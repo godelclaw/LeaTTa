@@ -41,7 +41,7 @@ a hypothesis catalog measured on the `--he` lane — background reading only.
 
 ## Governance
 
-- Local branch `petta-profile`; no push without Zar's word.
+- Local branch `petta-profile`; no push without the maintainer's approval.
 - **Upstreaming condition (SR-bridge compatibility):** a sibling effort's
   ~28.8k-line SR bridge imports `MettaHyperonFull.*`. If LeaTTa-petta is ever
   upstreamed to zariuq/LeaTTa: `heProfile` must remain the default and

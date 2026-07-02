@@ -2,7 +2,7 @@
 
 Rule: nothing in this repo is called "certified" for the PeTTa profile while
 this ledger has open entries. Sorries are special-permission: a scoped window
-was granted by Zar (2026-07-02) for M2/M3 special-form arms, on exactly that
+was granted by the maintainer (2026-07-02) for M2/M3 special-form arms, on exactly that
 condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
 
 ## Open — profile axes not yet modeled
