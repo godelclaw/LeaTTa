@@ -38,8 +38,13 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
   (RelationalBridge.lean) certify that any answer read as a ground reduction is
   in `leastModelP`; the input-binding SEARCH is the certified LP/SLD solver
   (math side). Full non-ground completeness = undecidable (honest never).
+- **T3.1/T3.2/T3.3a DONE (engine-side, zero sorry, audited)**: `leastModelP`
+  (Tarski lfp); the **coincidence theorem** (`leastModelP` = reduction-to-normal
+  -form, unconditional); `ground_answer_sound` (relational answers certified).
 - **T3.3b (BANKED, math-side)**: `SLDTree`-answers ⊆ `leastModelP`, authored in
   Mettapedia with a pinned+defs-equal vendored `leastModelP`. Behind SR seal.
+- **Genuinely-never (a theorem, not a gap)**: full non-ground completeness =
+  undecidable (infinite SLD trees for non-terminating programs).
 
 ## Track-2 obligations from Track-1 kernel changes
 

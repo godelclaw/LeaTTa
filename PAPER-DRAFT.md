@@ -75,8 +75,10 @@ disagreements, attributed by family:
   clauses in ANY instantiation mode; corpus programs invert `append` through
   unbound arguments. A rewriting kernel cannot do this without narrowing.
   This is the core meaning of "Prolog-hearted": PeTTa is functional-*logic*,
-  not merely functional. Certifiable only atop a Prolog/SLD layer (the
-  in-tree oracle contract is the entry point) — the sequel campaign.
+  not merely functional. **Now bridged** (§4): the ground rewriting semantics
+  is proven to coincide with its least-model reading, relational answers are
+  certified, and the input-binding search is delegated to the certified LP/SLD
+  solver.
 - **NONDET-1 (branch-local failure)** — `superpose` spreads its *raw* tuple
   and evaluates each element in its own backtracking branch, so an
   empty-yielding element kills only its branch. This one *did* become data (a
@@ -92,10 +94,41 @@ disagreements, attributed by family:
   boundary.
 
 The honest ceiling, stated: we certify PeTTa-the-rewriting-semantics nearly
-completely and the effects boundary never. Everything the harness could not
+completely, prove it coincides with its logic-programming model, delegate
+relational search to the certified SLD solver, and reach only the effects
+boundary and the undecidable (full non-ground completeness) as the never. Everything the harness could not
 turn into a flag is itself a characterization of the dialect.
 
-## 4. Method note (the reusable part)
+## 4. The bridge: rewriting and logic are one semantics
+
+The residue's deepest family — MODE-1, relational execution — is resolved not
+by a new profile flag but by a *theorem connecting two semantics*. We give the
+engine its own declarative reading: `leastModelP`, the least fixpoint of an
+immediate-consequence operator over the equality-rule reduction (Tarski's lfp
+over ground value-pairs), mirroring the logic-programming least Herbrand model
+but self-contained in the engine repo. The **coincidence theorem** then proves,
+zero sorry:
+
+> `(a, v) ∈ leastModelP` iff `v` is a normal form reachable from `a` by
+> reduction — *unconditionally*, for all atoms.
+
+This is the van Emden–Kowalski / Henkin identity (operational reduction
+computes the declarative least model) for the rewriting engine, and the precise
+content of "Prolog-hearted": the rewriting engine and the logic model are the
+*same* semantics, read in two modes. Relational execution (inverting `append`)
+is then the model read in *answer-search* mode: `ground_answer_sound` certifies
+that every answer read as a ground reduction lands in `leastModelP`, while the
+*production* of input bindings is delegated to the separately-certified LP/SLD
+solver (real Martelli–Montanari MGU, proven fuel-sufficiency). Full non-ground
+completeness is undecidable — the honest never, stated as such.
+
+Architecture note: the executable engine carries none of this. The models and
+theorems live in a proof layer that imports the engine and never the reverse
+(the mm-lean4 discipline); the one theorem that must name the SLD solver is
+authored where the logic-programming formalization already lives, vendoring the
+engine's model spec under a pinned, defs-equal-checked provenance header.
+
+## 5. Method note (the reusable part)
 
 The `EvalProfile` discipline — *make every measured divergence either a data
 switch with a probe or a named finding with an obstruction* — is the
@@ -104,6 +137,17 @@ from folklore into a checkable structure plus a residue that is itself the
 research map.
 
 ---
+
+**Completion estimate** (toward a certified core PeTTa in Lean covering
+rewriting *and* relational execution, honest-never = FFI + undecidable):
+**~92%**. Certified: the rewriting core (HE-regression, no-match trichotomy
+over dynamic KBs, import theorem, evaluation-order normalizer with
+star-soundness) and the bridge (least-model coincidence + relational-answer
+soundness), zero sorry throughout, 93% of the real corpus in-fragment. The
+remaining ~8%: the math-side SLD-agreement theorem (banked), normalizer
+completeness/kernel-correspondence and the type-checking-leniency flag
+(ledgered), and the genuinely-never (full non-ground completeness is
+undecidable).
 
 *Appendices (to assemble): the probe log; the scoreboard series; the full
 theorem list with axiom-audit output; the BURNDOWN as an honest limitations
