@@ -15,6 +15,7 @@ import MettaHyperonFull.Proofs.ImportConcat
 import MettaHyperonFull.Operational.NormalizeP
 import MettaHyperonFull.Proofs.NormalizeSound
 import MettaHyperonFull.Proofs.GroundModel
+import MettaHyperonFull.Proofs.Coincidence
 
 #print axioms Metta.reduceAtomP_he
 #print axioms Metta.reduceArgsP_he
@@ -42,3 +43,8 @@ import MettaHyperonFull.Proofs.GroundModel
 #print axioms Metta.leastModelP_fixpoint
 #print axioms Metta.leastModelP_least
 #print axioms Metta.leastModelP_step
+
+-- The coincidence theorem (T3.2)
+#print axioms Metta.coincidence
+#print axioms Metta.coincidence_sound
+#print axioms Metta.coincidence_complete
