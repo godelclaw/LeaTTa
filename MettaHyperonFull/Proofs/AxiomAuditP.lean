@@ -14,6 +14,7 @@ import MettaHyperonFull.Proofs.CorrespondenceP
 import MettaHyperonFull.Proofs.ImportConcat
 import MettaHyperonFull.Operational.NormalizeP
 import MettaHyperonFull.Proofs.NormalizeSound
+import MettaHyperonFull.Proofs.GroundModel
 
 #print axioms Metta.reduceAtomP_he
 #print axioms Metta.reduceArgsP_he
@@ -36,3 +37,8 @@ import MettaHyperonFull.Proofs.NormalizeSound
 #print axioms Metta.normalizeP_sound
 #print axioms Metta.descendantsP_sound
 #print axioms Metta.definedHeadK_eq_definedHead_dyn
+
+-- Ground model surface (T3.1)
+#print axioms Metta.leastModelP_fixpoint
+#print axioms Metta.leastModelP_least
+#print axioms Metta.leastModelP_step
