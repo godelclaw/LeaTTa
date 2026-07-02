@@ -5,6 +5,7 @@ For each corpus file: classify in/out-of-fragment (core PeTTa), run both
 engines, normalize results, compare as multisets, append a scoreboard row.
 Out-of-fragment and parse-gap files are counted, never silently dropped.
 """
+import os
 import re
 import subprocess
 import sys
