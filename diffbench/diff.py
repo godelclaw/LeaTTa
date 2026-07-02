@@ -107,6 +107,14 @@ def leatta_results(path, timeout):
     return items
 
 
+_NUM = re.compile(r"-?\d+\.\d+(?:[eE][+-]?\d+)?")
+
+
+def _canon_num(m):
+    f = float(m.group(0))
+    return str(int(f)) if f == int(f) else f"{f:g}"
+
+
 def normalize(item):
     s = " ".join(item.split())
     low = s.lower()
@@ -119,7 +127,8 @@ def normalize(item):
             return str(int(f))
     except ValueError:
         pass
-    return s
+    # canonicalize float literals INSIDE compound terms: 0.900000 -> 0.9
+    return _NUM.sub(_canon_num, s)
 
 
 def compare(petta, leatta):

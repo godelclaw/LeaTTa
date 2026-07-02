@@ -54,16 +54,22 @@ structure EvalProfile where
   noMatchEmpty : Bool
   ifArity2 : Bool
   quoteStrips : Bool
+  /-- Success shape of space mutations (`add-atom`/`remove-atom`/`import!`):
+  `true` = they return the boolean `true` (native PeTTa, probe 2026-07-02);
+  `false` = they return the unit `()` (HE; DIV-006 family). -/
+  successTrue : Bool
 deriving Repr, BEq, Inhabited
 
 /-- Hyperon-Experimental 0.2.10 — the dialect certified by the existing
 `Semantics.reduceAtom`; `SemanticsP.reduceAtomP_he` proves the equivalence. -/
 def heProfile : EvalProfile :=
-  { noMatchEmpty := false, ifArity2 := false, quoteStrips := false }
+  { noMatchEmpty := false, ifArity2 := false, quoteStrips := false,
+    successTrue := false }
 
 /-- Native PeTTa (the lane mettaclaw and PeTTaChainer run). Each field value
 is an empirical claim; see the module docstring for probes/DIV ids. -/
 def pettaProfile : EvalProfile :=
-  { noMatchEmpty := true, ifArity2 := true, quoteStrips := true }
+  { noMatchEmpty := true, ifArity2 := true, quoteStrips := true,
+    successTrue := true }
 
 end Metta

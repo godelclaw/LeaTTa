@@ -31,6 +31,14 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
   semantics (functional-LOGIC, not just functional): attribution family in
   the scoreboard, out of scope for the dialect profile.
 
+## Track-2 obligations from Track-1 kernel changes
+
+- **OBL-1**: `EvalProfile.successTrue` is honored by the KERNEL space
+  mutations (`add-atom`/`remove-atom`/`import!` return sites); the
+  four-register SPEC (`stepAddAtom`/`stepRemAtom` pushing `Atom.unit`) is not
+  yet profile-parametric. Obligation: parameterize + correspondence, due with
+  the T1.3 (dynamic spaces) Track-2 pass.
+
 ## T1.3 pre-work: native space-semantics probes (2026-07-02, 6 probes)
 
 - `add-atom`/`remove-atom` return `true` in native PeTTa (LeaTTa returns

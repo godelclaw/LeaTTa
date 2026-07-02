@@ -332,6 +332,11 @@ def definedHeadK (env : MinEnv) (w : World) (toEval : Atom) : Bool :=
         | _ => false
   | _ => false
 
+/-- The success atom of a space mutation under the env's dialect: PeTTa's
+`true` or HE's unit `()` (`EvalProfile.successTrue`, DIV-006). -/
+def MinEnv.successAtom (env : MinEnv) : Atom :=
+  if env.profile.successTrue then Atom.gnd (Ground.bool true) else Atom.expr []
+
 /-- Rename every variable in the rule to a fresh name tagged with `counter`. Without freshening,
     a recursive function reuses the same variable names across recursion levels in a single binding
     thread and clashes. Hyperon freshens rule variables via the atomspace query / `make_unique`. -/
@@ -814,13 +819,13 @@ def interpretStack1 (env : MinEnv) (fuel : Nat) (st : St) (it : Item) : List Ite
           -- Added atoms go to `world.selfExtra` for `&self` (both `match &self` and `candidatesW`
           -- consult it), or to the named space in `world.spaces` for any other token.
           match spaceName st.world (instantiate it.bnd s) with
-          | some "&self" => ([finItem prev (Atom.expr []) it.bnd], st.mapWorld (·.appendSelf [instantiate it.bnd a]))
-          | some name => ([finItem prev (Atom.expr []) it.bnd], st.mapWorld (·.appendSpace name [instantiate it.bnd a]))
+          | some "&self" => ([finItem prev env.successAtom it.bnd], st.mapWorld (·.appendSelf [instantiate it.bnd a]))
+          | some name => ([finItem prev env.successAtom it.bnd], st.mapWorld (·.appendSpace name [instantiate it.bnd a]))
           | none => ([finItem prev (errAtom (instantiate it.bnd s) "add-atom: not a space") it.bnd], st)
       | Atom.expr [Atom.sym "remove-atom", s, a] =>
           match spaceName st.world (instantiate it.bnd s) with
-          | some "&self" => ([finItem prev (Atom.expr []) it.bnd], st.mapWorld (·.eraseSelf (instantiate it.bnd a)))
-          | some name => ([finItem prev (Atom.expr []) it.bnd], st.mapWorld (·.eraseFromSpace name (instantiate it.bnd a)))
+          | some "&self" => ([finItem prev env.successAtom it.bnd], st.mapWorld (·.eraseSelf (instantiate it.bnd a)))
+          | some name => ([finItem prev env.successAtom it.bnd], st.mapWorld (·.eraseFromSpace name (instantiate it.bnd a)))
           | none => ([finItem prev (errAtom (instantiate it.bnd s) "remove-atom: not a space") it.bnd], st)
       | Atom.expr [Atom.sym "get-atoms", s] =>
           match spaceName st.world (instantiate it.bnd s) with
@@ -844,8 +849,8 @@ def interpretStack1 (env : MinEnv) (fuel : Nat) (st : St) (it : Item) : List Ite
                 env.imports.getD ("library " ++ lib) []
             | _ => []
           match spaceName st.world (instantiate it.bnd space) with
-          | some "&self" => ([finItem prev (Atom.expr []) it.bnd], st.mapWorld (·.appendSelf fileAtoms))
-          | some name => ([finItem prev (Atom.expr []) it.bnd], st.mapWorld (·.appendSpace name fileAtoms))
+          | some "&self" => ([finItem prev env.successAtom it.bnd], st.mapWorld (·.appendSelf fileAtoms))
+          | some name => ([finItem prev env.successAtom it.bnd], st.mapWorld (·.appendSpace name fileAtoms))
           | none => ([finItem prev (errAtom (instantiate it.bnd space) "import!: target is not a space") it.bnd], st)
       | _ =>
           if isEmbeddedOp top.atom then
