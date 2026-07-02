@@ -66,7 +66,7 @@ def heProfile : EvalProfile :=
   { noMatchEmpty := false, ifArity2 := false, quoteStrips := false,
     successTrue := false }
 
-/-- Native PeTTa (the lane mettaclaw and PeTTaChainer run). Each field value
+/-- Native PeTTa (the lane PeTTaChainer and native-PeTTa agents run). Each field value
 is an empirical claim; see the module docstring for probes/DIV ids. -/
 def pettaProfile : EvalProfile :=
   { noMatchEmpty := true, ifArity2 := true, quoteStrips := true,

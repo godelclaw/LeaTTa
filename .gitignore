@@ -7,3 +7,5 @@
 /.playwright-mcp/
 /leatta-*.png
 /leatta-*.jpeg
+diffbench/__pycache__/
+*.pyc
