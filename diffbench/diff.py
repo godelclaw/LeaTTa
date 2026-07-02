@@ -14,7 +14,7 @@ import collections
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 PETTA_RUNNER = ["bash", "/home/oruzi/repos/PeTTa/test_runner.sh"]
-LEATTA = [str(REPO / ".lake/build/bin/LeaTTa"), "--file"]
+LEATTA = [str(REPO / ".lake/build/bin/LeaTTa")] + (os.environ.get("LEATTA_ARGS", "").split() if os.environ.get("LEATTA_ARGS") else []) + ["--file"]
 SCOREBOARD = REPO / "diffbench" / "scoreboard.tsv"
 
 # Tokens that put a file outside the declared "core PeTTa" fragment

@@ -101,22 +101,24 @@ def loadImports (path : String) (src : String) : IO (Std.HashMap String (List At
     * `--min PROGRAM`: run a program string;
     * `--mettail PATH --term TERM [--fuel N]`: run `TERM` with a MeTTaIL dialect file;
     * `--oracle PATH`: run a test file's `!`-assertions and report how many evaluate to `()`.
+    A leading/anywhere `--petta` flag selects the native-PeTTa evaluation profile
+    (`Metta.pettaProfile`) for the minimal-interpreter modes.
     An earlier `Runtime.CLI` four-register runner was retired; see `MettaHyperonFull.lean`. -/
-def main : List String → IO UInt32
+def dispatch (profile : Metta.EvalProfile) : List String → IO UInt32
   | ["--file", path] | ["--min-file", path] => do
       let src ← IO.FS.readFile path
       let imports ← loadImports path src
-      IO.println (runMinimalSource src (imports := imports))
+      IO.println (runMinimalSource src (imports := imports) (profile := profile))
       pure 0
   | ["--oracle", path] => do
       -- Run every `!`-assertion through the minimal interpreter in file order.
       -- An assertion passes iff it evaluates to the unit atom `()`.
       let src ← IO.FS.readFile path
       let imports ← loadImports path src
-      IO.println (oracleReport src (imports := imports))
+      IO.println (oracleReport src (imports := imports) (profile := profile))
       pure 0
   | "--min" :: rest => do
-      IO.println (runMinimalSource (" ".intercalate rest))
+      IO.println (runMinimalSource (" ".intercalate rest) (profile := profile))
       pure 0
   | ["--mettail", path, "--term", term] =>
       runMeTTaILFile path term 256
@@ -131,5 +133,9 @@ def main : List String → IO UInt32
       IO.println (runMinimalSource demoSource)
       pure 0
   | args => do
-      IO.println (runMinimalSource (" ".intercalate args))
+      IO.println (runMinimalSource (" ".intercalate args) (profile := profile))
       pure 0
+
+def main (args : List String) : IO UInt32 :=
+  let profile := if args.contains "--petta" then Metta.pettaProfile else Metta.heProfile
+  dispatch profile (args.filter (· != "--petta"))

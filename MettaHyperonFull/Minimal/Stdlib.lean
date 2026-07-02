@@ -575,6 +575,34 @@ def preludeAtoms : List Atom :=
   | Except.ok xs => xs
   | Except.error _ => []
 
+/-- Native-PeTTa dialect prelude rules (data-level dialect deltas).
+`quote` strips to its argument; the kept `(: quote (-> Atom Atom))` signature
+is what makes the result inert (type-directed no-re-evaluation), matching the
+native probe `!(quote (+ 1 2))` → `(+ 1 2)`. The 2-arg `if` only needs a True
+rule: the False case has no matching clause, which under
+`EvalProfile.noMatchEmpty` is Prolog goal failure — the empty result. -/
+def pettaQuoteSrc : String := "(= (quote $x) $x)"
+def pettaIf2Src : String := "(= (if True $then) $then)"
+
+private def parsedOr (src : String) : List Atom :=
+  match parseProgram src with
+  | Except.ok xs => xs
+  | Except.error _ => []
+
+/-- The stdlib prelude specialized to an evaluation profile. At `heProfile`
+this is exactly `preludeAtoms`. Under `quoteStrips` the HE rule
+`(= (quote $atom) NotReducible)` is replaced by the stripping rule. -/
+def preludeAtomsFor (p : EvalProfile) : List Atom :=
+  let base :=
+    if p.quoteStrips then
+      preludeAtoms.filter (fun a =>
+        match a with
+        | Atom.expr [Atom.sym "=", Atom.expr [Atom.sym "quote", Atom.var _],
+            Atom.sym "NotReducible"] => false
+        | _ => true) ++ parsedOr pettaQuoteSrc
+    else preludeAtoms
+  base ++ (if p.ifArity2 then parsedOr pettaIf2Src else [])
+
 /-- A knowledge base = the stdlib prelude plus the user's atoms. -/
 def stdKb (userAtoms : List Atom) : Space := ⟨preludeAtoms ++ userAtoms⟩
 
@@ -600,13 +628,15 @@ def splitProgram : List Atom → List Atom × List Atom
     e.g. the same expression evaluated before and after a `(: …)` type declaration gives different
     results. Returns each query paired with its results, in file order. -/
 def evalSequential (atoms : List Atom) (fuel : Nat)
-    (imports : Std.HashMap String (List Atom) := Std.HashMap.emptyWithCapacity) : List (Atom × List Atom) :=
+    (imports : Std.HashMap String (List Atom) := Std.HashMap.emptyWithCapacity)
+    (profile : EvalProfile := heProfile) : List (Atom × List Atom) :=
   -- `runQ` evaluates a query under the current `St` (gensym counter + mutable world) and returns its
   -- results together with the advanced state, so `bind!` tokens, named-space `add-atom`s and state
   -- cells made by one query are visible to later queries (globally mutable, like Hyperon). `imports`
   -- (pre-read by the IO runner) backs `import!` and is constant across the run.
   let runQ := fun (kbRev : List Atom) (st : St) (q : Atom) =>
-    let env := { MinEnv.ofAtomsGT (preludeAtoms ++ kbRev.reverse) stdGroundings with imports := imports }
+    let env := { MinEnv.ofAtomsGT (preludeAtomsFor profile ++ kbRev.reverse) stdGroundings with
+                 imports := imports, profile := profile }
     let (pairs, st') := mettaEval env fuel st [] q
     (pairs.map (·.1), st')
   -- accumulator: (kb-atoms reversed, results reversed, threaded St, "previous atom was `!`")
@@ -645,19 +675,21 @@ def collectModuleRoots (atoms : List Atom) : List String := atoms.filterMap modu
 
 /-- Run a MeTTa program (sequentially) and pretty-print all `!`-query results. -/
 def runMinimalSource (src : String) (fuel : Nat := 100000)
-    (imports : Std.HashMap String (List Atom) := Std.HashMap.emptyWithCapacity) : String :=
+    (imports : Std.HashMap String (List Atom) := Std.HashMap.emptyWithCapacity)
+    (profile : EvalProfile := heProfile) : String :=
   match parseProgram src with
   | Except.error e => "parse error: " ++ e
-  | Except.ok atoms => Pretty.atoms ((evalSequential atoms fuel imports).flatMap (·.2))
+  | Except.ok atoms => Pretty.atoms ((evalSequential atoms fuel imports profile).flatMap (·.2))
 
 /-- Run a test file's `!`-assertions (sequentially) and report pass/fail counts; an assertion passes
     iff it evaluates to the unit atom `()` (`Atom.expr []`). -/
 def oracleReport (src : String) (fuel : Nat := 100000)
-    (imports : Std.HashMap String (List Atom) := Std.HashMap.emptyWithCapacity) : String :=
+    (imports : Std.HashMap String (List Atom) := Std.HashMap.emptyWithCapacity)
+    (profile : EvalProfile := heProfile) : String :=
   match parseProgram src with
   | Except.error e => "parse error: " ++ e
   | Except.ok atoms =>
-      let res := (evalSequential atoms fuel imports).foldl (fun (acc : Nat × Nat × List String) qr =>
+      let res := (evalSequential atoms fuel imports profile).foldl (fun (acc : Nat × Nat × List String) qr =>
         if qr.2 == [Atom.expr []] then (acc.1 + 1, acc.2.1, acc.2.2)
         else (acc.1, acc.2.1 + 1, acc.2.2 ++ [s!"FAIL: {qr.1}\n   got: {Pretty.atoms qr.2}"])) (0, 0, [])
       "\n".intercalate (res.2.2 ++ [s!"\n==== PASS={res.1}  FAIL={res.2.1}  TOTAL={res.1 + res.2.1} ===="])

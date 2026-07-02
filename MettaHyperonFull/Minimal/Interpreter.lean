@@ -20,6 +20,7 @@ Open obligations: fuel is shared with the nested `collapse-bind` driver, so deep
 import MettaHyperonFull.Core.Matching
 import MettaHyperonFull.Core.Space
 import MettaHyperonFull.Core.Builtins
+import MettaHyperonFull.Operational.Profile
 import Std.Data.HashMap
 
 namespace Metta.Minimal
@@ -152,6 +153,10 @@ structure MinEnv where
       kept separate from `types` (keyed by symbol). A direct declaration takes precedence over
       the type inferred for an application in `getTypes`. -/
   exprTypes : List (Atom × Atom)
+  /-- Evaluation dialect (`heProfile` by default, so every existing construction
+      and proof is unaffected). `pettaProfile` switches the measured native-PeTTa
+      behaviors; see `Operational/Profile.lean`. -/
+  profile : EvalProfile := heProfile
 
 /-- Extract the `(= lhs rhs)` equality rules from an atom list. Factored out so
     `Proofs/IndexingComplete.lean` can characterise the index against this definition. -/
@@ -314,6 +319,19 @@ def candidatesW (env : MinEnv) (w : World) (toEval : Atom) : List (Atom × Atom)
     | _ => none
   env.candidates toEval ++ extra
 
+/-- Does `toEval` have a candidate `=`-rule of the same head and arity (kernel analogue of
+    `Operational.SemanticsP.definedHead`)? Head-and-arity mirrors Prolog functor indexing: a call
+    to a defined functor with no matching clause fails, while an unknown head is constructor data.
+    Variable-headed rules (`varRules`) do not make a head "defined". -/
+def definedHeadK (env : MinEnv) (w : World) (toEval : Atom) : Bool :=
+  match toEval with
+  | Atom.expr (Atom.sym _ :: args) =>
+      (candidatesW env w toEval).any fun pr =>
+        match pr.fst with
+        | Atom.expr (Atom.sym _ :: args') => args'.length == args.length
+        | _ => false
+  | _ => false
+
 /-- Rename every variable in the rule to a fresh name tagged with `counter`. Without freshening,
     a recursive function reuses the same variable names across recursion levels in a single binding
     thread and clashes. Hyperon freshens rule variables via the atomspace query / `make_unique`. -/
@@ -335,7 +353,14 @@ def queryOp (env : MinEnv) (st : St) (prev : Stack) (toEval : Atom) (b : Binding
       (Bindings.merge b mb).filterMap fun m =>
         if Bindings.hasLoop m then none else some (evalResult prev (instantiate m rhs') m)
     (acc.1 ++ items, { acc.2 with counter := acc.2.counter + 1 })) ([], st)
-  if results.isEmpty then ([finItem prev notReducibleA b], st') else (results, st')
+  if results.isEmpty then
+    -- Dialect switch (native PeTTa, `noMatchEmpty`): a DEFINED head (some
+    -- candidate rule of the same arity exists) with no matching clause is
+    -- Prolog goal failure — a dead branch, not an inert normal form.
+    -- Undefined heads stay inert in every dialect.
+    if env.profile.noMatchEmpty && definedHeadK env st.world toEval then ([], st')
+    else ([finItem prev notReducibleA b], st')
+  else (results, st')
 
 /-- `(eval <atom>)` (Rust `eval`/`eval_impl`): apply bindings, then execute a grounded operator,
     push a nested embedded op, or query the space for an equality rule. Threads the gensym counter. -/
