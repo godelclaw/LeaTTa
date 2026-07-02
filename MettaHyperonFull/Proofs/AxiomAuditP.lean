@@ -12,6 +12,7 @@ Open obligations: keep aligned with PROFILE.md's theorem table.
 -/
 import MettaHyperonFull.Proofs.CorrespondenceP
 import MettaHyperonFull.Proofs.ImportConcat
+import MettaHyperonFull.Operational.NormalizeP
 
 #print axioms Metta.reduceAtomP_he
 #print axioms Metta.reduceArgsP_he
@@ -28,3 +29,6 @@ import MettaHyperonFull.Proofs.ImportConcat
 -- Import theorem surface (T2.2)
 #print axioms Metta.import_concat_query
 #print axioms Metta.import_concat_irreducible
+
+-- Strategy normalizer surface (C2.2)
+#print axioms Metta.ctxStepP_stratNone_he
