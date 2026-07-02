@@ -840,6 +840,8 @@ def interpretStack1 (env : MinEnv) (fuel : Nat) (st : St) (it : Item) : List Ite
           -- IO runner must pre-read all imported files before evaluation starts).
           let fileAtoms := match instantiate it.bnd file with
             | Atom.sym f => env.imports.getD f []
+            | Atom.expr [Atom.sym "library", Atom.sym lib] =>
+                env.imports.getD ("library " ++ lib) []
             | _ => []
           match spaceName st.world (instantiate it.bnd space) with
           | some "&self" => ([finItem prev (Atom.expr []) it.bnd], st.mapWorld (·.appendSelf fileAtoms))

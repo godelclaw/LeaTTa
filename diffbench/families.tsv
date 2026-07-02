@@ -1,0 +1,46 @@
+file	family	note
+atomops.metta	BUILTIN	sub-op differences within atom ops (index/sort variants); re-tag after run-3
+booleansolver.metta	MODE-1	solver enumerates via relational search
+callquoteevalreduce2.metta	ORDER-1	quote/eval staging depth
+caseconstrain.metta	MODE-1	case with unbound constraint
+casenew.metta	ORDER-1	case via stdlib quote machinery vs PeTTa case
+foldall.metta	ORDER-1	nondeterministic fold; result re-driving differs
+forall.metta	ORDER-1	nondeterministic forall
+functionhead.metta	MODE-1	inverts append through unbound args
+functionhead2.metta	MODE-1	function-head inversion
+functionhead3.metta	MODE-1	function-head inversion
+functiontypes.metta	TYPES	get-type surface differs
+he_math.metta	BUILTIN	numeric tower (pow-math int) — armed in run-3
+holbenchmark.metta	PERF	higher-order search blowup (timeout)
+holfunctions.metta	MODE-1	higher-order + currying (DIV d2)
+holfunctions_intrinsicop.metta	MODE-1	higher-order intrinsics
+hyperpose_primes.metta	ORDER-1	hyperpose multiplicity
+invertfunction.metta	MODE-1	relational inversion
+invertpeanoplus.metta	MODE-1	peano inversion
+is_alpha_member_test.metta	BUILTIN	is-alpha-member gap
+lambda.metta	MODE-1	lambda encoding + currying
+listhead.metta	MODE-1	list-head inversion
+logicprogset.metta	MODE-1	logic-program set enumeration
+matchsingle.metta	TYPES	match on typed pattern
+matchtypes.metta	TYPES	match + type queries
+math.metta	BUILTIN	numeric tower — armed in run-3
+meta_types.metta	TYPES	metatype surface
+myinterpreter.metta	ORDER-1	meta-interpreter staging
+nestedcons.metta	ORDER-1	nested cons re-driving
+parametric_types.metta	TYPES	parametric type inference differs
+parse.metta	BUILTIN	parse builtin gap
+partialdef.metta	MODE-1	partial definitions relationally
+plntestdirect.metta	PERF	PLN search blowup (timeout)
+recursive_types.metta	TYPES	recursive type checks
+specialize.metta	TRANSLATOR	PeTTa specializer machinery (impl-specific)
+specializecyclic.metta	TRANSLATOR	PeTTa specializer machinery
+supercollapse.metta	ORDER-1	superpose/collapse staging
+superpose_nested.metta	ORDER-1	nested superpose staging
+test_alpha_unique_atom.metta	BUILTIN	alpha-unique-atom gap
+test_string_comments.metta	BUILTIN	repr/string surface
+translatorrule.metta	TRANSLATOR	add-translator-rule machinery
+translatorrule_fib.metta	TRANSLATOR	translator rules
+translatorrule_for.metta	TRANSLATOR	translator rules
+types.metta	TYPES	type query surface
+types_dependent.metta	TYPES	dependent type surface
+types_nondet.metta	TYPES	nondet type queries

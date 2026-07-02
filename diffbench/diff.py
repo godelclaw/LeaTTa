@@ -7,6 +7,7 @@ Out-of-fragment and parse-gap files are counted, never silently dropped.
 """
 import os
 import re
+import signal
 import subprocess
 import sys
 import pathlib
@@ -21,10 +22,13 @@ SCOREBOARD = REPO / "diffbench" / "scoreboard.tsv"
 
 # Tokens that put a file outside the declared "core PeTTa" fragment
 # (effects, Prolog/Python interop, spaces/state, modules). See plan.
+# ADMIT_IMPORTS=1 admits import!-using files (T1.2 gate); repr became a
+# supported petta builtin at the same arm.
+_IMPORT_TOKENS = r"" if os.environ.get("ADMIT_IMPORTS") else r"import!|repr|"
 OUT_OF_FRAGMENT = re.compile(
-    r"py-call|py-atom|import!|git-import|import_prolog|translatePredicate"
+    r"py-call|py-atom|" + _IMPORT_TOKENS + r"git-import|import_prolog|translatePredicate"
     r"|change-state!|new-state|get-state|bind!|new-space|add-atom|remove-atom"
-    r"|add-reduct|match\s+&|shell|call-cleanup|time-limit|sread|repr"
+    r"|add-reduct|match\s+&|shell|call-cleanup|time-limit|sread"
     r"|assertEqual|regex|random|get_time|flush|trace|halt"
 )
 
@@ -39,13 +43,34 @@ def classify(text):
 def transform(text):
     # PeTTa's test helper prints checkmark lines LeaTTa lacks; (test A B) and
     # (== A B) evaluate both args the same way, so rewrite for comparability.
-    return re.sub(r"\((test|assertEqual)\s", "(== ", text)
+    text = re.sub(r"\((test|assertEqual)\s", "(== ", text)
+    # println! interleaves side-effect lines into PeTTa's stdout that a pure
+    # kernel cannot mirror; drop whole-line print directives so BOTH engines
+    # run the identical print-free program (oracle-fair transform).
+    text = re.sub(r"^\s*!\(println!.*$", "", text, flags=re.M)
+    return text
+
+
+def run_grouped(cmd, timeout):
+    """Run with its own process group; on timeout kill the WHOLE group so no
+    orphaned swipl survives (shared machine courtesy)."""
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         text=True, start_new_session=True)
+    try:
+        out, err = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        p.communicate()
+        raise
+    return out, err
 
 
 def petta_results(path, timeout):
-    p = subprocess.run(PETTA_RUNNER + [str(path)], capture_output=True,
-                       text=True, timeout=timeout)
-    txt = ANSI.sub("", p.stdout + p.stderr)
+    out, err = run_grouped(PETTA_RUNNER + [str(path)], timeout)
+    txt = ANSI.sub("", out + err)
     out, keep = [], False
     for line in txt.splitlines():
         if "^^^" in line:
@@ -60,9 +85,8 @@ def petta_results(path, timeout):
 
 
 def leatta_results(path, timeout):
-    p = subprocess.run(LEATTA + [str(path)], capture_output=True,
-                       text=True, timeout=timeout)
-    txt = p.stdout.strip()
+    out, _err = run_grouped(LEATTA + [str(path)], timeout)
+    txt = out.strip()
     if not (txt.startswith("[") and txt.endswith("]")):
         return None
     inner = txt[1:-1].strip()
@@ -104,7 +128,7 @@ def compare(petta, leatta):
     return a == b
 
 
-def run_file(path, timeout=90):
+def run_file(path, timeout=45):
     text = path.read_text(errors="replace")
     frag, why = classify(text)
     with tempfile.NamedTemporaryFile("w", suffix=".metta", delete=False) as t:

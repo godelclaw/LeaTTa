@@ -31,6 +31,20 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
   semantics (functional-LOGIC, not just functional): attribution family in
   the scoreboard, out of scope for the dialect profile.
 
+## T1.3 pre-work: native space-semantics probes (2026-07-02, 6 probes)
+
+- `add-atom`/`remove-atom` return `true` in native PeTTa (LeaTTa returns
+  `()` — DIV-006 surface family; needs a profile-side result-shape switch).
+- Runtime rules fire immediately after `add-atom &self (= ...)`; `match`
+  works over rule and non-rule atoms alike.
+- **Definedness is dynamic**: after `remove-atom` deletes the last rule for a
+  head, calls to it revert to INERT (undefined), not empty. The kernel's
+  `definedHeadK` over `candidatesW` (which consults `selfExtra`) already has
+  the right shape; the spec-side correspondence is stated at `World.empty`
+  and will need a dynamic-KB restatement in Track 2.
+- Named spaces: `bind! &kb (new-space)` + `add-atom`/`match`/`get-atoms &kb`
+  behave as in HE modulo the `true` result shape.
+
 ## Known LeaTTa artifacts (NOT profile deltas — pre-ledgered so the M0
 baseline is not misread)
 

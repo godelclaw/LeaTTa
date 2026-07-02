@@ -603,12 +603,89 @@ def pettaLibSrc : String :=
    (= (max $a $b) (if (< $a $b) $b $a))
    (= (is-var $x) (== (get-metatype $x) Variable))
    (= (is-expr $x) (== (get-metatype $x) Expression))
-   (= (is-ground $x) (== (get-metatype $x) Grounded))"
+   (= (is-ground $x) (== (get-metatype $x) Grounded))
+   (: parse (-> %Undefined% Atom))"
 
 private def parsedOr (src : String) : List Atom :=
   match parseProgram src with
   | Except.ok xs => xs
   | Except.error _ => []
+
+/-- Native-PeTTa numeric tower: SWI-Prolog `**` preserves integers where the
+HE surface computes in f64 (probe: PeTTa `(pow-math 2 3)` → `8`, not `8.0`).
+Prepended to the table so `lookup` shadows the HE entry; non-integer or
+negative/huge exponents fall back to the float path. -/
+def pettaPowMath : List Atom → ReduceResult
+  | [Atom.gnd (Ground.int a), Atom.gnd (Ground.int b)] =>
+      if 0 ≤ b && b < 64 then ReduceResult.ok [Atom.gnd (Ground.int (a ^ b.toNat))]
+      else Builtins.floatBin Float.pow [Atom.gnd (Ground.int a), Atom.gnd (Ground.int b)]
+  | args => Builtins.floatBin Float.pow args
+
+/-- `(is-alpha-member x expr)` → Bool: is `x` α-equivalent to a child of `expr`
+(native probe: `(is-alpha-member (f $z) ((f $x) (g 1)))` → `true`). -/
+def isAlphaMemberOp : List Atom → ReduceResult
+  | [x, Atom.expr xs] => ReduceResult.ok [Atom.gnd (Ground.bool (xs.any (alphaEq x)))]
+  | _ => ReduceResult.incorrectArgument "is-alpha-member expects an atom and an expression"
+
+/-- `(repr a)` → the string form of `a`. PeTTa evaluates the argument first
+(native probe: `(repr (+ 1 2))` → `"3"`), which `evalArgs` mode provides. -/
+def reprOp : List Atom → ReduceResult
+  | [a] => ReduceResult.ok [Atom.gnd (Ground.str (Pretty.atom a))]
+  | _ => ReduceResult.incorrectArgument "repr expects one argument"
+
+/-- `(parse s)` → the atom parsed from string `s`, left UNevaluated (native
+probe: `(parse \"(+ 1 2)\")` → `(+ 1 2)`); the prelude declares
+`(: parse (-> %Undefined% Atom))` so the result is not re-driven. -/
+def parseOp : List Atom → ReduceResult
+  | [Atom.gnd (Ground.str s)] =>
+      match parseProgram s with
+      | Except.ok [a] => ReduceResult.ok [a]
+      | Except.ok atoms => ReduceResult.ok [Atom.expr atoms]
+      | Except.error _ => ReduceResult.incorrectArgument "parse: unparsable string"
+  | _ => ReduceResult.incorrectArgument "parse expects one string"
+
+/-- Float → Int in the SWI-Prolog style used by the conversion. -/
+def floatToInt (r : Float) : Int :=
+  if r ≥ 0 then Int.ofNat r.toUInt64.toNat else -(Int.ofNat (-r).toUInt64.toNat)
+
+/-- PeTTa's rounding family returns INTEGERS, as SWI-Prolog's
+`truncate/ceiling/floor/round` do (probe: `(trunc-math 5.6)` → `5` not `5.0`);
+an Int argument passes through. -/
+def pettaRound (f : Float → Float) : List Atom → ReduceResult
+  | [Atom.gnd (Ground.int a)] => ReduceResult.ok [Atom.gnd (Ground.int a)]
+  | [Atom.gnd (Ground.float x)] => ReduceResult.ok [Atom.gnd (Ground.int (floatToInt (f x)))]
+  | _ => ReduceResult.incorrectArgument "expected one Number"
+
+/-- PeTTa's `min-atom`/`max-atom` return the ORIGINAL extremal element (an Int
+tuple yields an Int), not a coerced float. -/
+def pettaExtremum (better : Float → Float → Bool) : List Atom → ReduceResult
+  | [Atom.expr (x :: xs)] =>
+      match Builtins.toFloat? x with
+      | none => ReduceResult.incorrectArgument "min/max-atom expects numbers"
+      | some v0 =>
+          let r := xs.foldl (fun (best : Atom × Float) a =>
+            match Builtins.toFloat? a with
+            | some v => if better v best.2 then (a, v) else best
+            | none => best) (x, v0)
+          ReduceResult.ok [r.1]
+  | _ => ReduceResult.incorrectArgument "expects one nonempty expression"
+
+/-- Grounding table for the native-PeTTa profile: PeTTa-arithmetic overrides
+and PeTTa-only builtins shadow/extend the HE entries by list order.
+`alpha-unique-atom` is `uniqueAtomOp`, whose dedup is already α-based. -/
+def pettaGroundings : GroundingTable :=
+  ⟨"pow-math", GroundMode.evalArgs, none, pettaPowMath⟩ ::
+  ⟨"trunc-math", GroundMode.evalArgs, none,
+    pettaRound (fun x => if x ≥ 0 then x.floor else x.ceil)⟩ ::
+  ⟨"ceil-math", GroundMode.evalArgs, none, pettaRound Float.ceil⟩ ::
+  ⟨"floor-math", GroundMode.evalArgs, none, pettaRound Float.floor⟩ ::
+  ⟨"round-math", GroundMode.evalArgs, none, pettaRound Float.round⟩ ::
+  ⟨"min-atom", GroundMode.evalArgs, none, pettaExtremum (· < ·)⟩ ::
+  ⟨"max-atom", GroundMode.evalArgs, none, pettaExtremum (· > ·)⟩ ::
+  ⟨"alpha-unique-atom", GroundMode.evalArgs, none, uniqueAtomOp⟩ ::
+  ⟨"is-alpha-member", GroundMode.evalArgs, none, isAlphaMemberOp⟩ ::
+  ⟨"repr", GroundMode.evalArgs, none, reprOp⟩ ::
+  ⟨"parse", GroundMode.evalArgs, none, parseOp⟩ :: stdGroundings
 
 /-- The stdlib prelude specialized to an evaluation profile. At `heProfile`
 this is exactly `preludeAtoms`. Under `quoteStrips` the HE rule
@@ -657,7 +734,8 @@ def evalSequential (atoms : List Atom) (fuel : Nat)
   -- cells made by one query are visible to later queries (globally mutable, like Hyperon). `imports`
   -- (pre-read by the IO runner) backs `import!` and is constant across the run.
   let runQ := fun (kbRev : List Atom) (st : St) (q : Atom) =>
-    let env := { MinEnv.ofAtomsGT (preludeAtomsFor profile ++ kbRev.reverse) stdGroundings with
+    let gt := if profile == heProfile then stdGroundings else pettaGroundings
+    let env := { MinEnv.ofAtomsGT (preludeAtomsFor profile ++ kbRev.reverse) gt with
                  imports := imports, profile := profile }
     let (pairs, st') := mettaEval env fuel st [] q
     (pairs.map (·.1), st')
@@ -676,6 +754,11 @@ def evalSequential (atoms : List Atom) (fuel : Nat)
     and a wrapped `(! …)` form are recognised. -/
 def importName? : Atom → Option String
   | Atom.expr [Atom.sym "import!", _, Atom.sym f] => some f
+  | Atom.expr [Atom.sym "import!", _, Atom.expr [Atom.sym "library", Atom.sym lib]] =>
+      -- PeTTa's `(library lib_x)` form; keyed distinctly so the IO resolver
+      -- can route it to the PeTTa lib root. The space in the key prevents
+      -- collision with any real path or module name.
+      some ("library " ++ lib)
   | Atom.expr [Atom.sym "!", inner] => importName? inner
   | _ => none
 
