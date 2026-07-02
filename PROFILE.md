@@ -5,6 +5,12 @@ This repo extends LeaTTa with a profile-parametric spec reducer
 to "what is native PeTTa, semantically, relative to HE 0.2.10" is the
 `EvalProfile` structure plus the ledgered structural axes in `BURNDOWN.md`.
 
+## Oracle pin
+
+Agreement claims in this repo are measured against **native PeTTa at commit
+`700707a68053` (patham9/PeTTa, "uniq-alpha")** — the sole oracle. PeTTa moves;
+every agreement number cites this pin. Re-pin (and re-baseline) on upgrade.
+
 ## The two engines in one sentence each
 
 - **HE** is a rewriting engine: unmatched applications stay inert as data,

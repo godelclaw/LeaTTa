@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""diffbench: differential harness — real native PeTTa (oracle) vs LeaTTa --file.
+"""diffbench: differential harness (NONDET IS ORDER-AGNOSTIC: results are a
+multiset/bag compared via Counter -- multiplicity matters, enumeration order
+does not; DIFF-COUNT = genuine multiplicity mismatch, not order).
+
+Original: — real native PeTTa (oracle) vs LeaTTa --file.
 
 For each corpus file: classify in/out-of-fragment (core PeTTa), run both
 engines, normalize results, compare as multisets, append a scoreboard row.
@@ -168,7 +172,12 @@ def run_file(path, timeout=45):
 
 
 def main():
-    corpus = sorted(pathlib.Path(sys.argv[1]).glob("*.metta"))
+    cdir = pathlib.Path(sys.argv[1])
+    if len(sys.argv) > 2 and pathlib.Path(sys.argv[2]).exists():
+        names = [l.strip() for l in open(sys.argv[2]) if l.strip()]
+        corpus = [cdir / n for n in names if (cdir / n).exists()]
+    else:
+        corpus = sorted(cdir.glob("*.metta"))
     rows = []
     for f in corpus:
         row = run_file(f)

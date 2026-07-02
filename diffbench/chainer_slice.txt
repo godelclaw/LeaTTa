@@ -1,0 +1,12 @@
+pln_direct.metta
+plntest.metta
+plntestdirect.metta
+test_stv_match.metta
+test_deduce_raw.metta
+test_evidence_kind_inline.metta
+hyperpose_primes.metta
+chain.metta
+foldallspacecount.metta
+matespace.metta
+matespace2.metta
+spaces_find.metta
