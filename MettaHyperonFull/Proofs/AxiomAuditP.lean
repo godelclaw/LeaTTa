@@ -13,6 +13,7 @@ Open obligations: keep aligned with PROFILE.md's theorem table.
 import MettaHyperonFull.Proofs.CorrespondenceP
 import MettaHyperonFull.Proofs.ImportConcat
 import MettaHyperonFull.Operational.NormalizeP
+import MettaHyperonFull.Proofs.NormalizeSound
 
 #print axioms Metta.reduceAtomP_he
 #print axioms Metta.reduceArgsP_he
@@ -32,3 +33,5 @@ import MettaHyperonFull.Operational.NormalizeP
 
 -- Strategy normalizer surface (C2.2)
 #print axioms Metta.ctxStepP_stratNone_he
+#print axioms Metta.normalizeP_sound
+#print axioms Metta.descendantsP_sound

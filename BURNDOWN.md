@@ -37,6 +37,14 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
   with `successAtomP` added (`SemanticsP.lean`); HE regressions proven by
   `rfl`; audited in `Proofs/AxiomAuditP.lean`.
 
+## Open — normalizer program (post-C2.3)
+
+- **NORM-1**: completeness of `normalizeP` (every `CtxStepP`-normal form is
+  produced given sufficient fuel) — converse of the proven star-soundness.
+- **NORM-2**: normalizer ⇔ kernel-driver correspondence (the minimal
+  interpreter's argMask/returnsAtom evaluation vs `normalizeP stratAll` at
+  the petta profile) — the full ORDER/NONDET formal closure.
+
 ## T1.3 pre-work: native space-semantics probes (2026-07-02, 6 probes)
 
 - `add-atom`/`remove-atom` return `true` in native PeTTa (LeaTTa returns

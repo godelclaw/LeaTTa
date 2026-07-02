@@ -50,6 +50,14 @@ a hypothesis catalog measured on the `--he` lane — background reading only.
   per head-keyed query — runtime `&self`-imported rules fire exactly as if
   statically present in the concatenated space (scope: static import map;
   inter-query sequencing is evaluator bookkeeping).
+- `ctxStepP_stratNone_he` (`NormalizeP.lean`) and `normalizeP_sound`
+  (`Proofs/NormalizeSound.lean`, C2.2/C2.3): the Strategy-parametric
+  innermost normalizer — PeTTa's normalize-once/branch-local-failure
+  evaluation made spec — with the recovery anchor (trivial strategy + HE
+  profile = the certified head-step) and STAR-SOUNDNESS (every produced
+  normal form is `CtxStepP`-reachable: the fuelled scheduler is bookkeeping
+  over the named relation). Completeness + kernel-driver correspondence:
+  ledgered.
 - Axiom audit (`Proofs/AxiomAuditP.lean`): every theorem above rests only on
   `propext` / `Quot.sound` / `Classical.choice`; no project axiom, no sorry.
 
