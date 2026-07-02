@@ -1,26 +1,26 @@
 file	family	note
 atomops.metta	BUILTIN	sub-op differences within atom ops (index/sort variants); re-tag after run-3
-booleansolver.metta	MODE-1	solver enumerates via relational search
+booleansolver.metta	MODE-1-BRIDGED	solver enumerates via relational search  [T3.3a: LP/SLD-certified]
 callquoteevalreduce2.metta	ORDER-1	quote/eval staging depth
 caseconstrain.metta	NONDET-1	branch-local failure in case machinery
 casenew.metta	NONDET-1	branch-local failure via empty in superpose
 foldall.metta	LAMBDA	aggregator armed; residual = |-> lambda generators
 forall.metta	LAMBDA	aggregator armed; residual = |-> lambda generators
-functionhead.metta	MODE-1	inverts append through unbound args
-functionhead2.metta	MODE-1	function-head inversion
-functionhead3.metta	MODE-1	function-head inversion
+functionhead.metta	MODE-1-BRIDGED	inverts append through unbound args  [T3.3a: LP/SLD-certified]
+functionhead2.metta	MODE-1-BRIDGED	function-head inversion  [T3.3a: LP/SLD-certified]
+functionhead3.metta	MODE-1-BRIDGED	function-head inversion  [T3.3a: LP/SLD-certified]
 functiontypes.metta	TYPECHECK-1	HE BadArgType; PeTTa permissive (armable)
 he_math.metta	BUILTIN	numeric tower (pow-math int) — armed in run-3
 holbenchmark.metta	PERF	higher-order search blowup (timeout)
 holfunctions.metta	MODE-1	higher-order + currying (DIV d2)
 holfunctions_intrinsicop.metta	MODE-1	higher-order intrinsics
 hyperpose_primes.metta	PERF	hyperpose armed; residual = deep-recursion StackOverflow
-invertfunction.metta	MODE-1	relational inversion
-invertpeanoplus.metta	MODE-1	peano inversion
+invertfunction.metta	MODE-1-BRIDGED	relational inversion  [T3.3a: LP/SLD-certified]
+invertpeanoplus.metta	MODE-1-BRIDGED	peano inversion  [T3.3a: LP/SLD-certified]
 is_alpha_member_test.metta	BUILTIN	is-alpha-member gap
 lambda.metta	MODE-1	lambda encoding + currying
-listhead.metta	MODE-1	list-head inversion
-logicprogset.metta	MODE-1	logic-program set enumeration
+listhead.metta	MODE-1-BRIDGED	list-head inversion  [T3.3a: LP/SLD-certified]
+logicprogset.metta	MODE-1-BRIDGED	logic-program set enumeration  [T3.3a: LP/SLD-certified]
 matchsingle.metta	TYPES	match on typed pattern
 matchtypes.metta	TYPES-STRUCTURAL	type-gated match result-set (Prolog-layer)
 math.metta	BUILTIN	numeric tower — armed in run-3
@@ -29,7 +29,7 @@ myinterpreter.metta	ORDER-1	meta-interpreter staging
 nestedcons.metta	ORDER-1	nested cons re-driving
 parametric_types.metta	TYPES	parametric type inference differs
 parse.metta	BUILTIN	parse builtin gap
-partialdef.metta	MODE-1	partial definitions relationally
+partialdef.metta	MODE-1-BRIDGED	partial definitions relationally  [T3.3a: LP/SLD-certified]
 plntestdirect.metta	PERF	PLN search blowup (timeout)
 recursive_types.metta	TYPES	recursive type checks
 specialize.metta	TRANSLATOR	PeTTa specializer machinery (impl-specific)

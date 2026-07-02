@@ -31,6 +31,16 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
   semantics (functional-LOGIC, not just functional): attribution family in
   the scoreboard, out of scope for the dialect profile.
 
+## Track-3 status (the Prolog bridge)
+
+- **MODE-1 → MODE-1-BRIDGED (T3.3a, DONE engine-side)**: relational execution
+  is accounted for. `ground_answer_sound`/`relational_answer_certified`
+  (RelationalBridge.lean) certify that any answer read as a ground reduction is
+  in `leastModelP`; the input-binding SEARCH is the certified LP/SLD solver
+  (math side). Full non-ground completeness = undecidable (honest never).
+- **T3.3b (BANKED, math-side)**: `SLDTree`-answers ⊆ `leastModelP`, authored in
+  Mettapedia with a pinned+defs-equal vendored `leastModelP`. Behind SR seal.
+
 ## Track-2 obligations from Track-1 kernel changes
 
 - **OBL-1 — DISCHARGED (T2.1)**: spec-side `stepAddAtomP`/`stepRemAtomP`

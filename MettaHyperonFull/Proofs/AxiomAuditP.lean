@@ -16,6 +16,7 @@ import MettaHyperonFull.Operational.NormalizeP
 import MettaHyperonFull.Proofs.NormalizeSound
 import MettaHyperonFull.Proofs.GroundModel
 import MettaHyperonFull.Proofs.Coincidence
+import MettaHyperonFull.Proofs.RelationalBridge
 
 #print axioms Metta.reduceAtomP_he
 #print axioms Metta.reduceArgsP_he
@@ -48,3 +49,7 @@ import MettaHyperonFull.Proofs.Coincidence
 #print axioms Metta.coincidence
 #print axioms Metta.coincidence_sound
 #print axioms Metta.coincidence_complete
+
+-- Relational bridge (T3.3a)
+#print axioms Metta.ground_answer_sound
+#print axioms Metta.relational_answer_certified
