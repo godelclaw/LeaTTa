@@ -1,0 +1,77 @@
+and_or.metta	IN		AGREE	1	1
+atomops.metta	IN		DIFF-COUNT	9	10
+booleansolver.metta	IN		DIFF-COUNT	2	0
+builin_types.metta	IN		DIFF-COUNT	36	37
+callquoteevalreduce.metta	IN		DIFF-COUNT	4	3
+callquoteevalreduce2.metta	IN		DIFF-VAL	4	4
+case.metta	IN		AGREE	1	1
+case2.metta	IN		AGREE	1	1
+caseconstrain.metta	IN		DIFF-COUNT	1	0
+caseempty.metta	IN		AGREE	2	2
+casenew.metta	IN		DIFF-COUNT	1	0
+chain.metta	IN		AGREE	2	2
+collapse.metta	IN		AGREE	1	1
+comments.metta	IN		AGREE	1	1
+constanthead.metta	IN		AGREE	1	1
+curry.metta	IN		DIFF-VAL	6	6
+cut.metta	IN		DIFF-COUNT	2	3
+empty.metta	IN		AGREE	1	1
+eval.metta	IN		DIFF-VAL	2	2
+factorial.metta	IN		AGREE	1	1
+fib.metta	IN		AGREE	1	1
+fibadd.metta	IN		DIFF-COUNT	2	1
+fibsmart.metta	IN		AGREE	1	1
+fibsmartimport.metta	IN		DIFF-COUNT	1	2
+foldall.metta	IN		DIFF-COUNT	10	20
+foldallmatch.metta	IN		DIFF-COUNT	2	4
+foldallspacecount.metta	IN		DIFF-COUNT	1	3
+forall.metta	IN		DIFF-COUNT	12	21
+functionhead.metta	IN		DIFF-COUNT	2	0
+functionhead2.metta	IN		DIFF-VAL	1	1
+functionhead3.metta	IN		DIFF-VAL	6	6
+functionremoval.metta	IN		DIFF-COUNT	8	15
+functionremovalspec.metta	IN		DIFF-COUNT	6	12
+functiontypes.metta	IN		DIFF-VAL	4	4
+git_import.metta	OUT	git-import	DIFF-VAL	4	4
+git_import2.metta	OUT	git-import	DIFF-COUNT	11	12
+greedy_chess.metta	OUT	new-state	PETTA-TIMEOUT		
+he_assert.metta	OUT	assertEqual	DIFF-COUNT	5	6
+he_atomspace.metta	IN		DIFF-COUNT	7	9
+he_equalreduct.metta	IN		DIFF-COUNT	4	6
+he_error.metta	IN		DIFF-COUNT	5	6
+he_evaluation.metta	IN		DIFF-COUNT	4	5
+he_math.metta	IN		AGREE	19	19
+he_minimalmetta.metta	IN		PETTA-TIMEOUT		
+he_quoting.metta	IN		DIFF-COUNT	6	5
+he_types.metta	IN		DIFF-COUNT	7	8
+holbenchmark.metta	IN		LEATTA-TIMEOUT	4	
+holfunctions.metta	IN		DIFF-VAL	7	7
+holfunctions_intrinsicop.metta	IN		DIFF-COUNT	1	0
+hyperpose_primes.metta	IN		DIFF-COUNT	3	6
+identity.metta	IN		AGREE	1	1
+if.metta	IN		AGREE	1	1
+if2.metta	IN		AGREE	1	1
+if3.metta	IN		AGREE	1	1
+if4.metta	IN		AGREE	1	1
+ifcasenondet.metta	IN		AGREE	2	2
+ifsimple.metta	IN		AGREE	1	1
+invertfunction.metta	IN		DIFF-VAL	3	3
+invertpeanoplus.metta	IN		DIFF-VAL	5	5
+is_alpha_member_test.metta	IN		DIFF-COUNT	25	23
+iter.metta	IN		AGREE	1	1
+lambda.metta	IN		DIFF-VAL	7	7
+let_superpose_if_case.metta	IN		AGREE	1	1
+letext.metta	IN		AGREE	1	1
+letlet.metta	IN		AGREE	1	1
+letstar.metta	IN		AGREE	1	1
+library.metta	IN		DIFF-COUNT	2	1
+listhead.metta	IN		DIFF-COUNT	3	2
+llm_cities.metta	OUT	sread	DIFF-COUNT	3	4
+logicprog.metta	IN		AGREE	1	1
+logicprogset.metta	IN		DIFF-COUNT	1	0
+matchnested.metta	IN		DIFF-VAL	1	1
+matchnested2.metta	IN		DIFF-VAL	1	1
+matchsingle.metta	IN		DIFF-VAL	2	2
+matchtypes.metta	IN		DIFF-COUNT	6	20
+matespace.metta	IN		LEATTA-TIMEOUT	1	
+matespace2.metta	IN		DIFF-VAL	1	1

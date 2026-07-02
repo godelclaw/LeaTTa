@@ -45,6 +45,11 @@ a hypothesis catalog measured on the `--he` lane — background reading only.
 - `stepAddAtomP_he` / `stepRemAtomP_he` / `successAtomP_he`
   (`SemanticsP.lean`, OBL-1): the machine's space mutations are
   profile-parametric; HE instances equal the originals by `rfl`.
+- `import_concat_query` / `import_concat_irreducible`
+  (`Proofs/ImportConcat.lean`, T2.2): **import is rule-space concatenation**,
+  per head-keyed query — runtime `&self`-imported rules fire exactly as if
+  statically present in the concatenated space (scope: static import map;
+  inter-query sequencing is evaluator bookkeeping).
 - Axiom audit (`Proofs/AxiomAuditP.lean`): every theorem above rests only on
   `propext` / `Quot.sound` / `Classical.choice`; no project axiom, no sorry.
 

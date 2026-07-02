@@ -11,6 +11,7 @@ Main exports: (audit output only)
 Open obligations: keep aligned with PROFILE.md's theorem table.
 -/
 import MettaHyperonFull.Proofs.CorrespondenceP
+import MettaHyperonFull.Proofs.ImportConcat
 
 #print axioms Metta.reduceAtomP_he
 #print axioms Metta.reduceArgsP_he
@@ -23,3 +24,7 @@ import MettaHyperonFull.Proofs.CorrespondenceP
 #print axioms Metta.successAtomP_he
 #print axioms Metta.stepAddAtomP_he
 #print axioms Metta.stepRemAtomP_he
+
+-- Import theorem surface (T2.2)
+#print axioms Metta.import_concat_query
+#print axioms Metta.import_concat_irreducible
