@@ -584,6 +584,27 @@ rule: the False case has no matching clause, which under
 def pettaQuoteSrc : String := "(= (quote $x) $x)"
 def pettaIf2Src : String := "(= (if True $then) $then)"
 
+/-- Native-PeTTa library surface (ported from PeTTa's builtin registry,
+`src/metta.pl`, and its Prolog implementations — expressed as MeTTa rules
+over LeaTTa's grounded core). Includes the Prolog-style lowercase boolean
+literals: PeTTa programs write `true`/`false`, which alias to the engine
+booleans here. -/
+def pettaLibSrc : String :=
+  "(= true True)
+   (= false False)
+   (= (implies $a $b) (or (not $a) $b))
+   (= (id $x) $x)
+   (= (append $a $b) (if (== $a ()) $b (cons-atom (car-atom $a) (append (cdr-atom $a) $b))))
+   (= (length $l) (size-atom $l))
+   (= (reverse $l) (if (== $l ()) () (append (reverse (cdr-atom $l)) ((car-atom $l)))))
+   (= (first $l) (car-atom $l))
+   (= (last $l) (if (== (cdr-atom $l) ()) (car-atom $l) (last (cdr-atom $l))))
+   (= (min $a $b) (if (< $a $b) $a $b))
+   (= (max $a $b) (if (< $a $b) $b $a))
+   (= (is-var $x) (== (get-metatype $x) Variable))
+   (= (is-expr $x) (== (get-metatype $x) Expression))
+   (= (is-ground $x) (== (get-metatype $x) Grounded))"
+
 private def parsedOr (src : String) : List Atom :=
   match parseProgram src with
   | Except.ok xs => xs
@@ -602,6 +623,7 @@ def preludeAtomsFor (p : EvalProfile) : List Atom :=
         | _ => true) ++ parsedOr pettaQuoteSrc
     else preludeAtoms
   base ++ (if p.ifArity2 then parsedOr pettaIf2Src else [])
+    ++ (if p == heProfile then [] else parsedOr pettaLibSrc)
 
 /-- A knowledge base = the stdlib prelude plus the user's atoms. -/
 def stdKb (userAtoms : List Atom) : Space := ⟨preludeAtoms ++ userAtoms⟩

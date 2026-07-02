@@ -120,7 +120,12 @@ def run_file(path, timeout=90):
             return (path.name, frag, why, "LEATTA-TIMEOUT", len(pr), "")
         if lr is None:
             return (path.name, frag, why, "LEATTA-NOOUT", len(pr), "")
-        verdict = "AGREE" if compare(pr, lr) else "DIFF"
+        if compare(pr, lr):
+            verdict = "AGREE"
+        elif len(pr) == len(lr):
+            verdict = "DIFF-VAL"    # same multiplicity, different values
+        else:
+            verdict = "DIFF-COUNT"  # nondeterminism/backtracking divergence
         return (path.name, frag, why, verdict, len(pr), len(lr))
     finally:
         tpath.unlink(missing_ok=True)

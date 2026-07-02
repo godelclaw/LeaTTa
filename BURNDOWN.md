@@ -16,10 +16,20 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
   show as scoreboard DIFFs). Plan: model the order dimension Strategy-style
   (`MeTTaIL/Semantics/Strategy.lean` is the proven-sound template), not as a
   Bool. Expected to be the paper-grade structural finding.
-- **ERR-1 (error surface)**: no-match axis case (c): a partial grounded
-  predicate applied to unexpected input can raise a real Prolog error in
-  PeTTa (vs HE structured `BadType` atoms vs empty). Unmodeled; needs native
-  probes before any field is added.
+- **ERR-1 (error surface)**: PROBED 2026-07-02: native PeTTa on
+  `!(+ 1 nonnumber)` raises a FATAL Prolog `is/2` arithmetic error — the
+  whole file run aborts (no subsequent directives execute). Not empty, not
+  inert, not a structured error atom: a crash. The profile leaves such
+  atoms inert (HE-style noReduce), so error-probe files diverge by design
+  until an error-semantics axis is modeled. Distinct from noMatchEmpty —
+  no conflation observed.
+- **MODE-1 (relational/invertible execution)**: PeTTa runs equality rules
+  as Prolog clauses, in ANY instantiation mode — `functionhead.metta` /
+  `invertfunction.metta` invert `append` through unbound arguments. A
+  rewriting kernel evaluates left-to-right on ground(ish) terms and cannot
+  do this without narrowing. This is a structural finding about PeTTa
+  semantics (functional-LOGIC, not just functional): attribution family in
+  the scoreboard, out of scope for the dialect profile.
 
 ## Known LeaTTa artifacts (NOT profile deltas — pre-ledgered so the M0
 baseline is not misread)
