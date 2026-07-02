@@ -25,10 +25,12 @@ SCOREBOARD = REPO / "diffbench" / "scoreboard.tsv"
 # ADMIT_IMPORTS=1 admits import!-using files (T1.2 gate); repr became a
 # supported petta builtin at the same arm.
 _IMPORT_TOKENS = r"" if os.environ.get("ADMIT_IMPORTS") else r"import!|repr|"
+_SPACE_TOKENS = r"" if os.environ.get("ADMIT_SPACES") else r"new-space|add-atom|remove-atom|add-reduct|match\s+&|bind!|"
 OUT_OF_FRAGMENT = re.compile(
-    r"py-call|py-atom|" + _IMPORT_TOKENS + r"git-import|import_prolog|translatePredicate"
-    r"|change-state!|new-state|get-state|bind!|new-space|add-atom|remove-atom"
-    r"|add-reduct|match\s+&|shell|call-cleanup|time-limit|sread"
+    r"py-call|py-atom|" + _IMPORT_TOKENS + _SPACE_TOKENS +
+    r"git-import|import_prolog|translatePredicate"
+    r"|change-state!|new-state|get-state"
+    r"|shell|call-cleanup|time-limit|sread"
     r"|assertEqual|regex|random|get_time|flush|trace|halt"
 )
 
