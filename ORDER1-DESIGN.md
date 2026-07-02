@@ -73,3 +73,32 @@ arm if it surfaces.
 
 Recommended next chunk: kernel arm first (measured win, small), spec
 normalizer second, correspondence third.
+
+
+## ADDENDUM (C2.1 re-diagnosis, same day) — the tag was hiding two families
+
+Executing the kernel arm triggered the stop rule in the best way: probing
+showed the kernel ALREADY implements innermost-descend + quote-guard (6/7
+probe shapes agreed before any change — the type-directed argMask/returnsAtom
+machinery was the strategy all along). The "ORDER-1" scoreboard family
+decomposed under per-file diffs into:
+
+- **NONDET-1** (the real finding): PeTTa's nondeterminism is Prolog
+  backtracking with BRANCH-LOCAL failure. `superpose` spreads its RAW tuple
+  elements (probe: `(superpose (collapse (f)))` spreads literally, yielding
+  the `collapse` symbol) and evaluates each in its own branch — an
+  empty-yielding element kills only itself (probe: `(superpose ((dead) 7))`
+  → `7`). Strict CBV tuple evaluation instead poisons the whole superpose.
+  Fix shipped: `superpose`/`hyperpose` as quoteArgs + `(-> Atom _)` sigs in
+  the petta profile (raw spread; the driver evaluates each item per-branch).
+- **Noeval aggregators**: `foldall`/`forall` are PeTTa TRANSLATOR-level
+  special forms (compiled to Prolog `foldall`/`forall` over the generator
+  GOAL — call-by-name). Shipped as prelude rules with `Atom`-typed generator
+  positions + `collapse`, mirroring the translator's findall semantics.
+
+Remaining genuinely-ORDER content: none identified at kernel level; the
+one-pass/fixpoint distinction is observationally covered by the type-directed
+mechanism on the corpus. The spec-side Strategy normalizer (C2.2) remains
+worthwhile as the FORMAL account of that mechanism, with the addendum that
+its petta instance must also carry the NONDET-1 branch-local-failure
+semantics (spread-raw superpose) to be faithful.

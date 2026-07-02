@@ -8,7 +8,7 @@ case.metta	IN		AGREE	1	1
 case2.metta	IN		AGREE	1	1
 caseconstrain.metta	IN		DIFF-COUNT	1	0
 caseempty.metta	IN		AGREE	2	2
-casenew.metta	IN		DIFF-COUNT	1	0
+casenew.metta	IN		AGREE	1	1
 chain.metta	IN		AGREE	2	2
 collapse.metta	IN		AGREE	1	1
 comments.metta	IN		AGREE	1	1
@@ -22,10 +22,10 @@ fib.metta	IN		AGREE	1	1
 fibadd.metta	IN		DIFF-COUNT	2	1
 fibsmart.metta	IN		AGREE	1	1
 fibsmartimport.metta	IN		DIFF-COUNT	1	2
-foldall.metta	IN		DIFF-COUNT	10	20
-foldallmatch.metta	IN		DIFF-COUNT	2	4
-foldallspacecount.metta	IN		DIFF-COUNT	1	3
-forall.metta	IN		DIFF-COUNT	12	21
+foldall.metta	IN		DIFF-COUNT	10	12
+foldallmatch.metta	IN		AGREE	2	2
+foldallspacecount.metta	IN		AGREE	1	1
+forall.metta	IN		DIFF-COUNT	12	14
 functionhead.metta	IN		DIFF-COUNT	2	0
 functionhead2.metta	IN		DIFF-VAL	1	1
 functionhead3.metta	IN		DIFF-VAL	6	6
@@ -79,8 +79,8 @@ matespacefast.metta	IN		LEATTA-TIMEOUT	1
 math.metta	IN		AGREE	19	19
 meta_types.metta	IN		DIFF-VAL	6	6
 metta4_prog.metta	IN		DIFF-VAL	3	3
-metta4_streams.metta	IN		DIFF-VAL	5	5
-mettaset.metta	IN		DIFF-COUNT	9	55
+metta4_streams.metta	IN		DIFF-COUNT	5	8
+mettaset.metta	IN		DIFF-VAL	9	9
 multicall.metta	IN		AGREE	1	1
 multiset_operations.metta	IN		AGREE	4	4
 mutex_and_transaction.metta	IN		DIFF-VAL	8	8
@@ -128,8 +128,8 @@ specializefunctiontypes.metta	IN		DIFF-COUNT	3	1
 state.metta	OUT	new-state	DIFF-VAL	4	4
 streamops.metta	IN		AGREE	4	4
 string.metta	IN		AGREE	1	1
-supercollapse.metta	IN		DIFF-VAL	1	1
-superpose_nested.metta	IN		DIFF-VAL	1	1
+supercollapse.metta	IN		AGREE	1	1
+superpose_nested.metta	IN		AGREE	1	1
 superpose_primes.metta	IN		AGREE	1	1
 tabling_fib.metta	IN		DIFF-VAL	3	3
 test_alpha_unique_atom.metta	IN		AGREE	13	13
@@ -175,5 +175,5 @@ types_dependent.metta	IN		DIFF-VAL	2	2
 types_nondet.metta	IN		DIFF-COUNT	3	4
 xor.metta	IN		AGREE	2	2
 
-# corpus=176 in-fragment=165 (93%) agree=63/165 (38% of in-fragment)
-# in-fragment verdicts: {'AGREE': 63, 'DIFF-COUNT': 50, 'DIFF-VAL': 41, 'PETTA-TIMEOUT': 2, 'LEATTA-TIMEOUT': 9}
+# corpus=176 in-fragment=165 (93%) agree=68/165 (41% of in-fragment)
+# in-fragment verdicts: {'AGREE': 68, 'DIFF-COUNT': 47, 'DIFF-VAL': 39, 'PETTA-TIMEOUT': 2, 'LEATTA-TIMEOUT': 9}

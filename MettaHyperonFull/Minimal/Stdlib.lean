@@ -604,7 +604,13 @@ def pettaLibSrc : String :=
    (= (is-var $x) (== (get-metatype $x) Variable))
    (= (is-expr $x) (== (get-metatype $x) Expression))
    (= (is-ground $x) (== (get-metatype $x) Grounded))
-   (: parse (-> %Undefined% Atom))"
+   (: parse (-> %Undefined% Atom))
+   (: superpose (-> Atom %Undefined%))
+   (: hyperpose (-> Atom %Undefined%))
+   (: foldall (-> %Undefined% Atom %Undefined% %Undefined%))
+   (= (foldall $f $gen $init) (let $bag (collapse $gen) (foldl-atom $bag $init $a $b ($f $a $b))))
+   (: forall (-> Atom %Undefined% %Undefined%))
+   (= (forall $gen $t) (let $bag (collapse ($t $gen)) (foldl-atom $bag True $a $b (and $a $b))))"
 
 private def parsedOr (src : String) : List Atom :=
   match parseProgram src with
@@ -682,6 +688,13 @@ def pettaGroundings : GroundingTable :=
   ⟨"round-math", GroundMode.evalArgs, none, pettaRound Float.round⟩ ::
   ⟨"min-atom", GroundMode.evalArgs, none, pettaExtremum (· < ·)⟩ ::
   ⟨"max-atom", GroundMode.evalArgs, none, pettaExtremum (· > ·)⟩ ::
+  -- NONDET-1 (probe-verified): PeTTa's superpose spreads its RAW tuple
+  -- elements and evaluates each in its own nondeterministic branch, so an
+  -- empty-yielding element kills only its branch (Prolog backtracking), and
+  -- even (superpose (collapse (f))) spreads literally. quoteArgs delivers
+  -- the raw tuple; the driver then evaluates each spread item per-branch.
+  ⟨"superpose", GroundMode.quoteArgs, none, superposeOp⟩ ::
+  ⟨"hyperpose", GroundMode.quoteArgs, none, superposeOp⟩ ::
   ⟨"alpha-unique-atom", GroundMode.evalArgs, none, uniqueAtomOp⟩ ::
   ⟨"is-alpha-member", GroundMode.evalArgs, none, isAlphaMemberOp⟩ ::
   ⟨"repr", GroundMode.evalArgs, none, reprOp⟩ ::
