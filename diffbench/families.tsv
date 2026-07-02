@@ -9,7 +9,7 @@ forall.metta	LAMBDA	aggregator armed; residual = |-> lambda generators
 functionhead.metta	MODE-1	inverts append through unbound args
 functionhead2.metta	MODE-1	function-head inversion
 functionhead3.metta	MODE-1	function-head inversion
-functiontypes.metta	TYPES	get-type surface differs
+functiontypes.metta	TYPECHECK-1	HE BadArgType; PeTTa permissive (armable)
 he_math.metta	BUILTIN	numeric tower (pow-math int) — armed in run-3
 holbenchmark.metta	PERF	higher-order search blowup (timeout)
 holfunctions.metta	MODE-1	higher-order + currying (DIV d2)
@@ -22,9 +22,9 @@ lambda.metta	MODE-1	lambda encoding + currying
 listhead.metta	MODE-1	list-head inversion
 logicprogset.metta	MODE-1	logic-program set enumeration
 matchsingle.metta	TYPES	match on typed pattern
-matchtypes.metta	TYPES	match + type queries
+matchtypes.metta	TYPES-STRUCTURAL	type-gated match result-set (Prolog-layer)
 math.metta	BUILTIN	numeric tower — armed in run-3
-meta_types.metta	TYPES	metatype surface
+meta_types.metta	TYPES-STRUCTURAL	meta type-predicate (Prolog-layer)
 myinterpreter.metta	ORDER-1	meta-interpreter staging
 nestedcons.metta	ORDER-1	nested cons re-driving
 parametric_types.metta	TYPES	parametric type inference differs
@@ -41,6 +41,6 @@ test_string_comments.metta	BUILTIN	repr/string surface
 translatorrule.metta	TRANSLATOR	add-translator-rule machinery
 translatorrule_fib.metta	TRANSLATOR	translator rules
 translatorrule_for.metta	TRANSLATOR	translator rules
-types.metta	TYPES	type query surface
+types.metta	TYPECHECK-1	HE type-checking rejects; PeTTa permissive (armable)
 types_dependent.metta	TYPES	dependent type surface
 types_nondet.metta	TYPES	nondet type queries
