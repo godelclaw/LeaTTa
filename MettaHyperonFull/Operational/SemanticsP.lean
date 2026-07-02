@@ -41,6 +41,30 @@ def equalityStepP (p : EvalProfile) (kb : Space) (a : Atom) : Option (List Atom)
   | [] => if p.noMatchEmpty && definedHead kb a then some [] else none
   | reds => some reds
 
+/-- Success atom of a space mutation under a profile (DIV-006 axis):
+native PeTTa's boolean `true`, or HE's unit (probe 2026-07-02). -/
+def successAtomP (p : EvalProfile) : Atom :=
+  if p.successTrue then Atom.gnd (Ground.bool true) else Atom.unit
+
+/-- Profile-parametric `stepAddAtom` (OBL-1): identical to the original except
+for the dialect success shape. -/
+def stepAddAtomP (p : EvalProfile) (s : State) (call a : Atom) : State :=
+  let st := { s with input := Space.removeOne s.input call }
+  State.pushOutput (State.addKb st a) (successAtomP p)
+
+/-- Profile-parametric `stepRemAtom` (OBL-1). -/
+def stepRemAtomP (p : EvalProfile) (s : State) (call a : Atom) : State :=
+  let st := { s with input := Space.removeOne s.input call }
+  State.pushOutput (State.remKb st a) (successAtomP p)
+
+theorem successAtomP_he : successAtomP heProfile = Atom.unit := rfl
+
+theorem stepAddAtomP_he (s : State) (call a : Atom) :
+    stepAddAtomP heProfile s call a = stepAddAtom s call a := rfl
+
+theorem stepRemAtomP_he (s : State) (call a : Atom) :
+    stepRemAtomP heProfile s call a = stepRemAtom s call a := rfl
+
 theorem equalityStepP_he (kb : Space) (a : Atom) :
     equalityStepP heProfile kb a = equalityStep kb a := by
   unfold equalityStepP equalityStep heProfile

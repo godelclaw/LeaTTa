@@ -26,6 +26,7 @@ to "what is native PeTTa, semantically, relative to HE 0.2.10" is the
 | argument evaluation before match | eager (minimal-MeTTa) | eager | probe `(f (z))` → `matched-zero` on BOTH — a shared behavior, not a divergence |
 | result re-driving (one-pass vs fixpoint) | fixpoint | one-pass | structural — NOT a flag; see BURNDOWN ORDER-1 |
 | error surface on bad grounded input | structured error atoms | can be Prolog error | unmodeled — BURNDOWN ERR-1 |
+| space-mutation success shape | `()` | `true` | probe: `add-atom`/`remove-atom`/`import!` → `true`; `EvalProfile.successTrue` |
 
 Oracle discipline: the sole oracle for pettaProfile is live native PeTTa
 (`~/repos/PeTTa`, `test_runner.sh` lane). The petta-he-profile DIV registry is
@@ -38,6 +39,14 @@ a hypothesis catalog measured on the `--he` lane — background reading only.
   proven, zero sorry. The HE certification is untouched (original modules
   unmodified; new modules additive).
 - `dialectStep_he`: no dialect arm fires at the HE profile (non-recursive).
+- `definedHeadK_eq_definedHead`, `petta_failure_iff`, `petta_inert_iff`
+  (`CorrespondenceP.lean`): the no-match trichotomy machine-checked against
+  the indexed kernel's dead-branch condition (static KB scope).
+- `stepAddAtomP_he` / `stepRemAtomP_he` / `successAtomP_he`
+  (`SemanticsP.lean`, OBL-1): the machine's space mutations are
+  profile-parametric; HE instances equal the originals by `rfl`.
+- Axiom audit (`Proofs/AxiomAuditP.lean`): every theorem above rests only on
+  `propext` / `Quot.sound` / `Classical.choice`; no project axiom, no sorry.
 
 ## Governance
 

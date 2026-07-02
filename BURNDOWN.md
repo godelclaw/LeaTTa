@@ -33,11 +33,9 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
 
 ## Track-2 obligations from Track-1 kernel changes
 
-- **OBL-1**: `EvalProfile.successTrue` is honored by the KERNEL space
-  mutations (`add-atom`/`remove-atom`/`import!` return sites); the
-  four-register SPEC (`stepAddAtom`/`stepRemAtom` pushing `Atom.unit`) is not
-  yet profile-parametric. Obligation: parameterize + correspondence, due with
-  the T1.3 (dynamic spaces) Track-2 pass.
+- **OBL-1 — DISCHARGED (T2.1)**: spec-side `stepAddAtomP`/`stepRemAtomP`
+  with `successAtomP` added (`SemanticsP.lean`); HE regressions proven by
+  `rfl`; audited in `Proofs/AxiomAuditP.lean`.
 
 ## T1.3 pre-work: native space-semantics probes (2026-07-02, 6 probes)
 
