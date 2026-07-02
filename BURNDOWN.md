@@ -44,6 +44,9 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
 - **NORM-2**: normalizer ⇔ kernel-driver correspondence (the minimal
   interpreter's argMask/returnsAtom evaluation vs `normalizeP stratAll` at
   the petta profile) — the full ORDER/NONDET formal closure.
+- **C3.1 — DISCHARGED**: `definedHeadK_eq_definedHead_dyn` generalizes the
+  no-match trichotomy to arbitrary `selfExtra` (imports + runtime rules);
+  the `World.empty` theorem is now its corollary. Audited.
 
 ## T1.3 pre-work: native space-semantics probes (2026-07-02, 6 probes)
 

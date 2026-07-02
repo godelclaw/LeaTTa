@@ -21,6 +21,7 @@ Open obligations: scope matches Correspondence.lean (static KB: `selfExtra`
   stated at `World.empty`).
 -/
 import MettaHyperonFull.Proofs.Correspondence
+import MettaHyperonFull.Proofs.ImportConcat
 import MettaHyperonFull.Operational.SemanticsP
 
 namespace Metta
@@ -133,6 +134,107 @@ theorem definedHeadK_eq_definedHead (atoms : List Atom) (gt : GroundingTable)
             | var v => simp at hg
             | gnd g => simp at hg
             | expr e => simp at hg
+
+/-- **Definedness classifiers agree, dynamically.** For ANY runtime state —
+rules imported or `add-atom`ed into `&self` included — the kernel's test
+computes the specification's test over the CONCATENATED knowledge base.
+Probe-grounded: definedness in native PeTTa is dynamic (removing a head's
+last rule reverts it to inert). The static component is the previous
+theorem; only the `selfExtra` component is new. -/
+theorem definedHeadK_eq_definedHead_dyn (atoms : List Atom)
+    (gt : GroundingTable) (w : World) (a : Atom) :
+    definedHeadK (MinEnv.ofAtomsGT atoms gt) w a
+      = definedHead ⟨atoms ++ w.selfExtra⟩ a := by
+  match a with
+  | Atom.sym _ => rfl
+  | Atom.var _ => rfl
+  | Atom.gnd _ => rfl
+  | Atom.expr [] => rfl
+  | Atom.expr (Atom.var _ :: rest) => rfl
+  | Atom.expr (Atom.gnd _ :: rest) => rfl
+  | Atom.expr (Atom.expr _ :: rest) => rfl
+  | Atom.expr (Atom.sym op :: args) =>
+      have hstatic := definedHeadK_eq_definedHead atoms gt
+        (Atom.expr (Atom.sym op :: args))
+      simp only [definedHeadK, definedHead] at hstatic ⊢
+      rw [show candidatesW (MinEnv.ofAtomsGT atoms gt) World.empty
+            (Atom.expr (Atom.sym op :: args))
+          = (MinEnv.ofAtomsGT atoms gt).candidates
+            (Atom.expr (Atom.sym op :: args)) from by
+        simp [candidatesW, World.empty]] at hstatic
+      have hw : candidatesW (MinEnv.ofAtomsGT atoms gt) w
+            (Atom.expr (Atom.sym op :: args))
+          = (MinEnv.ofAtomsGT atoms gt).candidates
+              (Atom.expr (Atom.sym op :: args))
+            ++ w.selfExtra.filterMap (fun x => match x with
+              | Atom.expr [Atom.sym "=", lhs, rhs] =>
+                  match headKey lhs,
+                      headKey (Atom.expr (Atom.sym op :: args)) with
+                  | some k1, some k2 =>
+                      if k1 == k2 then some (lhs, rhs) else none
+                  | none, _ => some (lhs, rhs)
+                  | _, _ => none
+              | _ => none) := rfl
+      rw [hw, List.any_append, equalityRules_eq_extractRules,
+          extractRules_append, List.any_append]
+      rw [equalityRules_eq_extractRules] at hstatic
+      rw [hstatic]
+      congr 1
+      -- the selfExtra component: filter guarantees head agreement
+      apply Bool.eq_iff_iff.mpr
+      rw [List.any_eq_true, List.any_eq_true]
+      constructor
+      · rintro ⟨⟨lhs, rhs⟩, hpr, hf⟩
+        obtain ⟨y, hy, hmatch⟩ := List.mem_filterMap.mp hpr
+        have hshape : y = Atom.expr [Atom.sym "=", lhs, rhs] ∧
+            (headKey lhs = some op ∨ headKey lhs = none) := by
+          split at hmatch
+          · refine ⟨?_, ?_⟩
+            · split at hmatch <;> (try split at hmatch) <;> simp_all
+            · split at hmatch <;> (try split at hmatch) <;> simp_all [headKey]
+          · simp at hmatch
+        refine ⟨(lhs, rhs), List.mem_filterMap.mpr ⟨y, hy, by simp [hshape.1]⟩, ?_⟩
+        cases lhs with
+        | sym s => simp at hf
+        | var v => simp at hf
+        | gnd g => simp at hf
+        | expr l3 =>
+          cases l3 with
+          | nil => simp at hf
+          | cons hd tl =>
+            cases hd with
+            | var v => simp at hf
+            | gnd g => simp at hf
+            | expr e => simp at hf
+            | sym h =>
+                have hop : h = op := by
+                  rcases hshape.2 with hk | hk <;> simpa [headKey] using hk
+                subst hop
+                simpa using hf
+      · rintro ⟨⟨lhs, rhs⟩, hpr, hg⟩
+        obtain ⟨y, hy, hmatch⟩ := List.mem_filterMap.mp hpr
+        have hshape : y = Atom.expr [Atom.sym "=", lhs, rhs] := by
+          split at hmatch <;> simp_all
+        subst hshape
+        cases lhs with
+        | sym s => simp at hg
+        | var v => simp at hg
+        | gnd g => simp at hg
+        | expr l3 =>
+          cases l3 with
+          | nil => simp at hg
+          | cons hd tl =>
+            cases hd with
+            | var v => simp at hg
+            | gnd g => simp at hg
+            | expr e => simp at hg
+            | sym h =>
+                have hho : (h == op) = true ∧
+                    (tl.length == args.length) = true := by simpa using hg
+                have hop : h = op := by simpa using hho.1
+                refine ⟨(Atom.expr (Atom.sym h :: tl), rhs),
+                  List.mem_filterMap.mpr ⟨_, hy, ?_⟩, by simpa using hho.2⟩
+                simp only [headKey, hop, beq_self_eq_true, if_true]
 
 /-- **PeTTa goal failure ⇔ kernel dead branch.** Under the native-PeTTa
 profile, a symbol-headed redex reduces to the EMPTY result set exactly when

@@ -35,3 +35,4 @@ import MettaHyperonFull.Proofs.NormalizeSound
 #print axioms Metta.ctxStepP_stratNone_he
 #print axioms Metta.normalizeP_sound
 #print axioms Metta.descendantsP_sound
+#print axioms Metta.definedHeadK_eq_definedHead_dyn
