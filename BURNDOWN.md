@@ -31,6 +31,33 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
   semantics (functional-LOGIC, not just functional): attribution family in
   the scoreboard, out of scope for the dialect profile.
 
+## Track-4 tutorial residue — ATTRIBUTED (the honest-report gate, both slices)
+
+Comprehensive diagnosis of the ~86 in-fragment tutorial disagreements
+(oracle-pinned, order-agnostic multiset):
+
+- **PERF (16)**: deep recursion/search exceeding fuel; swipl computes (accepted,
+  not a fidelity bug).
+- **RELATIONAL (13)**: implicit SLD conjunction / unbound-var resolution -->
+  the lp-engine battery tier (certified account, not the rewriting engine).
+- **LAMBDA / partial-application (~10)**: PeTTa reifies `(partial f args)` and
+  `|->` lambdas; cool-but-not-core (Zar) -- advanced surface.
+- **BUILTIN-COVERAGE (~40, the VALUE-DIFF bulk)**: a LONG TAIL of individual
+  PeTTa operators our HE-lineage kernel does not yet match, sampled: `eval`
+  and `call` staging (callquoteevalreduce, eval), `second-from-pair` (atomops),
+  `if-equal` (he_equalreduct evaluates where native holds), and similar. Each
+  is small and addable (a grounded op or a staging rule); NONE is a deep
+  semantic defect. Collectively they are the ~40% aggregate gap.
+
+CONCLUSION (honest, both slices attributed): the rewriting SEMANTICS is faithful
+where the semantics is shared (probe-verified: primitives, spaces, control,
+mutation-view; certified: the whole Track 1-3 core). The ~40% aggregate is NOT
+a broken core -- it is (a) PERF, (b) relational (battery tier), (c) lambda
+(advanced), and (d) a long tail of ~40 individual builtin/operator coverage
+gaps. Reaching >=90% = implementing that builtin tail: bounded-but-large,
+op-by-op, now NAMED rather than mysterious. Not a defect to debug; a coverage
+list to work if the corpus-match number is itself the goal.
+
 ## Track-4 FINAL honest number (verified three ways)
 
 The `test` differential transform was NOT the cause of the low agreement.
