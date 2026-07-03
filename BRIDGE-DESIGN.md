@@ -111,3 +111,52 @@ shape is a clean Tarski-lfp mirror (§2); T3.1 is a screenful; the T3.2
 soundness direction is low-risk and the completeness direction is the only real
 proof-risk (stop rule covers it). The architecture rules (§1) keep the engine
 clean and the deep SLD theorem where the math lives.
+
+
+## §7 Three-tier reorganization (the pristine format for LP/SLD/Prolog)
+
+The executable Prolog/SLD material should live in its OWN tier, not buried in
+the heavy theory nor bolted onto a pure engine. Three tiers, one arrow:
+
+```
+ENGINES     LeaTTa / LeaTTa-petta / CeTTa / PeTTa
+            rewriting-only, self-contained, import NOTHING (unchanged).
+                 ▲ process boundary only (harness runs binaries)
+ALGORITHMS  a standalone verified-executable package (working name `lp-engine`,
+            NOT "batteries" -- std4 name collision): unifyFuel (MGU),
+            SLDCompute (executable DFS), compileExpr (MeTTa->Prolog-goal).
+            CORE-LEAN ONLY, no Mathlib, builds in seconds, ships a CLI binary.
+                 ▲ Lake dependency (math imports algorithms -- the arrow)
+METTAPEDIA  the theory: SLDTree, least Herbrand, unification/SLD completeness,
+            the Track-3 coincidence + T3.3b agreement -- Mathlib-powered,
+            proves things ABOUT lp-engine's real shipped code (no vendored copy).
+```
+
+**Why**: the relational residue (implicit `(, g1 g2)` SLD conjunction, `?`/
+reduce resolution) is a PeTTa-dialect EXECUTION MODEL, not a rewriting-engine
+defect (HE/CeTTa/LeaTTa/ours all decline it identically; only PeTTa runs it,
+being swipl underneath). So the certified relational account is: run the
+fragment through `lp-engine` (compileExpr + SLDCompute + the meTTaPrologOracle
+calling back into the rewriting engine for grounded/functional parts). No
+second resolver is ever written; the engine stays pure.
+
+**The carve-out is a de-tangling, not a move** (aimama-side, read-only here —
+this is the executable spec for that work): `SLDCompute`/`UnificationMGU`
+import no Mathlib directly but pull it transitively via `FunctionFreeEvaluation`
+(3) and `Core` (5). Factor defs-from-proofs in ~4-6 files: executable defs ->
+`lp-engine` on core-Lean-only imports; interleaved proofs stay in Mettapedia and
+re-point. Bounded classic work; its own tranche.
+
+**Sequencing**: do the carve-out BEFORE T3.3b so the agreement theorem is
+written once against the final layout. Home it in `lean/standalone/` beside
+mm-lean4. This is the natural first job for the SR-side agent after the seal
+(it merges with the already-banked T3.3b -- one tranche). Verify-don't-assume
+when it lands: soundness (coincidence+T3.3b) guarantees answers are in the
+model, but exact PLN-numeric agreement (STV arithmetic through resolution) is an
+EMPIRICAL check -- the oracle must run the grounded ops faithfully mid-resolution.
+
+**Efficiency**: `lp-engine` is the CERTIFIED oracle, verification-grade, not
+production-fast (Lean SLD << swipl). Production PLN runs on PeTTa/CeTTa. Same
+Level-1/Level-2 split as the rest of the stack. An FFI-to-SWI fast lane is
+possible but pointless -- it re-plumbs PeTTa, which already ships as its own
+binary the harness tests against.
