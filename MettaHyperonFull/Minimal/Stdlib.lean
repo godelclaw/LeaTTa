@@ -699,6 +699,16 @@ def msortOp : List Atom → ReduceResult
   | [Atom.expr xs] => ReduceResult.ok [Atom.expr (sortAtoms xs)]
   | _ => ReduceResult.incorrectArgument "msort expects one expression"
 
+/-- `(decons (h t…))` -> `(h (t…))`: head and tail-as-tuple. -/
+def deconsOp : List Atom → ReduceResult
+  | [Atom.expr (h :: t)] => ReduceResult.ok [Atom.expr [h, Atom.expr t]]
+  | _ => ReduceResult.incorrectArgument "decons expects a non-empty tuple"
+
+/-- `(member x (…))` -> Bool (like is-member). -/
+def memberOp : List Atom → ReduceResult
+  | [x, Atom.expr xs] => ReduceResult.ok [Atom.gnd (Ground.bool (xs.contains x))]
+  | _ => ReduceResult.incorrectArgument "member expects an atom and a tuple"
+
 /-- `(second-from-pair (a b))` -> b. -/
 def secondFromPairOp : List Atom → ReduceResult
   | [Atom.expr (_ :: b :: _)] => ReduceResult.ok [b]
@@ -748,7 +758,9 @@ def pettaGroundings : GroundingTable :=
   ⟨"second-from-pair", GroundMode.evalArgs, none, secondFromPairOp⟩ ::
   ⟨"is-member", GroundMode.evalArgs, none, isMemberOp⟩ ::
   ⟨"list_to_set", GroundMode.evalArgs, none, listToSetOp⟩ ::
-  ⟨"exclude-item", GroundMode.evalArgs, none, excludeItemOp⟩ :: stdGroundings
+  ⟨"exclude-item", GroundMode.evalArgs, none, excludeItemOp⟩ ::
+  ⟨"decons", GroundMode.evalArgs, none, deconsOp⟩ ::
+  ⟨"member", GroundMode.evalArgs, none, memberOp⟩ :: stdGroundings
 
 /-- The stdlib prelude specialized to an evaluation profile. At `heProfile`
 this is exactly `preludeAtoms`. Under `quoteStrips` the HE rule
