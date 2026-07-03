@@ -909,13 +909,14 @@ def interpretStack1 (env : MinEnv) (fuel : Nat) (st : St) (it : Item) : List Ite
                 env.imports.getD ("library " ++ lib) []
             | _ => []
           -- Native PeTTa import results (probe 2026-07-03, per target kind):
-          -- a resolvable `.metta` FILE path answers `true`; `../lib/` modules
-          -- and bare names load through the Prolog library mechanism and
-          -- answer NOTHING. HE always answers the success atom.
-          let fname := match instantiate it.bnd file with
-            | Atom.sym f => f
-            | _ => ""
-          let res := if env.profile.importSilent && !fname.endsWith ".metta"
+          -- a `.metta` FILE path and the `(library lib)` form answer `true`;
+          -- `../lib/` module paths and bare names load through the Prolog
+          -- library mechanism and answer NOTHING. HE always answers success.
+          let answers := match instantiate it.bnd file with
+            | Atom.sym f => f.endsWith ".metta"
+            | Atom.expr [Atom.sym "library", _] => true
+            | _ => false
+          let res := if env.profile.importSilent && !answers
             then [] else [finItem prev env.successAtom it.bnd]
           match spaceName st.world (instantiate it.bnd space) with
           | some "&self" => (res, st.mapWorld (·.appendSelf fileAtoms))

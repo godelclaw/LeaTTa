@@ -75,14 +75,17 @@ BUILTIN_RELS = {
     "ueq2": ("ueq2_r(X, X).",),
     "istrue": ("istrue_r('True').",),
 }
-FN_ARITY = {"append": 2, "cons": 2, "member": 2, "and": 2, "or": 2, "not": 1}
+FN_ARITY = {"append": 2, "cons": 2, "member": 2, "is-member": 2,
+            "and": 2, "or": 2, "not": 1}
+FN_ALIAS = {"is-member": "member"}
 # engine/space/nondet ops outside the pure SLD fragment -> NO-COMPILE (honest)
-ENGINE_OPS = {"collapse", "superpose", "match", "add-atom", "remove-atom",
+ENGINE_OPS = {"superpose", "match", "add-atom", "remove-atom",
               "bind!", "new-space", "msort", "car-atom", "cdr-atom",
               "cons-atom", "size-atom", "index-atom", "quote", "eval", "chain",
               "unify", "function", "return", "println!", "trace!", "get-type",
-              "/", "<", ">", "<=", ">=", "%"}
-ARITH_FN = {"+": "plus", "-": "minus", "*": "times", "#+": "plus", "#-": "minus"}
+              "/", "%"}
+ARITH_FN = {"+": "plus", "-": "minus", "*": "times", "#+": "plus", "#-": "minus",
+            ">": "cmp_gt", "<": "cmp_lt", ">=": "cmp_ge", "<=": "cmp_le"}
 
 def metta_vars(e, acc=None):
     if acc is None: acc = []
@@ -149,6 +152,15 @@ class Compiler:
             return self.compile_expr(ret, goals)
         if h == "case":
             return self.compile_case(e, goals)
+        if h == "collapse":
+            inner_goals = []
+            r = self.compile_expr(e[1], inner_goals)
+            vs = [self.pvar(v) for v in metta_vars(e[1])]
+            name = f"goalaux{self.aux_n}"; self.aux_n += 1
+            self.aux.append((f"{name}({', '.join(vs + [r])})", inner_goals))
+            rv = self.fresh()
+            goals.append(f"collapse_t({r}, {name}({', '.join(vs + [r])}), {rv})")
+            return rv
         if h == "once":
             inner_goals = []
             r = self.compile_expr(e[1], inner_goals)
@@ -183,7 +195,8 @@ class Compiler:
         if self.is_fn(h):
             args = [self.compile_expr(a, goals) for a in e[1:]]
             r = self.fresh()
-            rel = self.rel(h) if h in FN_ARITY else self.const(h)[1:-1] + "_f"
+            rel = (self.rel(FN_ALIAS.get(h, h)) if h in FN_ARITY
+                   else re.sub(r"[^A-Za-z0-9_]", "_", h) + "_f")
             goals.append(f"{rel}({', '.join(args + [r])})")
             return r
         # plain data tuple
@@ -257,8 +270,8 @@ class Compiler:
 def reorder_goals(goals):
     """Stable partition: structural goals first, mode-flexible arithmetic
     last, so inversions (X+35 = 42) see their arguments grounded."""
-    struct = [g for g in goals if not re.match(r"(plus|minus|times)\(", g)]
-    arith  = [g for g in goals if re.match(r"(plus|minus|times)\(", g)]
+    struct = [g for g in goals if not re.match(r"(plus|minus|times|cmp_)", g)]
+    arith  = [g for g in goals if re.match(r"(plus|minus|times|cmp_)", g)]
     return struct + arith
 
 def clause_vars(text):
@@ -306,7 +319,7 @@ def parse_sexp_term(s):
 def render(t):
     if isinstance(t, str): return t
     tag = t[0]
-    if tag == "c": return t[1]
+    if tag == "c": return "()" if t[1] == "[]" else t[1]
     if tag == "v": return "$" + t[1]
     if tag == "f":
         fn = t[1]
@@ -386,11 +399,13 @@ def route_file(path, timeout=30, workdir=None):
                         capture_output=True, text=True, timeout=timeout)
     if pr.returncode != 0:
         raise NoCompile(f"swipl failed: {pr.stderr.strip()[:120]}")
-    answers, certified = [], True
+    answers, certified, trusted = [], True, False
     for tf in sorted(wd.glob(path.stem + "-q*.sexp")):
         ck = subprocess.run([str(CHECKTRACE), str(tf)],
                             capture_output=True, text=True, timeout=timeout)
-        if ck.returncode != 0:
+        if ck.returncode == 3:
+            trusted = True          # certified except trusted collections
+        elif ck.returncode != 0:
             certified = False
         a = sexp_answer(tf)
         if a is not None: answers.append(a)
@@ -401,7 +416,8 @@ def route_file(path, timeout=30, workdir=None):
     a_bag = collections.Counter(D.normalize(x) for x in answers)
     p_bag = collections.Counter(D.normalize(x) for x in petta)
     agree = a_bag == p_bag
-    return ("DELEGATED-CHECKED" if certified and agree else
+    return (("DELEGATED-TRUSTED" if trusted else "DELEGATED-CHECKED")
+            if certified and agree else
             "DELEGATED-DIFF" if certified else "UNCERTIFIED",
             answers, petta)
 

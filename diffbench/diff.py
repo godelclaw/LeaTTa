@@ -304,10 +304,13 @@ def main():
     agreeset = {r[0] for r in agree}
     dchecked = [f for f, v in deleg.items()
                 if v == "DELEGATED-CHECKED" and f not in agreeset]
-    total = len(agree) + len(dchecked)
+    dtrusted = [f for f, v in deleg.items()
+                if v == "DELEGATED-TRUSTED" and f not in agreeset]
+    total = len(agree) + len(dchecked) + len(dtrusted)
     print(f"\n# COVERED = {total}/{len(rows)} "
           f"({100*total//max(1,len(rows))}% of corpus): "
-          f"{len(agree)} kernel-agree + {len(dchecked)} certificate-checked delegated")
+          f"{len(agree)} kernel-agree + {len(dchecked)} certificate-checked "
+          f"+ {len(dtrusted)} trusted-collection delegated")
     print(f"# not covered: {len(in_frag)-total} divergent (defect list) "
           f"+ {len(rows)-len(in_frag)} effects/FFI (out of scope)")
     ctr = collections.Counter(r[3] for r in in_frag)
