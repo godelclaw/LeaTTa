@@ -816,7 +816,7 @@ def interpretStack1 (env : MinEnv) (fuel : Nat) (st : St) (it : Item) : List Ite
       | Atom.expr [Atom.sym "change-state!", s, v] =>
           match stateId st.world (instantiate it.bnd s) with
           | some id =>
-              ([finItem prev (stateHandle id) it.bnd], st.mapWorld (·.setStore id (instantiate it.bnd v)))
+              ([finItem prev env.successAtom it.bnd], st.mapWorld (·.setStore id (instantiate it.bnd v)))
           | none => ([finItem prev (errAtom (instantiate it.bnd s) "change-state!: not a state") it.bnd], st)
       | Atom.expr [Atom.sym "new-space"]
       | Atom.expr [Atom.sym "new-mork-space"] =>
@@ -859,7 +859,7 @@ def interpretStack1 (env : MinEnv) (fuel : Nat) (st : St) (it : Item) : List Ite
       | Atom.expr [Atom.sym "bind!", tok, val] =>
           -- Bind a token to the (already-evaluated) value; `resolveTok` resolves it on use.
           match instantiate it.bnd tok with
-          | Atom.sym t => ([finItem prev (Atom.expr []) it.bnd], st.mapWorld (·.bindTok t (instantiate it.bnd val)))
+          | Atom.sym t => ([finItem prev env.successAtom it.bnd], st.mapWorld (·.bindTok t (instantiate it.bnd val)))
           | other => ([finItem prev (errAtom other "bind!: token must be a symbol") it.bnd], st)
       | Atom.expr [Atom.sym "import!", space, file] =>
           -- Load a module's atoms (pre-read into `env.imports` by the IO runner) into a space.
