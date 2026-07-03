@@ -31,6 +31,28 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
   semantics (functional-LOGIC, not just functional): attribution family in
   the scoreboard, out of scope for the dialect profile.
 
+## Track-4 FINAL honest number (verified three ways)
+
+The `test` differential transform was NOT the cause of the low agreement.
+Three comparison methods all cluster at ~40% tutorial agreement (order-agnostic
+multiset, oracle-pinned 700707a68053, states admitted):
+  test->== (spread):        69/168 (41%)
+  test->(collapse A) (tuple): 61/168 (36%)  [order-sensitive, rejected]
+  test->A bare (multiset):   66/168 (39%)  [correct: order-agnostic]
+So ~66/168 agree; ~86 in-fragment files (50 DIFF-COUNT + 36 DIFF-VAL) are
+GENUINE value/count divergences in the rewriting fragment, NOT harness
+artifacts and NOT all RELATIONAL/PERF. Their individual causes are undiagnosed.
+
+CONCLUSION: the >=90% gate is not reachable without a large, open-ended
+per-file diagnosis of a long tail of small dialect divergences (our HE-lineage
+kernel vs PeTTa's full behavior). Two "systematic cause" hypotheses (transform
+unfairness) were tested and FALSIFIED. What is solid and independent of this
+number: the certified core (Track 1/2/3, zero-sorry), the probe-verified
+primitives (progn/reduce/cut/typecheck/states), the mutation-view, the chainer
+heartbeat, and the three-tier plan. The aggregate % measures how fully our
+minimal-MeTTa-derived engine replicates PeTTa's entire dialect surface -- a
+long tail, not a single fixable root.
+
 ## Track-4 HONEST STATUS (correction, supersedes the "100% rewriting" claim)
 
 The claim "faithful on 100% of the rewriting fragment" was WRONG -- extrapolated

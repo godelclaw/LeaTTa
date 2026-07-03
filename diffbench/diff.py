@@ -46,10 +46,50 @@ def classify(text):
     return ("OUT", hit.group(0)) if hit else ("IN", "")
 
 
+def _rewrite_test_to_collapseA(text):
+    """(test A B) / (assertEqual A B) -> (collapse A): native `test` always
+    returns `true` and collapses A before comparing, so the fair differential
+    is whether A evaluates the same on both engines (B is the same literal in
+    both files). Balanced-paren extraction of the first argument."""
+    out = []
+    i = 0
+    n = len(text)
+    while i < n:
+        m = re.match(r"\((test|assertEqual)\s", text[i:])
+        if not m:
+            out.append(text[i]); i += 1; continue
+        # i points at '('; find the matching close of the whole (test ...) form
+        depth = 0; j = i
+        while j < n:
+            if text[j] == '(': depth += 1
+            elif text[j] == ')':
+                depth -= 1
+                if depth == 0: break
+            j += 1
+        form = text[i:j+1]  # (test A B ...)
+        # inside: after "(test " extract first balanced arg A
+        inner = form[m.end():-1].lstrip()
+        # extract first balanced sub-expression from inner
+        if inner.startswith('('):
+            d=0; k=0
+            while k < len(inner):
+                if inner[k]=='(': d+=1
+                elif inner[k]==')':
+                    d-=1
+                    if d==0: k+=1; break
+                k+=1
+            A = inner[:k]
+        else:
+            A = inner.split(None,1)[0]
+        out.append(A)  # evaluate A bare; harness compares its bag as an order-agnostic multiset
+        i = j+1
+    return "".join(out)
+
+
 def transform(text):
     # PeTTa's test helper prints checkmark lines LeaTTa lacks; (test A B) and
     # (== A B) evaluate both args the same way, so rewrite for comparability.
-    text = re.sub(r"\((test|assertEqual)\s", "(== ", text)
+    text = _rewrite_test_to_collapseA(text)
     # println! interleaves side-effect lines into PeTTa's stdout that a pure
     # kernel cannot mirror; drop whole-line print directives so BOTH engines
     # run the identical print-free program (oracle-fair transform).
