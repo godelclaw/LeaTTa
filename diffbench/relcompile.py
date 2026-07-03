@@ -99,6 +99,7 @@ class Compiler:
         self.rules = rules              # name -> [(params, rhs)]
         self.aux = []                   # extra clauses (text later)
         self.used_rels = set()
+        self.facts = []                 # (name, [prolog terms]) ground facts
         self.committed = []
         self.fresh_n = 0
         self.aux_n = 0
@@ -136,6 +137,16 @@ class Compiler:
             pterm = self.compile_expr(pat, goals)  # fn-call pattern narrows
             goals.append(f"{self.rel('ueq2')}({pterm}, {vterm})")
             return self.compile_expr(body, goals)
+        if h == "match":
+            if len(e) != 4 or e[1] != "&self":
+                raise NoCompile("match beyond (match &self pat ret)")
+            pat, ret = e[2], e[3]
+            if not (isinstance(pat, list) and pat and isinstance(pat[0], str)):
+                raise NoCompile("non-atom match pattern")
+            pargs = [self.compile_expr(a, goals) for a in pat[1:]]
+            self.used_facts = getattr(self, "used_facts", set()); self.used_facts.add(pat[0])
+            goals.append(f"fact_{re.sub(r'[^A-Za-z0-9_]', '_', pat[0])}({', '.join(pargs)})")
+            return self.compile_expr(ret, goals)
         if h == "case":
             return self.compile_case(e, goals)
         if h == "once":
@@ -322,6 +333,7 @@ def route_file(path, timeout=30, workdir=None):
         else:
             forms.append(raw[i]); i += 1
     rules = collections.defaultdict(list)
+    facts_raw = []
     bangs = []
     for f in forms:
         if isinstance(f, list) and f and f[0] == "=" and isinstance(f[1], list):
@@ -330,10 +342,21 @@ def route_file(path, timeout=30, workdir=None):
             bangs.append(f[1])
         elif isinstance(f, list) and f and f[0] == ":":
             continue
+        elif isinstance(f, list) and f and isinstance(f[0], str):
+            fgoals = []
+            fargs = [c0.compile_expr(a, fgoals) if False else None for a in []]
+            facts_raw.append(f)
         elif isinstance(f, list):
-            raise NoCompile(f"top-level fact/space form: {f[:1]}")
+            raise NoCompile(f"top-level form with non-symbol head: {f[:1]}")
     c = Compiler(rules)
     clauses = []
+    for f in facts_raw:
+        fgoals = []
+        fargs = [c.compile_expr(a, fgoals) for a in f[1:]]
+        if fgoals:
+            raise NoCompile(f"non-ground fact {f[0]}")
+        name = "fact_" + re.sub(r"[^A-Za-z0-9_]", "_", f[0])
+        clauses.append((f"{name}({', '.join(fargs)})" if fargs else name, []))
     for fname, defs in rules.items():
         for params, rhs in defs:
             clauses.append(c.compile_rule(fname, params, rhs))

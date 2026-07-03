@@ -739,10 +739,18 @@ def excludeItemOp : List Atom → ReduceResult
   | [x, Atom.expr xs] => ReduceResult.ok [Atom.expr (xs.filter (· != x))]
   | _ => ReduceResult.incorrectArgument "exclude-item expects an atom and a tuple"
 
+/-- Native PeTTa reports grounded (built-in) SYMBOLS as `Grounded`
+(probe: `(get-metatype +)` -> `Grounded`); HE's structural answer is `Symbol`.
+Shadowed into the petta table with the table's own name list. -/
+def pettaGetMetatypeOp (groundedNames : List String) : List Atom → ReduceResult
+  | [Atom.sym s] =>
+      ReduceResult.ok [Atom.sym (if groundedNames.contains s then "Grounded" else "Symbol")]
+  | args => getMetatypeOp args
+
 /-- Grounding table for the native-PeTTa profile: PeTTa-arithmetic overrides
 and PeTTa-only builtins shadow/extend the HE entries by list order.
 `alpha-unique-atom` is `uniqueAtomOp`, whose dedup is already α-based. -/
-def pettaGroundings : GroundingTable :=
+def pettaGroundingsBase : GroundingTable :=
   ⟨"pow-math", GroundMode.evalArgs, none, pettaPowMath⟩ ::
   ⟨"trunc-math", GroundMode.evalArgs, none,
     pettaRound (fun x => if x ≥ 0 then x.floor else x.ceil)⟩ ::
@@ -773,6 +781,10 @@ def pettaGroundings : GroundingTable :=
   ⟨"exclude-item", GroundMode.evalArgs, none, excludeItemOp⟩ ::
   ⟨"decons", GroundMode.evalArgs, none, deconsOp⟩ ::
   ⟨"member", GroundMode.evalArgs, none, memberOp⟩ :: stdGroundings
+
+def pettaGroundings : GroundingTable :=
+  ⟨"get-metatype", GroundMode.evalArgs, none,
+    pettaGetMetatypeOp (pettaGroundingsBase.map (·.name))⟩ :: pettaGroundingsBase
 
 /-- The stdlib prelude specialized to an evaluation profile. At `heProfile`
 this is exactly `preludeAtoms`. Under `quoteStrips` the HE rule

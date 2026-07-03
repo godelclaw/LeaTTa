@@ -761,8 +761,27 @@ def interpretStack1 (env : MinEnv) (fuel : Nat) (st : St) (it : Item) : List Ite
               let (rs, st2) := mettaEval env fuel acc.2 it.bnd t
               (acc.1 ++ rs.map (fun p => finItem prev p.1 it.bnd), st2)) ([], st0)
           match xi with
+          | Atom.var _ =>
+              -- Native PeTTa types an unbound variable as a FRESH variable
+              -- (probe: `(get-type $a)` -> `$_123`), not `%Undefined%`.
+              if env.profile == heProfile then emit st
+              else
+                let (n, st') := St.fresh st
+                ([finItem prev (Atom.var s!"gtv{n}") it.bnd], st')
           | Atom.expr (Atom.sym op :: args) =>
-              if env.profile.typecheckStrict && (typeMismatch env st.world op args).isSome then ([], st) else emit st
+              -- Native PeTTa types a non-application tuple elementwise
+              -- (probe: `(: a A) (: b B)` gives `(get-type (a b))` -> `(A B)`).
+              -- Conservative gate: head has no arrow type and every element
+              -- types to something other than %Undefined%.
+              let isArrow : Atom → Bool := fun t => match t with
+                | Atom.expr (Atom.sym "->" :: _) => true | _ => false
+              let elemTs := (Atom.sym op :: args).map (fun a =>
+                ((getTypes env (typePrep st.world a)).head?).getD (Atom.sym "%Undefined%"))
+              if env.profile != heProfile && !args.isEmpty
+                 && !(getTypes env (typePrep st.world (Atom.sym op))).any isArrow
+                 && elemTs.all (· != Atom.sym "%Undefined%") then
+                ([finItem prev (Atom.expr elemTs) it.bnd], st)
+              else if env.profile.typecheckStrict && (typeMismatch env st.world op args).isSome then ([], st) else emit st
           | Atom.expr (f :: args) =>
               -- Expression-headed application (e.g. partial application `(curry-a + 2)`): no type
               -- if the head's function type rejects an argument
@@ -889,9 +908,18 @@ def interpretStack1 (env : MinEnv) (fuel : Nat) (st : St) (it : Item) : List Ite
             | Atom.expr [Atom.sym "library", Atom.sym lib] =>
                 env.imports.getD ("library " ++ lib) []
             | _ => []
+          -- Native PeTTa import results (probe 2026-07-03, per target kind):
+          -- a resolvable `.metta` FILE path answers `true`; `../lib/` modules
+          -- and bare names load through the Prolog library mechanism and
+          -- answer NOTHING. HE always answers the success atom.
+          let fname := match instantiate it.bnd file with
+            | Atom.sym f => f
+            | _ => ""
+          let res := if env.profile.importSilent && !fname.endsWith ".metta"
+            then [] else [finItem prev env.successAtom it.bnd]
           match spaceName st.world (instantiate it.bnd space) with
-          | some "&self" => ([finItem prev env.successAtom it.bnd], st.mapWorld (·.appendSelf fileAtoms))
-          | some name => ([finItem prev env.successAtom it.bnd], st.mapWorld (·.appendSpace name fileAtoms))
+          | some "&self" => (res, st.mapWorld (·.appendSelf fileAtoms))
+          | some name => (res, st.mapWorld (·.appendSpace name fileAtoms))
           | none => ([finItem prev (errAtom (instantiate it.bnd space) "import!: target is not a space") it.bnd], st)
       | _ =>
           if isEmbeddedOp top.atom then

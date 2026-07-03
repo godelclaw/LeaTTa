@@ -68,6 +68,10 @@ structure EvalProfile where
   `!(cut)` -> `true`; `match-single` commits to its first match). `false` =
   `(cut)` is an ordinary inert atom (HE). -/
   cutCommits : Bool := false
+  /-- `import!` result discipline (probe 2026-07-03, per target kind): a
+  `.metta` file path answers `true`; `../lib/` modules and bare names answer
+  NOTHING (Prolog library mechanism). `false` = HE always answers success. -/
+  importSilent : Bool := false
 deriving Repr, BEq, Inhabited
 
 /-- Hyperon-Experimental 0.2.10 — the dialect certified by the existing
@@ -80,6 +84,6 @@ def heProfile : EvalProfile :=
 is an empirical claim; see the module docstring for probes/DIV ids. -/
 def pettaProfile : EvalProfile :=
   { noMatchEmpty := true, ifArity2 := true, quoteStrips := true,
-    successTrue := true, typecheckStrict := false, cutCommits := true }
+    successTrue := true, typecheckStrict := false, cutCommits := true, importSilent := true }
 
 end Metta

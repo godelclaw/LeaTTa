@@ -162,6 +162,21 @@ def _canon_num(m):
 
 
 _BOOL = re.compile(r"\b(True|False)\b")
+_VAR = re.compile(r"\$[A-Za-z0-9_#]+")
+
+
+def _canon_vars(s):
+    """Canonicalize variable NAMES per item (de Bruijn-style: first distinct
+    var -> $v1, ...). Fresh-variable results (`(get-type $a)` -> `$_123` vs
+    `$_gt0`) are counter artifacts, not semantics; per-item numbering keeps
+    `(p $x $y)` distinct from `(p $x $x)`."""
+    seen = {}
+    def sub(m):
+        v = m.group(0)
+        if v not in seen:
+            seen[v] = f"$v{len(seen) + 1}"
+        return seen[v]
+    return _VAR.sub(sub, s)
 
 
 def normalize(item):
@@ -172,6 +187,7 @@ def normalize(item):
     # PeTTa aliases true<->True (lib rule `(= true True)`); engines print
     # different cases INSIDE structures -- presentation, not semantics.
     s = _BOOL.sub(lambda m: m.group(0).lower(), s)
+    s = _canon_vars(s)
     # float vs int presentation (42 vs 42.0)
     try:
         f = float(s)
@@ -275,9 +291,24 @@ def main():
     in_frag = [r for r in rows if r[1] == "IN"]
     agree = [r for r in in_frag if r[3] in ("AGREE", "AGREE-ORD")]
     # COVERED = agrees with the native oracle. Nothing else counts.
-    print(f"\n# COVERED (agree) = {len(agree)}/{len(rows)} "
-          f"({100*len(agree)//max(1,len(rows))}% of corpus)")
-    print(f"# not covered: {len(in_frag)-len(agree)} divergent (defect list) "
+    # The certified delegation lane (relcompile.py) records its verdicts in
+    # delegated.tsv; only DELEGATED-CHECKED (certificate verified AND oracle
+    # bag agrees) counts toward coverage, reported as its own component so the
+    # checked/trusted split stays visible in the headline.
+    deleg = {}
+    dpath = REPO / "diffbench" / "delegated.tsv"
+    if dpath.exists():
+        for line in dpath.read_text().splitlines():
+            p = line.split("\t")
+            if len(p) == 2: deleg[p[0]] = p[1]
+    agreeset = {r[0] for r in agree}
+    dchecked = [f for f, v in deleg.items()
+                if v == "DELEGATED-CHECKED" and f not in agreeset]
+    total = len(agree) + len(dchecked)
+    print(f"\n# COVERED = {total}/{len(rows)} "
+          f"({100*total//max(1,len(rows))}% of corpus): "
+          f"{len(agree)} kernel-agree + {len(dchecked)} certificate-checked delegated")
+    print(f"# not covered: {len(in_frag)-total} divergent (defect list) "
           f"+ {len(rows)-len(in_frag)} effects/FFI (out of scope)")
     ctr = collections.Counter(r[3] for r in in_frag)
     print("# divergent verdicts:", dict(ctr))

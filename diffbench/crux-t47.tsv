@@ -1,0 +1,103 @@
+builin_types.metta	INERT-FORM:->	P-only[10]: %Undefined% ;; %Undefined% ;; %Undefined%	L-only[11]: true ;; (-> Number Number Number) ;; (-> Number Number Number)
+callquoteevalreduce.metta	VALUE	P-only[4]: (before-call-errors-ofc (quote-before (fib 5)) (eval-before (fib 5)) (reduce-before (fib 5))) ;; ((within (fib 5)) (call-within 5) (quote-within (fib 5)) (eval-	L-only[3]: (before-call-errors-ofc (quote-before (fib 5)) (eval-before (eval (fib 5))) (reduce-before (fib 5))) ;; ((call-before (call (fib 5))) (quote-before (fib 5)) (ev
+callquoteevalreduce2.metta	VALUE	P-only[2]: (fib-call 5) ;; (fib-eval 5)	L-only[2]: (fib-call (call 5)) ;; (fib-eval (if (< (myfunc) 2) (myfunc) (+ (fib (- (myfunc) 1)) (fib (- (myfunc) 2)))))
+curry.metta	VALUE	P-only[6]: "(partial f (1))" ;; 3 ;; "(partial g (1 2))"	L-only[6]: "(f 1)" ;; ((f 1) 2) ;; "(g 1 2)"
+eval.metta	INERT-FORM:eval	P-only[1]: (42.7 42)	L-only[1]: (eval (42.7 42))
+fibadd.metta	INERT-FORM:fib	P-only[2]: true ;; 832040	L-only[1]: (fib 30)
+fibsmartimport.metta	VALUE	P-only[0]: 	L-only[1]: true
+foldall.metta	VALUE	P-only[8]: 5 ;; 5 ;; 5	L-only[10]: ((|-> ($x $y) (+ $x $y)) ((|-> ($x $y) (+ $x $y)) 0 2) 3) ;; ((|-> ($x $y) (+ $x $y)) ((|-> ($x $y) (+ $x $y)) 0 2) 3) ;; ((|-> ($x $y) (+ $x $y)) ((|-> ($x $y)
+forall.metta	INERT-FORM:and	P-only[10]: false ;; false ;; false	L-only[12]: (and true (< ((|-> (1) 1) $z) 2)) ;; (and true (< ((|-> (2) 2) $z) 2)) ;; (and true ((|-> ($v) (< $v 2)) 2))
+functionhead2.metta	VALUE	P-only[1]: (cat42 garfield)	L-only[1]: (cat42 garfield roomba)
+functionhead3.metta	INERT-FORM:Empty	P-only[4]: (4) ;; (4 5) ;; (3 4 4 5 5)	L-only[4]: () ;; () ;; ()
+functionremoval.metta	VALUE	P-only[3]: (2) ;; (42) ;; ((f g))	L-only[9]: (2 42) ;; (2 42) ;; true
+functionremovalspec.metta	INERT-FORM:g	P-only[0]: 	L-only[6]: true ;; true ;; 2
+functiontypes.metta	VALUE	P-only[1]: (42 6 (+ 4 2))	L-only[1]: (42 6 6)
+he_assert.metta	INERT-FORM:Error,chain	P-only[5]: (assertEqual 3 3) ;; (assertAlphaEqual (h $_111942 $_111948) (h $_111966 $_111972)) ;; (assertAlphaEqual (+ $_112240 $_112246) (+ $_112264 $_112270))	L-only[6]: true ;; () ;; ()
+he_atomspace.metta	VALUE	P-only[5]: (add-reduct &self false) ;; (+ 1 3) ;; (get-type-space &self a)	L-only[7]: true ;; true ;; 4
+he_equalreduct.metta	VALUE	P-only[1]: (if-equal 1 1 "Equal" "Not Equal")	L-only[2]: true ;; "Equal"
+he_error.metta	INERT-FORM:catch,return	P-only[5]: (if-error 42 Error 42) ;; (if-error (Error (type_error evaluable (/ a 0)) (context (: system (/ is 2)) $_116150)) Error (Error (type_error evaluable (/ a 0)) (c	L-only[6]: true ;; (catch 42) ;; (catch (+ 40 a))
+he_evaluation.metta	INERT-FORM:+	P-only[2]: 10 ;; (for-each-in-atom (1 3 5 62 2 5) println!)	L-only[3]: true ;; (+ 5 5) ;; ()
+he_quoting.metta	VALUE	P-only[4]: (unquote (+ 1 2)) ;; "(unquote 42)" ;; (noreduce-eq 3 3)	L-only[3]: true ;; true ;; false
+he_types.metta	VALUE	P-only[5]: (is-function (-> Atom Atom)) ;; (is-function Atom) ;; (match-types Atom Atom "Matched!" "Didn't match")	L-only[6]: true ;; true ;; true
+holfunctions_intrinsicop.metta	EMPTY-LEATTA	P-only[1]: (true false false)	L-only[0]: 
+hyperpose_primes.metta	INERT-FORM:Error	P-only[2]: (true true true true) ;; true	L-only[5]: ((Error 33331 StackOverflow) (Error 33331 StackOverflow) (Error 33331 StackOverflow) (Error 33331 StackOverflow)) ;; (Error (* 33333 33333) StackOverflow) ;; (E
+invertpeanoplus.metta	INERT-FORM:Empty	P-only[4]: (S (S (S Z))) ;; (S (S (S Z))) ;; ((Z (S (S (S (S Z))))) ((S Z) (S (S (S Z)))) ((S (S Z)) (S (S Z))) ((S (S (S Z))) (S Z)) ((S (S (S (S Z)))) Z))	L-only[4]: Empty ;; Empty ;; Empty
+is_alpha_member_test.metta	VALUE	P-only[3]: (pattern:- (hi name boss)) ;; (is member:- false in pattern:- (hi name boss)) ;; true	L-only[1]: false
+lambda.metta	INERT-FORM:maplist	P-only[5]: (2 3 4) ;; true ;; (42 43 2 3)	L-only[5]: (maplist (|-> ($a) (+ 1 $a)) (1 2 3)) ;; ((|-> ($acc $e) (or false $acc)) false 1) ;; ((|-> ($x) ((myfunc 42) ($x 2 3))) 43)
+library.metta	VALUE	P-only[1]: (2 3 4)	L-only[0]: 
+llm_cities.metta	VALUE	P-only[0]: 	L-only[1]: true
+matchtypes.metta	INERT-FORM:match-type-or	P-only[0]: 	L-only[14]: "Matched!" ;; "Matched!" ;; true
+matespace.metta	VALUE	P-only[1]: 1063919	L-only[1]: 0
+meta_types.metta	VALUE	P-only[1]: Grounded	L-only[1]: Symbol
+metta4_streams.metta	INERT-FORM:and	P-only[3]: true ;; ((num 1) (num 2) (num 3) (num 4)) ;; 6	L-only[3]: (and (and (and (and true ((|-> ($x) true) 1)) ((|-> ($x) true) 2)) ((|-> ($x) true) 3)) ((|-> ($x) true) 4)) ;; ((num $x)) ;; ((|-> ($x $y) (+ $x $y)) ((|-> ($x
+mettaset.metta	VALUE	P-only[1]: ((set 1 a) (set 1 b) (set 1 c) (set 2 d) (set 2 e) (set 2 f) (set 3 a) (set 3 b))	L-only[1]: ()
+mutex_and_transaction.metta	INERT-FORM:with_mutex	P-only[6]: (true true) ;; (true true) ;; (true true)	L-only[6]: (with_mutex testmutex (true true)) ;; (with_mutex testmutex (true true)) ;; (with_mutex testmutex (true true))
+myinterpreter.metta	EMPTY-LEATTA	P-only[4]: ("Runtime-interpreting code" (if (== 1 1) (w) (v))) ;; ("Runtime-interpreting code" (if (== 1 2) (w) (v))) ;; 42	L-only[0]: 
+nars_direct.metta	INERT-FORM:unique-atom	P-only[6]: true ;; true ;; true	L-only[3]: (unique-atom (collapse ((grandfather a c) (progn (reduce (grandfather a c)) (foldl-atom (collapse (reduce (grandfather a c))) (stv 0.5 0) Truth_Revision))))) ;;
+nars_tuffy.metta	EMPTY-PETTA|INERT-FORM:NARS.Query	P-only[0]: 	L-only[2]: true ;; (NARS.Query ((Sentence ((==> (--> (× $1#0 $2#0) friend) (==> (--> $1#0 ([] smokes)) (--> $2#0 ([] smokes)))) (stv 0.4 0.9)) (1)) (Sentence ((==> (--> $1
+nilbc.metta	VALUE	P-only[1]: (: (a1 a2 a2) (⟨=⟩ $_32382 $_32382))	L-only[4]: true ;; true ;; true
+parametric_types.metta	VALUE	P-only[1]: Bool	L-only[3]: true ;; $ty ;; Empty
+parse.metta	INERT-FORM:parse	P-only[1]: "42"	L-only[1]: (parse "\" 42\ "")
+partialdef.metta	INERT-FORM:mp,plus1times2	P-only[2]: 2 ;; 4	L-only[2]: (mp 1 1) ;; (plus1times2 1)
+patrick_iterate_quad.metta	LEATTA-TIMEOUT	P-only[2]: true ;; 125417041750	L-only[0]: 
+patrick_test.metta	VALUE	P-only[3]: (s e n n a h a n n e s) ;; (4 5 6) ;; 46	L-only[2]: () ;; ((|-> ($i $x) (+ $x $i)) 9 ((|-> ($i $x) (+ $x $i)) 8 ((|-> ($i $x) (+ $x $i)) 7 ((|-> ($i $x) (+ $x $i)) 6 ((|-> ($i $x) (+ $x $i)) 5 ((|-> ($i $x) (+ $x
+peano.metta	VALUE	P-only[1]: 301	L-only[1]: 0
+pln_direct.metta	INERT-FORM:unique-atom	P-only[6]: true ;; true ;; true	L-only[3]: (unique-atom (collapse ((grandfather a c) (progn (reduce (grandfather a c)) (foldl-atom (collapse (reduce (grandfather a c))) (stv 0.5 0) Truth_Revision))))) ;;
+pln_roman.metta	VALUE	P-only[0]: 	L-only[1]: true
+pln_tuffy.metta	VALUE	P-only[1]: (PLN.Query ((Sentence ((Implication (Inheritance (Product $_13776 $_13782) friend) (Implication (Inheritance $_13776 (IntSet smokes)) (Inheritance $_13782 (IntS	L-only[2]: true ;; (PLN.Query ((Sentence ((Implication (Inheritance (Product $1#0 $2#0) friend) (Implication (Inheritance $1#0 (IntSet smokes)) (Inheritance $2#0 (IntSet s
+recursive_types.metta	INERT-FORM:%Undefined%	P-only[1]: ((Metal (-> Metal Sword)) (Metal (-> Metal Paperclip)))	L-only[1]: (%Undefined%)
+repr.metta	VALUE	P-only[2]: "\"42\"" ;; "2025_12_12"	L-only[2]: ""42"" ;; "20251212"
+roman_test.metta	VALUE	P-only[12]: (map-flat (partial + (1)) (1 2 3)) ;; (map-nested (partial + (1)) (1 (2 3))) ;; (/=\ (1 2 $_151214) (2 3 4))	L-only[19]: true ;; (map-flat (+ 1) (1 2 3)) ;; (map-nested (+ 1) (1 (2 3)))
+scale.metta	INERT-FORM:Error	P-only[1]: (all: 1000000 first: 1 second: 100000 rel: 1 both: 1)	L-only[1]: (Error (unify ($head#64284 $tail#64284) (($K10#64280 (% 992858 10)) (($t#64280 (add-atom &self (r 992858 $K10#64280))))) (unify ($pat#64284 $at#64284) $head#642
+selfprog.metta	VALUE	P-only[1]: "(function1)"	L-only[1]: "OK"
+spacefunction.metta	VALUE	P-only[1]: (f 3 4)	L-only[1]: 7
+spaces_find.metta	VALUE	P-only[1]: ((MissedAllPieces))	L-only[2]: true ;; ()
+spaces_removeallatoms.metta	VALUE	P-only[4]: (true true true true true true true true true true true) ;; "(remove-all-atoms &self)" ;; "(f 42)"	L-only[4]: (true true true true true true true true true true true true true true true true true true true true true true true true true true true true true true true true
+spaces_succeedspredicate.metta	INERT-FORM:case	P-only[2]: false ;; (a b)	L-only[1]: (case (translatePredicate (catch (Predicate (&self friend tim tom)) $_#0 fail)) (($item#0 true) (Empty false)))
+specialize.metta	INERT-FORM:+	P-only[12]: Not specialized wrapper2_Spec_[partial(+,[1])]/2 ;; (2 3 4) ;; (2 3 4)	L-only[3]: (+ 1) ;; (((+ 1) 1) ((* 1) 1)) ;; (((* 1) 1) ((+ 1) 1))
+specializecyclic.metta	VALUE	P-only[2]: Not specialized f4_Spec_[+]/3 ;; Not specialized f3_Spec_[+]/3	L-only[0]: 
+specializefunctiontypes.metta	INERT-FORM:repra	P-only[3]: 42 ;; ok ;; ok	L-only[1]: (repra (g 42))
+string.metta	EMPTY-PETTA	P-only[0]: 	L-only[1]: "a "
+test_backward_v01.metta	INERT-FORM:Error,Inherits,backward-chain	P-only[3]: ERROR: [Thread main] /home/oruzi/repos/PeTTa/src/main.pl:23: user:main findall_loop/4: Unknown procedure: 'fact?'/2 ;; ERROR: [Thread main] However, there are d	L-only[6]: true ;; (Inherits Cat Animal (stv 0.9 0.95)) ;; (Error (match &self (Inherits $S $P $tv)) unsupported minimal op)
+test_backward_v06.metta	INERT-FORM:nal-deduce-conf,nal-deduce-freq	P-only[2]: (partial nal-deduce-freq (0.95 0.99 0.8 0.9)) ;; (partial nal-deduce-conf (0.95 0.99 0.8 0.9))	L-only[2]: (nal-deduce-freq 0.95 0.99 0.8 0.9) ;; (nal-deduce-conf 0.95 0.99 0.8 0.9)
+test_evidence_kind.metta	VALUE	P-only[0]: 	L-only[1]: true
+test_match_simple.metta	INERT-FORM:Error	P-only[2]: (partial match (&self (Inherits $_8332 Animal $_8344))) ;; (partial match (&self (Inherits Cat $_8926 $_8932)))	L-only[2]: (Error (match &self (Inherits $S Animal $tv)) unsupported minimal op) ;; (Error (match &self (Inherits Cat $P $tv)) unsupported minimal op)
+test_nal_import.metta	INERT-FORM:nal-deduce-conf,nal-deduce-freq	P-only[2]: (partial nal-deduce-freq (0.95 0.99 0.8 0.9)) ;; (partial nal-deduce-conf (0.95 0.99 0.8 0.9))	L-only[2]: (nal-deduce-freq 0.95 0.99 0.8 0.9) ;; (nal-deduce-conf 0.95 0.99 0.8 0.9)
+test_string_comments.metta	LEATTA-NOOUT	P-only[0]: 	L-only[0]: 
+test_unify_eval_branches.metta	VALUE	P-only[3]: (Error (Constant wff) "already declared") ;; (Error (Var x) "active variable conflict") ;; 3	L-only[3]: () ;; () ;; 0
+translatorrule.metta	INERT-FORM:add-translator-rule!,cons	P-only[5]: true ;; true ;; (42 43)	L-only[5]: (add-translator-rule! compileeval42) ;; (add-translator-rule! compile42) ;; (cons 42 (43))
+translatorrule_fib.metta	INERT-FORM:add-translator-rule!	P-only[1]: true	L-only[1]: (add-translator-rule! compilefib)
+translatorrule_for.metta	INERT-FORM:add-translator-rule!	P-only[2]: true ;; ((odd 3) (even 4))	L-only[2]: (add-translator-rule! for) ;; ((let $x#5 (superpose (3 4)) (if (== (% $x#5 2) 0) (even $x#5) (odd $x#5))))
+types.metta	VALUE	P-only[2]: $_122934 ;; (A B)	L-only[2]: %Undefined% ;; %Undefined%
+types_nondet.metta	VALUE	P-only[0]: 	L-only[1]: Tdefault
+
+# CRUX buckets: {'VALUE': 35, 'INERT-FORM': 31, 'EMPTY-LEATTA': 2, 'EMPTY-PETTA': 2, 'LEATTA-TIMEOUT': 1, 'LEATTA-NOOUT': 1}
+# INERT-FORM head symbols (the missing/wrong-op worklist):
+#   Error	5
+#   add-translator-rule!	3
+#   and	2
+#   Empty	2
+#   +	2
+#   unique-atom	2
+#   nal-deduce-conf	2
+#   nal-deduce-freq	2
+#   ->	1
+#   eval	1
+#   fib	1
+#   g	1
+#   chain	1
+#   catch	1
+#   return	1
+#   maplist	1
+#   match-type-or	1
+#   with_mutex	1
+#   NARS.Query	1
+#   parse	1
+#   mp	1
+#   plus1times2	1
+#   %Undefined%	1
+#   case	1
+#   repra	1
+#   Inherits	1
+#   backward-chain	1
+#   cons	1
