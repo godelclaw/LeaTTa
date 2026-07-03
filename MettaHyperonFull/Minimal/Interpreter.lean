@@ -745,7 +745,7 @@ def interpretStack1 (env : MinEnv) (fuel : Nat) (st : St) (it : Item) : List Ite
               (acc.1 ++ rs.map (fun p => finItem prev p.1 it.bnd), st2)) ([], st0)
           match xi with
           | Atom.expr (Atom.sym op :: args) =>
-              if (typeMismatch env st.world op args).isSome then ([], st) else emit st
+              if env.profile.typecheckStrict && (typeMismatch env st.world op args).isSome then ([], st) else emit st
           | Atom.expr (f :: args) =>
               -- Expression-headed application (e.g. partial application `(curry-a + 2)`): no type
               -- if the head's function type rejects an argument
@@ -917,7 +917,7 @@ def mettaEval (env : MinEnv) (fuel : Nat) (st : St) (bnd : Bindings) (a : Atom) 
   | fuel + 1 =>
     match instantiate bnd a with
     | Atom.expr (Atom.sym op :: args) =>
-      if let some (pos, expected, actual) := typeMismatch env st.world op args then
+      if let some (pos, expected, actual) := (if env.profile.typecheckStrict then typeMismatch env st.world op args else none) then
         -- Runtime type error: a declared parameter type rejects an argument (Hyperon `BadArgType`).
         ([(Atom.expr [Atom.sym "Error", Atom.expr (Atom.sym op :: args),
             Atom.expr [Atom.sym "BadArgType", Atom.gnd (Ground.int (Int.ofNat pos)), expected, actual]], bnd)], st)

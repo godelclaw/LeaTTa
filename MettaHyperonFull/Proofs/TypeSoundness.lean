@@ -105,12 +105,13 @@ theorem typeCheckArgs_no_param (env : MinEnv) (w : World) (argTypes : List Atom)
 rejection; the runtime never invents a type error. -/
 theorem mettaEval_badArgType (env : MinEnv) (fuel : Nat) (st : St) (bnd : Bindings)
     (op : String) (args : List Atom) (pos : Nat) (exp act : Atom)
+    (hstrict : env.profile.typecheckStrict = true)
     (hinst : instantiate bnd (Atom.expr (Atom.sym op :: args)) = Atom.expr (Atom.sym op :: args))
     (hwt : typeMismatch env st.world op args = some (pos, exp, act)) :
     mettaEval env (fuel + 1) st bnd (Atom.expr (Atom.sym op :: args)) =
       ([(Atom.expr [Atom.sym "Error", Atom.expr (Atom.sym op :: args),
           Atom.expr [Atom.sym "BadArgType", Atom.gnd (Ground.int (Int.ofNat pos)), exp, act]], bnd)], st) := by
-  simp [mettaEval, hinst, hwt]
+  simp [mettaEval, hinst, hwt, hstrict]
 
 /-- **Totality of typing.** `getTypes` assigns at least one type to every atom; gradual typing has
 no "untyped gap": an undeclared symbol gets `%Undefined%`, an application its inferred return type(s)

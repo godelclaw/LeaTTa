@@ -58,18 +58,23 @@ structure EvalProfile where
   `true` = they return the boolean `true` (native PeTTa, probe 2026-07-02);
   `false` = they return the unit `()` (HE; DIV-006 family). -/
   successTrue : Bool
+  /-- Enforce declared argument type-checking (HE `BadArgType`). `true` = HE
+  (strict); `false` = native PeTTa (permissive — type-checking is optional in
+  PeTTa; probe: PeTTa evaluates calls HE rejects). Strict remains available
+  when the user declares types. -/
+  typecheckStrict : Bool
 deriving Repr, BEq, Inhabited
 
 /-- Hyperon-Experimental 0.2.10 — the dialect certified by the existing
 `Semantics.reduceAtom`; `SemanticsP.reduceAtomP_he` proves the equivalence. -/
 def heProfile : EvalProfile :=
   { noMatchEmpty := false, ifArity2 := false, quoteStrips := false,
-    successTrue := false }
+    successTrue := false, typecheckStrict := true }
 
 /-- Native PeTTa (the lane PeTTaChainer and native-PeTTa agents run). Each field value
 is an empirical claim; see the module docstring for probes/DIV ids. -/
 def pettaProfile : EvalProfile :=
   { noMatchEmpty := true, ifArity2 := true, quoteStrips := true,
-    successTrue := true }
+    successTrue := true, typecheckStrict := false }
 
 end Metta
