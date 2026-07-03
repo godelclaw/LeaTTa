@@ -347,17 +347,41 @@ def freshenRule (counter : Nat) (lhs rhs : Atom) : Atom × Atom :=
       let sub : Subst := vs.map fun v => (v, Atom.var (v ++ "#" ++ toString counter))
       (Subst.apply sub lhs, Subst.apply sub rhs)
 
+mutual
+/-- Does an atom syntactically contain `cut` (bare or `(cut …)`)? PeTTa's `cut`
+compiles to Prolog `!` — committed choice. HE programs never contain it, so
+this is always `false` there and the commit below is a no-op for HE. -/
+def atomHasCut : Atom → Bool
+  | Atom.sym s => s == "cut"
+  | Atom.expr xs => atomsHaveCut xs
+  | _ => false
+def atomsHaveCut : List Atom → Bool
+  | [] => false
+  | x :: rest => atomHasCut x || atomsHaveCut rest
+end
+
 /-- Query the KB for `(= to_eval $X)` and return each matching RHS with merged bindings
     (Rust `query`), threading the gensym counter. Returns `[NotReducible]` when nothing matches.
-    Variable-headed atoms are refused without querying. -/
+    Variable-headed atoms are refused without querying.
+
+    Committed choice (PeTTa `cut`): candidates are tried in knowledge-base
+    order; once a MATCHING clause whose body contains `cut` fires, later
+    candidates are pruned (Prolog `!`). Per the CeTTa `--lang petta` precedent
+    this commits to a choice without needing to match PeTTa's exact pick
+    (nondet is order-agnostic). Cut-free programs (all HE code) are unaffected. -/
 def queryOp (env : MinEnv) (st : St) (prev : Stack) (toEval : Atom) (b : Bindings) : List Item × St :=
   if isVariableHeaded toEval then ([finItem prev notReducibleA b], st) else
-  let (results, st') := (candidatesW env st.world toEval).foldl (fun (acc : List Item × St) p =>
-    let (lhs', rhs') := freshenRule acc.2.counter p.fst p.snd
-    let items := (matchAtoms lhs' toEval).flatMap fun mb =>
-      (Bindings.merge b mb).filterMap fun m =>
-        if Bindings.hasLoop m then none else some (evalResult prev (instantiate m rhs') m)
-    (acc.1 ++ items, { acc.2 with counter := acc.2.counter + 1 })) ([], st)
+  let (results, st', _) := (candidatesW env st.world toEval).foldl
+    (fun (acc : List Item × St × Bool) p =>
+      if acc.2.2 then acc else  -- already committed via a cut: prune the rest
+      let (lhs', rhs') := freshenRule acc.2.1.counter p.fst p.snd
+      let mtchs := matchAtoms lhs' toEval
+      let items := mtchs.flatMap fun mb =>
+        (Bindings.merge b mb).filterMap fun m =>
+          if Bindings.hasLoop m then none else some (evalResult prev (instantiate m rhs') m)
+      let committed := !mtchs.isEmpty && atomHasCut rhs'
+      (acc.1 ++ items, { acc.2.1 with counter := acc.2.1.counter + 1 }, acc.2.2 || committed))
+    ([], st, false)
   if results.isEmpty then
     -- Dialect switch (native PeTTa, `noMatchEmpty`): a DEFINED head (some
     -- candidate rule of the same arity exists) with no matching clause is

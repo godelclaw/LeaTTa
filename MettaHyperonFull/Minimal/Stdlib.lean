@@ -676,6 +676,23 @@ def pettaExtremum (better : Float → Float → Bool) : List Atom → ReduceResu
           ReduceResult.ok [r.1]
   | _ => ReduceResult.incorrectArgument "expects one nonempty expression"
 
+/-- `(progn a b ... z)` (PeTTa sequential control): with evalArgs the driver
+evaluates each argument; return the LAST. Probe: `(progn a b (g))` -> value of
+`(g)`. -/
+def prognOp : List Atom → ReduceResult
+  | [] => ReduceResult.incorrectArgument "progn expects at least one argument"
+  | args => match args.getLast? with
+      | some x => ReduceResult.ok [x]
+      | none => ReduceResult.incorrectArgument "progn: empty"
+
+/-- `(reduce t)` (PeTTa force-evaluate): with evalArgs the argument is already
+driven to its answer(s) (nondeterminism preserved by the driver's per-value
+spread), so `reduce` is the identity on the forced value. Probe:
+`(collapse (reduce (multi)))` -> the full answer bag. -/
+def reduceForceOp : List Atom → ReduceResult
+  | [x] => ReduceResult.ok [x]
+  | _ => ReduceResult.incorrectArgument "reduce expects one argument"
+
 /-- Grounding table for the native-PeTTa profile: PeTTa-arithmetic overrides
 and PeTTa-only builtins shadow/extend the HE entries by list order.
 `alpha-unique-atom` is `uniqueAtomOp`, whose dedup is already α-based. -/
@@ -698,7 +715,9 @@ def pettaGroundings : GroundingTable :=
   ⟨"alpha-unique-atom", GroundMode.evalArgs, none, uniqueAtomOp⟩ ::
   ⟨"is-alpha-member", GroundMode.evalArgs, none, isAlphaMemberOp⟩ ::
   ⟨"repr", GroundMode.evalArgs, none, reprOp⟩ ::
-  ⟨"parse", GroundMode.evalArgs, none, parseOp⟩ :: stdGroundings
+  ⟨"parse", GroundMode.evalArgs, none, parseOp⟩ ::
+  ⟨"progn", GroundMode.evalArgs, none, prognOp⟩ ::
+  ⟨"reduce", GroundMode.evalArgs, none, reduceForceOp⟩ :: stdGroundings
 
 /-- The stdlib prelude specialized to an evaluation profile. At `heProfile`
 this is exactly `preludeAtoms`. Under `quoteStrips` the HE rule
