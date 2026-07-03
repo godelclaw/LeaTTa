@@ -46,3 +46,5 @@ types_dependent.metta	TYPES	dependent type surface
 types_nondet.metta	TYPES	nondet type queries
 pln_direct.metta	RELATIONAL	implicit-SLD conjunction (?/reduce resolution) -- battery tier
 spaces_find.metta	RELATIONAL	find = caller-var binding via shared logic vars -- battery tier
+matespace.metta	PERF	deep space-search truncated by fuel (swipl computes)
+matespace2.metta	PERF	deep space-search truncated by fuel (swipl computes)

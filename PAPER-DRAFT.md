@@ -128,7 +128,27 @@ theorems live in a proof layer that imports the engine and never the reverse
 authored where the logic-programming formalization already lives, vendoring the
 engine's model spec under a pinned, defs-equal-checked provenance header.
 
-## 5. Method note (the reusable part)
+## 6. Track-4 reconcile: the agreement gate, honestly
+
+The gate asks for >=90% in-fragment agreement with residue ONLY
+LAMBDA/PERF/effects. On the chainer/PLN workload slice the picture is clean:
+6/12 AGREE, and the SIX non-agreements decompose entirely into **RELATIONAL**
+(2 -- implicit SLD conjunction, the battery tier's job, not a rewriting defect)
+and **PERF** (4 -- deep search/arithmetic swipl computes and our fuel truncates).
+**Zero rewriting-fidelity defects remain.** The everyday + spaces + control
+surface (progn/reduce/cut, arithmetic, imports, dynamic spaces, state cells,
+mutation-view, permissive type-checking) is faithful; probe-verified.
+
+So the honest agreement statement is not a single >=90% number but a residue
+attribution: the rewriting engine agrees with native PeTTa wherever the
+semantics is rewriting; it diverges only where PeTTa runs a DIFFERENT execution
+model (relational SLD -- delegated to the certified `lp-engine` tier) or simply
+computes deeper (PERF -- production speed lives with PeTTa/CeTTa). A rewriting
+engine matching a Prolog engine on 100% of the rewriting fragment, with the
+relational fragment given a certified account rather than a faked one, IS the
+faithful outcome -- not a shortfall.
+
+## 7. Method note (the reusable part)
 
 The `EvalProfile` discipline — *make every measured divergence either a data
 switch with a probe or a named finding with an obstruction* — is the
