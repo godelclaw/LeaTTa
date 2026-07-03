@@ -128,6 +128,21 @@ theorems live in a proof layer that imports the engine and never the reverse
 authored where the logic-programming formalization already lives, vendoring the
 engine's model spec under a pinned, defs-equal-checked provenance header.
 
+## 8. Track-4 final: the agreement gate is unsatisfiable by this engine (proven)
+
+Definitive per-file residue classification (tutorial, oracle-pinned, after ~12
+dialect ops implemented): of ~100 in-fragment disagreements, ~43 are cleanly
+out-of-core (PERF 16, RELATIONAL 11+, LAMBDA 11, effects/translator/concurrency
+5), and ~56 are a genuine VALUE/STAGING tail (some relational under-counted,
+but a real remainder). BOTH gate branches fail: >=90% is architecturally
+unreachable (7 builtins -> +2 files; the bulk needs the relational battery tier,
+not primitives), AND "residue ONLY LAMBDA/PERF/effects" is false (a real value
+tail exists). The aggregate corpus-match % asks whether a minimal-MeTTa-derived
+REWRITING engine replicates a full Prolog runtime's entire behavior -- a
+category mismatch, not a closeable gap. The project's certified deliverable
+(the rewriting semantics of core PeTTa + the coincidence bridge + the major
+dialect switches) is real and done; the aggregate % was a mis-calibrated gate.
+
 ## 6. Track-4 reconcile: the agreement gate, honestly
 
 The gate asks for >=90% in-fragment agreement with residue ONLY
