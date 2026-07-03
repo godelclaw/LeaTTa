@@ -593,6 +593,7 @@ def pettaLibSrc : String :=
   "(= true True)
    (= false False)
    (= (implies $a $b) (or (not $a) $b))
+   (= (once $x) (let $cut_tmp (cut) $x))
    (= (map-atom $l $f) (if (== $l ()) () (cons-atom ($f (car-atom $l)) (map-atom (cdr-atom $l) $f))))
    (= (filter-atom $l $f) (if (== $l ()) () (if ($f (car-atom $l)) (cons-atom (car-atom $l) (filter-atom (cdr-atom $l) $f)) (filter-atom (cdr-atom $l) $f))))
    (= (foldl-atom $l $init $f) (if (== $l ()) $init (foldl-atom (cdr-atom $l) ($f $init (car-atom $l)) $f)))
@@ -835,7 +836,8 @@ def evalSequential (atoms : List Atom) (fuel : Nat)
     let env := { MinEnv.ofAtomsGT (preludeAtomsFor profile ++ kbRev.reverse) gt with
                  imports := imports, profile := profile }
     let (pairs, st') := mettaEval env fuel st [] q
-    (pairs.map (·.1), st')
+    -- committed choice is query-scoped: the cut bubble never crosses a bang
+    (pairs.map (·.1), { st' with cutBubble := false, cutFired := false })
   -- accumulator: (kb-atoms reversed, results reversed, threaded St, "previous atom was `!`")
   let step := fun (acc : List Atom × List (Atom × List Atom) × St × Bool) (a : Atom) =>
     let (kbRev, resRev, st, wasBang) := acc

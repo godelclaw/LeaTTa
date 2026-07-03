@@ -63,6 +63,11 @@ structure EvalProfile where
   PeTTa; probe: PeTTa evaluates calls HE rejects). Strict remains available
   when the user declares types. -/
   typecheckStrict : Bool
+  /-- Body-internal committed choice (PeTTa `cut`/`!`): `(cut)` prunes the
+  pending sibling branches of the enclosing evaluation (probe 2026-07-03:
+  `!(cut)` -> `true`; `match-single` commits to its first match). `false` =
+  `(cut)` is an ordinary inert atom (HE). -/
+  cutCommits : Bool := false
 deriving Repr, BEq, Inhabited
 
 /-- Hyperon-Experimental 0.2.10 — the dialect certified by the existing
@@ -75,6 +80,6 @@ def heProfile : EvalProfile :=
 is an empirical claim; see the module docstring for probes/DIV ids. -/
 def pettaProfile : EvalProfile :=
   { noMatchEmpty := true, ifArity2 := true, quoteStrips := true,
-    successTrue := true, typecheckStrict := false }
+    successTrue := true, typecheckStrict := false, cutCommits := true }
 
 end Metta

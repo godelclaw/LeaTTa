@@ -241,6 +241,16 @@ structure St where
   counter : Nat
   /-- Mutable world (named spaces, state cells, tokens) threaded through evaluation. -/
   world : World
+  /-- Set by `(cut)` under `cutCommits`; consumed by `interpretFuel`, which
+  prunes the pending sibling branches of the current work list, converts it
+  into `cutBubble`, and continues. Never set on the HE profile. -/
+  cutFired : Bool := false
+  /-- Sticky form of `cutFired`: tells the enclosing `mettaEval` folds to stop
+  producing further alternatives (argument combinations, clause results).
+  Cleared at the per-query boundary (`evalSequential`). Scope note: this cuts
+  to the current top-level query — Prolog cut is clause-scoped; on the corpus
+  patterns (commit-after-choice) the two coincide. -/
+  cutBubble : Bool := false
 
 def St.init : St := { counter := 0, world := World.empty }
 
@@ -396,6 +406,13 @@ def queryOp (env : MinEnv) (st : St) (prev : Stack) (toEval : Atom) (b : Binding
 def evalOp (env : MinEnv) (st : St) (prev : Stack) (x : Atom) (b : Bindings) : List Item × St :=
   let x' := instantiate b x
   match x' with
+  | Atom.expr [Atom.sym "cut"] =>
+      -- Committed choice (PeTTa `!`): succeed as `true` and signal the
+      -- enclosing `interpretFuel` to prune pending sibling branches.
+      -- Probe: `!(cut)` -> `true`. HE keeps `(cut)` an ordinary atom.
+      if env.profile.cutCommits then
+        ([finItem prev (Atom.sym "True") b], { st with cutFired := true })
+      else queryOp env st prev x' b
   | Atom.expr (Atom.sym op :: args) =>
       -- Grounded ops (`==`, the `assert*` family, arithmetic, ...) compare values, so each argument
       -- has its `bind!` tokens substituted and its state handles dereferenced to cell contents first.
@@ -898,7 +915,16 @@ def interpretFuel (env : MinEnv) (fuel : Nat) (st : St) (work : List Item) (done
       let (results, st') := interpretStack1 env f st it
       let finals := (results.filter isFinal).map finalPair
       let more := results.filter (fun r => !isFinal r)
-      interpretFuel env f st' (more ++ rest) (finals.reverse ++ done)
+      -- Committed choice (PeTTa `cut`): a step that executed `(cut)` prunes
+      -- the PENDING sibling branches of this evaluation (`rest`); the
+      -- cutter's own continuation (`more`) and already-produced results
+      -- survive. The flag clears here: its scope is this invocation — the
+      -- enclosing rule application (clause-scoped, like Prolog `!`).
+      if st'.cutFired then
+        interpretFuel env f { st' with cutFired := false, cutBubble := true }
+          more (finals.reverse ++ done)
+      else
+        interpretFuel env f st' (more ++ rest) (finals.reverse ++ done)
   termination_by 3 * fuel
   decreasing_by all_goals (simp_wf <;> omega)
 
@@ -932,8 +958,10 @@ def mettaEval (env : MinEnv) (fuel : Nat) (st : St) (bnd : Bindings) (a : Atom) 
         let queryVars := args.flatMap Atom.vars
         let (partials, st1) := (args.zip (argMask env op args.length)).foldl
           (fun (acc : List (List Atom × Bindings) × St) ae =>
+            let b0 := acc.2.cutBubble
             acc.1.foldl (fun (acc2 : List (List Atom × Bindings) × St) part =>
-              if ae.2 then
+              if acc2.2.cutBubble && !b0 then acc2
+              else if ae.2 then
                 let (ps, st') := mettaEval env fuel acc2.2 part.2 ae.1
                 (acc2.1 ++ ps.map (fun p =>
                   (part.1 ++ [p.1], restrictBnd queryVars ((Bindings.merge part.2 p.2).head?.getD p.2))), st')
@@ -942,8 +970,10 @@ def mettaEval (env : MinEnv) (fuel : Nat) (st : St) (bnd : Bindings) (a : Atom) 
           ([([], [])], st)
         -- (2) Reduce each (binding-threaded) combination; leave inert on Atom-return (`metta_call`)
         --     or re-evaluate, carrying the threaded query bindings forward.
+        let b1 := st1.cutBubble
         partials.foldl
           (fun (acc : List (Atom × Bindings) × St) part =>
+            if acc.2.cutBubble && !b1 then acc else
             -- Error propagation (Hyperon `interpret_args`): if a type-directed-evaluated argument
             -- reduced to an `(Error ...)`, the whole application becomes that error, so
             -- `(f (+ 5 "S"))` gives `(Error (+ 5 "S") (BadArgType 2 Number String))`. The `h != orig`
@@ -956,7 +986,9 @@ def mettaEval (env : MinEnv) (fuel : Nat) (st : St) (bnd : Bindings) (a : Atom) 
             let w := Atom.expr (Atom.sym op :: part.1)
             let (pairs, st') := interpretFuel env (fuel + 1) acc.2
               [{ stack := atomToStack (Atom.expr [Atom.sym "eval", w]) [], bnd := bnd }] []
+            let b2 := st'.cutBubble
             let (out, st'') := pairs.foldl (fun (a2 : List (Atom × Bindings) × St) p =>
+              if a2.2.cutBubble && !b2 then a2 else
               let pb := restrictBnd queryVars ((Bindings.merge part.2 p.2).head?.getD p.2)
               if p.1 == notReducibleA || p.1 == w then (a2.1 ++ [(w, part.2)], a2.2)
               else if returnsAtom env w && !isEmbeddedOp p.1 then (a2.1 ++ [(p.1, pb)], a2.2)
@@ -988,19 +1020,25 @@ def mettaEval (env : MinEnv) (fuel : Nat) (st : St) (bnd : Bindings) (a : Atom) 
           -- Re-evaluate a tuple result whose head reduced into a new application, e.g.
           -- `((is-socrates) Human)` -> `((curry-a is Socrates) Human)` -> `(is Socrates Human)` -> `True`.
           -- A result identical to the input is a normal-form tuple, kept as-is (no re-eval, no loop).
+          let b3 := st2.cutBubble
           tupleRes.foldl (fun (acc : List (Atom × Bindings) × St) p =>
-            if p.1 == whole then (acc.1 ++ [p], acc.2)
+            if acc.2.cutBubble && !b3 then acc
+            else if p.1 == whole then (acc.1 ++ [p], acc.2)
             else let (more, st') := mettaEval env fuel acc.2 p.2 p.1; (acc.1 ++ more, st')) ([], st2)
         else
+          let b4 := st1.cutBubble
           reduced.foldl (fun (acc : List (Atom × Bindings) × St) p =>
+            if acc.2.cutBubble && !b4 then acc else
             let (more, st') := mettaEval env fuel acc.2 p.2 p.1
             (acc.1 ++ more, st')) ([], st1)
     | w =>
         -- Bare symbol, variable, or grounded atom: reduce once, then re-evaluate or leave inert.
         let (pairs, st') := interpretFuel env (fuel + 1) st
           [{ stack := atomToStack (Atom.expr [Atom.sym "eval", w]) [], bnd := bnd }] []
+        let b5 := st'.cutBubble
         pairs.foldl (fun (a2 : List (Atom × Bindings) × St) p =>
-          if p.1 == notReducibleA || p.1 == w then (a2.1 ++ [(w, bnd)], a2.2)
+          if a2.2.cutBubble && !b5 then a2
+          else if p.1 == notReducibleA || p.1 == w then (a2.1 ++ [(w, bnd)], a2.2)
           else if returnsAtom env w && !isEmbeddedOp p.1 then (a2.1 ++ [p], a2.2)
           else let (more, st3) := mettaEval env fuel a2.2 p.2 p.1; (a2.1 ++ more, st3)) ([], st')
   termination_by 3 * fuel + 1

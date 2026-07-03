@@ -253,7 +253,7 @@ baseline is not misread)
   cross-arity case (rules exist at other arity only) is unprobed on native
   PeTTa — probe before M3 closes.
 
-## CUT-1 (queued): body-internal cut via a fired-flag, not branch tags
+## CUT-1 (LANDED): body-internal cut via a fired-flag, not branch tags
 The recursive evaluator's sequential folds ARE the choicepoint stack, so cut
 needs no per-branch provenance: make `cut` an embedded op that sets a
 `cutFired` flag in `St`; at each rule application whose RHS `atomHasCut`
@@ -271,3 +271,20 @@ deliberately forfeited — that IS cut).
 `e2_states.metta` 13/14 on the HE oracle suite — verified present on the
 clean committed tree (rebuild bisect), predates the petta-profile work.
 Not a today regression; needs its own diagnosis.
+
+### CUT-1 landing notes (2026-07-03)
+Landed as the two-stage flag: `St.cutFired` (transient, set by the `(cut)`
+arm in `evalOp`, petta-profile-gated) -> `interpretFuel` prunes the pending
+work-list siblings and converts it to `St.cutBubble` (sticky) -> the six
+`mettaEval` alternative-producing folds stop when the bubble rises DURING the
+fold (baseline-relative check `bubble && !baseline`, so survivors of an
+already-bubbled call are kept) -> cleared per bang query in `evalSequential`.
+Scope: cuts to the current top-level query, not the textual clause — on the
+corpus commit-after-choice patterns these coincide; a nested-independent-
+nondet program could over-prune (ledgered, no corpus witness). Bonus: `once`
+became a one-line lib rule `(= (once $x) (let $cut_tmp (cut) $x))` — the
+bubble prunes sibling rule applications even after argument spread, which is
+what blocked the previous `once` attempt. Probe-verified vs native petta:
+cut.metta, once.metta, matchsingle.metta all match exactly; HE oracle canary
+unchanged (269/270 pre-existing); accumulator lemma re-proved (zero sorry).
+Overhead: one boolean check per alternative; no allocation.

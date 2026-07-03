@@ -100,11 +100,16 @@ theorem interpretFuel_done (env : MinEnv) (fuel : Nat) :
           cases h : interpretStack1 env f st it with
           | mk results st' =>
               simp only [interpretFuel, h, List.append_nil]
-              -- name the two head-bucketed sublists so the IH applies by name
-              generalize List.filter (fun r => !isFinal r) results ++ rest = W
-              generalize List.map finalPair (List.filter isFinal results) = F
-              rw [ih st' W (F.reverse ++ done), ih st' W F.reverse]
-              simp [List.reverse_append, List.append_assoc]
+              -- the cut-prune branch and the plain branch each close by the IH
+              by_cases hc : st'.cutFired <;> simp only [hc, if_true, if_false]
+              · generalize List.filter (fun r => !isFinal r) results = W
+                generalize List.map finalPair (List.filter isFinal results) = F
+                rw [ih _ W (F.reverse ++ done), ih _ W F.reverse]
+                simp [List.reverse_append, List.append_assoc]
+              · generalize List.filter (fun r => !isFinal r) results ++ rest = W
+                generalize List.map finalPair (List.filter isFinal results) = F
+                rw [ih st' W (F.reverse ++ done), ih st' W F.reverse]
+                simp [List.reverse_append, List.append_assoc]
 
 theorem cartesian_nil {α : Type} : cartesian ([] : List (List α)) = [[]] := rfl
 
