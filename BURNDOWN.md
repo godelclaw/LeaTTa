@@ -31,6 +31,18 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
   semantics (functional-LOGIC, not just functional): attribution family in
   the scoreboard, out of scope for the dialect profile.
 
+## Builtin-coverage tail — progress + method
+
+Implemented (probe-verified): msort ((3 1 2)->(1 2 3)). Attempted `once`
+(take-first-of-nondeterminism): needs kernel evaluation-ORDER surgery, not a
+grounded op or noeval-signature -- the arg is spread by the enclosing eager
+evaluation before `once` sees it, at a level the (-> Atom _) signature does not
+reach. Reverted per the 2-iteration stop-rule; `once` is a dedicated kernel
+task (special-form arg-capture), grouped with the other take-first/committed
+ops. METHOD for the tail: extract unreduced operator heads from the divergence
+diffs (once/msort/... ), implement each as grounded-op / prelude-rule / special
+-form, probe, re-measure. Bounded, op-by-op, multi-session.
+
 ## Track-4 tutorial residue — ATTRIBUTED (the honest-report gate, both slices)
 
 Comprehensive diagnosis of the ~86 in-fragment tutorial disagreements
