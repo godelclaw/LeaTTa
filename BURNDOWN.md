@@ -288,3 +288,14 @@ what blocked the previous `once` attempt. Probe-verified vs native petta:
 cut.metta, once.metta, matchsingle.metta all match exactly; HE oracle canary
 unchanged (269/270 pre-existing); accumulator lemma re-proved (zero sorry).
 Overhead: one boolean check per alternative; no allocation.
+
+## IMPORT-RESULT discipline (landed) + the one honest residue
+Probe-pinned per target kind: `.metta` file paths and `(library lib)` answer
+`true`; `../lib/` module paths and bare names answer NOTHING (Prolog library
+mechanism). First probe was WRONG (cwd-relative import failed silently ->
+inferred blanket silence -> broke 18 files for one run; re-probed per kind
+and corrected). Residue: git_import2 imports `(library lib_faiss)` whose
+FFI build (git-import! + build.sh) petta requires at load; petta answers
+nothing on that failure. Our loader resolves the stub, so we answer true —
+distinguishing "resolves but its FFI build is missing" is effects-boundary
+territory. One file, ledgered, not chased.
