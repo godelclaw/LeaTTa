@@ -699,6 +699,26 @@ def msortOp : List Atom → ReduceResult
   | [Atom.expr xs] => ReduceResult.ok [Atom.expr (sortAtoms xs)]
   | _ => ReduceResult.incorrectArgument "msort expects one expression"
 
+/-- `(second-from-pair (a b))` -> b. -/
+def secondFromPairOp : List Atom → ReduceResult
+  | [Atom.expr (_ :: b :: _)] => ReduceResult.ok [b]
+  | _ => ReduceResult.incorrectArgument "second-from-pair expects a pair"
+
+/-- `(is-member x (…))` -> Bool: is `x` a child of the tuple? -/
+def isMemberOp : List Atom → ReduceResult
+  | [x, Atom.expr xs] => ReduceResult.ok [Atom.gnd (Ground.bool (xs.contains x))]
+  | _ => ReduceResult.incorrectArgument "is-member expects an atom and a tuple"
+
+/-- `(list_to_set (…))` -> the tuple with duplicates removed (order-preserving). -/
+def listToSetOp : List Atom → ReduceResult
+  | [Atom.expr xs] => ReduceResult.ok [Atom.expr (dedupAux [] xs)]
+  | _ => ReduceResult.incorrectArgument "list_to_set expects a tuple"
+
+/-- `(exclude-item x (…))` -> the tuple with ALL occurrences of `x` removed. -/
+def excludeItemOp : List Atom → ReduceResult
+  | [x, Atom.expr xs] => ReduceResult.ok [Atom.expr (xs.filter (· != x))]
+  | _ => ReduceResult.incorrectArgument "exclude-item expects an atom and a tuple"
+
 /-- Grounding table for the native-PeTTa profile: PeTTa-arithmetic overrides
 and PeTTa-only builtins shadow/extend the HE entries by list order.
 `alpha-unique-atom` is `uniqueAtomOp`, whose dedup is already α-based. -/
@@ -724,7 +744,11 @@ def pettaGroundings : GroundingTable :=
   ⟨"parse", GroundMode.evalArgs, none, parseOp⟩ ::
   ⟨"progn", GroundMode.evalArgs, none, prognOp⟩ ::
   ⟨"reduce", GroundMode.evalArgs, none, reduceForceOp⟩ ::
-  ⟨"msort", GroundMode.evalArgs, none, msortOp⟩ :: stdGroundings
+  ⟨"msort", GroundMode.evalArgs, none, msortOp⟩ ::
+  ⟨"second-from-pair", GroundMode.evalArgs, none, secondFromPairOp⟩ ::
+  ⟨"is-member", GroundMode.evalArgs, none, isMemberOp⟩ ::
+  ⟨"list_to_set", GroundMode.evalArgs, none, listToSetOp⟩ ::
+  ⟨"exclude-item", GroundMode.evalArgs, none, excludeItemOp⟩ :: stdGroundings
 
 /-- The stdlib prelude specialized to an evaluation profile. At `heProfile`
 this is exactly `preludeAtoms`. Under `quoteStrips` the HE rule
