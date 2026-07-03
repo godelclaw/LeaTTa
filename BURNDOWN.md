@@ -31,6 +31,43 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
   semantics (functional-LOGIC, not just functional): attribution family in
   the scoreboard, out of scope for the dialect profile.
 
+## Fidelity audit (chainer/PLN workload, 2026-07-03) — the real DIFF-COUNT content
+
+Probed against native PeTTa (pin 700707a68053). The chainer slice (50% baseline)
+exposed that the residual multiplicity divergence is NOT "branch-local failure"
+(that was fixed in Track 2 and is correct) but three distinct causes:
+
+- **CONTROL-1 — `cut` / `progn` MISSING (critical, unmodeled).** Probe:
+  `(= (pick $x) (progn (cut) first))` + `(= (pick $x) second)`;
+  `(collapse (pick anything))` → native `(first)` (cut commits, prunes clause 2);
+  ours `((progn (cut) first) second)` (neither grounded; both clauses fire
+  unreduced). `cut` is committed choice — it prunes the answer multiset; PLN's
+  `=>` operator relies on it. This is control-flow / the Prolog-execution layer,
+  NOT pure rewriting — it belongs with the relational/SLD layer or must be
+  explicitly scoped out; a rewriting kernel cannot fake cut honestly.
+- **BIND-1 — `find` / `reduce` primitives MISSING (fixable, in-fragment-ish).**
+  `spaces_find`: `(find &self (friend $a $b))` yields 4 UNBOUND
+  `(FoundChain $a $b $c)` instead of bound `(FoundChain a b c)` +
+  `(MissedSecondPiece)`. `find`/`reduce` (force-eval-to-answer, bind vars) are
+  lib primitives we do not ground; PLN's `(? $term)` uses `(reduce $term)`.
+  Real bug, addable.
+- **PERF-1 — fuel too shallow for deep arithmetic.** `hyperpose_primes`
+  StackOverflows on `find-divisor` recursing to sqrt(n); swipl computes it.
+  Config artifact, not semantics; raise fuel or tag PERF.
+
+Mutation-visibility (logical-update view) probe: **PASS** — `add-atom` during an
+open match enumeration is not seen by that enumeration (native `(1 2)`; ours
+`(1 2)`), seen by the next call (both `(1 2 100 100)`). The chainer heartbeat is
+faithful.
+
+Verdict: the pure rewriting + spaces core is faithful (mutation view correct,
+tutorials mostly agree). "Chainer-grade" is premature: real PLN leans on `cut`
+(committed choice) and `find`/`reduce`, which we do not model. The single
+biggest fidelity lever is `cut` — and it is control-flow, so it lands with the
+relational layer, not a rewriting-profile arm.
+
+## Fidelity audit
+
 ## Track-3 status (the Prolog bridge)
 
 - **MODE-1 → MODE-1-BRIDGED (T3.3a, DONE engine-side)**: relational execution

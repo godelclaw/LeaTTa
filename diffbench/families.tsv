@@ -14,7 +14,7 @@ he_math.metta	BUILTIN	numeric tower (pow-math int) — armed in run-3
 holbenchmark.metta	PERF	higher-order search blowup (timeout)
 holfunctions.metta	MODE-1	higher-order + currying (DIV d2)
 holfunctions_intrinsicop.metta	MODE-1	higher-order intrinsics
-hyperpose_primes.metta	PERF	hyperpose armed; residual = deep-recursion StackOverflow
+hyperpose_primes.metta	PERF	deep find-divisor recursion exceeds fuel
 invertfunction.metta	MODE-1-BRIDGED	relational inversion  [T3.3a: LP/SLD-certified]
 invertpeanoplus.metta	MODE-1-BRIDGED	peano inversion  [T3.3a: LP/SLD-certified]
 is_alpha_member_test.metta	BUILTIN	is-alpha-member gap
@@ -44,3 +44,5 @@ translatorrule_for.metta	TRANSLATOR	translator rules
 types.metta	TYPECHECK-1	HE type-checking rejects; PeTTa permissive (armable)
 types_dependent.metta	TYPES	dependent type surface
 types_nondet.metta	TYPES	nondet type queries
+pln_direct.metta	CONTROL-1	cut/progn/runtime-rule-def -- committed choice unmodeled
+spaces_find.metta	BIND-1	find/reduce binding -- missing primitives (fixable)
