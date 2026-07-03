@@ -31,6 +31,28 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
   semantics (functional-LOGIC, not just functional): attribution family in
   the scoreboard, out of scope for the dialect profile.
 
+## Track-4 DECISIVE finding: the >=90% gate is not reachable by builtin coverage
+
+MEASURED: 7 clean builtins added (msort, second-from-pair, is-member,
+list_to_set, exclude-item, decons, member) moved the tutorial from 66/168 to
+**68/168 (+2 files)**. That is the ROI of the builtin-coverage grind: ~7 ops per
+2 files. To reach 90% (151/168) would need ~80 more files to flip; at this rate
+that is hundreds of ops -- AND most remaining files are NOT builtin-fixable:
+the 50 VALUE-DIFF bulk is dominated by RELATIONAL (battery tier), LAMBDA
+(partial-application), PERF (fuel), and quote/eval STAGING, none of which a
+grounded op addresses.
+
+CONCLUSION (evidenced, not speculated): the >=90% agreement gate on the full
+tutorial corpus is NOT achievable by adding builtins to this rewriting engine.
+Reaching it would require the relational battery tier + lambda features +
+accepting PERF -- i.e. the THREE-TIER architecture (relational -> lp-engine),
+not more ops here. The gate as written ("residue ONLY LAMBDA/PERF/effects")
+assumed a small closeable residue; the measurement shows a large ARCHITECTURAL
+tail. The correct closure is: certified rewriting core (done) + the three-tier
+plan for the relational fragment + honest residue attribution. The aggregate
+agreement % measures "does this rewriting engine replicate PeTTa's entire
+runtime," which is a different (and larger) thing than the certified deliverable.
+
 ## Builtin-coverage tail — progress + method
 
 Implemented (probe-verified): msort ((3 1 2)->(1 2 3)). Attempted `once`
