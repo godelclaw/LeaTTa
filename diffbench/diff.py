@@ -143,7 +143,7 @@ def compare(petta, leatta):
     return a == b
 
 
-def run_file(path, timeout=45):
+def run_file(path, timeout=20):
     text = path.read_text(errors="replace")
     frag, why = classify(text)
     with tempfile.NamedTemporaryFile("w", suffix=".metta", delete=False) as t:

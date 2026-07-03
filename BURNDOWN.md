@@ -31,7 +31,25 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
   semantics (functional-LOGIC, not just functional): attribution family in
   the scoreboard, out of scope for the dialect profile.
 
-## Track-4 engine boundary (the rewriting story is complete)
+## Track-4 HONEST STATUS (correction, supersedes the "100% rewriting" claim)
+
+The claim "faithful on 100% of the rewriting fragment" was WRONG -- extrapolated
+from the clean chainer slice (6/12, residue RELATIONAL+PERF) to the whole
+tutorial corpus without checking. The MEASURED tutorial number is 69/168 (41%,
+oracle-pinned 700707a68053, states admitted). Of the ~86 in-fragment
+disagreements, only ~29 are in characterized families; **~57 are untagged and
+mostly small value/count divergences** (off-by-one, surfacing as an extra
+`false` where our computation yields a different value than native, exposed by
+the test->== harness transform). These are NOT all RELATIONAL/PERF -- some are
+genuine value differences in the rewriting fragment, undiagnosed.
+
+SOLID (probe-verified): progn/reduce/cut/typecheck/states individually correct;
+mutation-visibility faithful; the chainer-slice residue cleanly RELATIONAL+PERF.
+NOT MET: the >=90% agreement gate (41% actual); the full residue is NOT honestly
+attributed (57 untagged). The long-tail per-file diagnosis is real remaining
+work, not a wave-through.
+
+## Track-4 engine boundary (rewriting primitives faithful; long tail undiagnosed)
 
 Verified: our engine does variable-binding queries `(age $who)->(5 7)` and
 explicit nested-match joins `(match (father Abe $y) (match (father $y $z) $z))
