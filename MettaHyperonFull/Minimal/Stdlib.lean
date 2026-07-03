@@ -693,6 +693,12 @@ def reduceForceOp : List Atom → ReduceResult
   | [x] => ReduceResult.ok [x]
   | _ => ReduceResult.incorrectArgument "reduce expects one argument"
 
+/-- `(msort t)` (PeTTa): sort the elements of tuple `t`. Reuses the atom
+ordering used by `sort-atom`. Probe: `(msort (3 1 2))` -> `(1 2 3)`. -/
+def msortOp : List Atom → ReduceResult
+  | [Atom.expr xs] => ReduceResult.ok [Atom.expr (sortAtoms xs)]
+  | _ => ReduceResult.incorrectArgument "msort expects one expression"
+
 /-- Grounding table for the native-PeTTa profile: PeTTa-arithmetic overrides
 and PeTTa-only builtins shadow/extend the HE entries by list order.
 `alpha-unique-atom` is `uniqueAtomOp`, whose dedup is already α-based. -/
@@ -717,7 +723,8 @@ def pettaGroundings : GroundingTable :=
   ⟨"repr", GroundMode.evalArgs, none, reprOp⟩ ::
   ⟨"parse", GroundMode.evalArgs, none, parseOp⟩ ::
   ⟨"progn", GroundMode.evalArgs, none, prognOp⟩ ::
-  ⟨"reduce", GroundMode.evalArgs, none, reduceForceOp⟩ :: stdGroundings
+  ⟨"reduce", GroundMode.evalArgs, none, reduceForceOp⟩ ::
+  ⟨"msort", GroundMode.evalArgs, none, msortOp⟩ :: stdGroundings
 
 /-- The stdlib prelude specialized to an evaluation profile. At `heProfile`
 this is exactly `preludeAtoms`. Under `quoteStrips` the HE rule
