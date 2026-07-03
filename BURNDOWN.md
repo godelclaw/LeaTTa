@@ -252,3 +252,22 @@ baseline is not misread)
 - `definedHead` uses head-symbol + arity (Prolog functor indexing). The
   cross-arity case (rules exist at other arity only) is unprobed on native
   PeTTa — probe before M3 closes.
+
+## CUT-1 (queued): body-internal cut via a fired-flag, not branch tags
+The recursive evaluator's sequential folds ARE the choicepoint stack, so cut
+needs no per-branch provenance: make `cut` an embedded op that sets a
+`cutFired` flag in `St`; at each rule application whose RHS `atomHasCut`
+(already computed for clause-commit), evaluate alternatives left-to-right and
+stop when the flag fires (clear it there — cut cuts its own clause, Prolog
+scope). Overhead: one O(1) flag check per alternative, zero allocation;
+cut-free programs (all HE code) take the never-fired branch — guard theorem
+"cut-free ⇒ unchanged" to accompany. Petta-profile-gated. Testing: both
+engines deterministic in KB order, so commit-to-first should match petta's
+pick on the corpus (bag-equality remains usable); the general spec is
+"sound refinement of the answer bag" (soundness inherited, completeness
+deliberately forfeited — that IS cut).
+
+## Ledger: HE oracle 269/270 (pre-existing)
+`e2_states.metta` 13/14 on the HE oracle suite — verified present on the
+clean committed tree (rebuild bisect), predates the petta-profile work.
+Not a today regression; needs its own diagnosis.

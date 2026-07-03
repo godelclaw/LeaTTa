@@ -113,24 +113,46 @@ proof-risk (stop rule covers it). The architecture rules (§1) keep the engine
 clean and the deep SLD theorem where the math lives.
 
 
-## §7 Three-tier reorganization (the pristine format for LP/SLD/Prolog)
+## §7 Three-tier reorganization (the pristine format for LP/SLD/Prolog) — **LANDED**
 
-The executable Prolog/SLD material should live in its OWN tier, not buried in
-the heavy theory nor bolted onto a pure engine. Three tiers, one arrow:
+The executable Prolog/SLD material lives in its OWN tier, not buried in the heavy
+theory nor bolted onto a pure engine. Three tiers, one arrow:
 
 ```
 ENGINES     LeaTTa / LeaTTa-petta / CeTTa / PeTTa
             rewriting-only, self-contained, import NOTHING (unchanged).
                  ▲ process boundary only (harness runs binaries)
-ALGORITHMS  a standalone verified-executable package (working name `lp-engine`,
-            NOT "batteries" -- std4 name collision): unifyFuel (MGU),
-            SLDCompute (executable DFS), compileExpr (MeTTa->Prolog-goal).
-            CORE-LEAN ONLY, no Mathlib, builds in seconds, ships a CLI binary.
-                 ▲ Lake dependency (math imports algorithms -- the arrow)
+ALGORITHMS  the standalone verified-executable package `algos-lp`, in the SAME
+            namespace `Mettapedia.Logic.LP`: Core (types), Substitution,
+            Unification (unifyFuel, Martelli-Montanari), SLDCompute (executable
+            DFS: sldSearch/sldQuery). CORE-LEAN ONLY, no Mathlib, builds
+            sub-second, ships `grandfather`.
+                 ▲ Lake dependency (math imports algos -- the arrow)
 METTAPEDIA  the theory: SLDTree, least Herbrand, unification/SLD completeness,
             the Track-3 coincidence + T3.3b agreement -- Mathlib-powered,
-            proves things ABOUT lp-engine's real shipped code (no vendored copy).
+            proves things ABOUT the algos code (goal: no vendored copy).
 ```
+
+**Status (landed, verified):** `algos-lp` exists in the godelclaw MeTTapedia repo
+under `lean/algos-lp`, builds Mathlib-free sub-second, and `lake exe grandfather`
+resolves `grandfather(Abe, Z)` -> `Z = Bart` through the certified SLD solver --
+the exact relational query the rewriting engine declines. The method is a **move,
+not a fork**: the executable defs are carried *verbatim*
+under the *same* namespace `Mettapedia.Logic.LP`, so the eventual math re-point is
+import-lines-only; every theorem and every Mathlib-flavored def stays in the math
+tier untouched; each file carries a provenance header. The prior straight-copy
+`lp-engine` mirror was pure replication and is removed. Gates verified: 0 Mathlib
+imports; grandfather runs; no third def site; all math theorems still resolve;
+provenance + defs-equal spot-check (algos `unifyFuel` byte-identical to math's
+modulo `N`/`Nat`).
+
+**Remaining for zero-replication (Gate 6, the reconciliation tranche):** the math
+tier still carries its own proof-side copies of the executable defs. Re-pointing
+it to `import` this package (so each exec def lives in exactly one place) is now
+**unblocked** -- the math tier and `algos-lp` are both on Lean 4.31 and share the
+namespace, so the re-point is import-lines-only. It is held as its own tranche
+because the math `Logic/LP` tree is hot (active proof lanes) and touching it is a
+significant, confirm-first change -- not a rider on the split.
 
 **Why**: the relational residue (implicit `(, g1 g2)` SLD conjunction, `?`/
 reduce resolution) is a PeTTa-dialect EXECUTION MODEL, not a rewriting-engine
@@ -160,3 +182,67 @@ production-fast (Lean SLD << swipl). Production PLN runs on PeTTa/CeTTa. Same
 Level-1/Level-2 split as the rest of the stack. An FFI-to-SWI fast lane is
 possible but pointless -- it re-plumbs PeTTa, which already ships as its own
 binary the harness tests against.
+
+
+## §8 swipl finds, Lean checks (the certificate architecture — **BUILT, demonstrated**)
+
+> Status update: `checkAnswer` + the s-expr adapter + the swipl meta-interpreter
+> (`prolog/mi.pl`) are live in `algos-lp`. End-to-end verified: swipl solves
+> grandfather -> `checktrace` certifies `Z = bart`; four tamper classes (lied
+> answer, wrong clause index, corrupted binding, forged fact) all REJECTED.
+> LAMBDA demonstrated the same way: defunctionalized `apply/3` with a
+> partial-application closure `addpair(K)`; higher-order `map` certified.
+> Remaining for corpus routing: the MeTTa->clause compile step + harness verdict
+> classes; the checker soundness theorem is math-tier work.
+
+This supersedes §7's "FFI-to-SWI fast lane is pointless" line. There is a fast
+lane worth building, but not as a faster *solver* — as a *checker*. The move is
+the LCF / de Bruijn / ATP discipline: **untrusted search, checked results.**
+
+**The asymmetry that makes it work.** SLD's positive answers are cheap to
+*certify* even when they were expensive to *find*:
+
+- When swipl returns an answer substitution (`Z = Bart`, or a derived PLN fact),
+  the certified `algos-lp` engine does not redo the search. It only *checks* the
+  answer: apply the substitution and re-verify the derivation (linear in the
+  supplied resolution trace, or a bounded re-derivation of a ground fact against
+  `leastModelP`). Checking is orders of magnitude cheaper than finding. So every
+  answer that is actually *used* ends up certified, at swipl speed. Trust moves
+  from per-query (take-it-or-leave-it) to **per-result**.
+- What cannot be certified this way is swipl saying **"no"**: failure and
+  exhaustiveness claims have no finite certificate. That is the undecidability
+  (infinite SLD trees) living exactly where it should. So the honest trust line
+  is one sentence: **positive answers = certified; negative/completeness claims =
+  trusted-with-label.** No fudging.
+
+**Concrete shape.** The swipl adapter returns `answer + (optional) resolution
+trace`. `algos-lp` gains one small entry point — a *checker*, strictly simpler
+than the solver it already ships:
+
+```
+checkAnswer : Program σ → Atom σ → Subst σ → (trace : List Step) → Bool
+-- applies the substitution, replays each resolution step against the program's
+-- clauses (each step must unify), bottoming out in facts / bounded re-derivation.
+```
+
+Its soundness theorem (`checkAnswer = true → answer ∈ leastModelP`) is the same
+van Emden-Kowalski content as the Track-3 coincidence, read in *verify* mode, and
+lands in the math tier over the algos `checkAnswer`.
+
+**The payoff (the reason this is load-bearing).** PeTTaChainer forward-chains,
+emitting a *stream of positive derived facts* — each one exactly the checkable
+object above. So: **chainer runs on swipl at production speed, every derived fact
+certificate-checked by the Lean core = certified PLN chaining at Prolog speed.**
+That is what the three tiers were quietly building toward: the rewriting engine
+for rewriting, swipl for search, `algos-lp` as the checker that makes the search
+output trustworthy, and Mettapedia proving the checker correct.
+
+**Scoreboard verdict classes** (diffbench): `DELEGATED-CHECKED` (positive answer,
+certificate verified — counts as certified) vs `DELEGATED-TRUSTED` (a "no"/
+exhaustiveness claim, labeled, uncertified by construction).
+
+**Sequencing.** This is its OWN probe-first tranche, landing after the tier split
+(now done). It extends `compileExpr` and the solver's atom model (higher-order
+`call/N` for `(partial f args)` / `|->` lambdas is the same layer — see the
+LAMBDA note), *not* the SLD loop. One tranche at a time — that discipline is what
+keeps each one perfect.

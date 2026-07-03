@@ -593,7 +593,9 @@ def pettaLibSrc : String :=
   "(= true True)
    (= false False)
    (= (implies $a $b) (or (not $a) $b))
-   (= (id $x) $x)
+   (= (map-atom $l $f) (if (== $l ()) () (cons-atom ($f (car-atom $l)) (map-atom (cdr-atom $l) $f))))
+   (= (filter-atom $l $f) (if (== $l ()) () (if ($f (car-atom $l)) (cons-atom (car-atom $l) (filter-atom (cdr-atom $l) $f)) (filter-atom (cdr-atom $l) $f))))
+   (= (foldl-atom $l $init $f) (if (== $l ()) $init (foldl-atom (cdr-atom $l) ($f $init (car-atom $l)) $f)))
    (= (append $a $b) (if (== $a ()) $b (cons-atom (car-atom $a) (append (cdr-atom $a) $b))))
    (= (length $l) (size-atom $l))
    (= (reverse $l) (if (== $l ()) () (append (reverse (cdr-atom $l)) ((car-atom $l)))))
@@ -685,6 +687,13 @@ def prognOp : List Atom → ReduceResult
       | some x => ReduceResult.ok [x]
       | none => ReduceResult.incorrectArgument "progn: empty"
 
+/-- `(prog1 a b ... z)` (PeTTa sequential control): with evalArgs the driver
+evaluates each argument; return the FIRST. Probe: `(prog1 (+ 1 1) (+ 2 2))`
+-> `2`. -/
+def prog1Op : List Atom → ReduceResult
+  | [] => ReduceResult.incorrectArgument "prog1 expects at least one argument"
+  | x :: _ => ReduceResult.ok [x]
+
 /-- `(reduce t)` (PeTTa force-evaluate): with evalArgs the argument is already
 driven to its answer(s) (nondeterminism preserved by the driver's per-value
 spread), so `reduce` is the identity on the forced value. Probe:
@@ -753,6 +762,8 @@ def pettaGroundings : GroundingTable :=
   ⟨"repr", GroundMode.evalArgs, none, reprOp⟩ ::
   ⟨"parse", GroundMode.evalArgs, none, parseOp⟩ ::
   ⟨"progn", GroundMode.evalArgs, none, prognOp⟩ ::
+  ⟨"prog1", GroundMode.evalArgs, none, prog1Op⟩ ::
+  ⟨"unique-atom", GroundMode.evalArgs, none, uniqueAtomOp⟩ ::
   ⟨"reduce", GroundMode.evalArgs, none, reduceForceOp⟩ ::
   ⟨"msort", GroundMode.evalArgs, none, msortOp⟩ ::
   ⟨"second-from-pair", GroundMode.evalArgs, none, secondFromPairOp⟩ ::
@@ -774,6 +785,17 @@ def preludeAtomsFor (p : EvalProfile) : List Atom :=
             Atom.sym "NotReducible"] => false
         | _ => true) ++ parsedOr pettaQuoteSrc
     else preludeAtoms
+  -- ATOMOPS-EVAL dialect arm (probe: `(cons-atom (+ 1 1) (2 3))` -> `(2 2 3)`,
+  -- `(car-atom (foo))` -> first element of foo's VALUE): PeTTa's functional
+  -- compilation evaluates tuple-op arguments; HE's `Atom`/`Expression` typing
+  -- quotes them. Under the petta profile, drop those type gates so the
+  -- default innermost evaluation applies. HE keeps them (SR guard untouched).
+  let atomOpGates := ["cons-atom", "decons-atom", "car-atom", "cdr-atom"]
+  let base := if p == heProfile then base else
+    base.filter (fun a =>
+      match a with
+      | Atom.expr [Atom.sym ":", Atom.sym n, _] => !(atomOpGates.contains n)
+      | _ => true)
   base ++ (if p.ifArity2 then parsedOr pettaIf2Src else [])
     ++ (if p == heProfile then [] else parsedOr pettaLibSrc)
 
