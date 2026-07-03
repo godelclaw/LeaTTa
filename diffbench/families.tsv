@@ -44,5 +44,5 @@ translatorrule_for.metta	TRANSLATOR	translator rules
 types.metta	TYPECHECK-1	HE type-checking rejects; PeTTa permissive (armable)
 types_dependent.metta	TYPES	dependent type surface
 types_nondet.metta	TYPES	nondet type queries
-pln_direct.metta	CONTROL-1	cut/progn/runtime-rule-def -- committed choice unmodeled
-spaces_find.metta	BIND-1	find/reduce binding -- missing primitives (fixable)
+pln_direct.metta	RELATIONAL	implicit-SLD conjunction (?/reduce resolution) -- battery tier
+spaces_find.metta	RELATIONAL	find = caller-var binding via shared logic vars -- battery tier

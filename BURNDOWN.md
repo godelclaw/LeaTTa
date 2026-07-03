@@ -31,6 +31,21 @@ condition. Current `sorry` count in `MettaHyperonFull/`: **0**.
   semantics (functional-LOGIC, not just functional): attribution family in
   the scoreboard, out of scope for the dialect profile.
 
+## Track-4 engine boundary (the rewriting story is complete)
+
+Verified: our engine does variable-binding queries `(age $who)->(5 7)` and
+explicit nested-match joins `(match (father Abe $y) (match (father $y $z) $z))
+->(Bart)` -- both agree with native PeTTa. HE/CeTTa/LeaTTa decline the IMPLICIT
+`(, g1 g2)` SLD conjunction identically; only PeTTa runs it (it is swipl
+underneath). So the RELATIONAL residue is a PeTTa-dialect EXECUTION MODEL
+(implicit SLD resolution via `?`/reduce), NOT a rewriting-engine defect. It is
+a legitimate fourth residue category (with LAMBDA/PERF/effects), certified by
+the ALGORITHMS/battery tier (compileExpr + SLDCompute + the meTTaPrologOracle
+calling back to this engine), not by adding a resolver here. The engine stays
+rewriting-only, self-contained. Primitives now faithful: progn/reduce/cut,
+arithmetic, spaces, imports, mutation-view. Engine-side Track 4: DONE at its
+natural boundary.
+
 ## Fidelity audit (chainer/PLN workload, 2026-07-03) — the real DIFF-COUNT content
 
 Probed against native PeTTa (pin 700707a68053). The chainer slice (50% baseline)
