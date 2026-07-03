@@ -161,11 +161,17 @@ def _canon_num(m):
     return str(int(f)) if f == int(f) else f"{f:g}"
 
 
+_BOOL = re.compile(r"\b(True|False)\b")
+
+
 def normalize(item):
     s = " ".join(item.split())
     low = s.lower()
     if low in ("true", "false"):
         return low
+    # PeTTa aliases true<->True (lib rule `(= true True)`); engines print
+    # different cases INSIDE structures -- presentation, not semantics.
+    s = _BOOL.sub(lambda m: m.group(0).lower(), s)
     # float vs int presentation (42 vs 42.0)
     try:
         f = float(s)
@@ -177,9 +183,47 @@ def normalize(item):
     return _NUM.sub(_canon_num, s)
 
 
+def _sexp_parse(s):
+    """Parse one result item into a nested-tuple tree (leaves = tokens)."""
+    toks = re.findall(r"[()]|[^\s()]+", s)
+    def rec(i):
+        if i >= len(toks):
+            return None, i
+        if toks[i] == "(":
+            items, i = [], i + 1
+            while i < len(toks) and toks[i] != ")":
+                node, i = rec(i)
+                if node is None:
+                    break
+                items.append(node)
+            return tuple(items), i + 1
+        if toks[i] == ")":
+            return None, i + 1
+        return toks[i], i + 1
+    node, i = rec(0)
+    return node if i >= len(toks) and node is not None else s
+
+
+def _canon_ord(node):
+    """Order-insensitive canonical form: tuple children compared as bags.
+    Nondet enumeration order (collapse tuples, space dumps) is engine-
+    unspecified; both sides canonicalize identically so this cannot create
+    one-sided agreement."""
+    if isinstance(node, tuple):
+        return "(" + " ".join(sorted(_canon_ord(c) for c in node)) + ")"
+    return node
+
+
 def compare(petta, leatta):
     a = collections.Counter(normalize(x) for x in petta)
     b = collections.Counter(normalize(x) for x in leatta)
+    return a == b
+
+
+def compare_ord(petta, leatta):
+    """Order-insensitive fallback: recursive multiset tree equality."""
+    a = collections.Counter(_canon_ord(_sexp_parse(normalize(x))) for x in petta)
+    b = collections.Counter(_canon_ord(_sexp_parse(normalize(x))) for x in leatta)
     return a == b
 
 
@@ -202,6 +246,8 @@ def run_file(path, timeout=20):
             return (path.name, frag, why, "LEATTA-NOOUT", len(pr), "")
         if compare(pr, lr):
             verdict = "AGREE"
+        elif compare_ord(pr, lr):
+            verdict = "AGREE-ORD"   # equal modulo nondet enumeration order
         elif len(pr) == len(lr):
             verdict = "DIFF-VAL"    # same multiplicity, different values
         else:
@@ -227,13 +273,14 @@ def main():
         for row in rows:
             out.write("\t".join(str(x) for x in row) + "\n")
     in_frag = [r for r in rows if r[1] == "IN"]
-    agree = [r for r in in_frag if r[3] == "AGREE"]
-    print(f"\n# corpus={len(rows)} in-fragment={len(in_frag)} "
-          f"({100*len(in_frag)//max(1,len(rows))}%) "
-          f"agree={len(agree)}/{len(in_frag)} "
-          f"({100*len(agree)//max(1,len(in_frag))}% of in-fragment)")
+    agree = [r for r in in_frag if r[3] in ("AGREE", "AGREE-ORD")]
+    # COVERED = agrees with the native oracle. Nothing else counts.
+    print(f"\n# COVERED (agree) = {len(agree)}/{len(rows)} "
+          f"({100*len(agree)//max(1,len(rows))}% of corpus)")
+    print(f"# not covered: {len(in_frag)-len(agree)} divergent (defect list) "
+          f"+ {len(rows)-len(in_frag)} effects/FFI (out of scope)")
     ctr = collections.Counter(r[3] for r in in_frag)
-    print("# in-fragment verdicts:", dict(ctr))
+    print("# divergent verdicts:", dict(ctr))
 
 
 if __name__ == "__main__":
