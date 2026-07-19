@@ -219,6 +219,13 @@ theorem completeRecordedStep_handlePyCall_aligned (engine : SubstEngine)
               simp [HostMachine.handlePyCall, hrequest, hlocal,
                 completeRecordedStep, HostMachine.consumeResponse,
                 StepAligned, StateAligned]
+          | prologReturned answers =>
+              simpa [HostMachine.handlePyCall, hrequest, hlocal,
+                completeRecordedStep_unwindError,
+                HostMachine.consumeResponse] using
+                unwindError_aligned transcript core frames liveTranscript cursor
+                  (HostMachine.marshallingErrorAtom
+                    "Prolog response used outside a Prolog request")
           | failed =>
               simp [HostMachine.handlePyCall, hrequest, hlocal,
                 completeRecordedStep, HostMachine.consumeResponse,
@@ -250,6 +257,13 @@ theorem completeRecordedStep_handlePyCall_aligned (engine : SubstEngine)
                   StepAligned, StateAligned]
                 cases response with
                 | returned value => simp
+                | prologReturned answers =>
+                    exact unwindError_aligned transcript core frames
+                      (liveTranscript ++
+                        [{ request, response := .prologReturned answers }])
+                      (cursor + 1)
+                      (HostMachine.marshallingErrorAtom
+                        "Prolog response used outside a Prolog request")
                 | failed => simp
                 | raised error =>
                     exact unwindError_aligned transcript core frames
@@ -299,6 +313,14 @@ theorem completeRecordedStep_handleReadLine_aligned (engine : SubstEngine)
           StepAligned, StateAligned]
         cases response with
         | returned value => simp
+        | prologReturned answers =>
+            exact unwindError_aligned transcript core frames
+              (liveTranscript ++
+                [{ request := HostRequest.readLine,
+                   response := .prologReturned answers }])
+              (cursor + 1)
+              (HostMachine.marshallingErrorAtom
+                "Prolog response used outside a Prolog request")
         | failed => simp
         | raised error =>
             exact unwindError_aligned transcript core frames
@@ -350,6 +372,13 @@ theorem completeRecordedStep_handleClock_aligned (engine : SubstEngine)
           StepAligned, StateAligned]
         cases response with
         | returned value => simp
+        | prologReturned answers =>
+            exact unwindError_aligned transcript core frames
+              (liveTranscript ++
+                [{ request, response := .prologReturned answers }])
+              (cursor + 1)
+              (HostMachine.marshallingErrorAtom
+                "Prolog response used outside a Prolog request")
         | failed => simp
         | raised error =>
             exact unwindError_aligned transcript core frames
@@ -402,6 +431,13 @@ theorem completeRecordedStep_handlePrintLine_aligned (engine : SubstEngine)
           HostMachine.hostDisabled, StepAligned, StateAligned]
         cases response with
         | returned value => simp
+        | prologReturned answers =>
+            exact unwindError_aligned transcript core frames
+              (liveTranscript ++
+                [{ request, response := .prologReturned answers }])
+              (cursor + 1)
+              (HostMachine.marshallingErrorAtom
+                "Prolog response used outside a Prolog request")
         | failed => simp
         | raised error =>
             exact unwindError_aligned transcript core frames
@@ -436,41 +472,54 @@ theorem completeRecordedStep_handleTranslatePredicate_aligned
         core, frames, host := {
           mode := .replay, transcript, cursor } }
         core functor ptArgs vars res rest (engine.substMany binding args).2) := by
-  cases hentry : transcript[cursor]? with
+  cases hlocal : localPrologGoals? core.world functor ptArgs res rest with
+  | some goals =>
+      simp [HostMachine.handleTranslatePredicate, hlocal,
+        completeRecordedStep, StepAligned, StateAligned]
   | none =>
-      simpa [HostMachine.handleTranslatePredicate, completeRecordedStep,
-        completeRecordedStep_unwindError, HostSession.resolve, hentry,
-        clearPending] using
-        unwindError_aligned transcript core frames liveTranscript cursor
-          (HostMachine.protocolErrorAtom
-            (.transcriptEnded cursor
-              (HostRequest.ofPrologCall functor ptArgs vars)))
-  | some exchange =>
-      rcases exchange with ⟨expected, response⟩
-      by_cases hmatch :
-          ((Lean.toJson expected).compress ==
-            (Lean.toJson (HostRequest.ofPrologCall functor ptArgs vars)).compress)
-            = true
-      · simp [HostMachine.handleTranslatePredicate, completeRecordedStep,
-          HostSession.resolve, hentry, hmatch, HostSession.supply,
-          HostMachine.stepWith, hcur, hvals, hbuild,
-          StepAligned, StateAligned]
-        cases response with
-        | returned value => simp
-        | failed => simp
-        | raised error =>
-            exact unwindError_aligned transcript core frames
-              (liveTranscript ++
-                [{ request := HostRequest.ofPrologCall functor ptArgs vars,
-                   response := .raised error }])
-              (cursor + 1) (HostMachine.pythonErrorAtom error)
-      · simpa [HostMachine.handleTranslatePredicate, completeRecordedStep,
-          completeRecordedStep_unwindError, HostSession.resolve, hentry,
-          hmatch, clearPending] using
-          unwindError_aligned transcript core frames liveTranscript cursor
-            (HostMachine.protocolErrorAtom
-              (.transcriptMismatch cursor expected
-                (HostRequest.ofPrologCall functor ptArgs vars)))
+      cases hentry : transcript[cursor]? with
+      | none =>
+          simpa [HostMachine.handleTranslatePredicate, hlocal,
+            completeRecordedStep, completeRecordedStep_unwindError,
+            HostSession.resolve, hentry, clearPending] using
+            unwindError_aligned transcript core frames liveTranscript cursor
+              (HostMachine.protocolErrorAtom
+                (.transcriptEnded cursor
+                  (HostRequest.ofPrologCall functor ptArgs vars)))
+      | some exchange =>
+          rcases exchange with ⟨expected, response⟩
+          by_cases hmatch :
+              ((Lean.toJson expected).compress ==
+                (Lean.toJson
+                  (HostRequest.ofPrologCall functor ptArgs vars)).compress) = true
+          · simp [HostMachine.handleTranslatePredicate, hlocal,
+              completeRecordedStep, HostSession.resolve, hentry, hmatch,
+              HostSession.supply, HostMachine.stepWith, hcur, hvals, hbuild,
+              StepAligned, StateAligned]
+            cases response with
+            | returned value =>
+                exact unwindError_aligned transcript core frames
+                  (liveTranscript ++
+                    [{ request := HostRequest.ofPrologCall functor ptArgs vars,
+                       response := .returned value }])
+                  (cursor + 1)
+                  (HostMachine.marshallingErrorAtom
+                    "ordinary host response used for a Prolog request")
+            | prologReturned answers => simp
+            | failed => simp
+            | raised error =>
+                exact unwindError_aligned transcript core frames
+                  (liveTranscript ++
+                    [{ request := HostRequest.ofPrologCall functor ptArgs vars,
+                       response := .raised error }])
+                  (cursor + 1) (HostMachine.pythonErrorAtom error)
+          · simpa [HostMachine.handleTranslatePredicate, hlocal,
+              completeRecordedStep, completeRecordedStep_unwindError,
+              HostSession.resolve, hentry, hmatch, clearPending] using
+              unwindError_aligned transcript core frames liveTranscript cursor
+                (HostMachine.protocolErrorAtom
+                  (.transcriptMismatch cursor expected
+                    (HostRequest.ofPrologCall functor ptArgs vars)))
 
 theorem recordedStepWith_replay (engine : SubstEngine) (prog : Prog)
     (gt : GroundingTable) (transcript liveTranscript : List HostExchange)

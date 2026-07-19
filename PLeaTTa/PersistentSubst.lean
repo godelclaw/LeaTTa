@@ -398,10 +398,10 @@ theorem ofClosed_valid (atom : Atom) (closed : atom.vars = []) :
 theorem Valid.variables_eq : ∀ {prepared : PreparedAtom},
     prepared.Valid → prepared.variables = prepared.atom.vars
   | _, .summary atom => rfl
-  | _, .cached atom variables exact exactSound variablesSound =>
+  | _, .cached atom cachedVariables exact exactSound variablesSound =>
       variablesSound
   | _, .expr children childrenValid => by
-      simp only [mkExpr, variables, atom, Atom.vars, List.flatMap_def,
+      simp only [mkExpr, PreparedAtom.variables, atom, Atom.vars, List.flatMap_def,
         List.map_map]
       apply congrArg List.flatten
       apply List.map_congr_left
@@ -1466,8 +1466,6 @@ theorem DependencyGraph.ofList_coherent (entries : Subst) :
       simp only [DependencyGraph.ofList, atomDependencies_eq_vars]
       constructor
       · intro query
-        change ((DependencyGraph.ofList rest).replaceSource source
-            value.vars).forward[query]? = _
         rw [DependencyGraph.forward_replaceSource]
         by_cases hsource : source = query
         · subst query
@@ -1479,8 +1477,6 @@ theorem DependencyGraph.ofList_coherent (entries : Subst) :
             Metta.Subst.lookup, hreverse]
           exact ih.forward_eq query
       · intro dependency query
-        change ((DependencyGraph.ofList rest).replaceSource source
-            value.vars).reverseContains dependency query = _
         rw [DependencyGraph.reverseContains_replaceSource]
         by_cases hsource : source = query
         · subst query
@@ -2528,7 +2524,7 @@ theorem Memo.unifyB_map_denote (state : Memo) (left right : Atom)
           rw [hrightResult]
           dsimp only
           rw [hleft.1, hright.1, hleft.2.2]
-          cases hunify : Metta.Unify.unifyTop
+          cases hunify : PLeaTTa.unifyTopExact
               (PLeaTTa.subst state.denote left)
               (PLeaTTa.subst state.denote right) with
           | none => rfl
@@ -2555,7 +2551,7 @@ theorem Memo.unifyB_coherent (state : Memo) (left right : Atom)
           dsimp only at hnext
           rw [hrightResult] at hnext
           dsimp only at hnext
-          cases hunify : Metta.Unify.unifyTop leftValue rightValue with
+          cases hunify : PLeaTTa.unifyTopExact leftValue rightValue with
           | none => simp [hunify] at hnext
           | some generated =>
               cases generated with
@@ -3818,7 +3814,7 @@ theorem Scoped.unifyB_map_denote (state : Scoped) (left right : Atom)
           rw [hrightResult]
           dsimp only
           rw [hleft.1, hright.1, hleft.2.2]
-          cases hunify : Metta.Unify.unifyTop
+          cases hunify : PLeaTTa.unifyTopExact
               (PLeaTTa.subst state.denote left)
               (PLeaTTa.subst state.denote right) with
           | none => rfl
@@ -3845,7 +3841,7 @@ theorem Scoped.unifyB_coherent (state : Scoped) (left right : Atom)
           dsimp only at hnext
           rw [hrightResult] at hnext
           dsimp only at hnext
-          cases hunify : Metta.Unify.unifyTop leftValue rightValue with
+          cases hunify : PLeaTTa.unifyTopExact leftValue rightValue with
           | none => simp [hunify] at hnext
           | some generated =>
               cases generated with

@@ -7,6 +7,7 @@ previously eliminated variable, so every dependency that is eventually bound
 appears earlier in the final substitution order.
 -/
 import PLeaTTa.Machine
+import MettaHyperonFull.Proofs.Basic
 
 namespace PLeaTTa
 
@@ -529,7 +530,10 @@ private theorem erase_eq_self_of_lookup_none (b : Subst) (name : String)
         congr 1
         exact ih hlookup
 
-private def SubstTopological.cons_of_fresh (b : Subst)
+/-- Prefixing a fresh, acyclic binding preserves a substitution's topological
+order.  This is the reusable certificate for the singleton bindings produced
+when a fresh result variable captures a term. -/
+def SubstTopological.cons_of_fresh (b : Subst)
     (topological : SubstTopological b) (name : String) (target : Atom)
     (hlookup : Metta.Subst.lookup b name = none)
     (hname : name ∉ target.vars)
@@ -595,7 +599,9 @@ private def SubstTopological.cons_of_fresh (b : Subst)
         simpa [List.idxOf_cons, hsourceBeq, hdependencyBeq] using
           Nat.add_lt_add_right hdecreases 1
 
-private def emptySubstTopological : SubstTopological ([] : Subst) := by
+/-- The empty runtime substitution has the canonical empty elimination
+order. -/
+def emptySubstTopological : SubstTopological ([] : Subst) := by
   refine
     { order := []
       nodup := List.nodup_nil
@@ -967,6 +973,54 @@ theorem substCompose_vars_origin (generated existing : Subst)
       simp only [resolutionSubstVars, List.mem_flatMap]
       exact ⟨binding, hgenerated, hmember⟩)
 
+/-- Every substitution accepted by the PeTTa exact-ground wrapper was first
+produced by the shared structural unifier. The wrapper can reject a candidate,
+but it never fabricates or changes one. -/
+theorem unifyTopExact_some_underlying (left right : Atom) (result : Subst)
+    (exactResult : unifyTopExact left right = some result) :
+    Metta.Unify.unifyTop left right = some result := by
+  unfold unifyTopExact at exactResult
+  cases underlying : Metta.Unify.unifyTop left right with
+  | none => simp [underlying] at exactResult
+  | some candidate =>
+      simp only [underlying] at exactResult
+      split at exactResult
+      · simpa using congrArg some exactResult
+      · simp at exactResult
+
+/-- Every atom is compatible with itself at the PeTTa dialect boundary.  This
+property is independent of host-ground equality: compatibility records term
+constructor shape, not equality of payloads already checked by the shared
+unifier. -/
+theorem pettaUnifyCompatible_self (atom : Atom) :
+    pettaUnifyCompatible atom atom = true := by
+  induction atom with
+  | sym name => rfl
+  | var name => rfl
+  | gnd ground => cases ground <;> rfl
+  | expr atoms children =>
+      simp only [pettaUnifyCompatible]
+      induction atoms with
+      | nil => rfl
+      | cons head tail tailIH =>
+          simp only [pettaUnifyCompatibleList, Bool.and_eq_true]
+          exact ⟨children head (by simp), tailIH (fun item member =>
+            children item (by simp [member]))⟩
+
+/-- An underlying unifier is accepted by the PeTTa wrapper when its result
+identifies the operands propositionally.  Equal operands necessarily have the
+same numeric constructors, while opaque host-ground reflexivity is left to the
+underlying unifier rather than assumed here. -/
+theorem unifyTopExact_of_underlying_exact (left right : Atom)
+    (result : Subst)
+    (underlying : Metta.Unify.unifyTop left right = some result)
+    (exact : subst result left = subst result right) :
+    unifyTopExact left right = some result := by
+  unfold unifyTopExact
+  simp only [underlying]
+  rw [exact, pettaUnifyCompatible_self]
+  rfl
+
 /-- Unification under an existing binding carries only variables already
 present in that binding or in the two source atoms. -/
 theorem unifyB_substVars_origin (binding : Subst) (left right : Atom)
@@ -975,17 +1029,20 @@ theorem unifyB_substVars_origin (binding : Subst) (left right : Atom)
     name ∈ resolutionSubstVars binding ∨
       name ∈ left.vars ∨ name ∈ right.vars := by
   unfold unifyB at hresult
-  cases hunify : Metta.Unify.unifyTop (subst binding left)
+  cases hexact : unifyTopExact (subst binding left)
       (subst binding right) with
-  | none => simp [hunify] at hresult
+  | none => simp [hexact] at hresult
   | some generated =>
+      have hunify : Metta.Unify.unifyTop (subst binding left)
+          (subst binding right) = some generated :=
+        unifyTopExact_some_underlying _ _ _ hexact
       cases generated with
       | nil =>
-          simp [hunify] at hresult
+          simp [hexact] at hresult
           subst result
           exact Or.inl hname
       | cons entry rest =>
-          simp [hunify] at hresult
+          simp [hexact] at hresult
           subst result
           rcases substCompose_vars_origin (entry :: rest) binding name hname
               with hgenerated | hexisting
@@ -1233,12 +1290,15 @@ def unifyB_topological (b : Subst) (left right : Atom) (result : Subst)
     (hresult : unifyB b left right = some result) :
     SubstTopological result := by
   unfold unifyB at hresult
-  cases hunify : Metta.Unify.unifyTop (subst b left) (subst b right) with
-  | none => simp [hunify] at hresult
+  cases hexact : unifyTopExact (subst b left) (subst b right) with
+  | none => simp [hexact] at hresult
   | some generated =>
+      have hunify : Metta.Unify.unifyTop (subst b left) (subst b right) =
+          some generated :=
+        unifyTopExact_some_underlying _ _ _ hexact
       cases generated with
       | nil =>
-          simp [hunify] at hresult
+          simp [hexact] at hresult
           subst result
           exact topological
       | cons binding rest =>
@@ -1257,7 +1317,7 @@ def unifyB_topological (b : Subst) (left right : Atom) (result : Subst)
           have hgeneratedAvoid : SubstEntriesAvoid b (binding :: rest) :=
             unifyTop_avoidsExternal b (subst b left) (subst b right)
               (binding :: rest) hleft hright hunify
-          simp [hunify] at hresult
+          simp [hexact] at hresult
           subst result
           exact SubstTopological.compose_of_avoids b (binding :: rest)
             topological hgeneratedTopological hgeneratedAvoid
@@ -1272,12 +1332,15 @@ theorem unifyB_absorbs_base (base : Subst) (left right : Atom)
     (hresult : unifyB base left right = some result) (atom : Atom) :
     subst result (subst base atom) = subst result atom := by
   unfold unifyB at hresult
-  cases hunify : Metta.Unify.unifyTop (subst base left) (subst base right) with
-  | none => simp [hunify] at hresult
+  cases hexact : unifyTopExact (subst base left) (subst base right) with
+  | none => simp [hexact] at hresult
   | some generated =>
+      have hunify : Metta.Unify.unifyTop (subst base left)
+          (subst base right) = some generated :=
+        unifyTopExact_some_underlying _ _ _ hexact
       cases generated with
       | nil =>
-          simp [hunify] at hresult
+          simp [hexact] at hresult
           subst result
           have hbaseDenotes : SubstLookupDenotes base base := by
             intro name value hlookup
@@ -1299,7 +1362,7 @@ theorem unifyB_absorbs_base (base : Subst) (left right : Atom)
           have hgeneratedAvoid : SubstEntriesAvoid base generated :=
             unifyTop_avoidsExternal base (subst base left) (subst base right)
               generated hleftAvoid hrightAvoid hunify
-          simp [hunify] at hresult
+          simp [hexact] at hresult
           subst result
           let composed := Metta.Subst.compose generated base
           have hcomposedTopological : SubstTopological composed :=
@@ -1379,6 +1442,34 @@ private theorem atomSize_le_sum_of_mem_unification {atom : Atom} :
       · simp only [List.map_cons, List.sum_cons]
         exact Nat.le_trans (atomSize_le_sum_of_mem_unification tail htail)
           (Nat.le_add_left _ _)
+
+/-- Deep substitution fixes any atom whose remaining variables are outside
+its lookup domain. This is a substitution theorem, shared by resolution and
+specialization proofs. -/
+theorem subst_eq_self_of_domain_free (binding : Subst) :
+    (atom : Atom) →
+      (∀ name, name ∈ atom.vars →
+        Metta.Subst.lookup binding name = none) →
+      subst binding atom = atom
+  | .sym name, _ => by simp
+  | .var name, free => subst_var_of_lookup_none binding name
+      (free name (by simp [Atom.vars]))
+  | .gnd ground, _ => by simp
+  | .expr atoms, free => by
+      simp only [subst_expr, Atom.expr.injEq]
+      rw [List.map_congr_left (fun child childMem => by
+        apply subst_eq_self_of_domain_free binding child
+        intro name nameMem
+        apply free name
+        simp only [Atom.vars]
+        rw [List.mem_flatten]
+        exact ⟨child.vars, List.mem_map_of_mem childMem, nameMem⟩)]
+      simp
+termination_by atom => atom.size
+decreasing_by
+  simp only [Atom.size]
+  simpa [Nat.add_comm] using Nat.lt_add_one_of_le
+    (atomSize_le_sum_of_mem_unification atoms childMem)
 
 /-- Applying one equation as a one-pass substitution is invisible to any
     deep substitution that already realizes that equation. -/
@@ -1903,6 +1994,19 @@ theorem unifyTop_exact_sound_of_exact_unifier (left right : Atom)
     hresult
   exact hproof.unifies (left, right) (by simp)
 
+/-- A concrete exact unifier witnesses acceptance of any candidate produced
+by the shared unifier.  This packages the unifier's exact-input soundness with
+the PeTTa numeric-constructor filter for callers that already carry a semantic
+witness. -/
+theorem unifyTopExact_of_exact_witness (left right : Atom)
+    (result witness : Subst)
+    (witnessExact : subst witness left = subst witness right)
+    (underlying : Metta.Unify.unifyTop left right = some result) :
+    unifyTopExact left right = some result := by
+  apply unifyTopExact_of_underlying_exact left right result underlying
+  exact unifyTop_exact_sound_of_exact_unifier left right result witness
+    witnessExact underlying
+
 /-- Exact-input soundness lifted through the machine's current-binding
     composition.  The proof uses denotational absorption of both component
     substitutions; it does not pretend one-pass `Subst.apply_compose` is a
@@ -1917,12 +2021,15 @@ theorem unifyB_exact_sound_of_exact_unifier (base : Subst)
   unfold unifyB at hresult
   let resolvedLeft := subst base left
   let resolvedRight := subst base right
-  cases hunify : Metta.Unify.unifyTop resolvedLeft resolvedRight with
-  | none => simp [resolvedLeft, resolvedRight, hunify] at hresult
+  cases hexact : unifyTopExact resolvedLeft resolvedRight with
+  | none => simp [resolvedLeft, resolvedRight, hexact] at hresult
   | some generated =>
+      have hunify : Metta.Unify.unifyTop resolvedLeft resolvedRight =
+          some generated :=
+        unifyTopExact_some_underlying _ _ _ hexact
       cases generated with
       | nil =>
-          simp [resolvedLeft, resolvedRight, hunify] at hresult
+          simp [resolvedLeft, resolvedRight, hexact] at hresult
           subst result
           have hexact := unifyTop_exact_sound_of_exact_unifier
             resolvedLeft resolvedRight [] witness hwitness hunify
@@ -1942,7 +2049,7 @@ theorem unifyB_exact_sound_of_exact_unifier (base : Subst)
           have hgeneratedAvoid : SubstEntriesAvoid base generated :=
             unifyTop_avoidsExternal base resolvedLeft resolvedRight generated
               hleftAvoid hrightAvoid hunify
-          simp [resolvedLeft, resolvedRight, hunify] at hresult
+          simp [resolvedLeft, resolvedRight, hexact] at hresult
           subst result
           let composed := Metta.Subst.compose generated base
           have hcomposedTopological : SubstTopological composed :=
@@ -2773,6 +2880,32 @@ theorem FreshVariant.unifyTop_succeeds_with_domain
               rw [hfuel]
               simpa [Metta.Unify.unifyRounds, Metta.Unify.decomposeAll,
                 hdecompose, hoccurs, nextEquations] using hresult
+
+/-- The PeTTa exact-ground wrapper accepts every structural fresh variant.
+The proof supplies the ordinary unifier with a concrete exact witness; the
+dialect filter then accepts the propositionally equal result without imposing
+an additional host-ground reflexivity law. -/
+theorem FreshVariant.unifyTopExact_succeeds_with_domain
+    {fresh : String → String} {copied source : Atom}
+    (variant : FreshVariant fresh copied source)
+    (hinjective : ∀ left, left ∈ source.vars →
+      ∀ right, right ∈ source.vars →
+        fresh left = fresh right → left = right)
+    (hdisjoint : ∀ left, left ∈ source.vars →
+      ∀ right, right ∈ source.vars → fresh left ≠ right) :
+    ∃ result, unifyTopExact copied source = some result ∧
+      FreshGenerated fresh source.vars result := by
+  obtain ⟨result, underlying, generated⟩ :=
+    variant.unifyTop_succeeds_with_domain hinjective hdisjoint
+  obtain ⟨witness, witnessExact⟩ :=
+    variant.exact_witness hinjective hdisjoint
+  have resultExact : subst result copied = subst result source :=
+    unifyTop_exact_sound_of_exact_unifier copied source result witness
+      witnessExact underlying
+  exact ⟨result,
+    unifyTopExact_of_underlying_exact copied source result underlying
+      resultExact,
+    generated⟩
 
 /-- Existence-only projection used by callers that do not need the generated
     domain certificate. -/

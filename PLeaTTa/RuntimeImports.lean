@@ -62,13 +62,11 @@ private def registeredHostFunctionAvailable (name : String) : Bool :=
     necessarily has a computed or malformed target. -/
 def unsupportedRuntimeDirective? : Atom → Option String
   | atom@(.expr [.sym "!", .expr (.sym "import_prolog_function" :: _)]) =>
-      if (prologRegistrations? atom).any
-          (·.all registeredHostFunctionAvailable) then none
+      if (prologRegistrations? atom).any (fun names => !names.isEmpty) then none
       else some "import_prolog_function names an unavailable host operation"
   | atom@(.expr [.sym "!",
       .expr (.sym "import_prolog_functions_from_file" :: _)]) =>
-      if (prologRegistrations? atom).any
-          (·.all registeredHostFunctionAvailable) then none
+      if (prologRegistrations? atom).any (fun names => !names.isEmpty) then none
       else some "import_prolog_functions_from_file names an unavailable host operation"
   | atom@(.expr [.sym "!", .expr (.sym "import!" :: _)]) =>
       if (importDirective? atom).isSome then none
@@ -238,31 +236,25 @@ private partial def expandForms
                   throw s!"Prolog import target does not exist: {path}"
                 if !(path.toString.endsWith ".pl") then
                   throw s!"Prolog import target is not a .pl file: {path}"
-                let hostFunctions := functions.filter (fun function =>
-                  importedPrologHostBacked function ||
-                    !registeredHostFunctionAvailable function)
-                let registered := hostFunctions.foldl (fun modules function =>
+                let registered := functions.foldl (fun modules function =>
                   (function, path) ::
                     modules.filter (fun entry => entry.1 != function))
                   prologModules
                 let (tail, pyModules, plModules, visited) ←
                   expandForms catalog pettaLibRoot programRoot sourceRoot dir
                     fuel visited observable pythonModules registered rest
-                pure (.prologRegister hostFunctions observable :: tail,
+                pure (.prologRegister functions observable :: tail,
                   pyModules, plModules, visited)
             | none =>
               match prologRegistrations? atom with
               | some functions =>
-                  let unavailable :=
-                    functions.filter (!registeredHostFunctionAvailable ·)
-                  if !unavailable.isEmpty then
-                    throw s!"unavailable imported host operations: {unavailable}"
-                  let success := SourceForm.atom
-                    (Atom.expr [Atom.sym "!", trueA]) observable
+                  if functions.isEmpty then
+                    throw "import_prolog_function names no function"
                   let (tail, pyModules, plModules, visited) ←
                     expandForms catalog pettaLibRoot programRoot sourceRoot dir
                       fuel visited observable pythonModules prologModules rest
-                  pure (success :: tail, pyModules, plModules, visited)
+                  pure (.prologRegister functions observable :: tail,
+                    pyModules, plModules, visited)
               | none =>
                   if let some error := unsupportedRuntimeDirective? atom then
                     throw error

@@ -585,6 +585,11 @@ def main (args : List String) : IO UInt32 := do
                       perBang := perBang ++ [[trueA]]
                       queries := queries ++ [([], trueA)]
                       qi := qi + 1
+                | some (.prologReturned _) =>
+                    let atom := HostMachine.marshallingErrorAtom
+                      "Prolog response used for a module import"
+                    if importDepth = 0 then runtimeError := some atom
+                    else skippingImportDepth := some importDepth
                 | some .failed =>
                     let atom := HostMachine.errorAtom "protocol"
                       "host import failed"

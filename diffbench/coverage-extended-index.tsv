@@ -1,177 +1,177 @@
-file	dependency	direct_verdict	petta_n	pleatta_n	witness	witness_verdict	semantic_status
-and_or.metta		AGREE	1	1			DIRECT-COVERED
-atomops.metta		AGREE	9	9			DIRECT-COVERED
-booleansolver.metta		AGREE	1	1			DIRECT-COVERED
-builin_types.metta		AGREE	37	37			DIRECT-COVERED
-callquoteevalreduce.metta		AGREE	4	4			DIRECT-COVERED
-callquoteevalreduce2.metta		AGREE	4	4			DIRECT-COVERED
-case.metta		AGREE	1	1			DIRECT-COVERED
-case2.metta		AGREE	1	1			DIRECT-COVERED
-caseconstrain.metta		AGREE	1	1			DIRECT-COVERED
-caseempty.metta		AGREE	2	2			DIRECT-COVERED
-casenew.metta		AGREE	1	1			DIRECT-COVERED
-chain.metta		AGREE	2	2			DIRECT-COVERED
-collapse.metta		AGREE	1	1			DIRECT-COVERED
-comments.metta		AGREE	1	1			DIRECT-COVERED
-constanthead.metta		AGREE	1	1			DIRECT-COVERED
-curry.metta		AGREE	6	6			DIRECT-COVERED
-cut.metta		AGREE	2	2			DIRECT-COVERED
-empty.metta		AGREE	1	1			DIRECT-COVERED
-eval.metta		AGREE	2	2			DIRECT-COVERED
-factorial.metta		AGREE	1	1			DIRECT-COVERED
-fib.metta		LEATTA-TIMEOUT	1		fib-small	AGREE	WITNESS-COVERED
-fibadd.metta		LEATTA-TIMEOUT	2		fibadd-small	AGREE	WITNESS-COVERED
-fibsmart.metta		AGREE	1	1			DIRECT-COVERED
-fibsmartimport.metta		AGREE	2	2			DIRECT-COVERED
-foldall.metta		AGREE	10	10			DIRECT-COVERED
-foldallmatch.metta		AGREE	2	2			DIRECT-COVERED
-foldallspacecount.metta		AGREE	1	1			DIRECT-COVERED
-forall.metta		AGREE	12	12			DIRECT-COVERED
-functionhead.metta		AGREE	2	2			DIRECT-COVERED
-functionhead2.metta		AGREE	1	1			DIRECT-COVERED
-functionhead3.metta		AGREE	6	6			DIRECT-COVERED
-functionremoval.metta		AGREE	8	8			DIRECT-COVERED
-functionremovalspec.metta		AGREE	5	5			DIRECT-COVERED
-functiontypes.metta		AGREE	4	4			DIRECT-COVERED
-git_import.metta	git-network-plugin	EXTERNAL-UNAVAILABLE					EXTERNAL-UNAVAILABLE
-git_import2.metta	git-network-plugin	EXTERNAL-UNAVAILABLE					EXTERNAL-UNAVAILABLE
-greedy_chess.metta	python-host	EXTERNAL-UNAVAILABLE					EXTERNAL-UNAVAILABLE
-he_assert.metta		AGREE	6	6			DIRECT-COVERED
-he_atomspace.metta		AGREE	9	9			DIRECT-COVERED
-he_equalreduct.metta		AGREE	5	5			DIRECT-COVERED
-he_error.metta		AGREE	6	6			DIRECT-COVERED
-he_evaluation.metta		AGREE	5	5			DIRECT-COVERED
-he_math.metta		AGREE	19	19			DIRECT-COVERED
-he_minimalmetta.metta		LEATTA-TIMEOUT	2		he-minimal-div-small	AGREE	WITNESS-COVERED
-he_quoting.metta		AGREE	7	7			DIRECT-COVERED
-he_types.metta		AGREE	8	8			DIRECT-COVERED
-holbenchmark.metta		LEATTA-TIMEOUT	4		holbenchmark-small	AGREE	WITNESS-COVERED
-holfunctions.metta		AGREE	7	7			DIRECT-COVERED
-holfunctions_intrinsicop.metta		AGREE	1	1			DIRECT-COVERED
-hyperpose_primes.metta		LEATTA-TIMEOUT	3		hyperpose-primes-small	AGREE	WITNESS-COVERED
-identity.metta		AGREE	1	1			DIRECT-COVERED
-if.metta		AGREE	1	1			DIRECT-COVERED
-if2.metta		AGREE	1	1			DIRECT-COVERED
-if3.metta		AGREE	1	1			DIRECT-COVERED
-if4.metta		AGREE	1	1			DIRECT-COVERED
-ifcasenondet.metta		AGREE	2	2			DIRECT-COVERED
-ifsimple.metta		AGREE	1	1			DIRECT-COVERED
-invertfunction.metta		AGREE	3	3			DIRECT-COVERED
-invertpeanoplus.metta		AGREE	5	5			DIRECT-COVERED
-is_alpha_member_test.metta		AGREE	23	23			DIRECT-COVERED
-iter.metta		AGREE	1	1			DIRECT-COVERED
-lambda.metta		AGREE	7	7			DIRECT-COVERED
-let_superpose_if_case.metta		AGREE	1	1			DIRECT-COVERED
-letext.metta		AGREE	1	1			DIRECT-COVERED
-letlet.metta		AGREE	1	1			DIRECT-COVERED
-letstar.metta		AGREE	1	1			DIRECT-COVERED
-library.metta		AGREE	2	2			DIRECT-COVERED
-listhead.metta		AGREE	3	3			DIRECT-COVERED
-llm_cities.metta	llm-python-host	EXTERNAL-UNAVAILABLE					EXTERNAL-UNAVAILABLE
-logicprog.metta		AGREE	1	1			DIRECT-COVERED
-logicprogset.metta		AGREE	1	1			DIRECT-COVERED
-matchnested.metta		AGREE	1	1			DIRECT-COVERED
-matchnested2.metta		AGREE	1	1			DIRECT-COVERED
-matchsingle.metta		AGREE	2	2			DIRECT-COVERED
-matchtypes.metta		AGREE	6	6			DIRECT-COVERED
-matespace.metta		LEATTA-TIMEOUT	1		matespace-small	AGREE	WITNESS-COVERED
-matespace2.metta		LEATTA-TIMEOUT	1		matespace2-small	AGREE	WITNESS-COVERED
-matespacefast.metta		LEATTA-TIMEOUT	1		matespacefast-small	AGREE	WITNESS-COVERED
-math.metta		AGREE	19	19			DIRECT-COVERED
-meta_types.metta		AGREE	6	6			DIRECT-COVERED
-metta4_prog.metta		AGREE	3	3			DIRECT-COVERED
-metta4_streams.metta		AGREE	5	5			DIRECT-COVERED
-mettaset.metta		AGREE	9	9			DIRECT-COVERED
-multicall.metta		AGREE	1	1			DIRECT-COVERED
-multiset_operations.metta		AGREE	4	4			DIRECT-COVERED
-mutex_and_transaction.metta		AGREE	8	8			DIRECT-COVERED
-myinterpreter.metta		AGREE	2	2			DIRECT-COVERED
-nars_direct.metta		AGREE	7	7			DIRECT-COVERED
-nars_tuffy.metta		LEATTA-TIMEOUT	2		nars-lookup+ground+variable	AGREE-VALUE	WITNESS-COVERED
-nestedcons.metta		AGREE	1	1			DIRECT-COVERED
-nilbc.metta		AGREE	25	25			DIRECT-COVERED
-once.metta		AGREE	2	2			DIRECT-COVERED
-parametric_types.metta		AGREE	1	1			DIRECT-COVERED
-parse.metta		AGREE	5	5			DIRECT-COVERED
-partialdef.metta		AGREE	2	2			DIRECT-COVERED
-patrick_iterate_fib.metta		AGREE	2	2			DIRECT-COVERED
-patrick_iterate_quad.metta		LEATTA-TIMEOUT	2		patrick-iterate-quad-small	AGREE	WITNESS-COVERED
-patrick_test.metta		AGREE	4	4			DIRECT-COVERED
-peano.metta		LEATTA-TIMEOUT	1		peano-small	AGREE	WITNESS-COVERED
-peanofast.metta		LEATTA-TIMEOUT	2		peanofast-small	AGREE	WITNESS-COVERED
-permutations.metta		LEATTA-TIMEOUT	1		permutations-small	AGREE	WITNESS-COVERED
-pln_direct.metta		AGREE	7	7			DIRECT-COVERED
-pln_roman.metta		LEATTA-TIMEOUT	2		pln-roman-small	AGREE	WITNESS-COVERED
-pln_tuffy.metta		LEATTA-EXHAUSTED	2		pln-variable-deduction	AGREE-VALUE	WITNESS-COVERED
-plntest.metta		AGREE	1	1			DIRECT-COVERED
-plntestdirect.metta		AGREE	1	1			DIRECT-COVERED
-prologimport.metta	prolog-host-ffi	EXTERNAL-UNAVAILABLE					EXTERNAL-UNAVAILABLE
-python.metta	python-host	EXTERNAL-UNAVAILABLE					EXTERNAL-UNAVAILABLE
-python_import.metta	python-host	EXTERNAL-UNAVAILABLE					EXTERNAL-UNAVAILABLE
-recursive_types.metta		AGREE	4	4			DIRECT-COVERED
-recursive_types2.metta		AGREE	2	2			DIRECT-COVERED
-repl.metta	interactive-stdin	EXTERNAL-UNAVAILABLE					EXTERNAL-UNAVAILABLE
-repr.metta		AGREE	6	6			DIRECT-COVERED
-roman_test.metta		AGREE	27	27			DIRECT-COVERED
-scale.metta		LEATTA-TIMEOUT	1		scale-small	AGREE	WITNESS-COVERED
-selfprog.metta		AGREE	4	4			DIRECT-COVERED
-smartdispatch.metta		AGREE	1	1			DIRECT-COVERED
-spacefunction.metta		AGREE	8	8			DIRECT-COVERED
-spaces.metta		AGREE	1	1			DIRECT-COVERED
-spaces2.metta		AGREE	3	3			DIRECT-COVERED
-spaces3.metta		AGREE	7	7			DIRECT-COVERED
-spaces_find.metta		AGREE	2	2			DIRECT-COVERED
-spaces_removeallatoms.metta		AGREE	5	5			DIRECT-COVERED
-spaces_succeedspredicate.metta		AGREE	3	3			DIRECT-COVERED
-specialize.metta		AGREE	11	11			DIRECT-COVERED
-specializecyclic.metta		AGREE	2	2			DIRECT-COVERED
-specializefunctiontypes.metta		AGREE	3	3			DIRECT-COVERED
-state.metta		AGREE	4	4			DIRECT-COVERED
-streamops.metta		AGREE	4	4			DIRECT-COVERED
-string.metta		AGREE	1	1			DIRECT-COVERED
-supercollapse.metta		AGREE	1	1			DIRECT-COVERED
-superpose_nested.metta		AGREE	1	1			DIRECT-COVERED
-superpose_primes.metta		LEATTA-TIMEOUT	1		superpose-primes-small	AGREE	WITNESS-COVERED
-tabling_fib.metta		AGREE	3	3			DIRECT-COVERED
-test_alpha_unique_atom.metta		AGREE	13	13			DIRECT-COVERED
-test_backward_v01.metta		PETTA-ERROR					ORACLE-UNAVAILABLE
-test_backward_v02.metta		AGREE	2	2			DIRECT-COVERED
-test_backward_v03.metta		AGREE	5	5			DIRECT-COVERED
-test_backward_v04.metta		AGREE	5	5			DIRECT-COVERED
-test_backward_v05.metta		AGREE	5	5			DIRECT-COVERED
-test_backward_v06.metta		AGREE	7	7			DIRECT-COVERED
-test_backward_v06_fixed.metta		AGREE	7	7			DIRECT-COVERED
-test_backward_v07.metta		AGREE	5	5			DIRECT-COVERED
-test_backward_v08.metta		AGREE	5	5			DIRECT-COVERED
-test_backward_v09.metta		AGREE	10	10			DIRECT-COVERED
-test_collapse.metta		AGREE	5	5			DIRECT-COVERED
-test_deduce_raw.metta		AGREE	3	3			DIRECT-COVERED
-test_evidence_kind.metta		PETTA-ERROR					ORACLE-UNAVAILABLE
-test_evidence_kind_import.metta		AGREE	6	6			DIRECT-COVERED
-test_evidence_kind_inline.metta		AGREE	5	5			DIRECT-COVERED
-test_let_match.metta		AGREE	3	3			DIRECT-COVERED
-test_match_3arg.metta		PETTA-ERROR					ORACLE-UNAVAILABLE
-test_match_simple.metta		AGREE	5	5			DIRECT-COVERED
-test_match_simple2.metta		AGREE	1	1			DIRECT-COVERED
-test_nal_import.metta		AGREE	5	5			DIRECT-COVERED
-test_nal_test_primitive.metta		PETTA-ERROR					ORACLE-UNAVAILABLE
-test_nal_v032.metta		AGREE	7	7			DIRECT-COVERED
-test_nal_v033.metta		AGREE	5	5			DIRECT-COVERED
-test_nal_v034.metta		AGREE	7	7			DIRECT-COVERED
-test_protocosmoMain.metta		AGREE	2	2			DIRECT-COVERED
-test_string_comments.metta		AGREE	11	11			DIRECT-COVERED
-test_stv_match.metta		AGREE	2	2			DIRECT-COVERED
-test_ulc_accessors.metta		AGREE	3	3			DIRECT-COVERED
-test_unify_eval_branches.metta		PETTA-ERROR					ORACLE-UNAVAILABLE
-tests.metta		AGREE	1	1			DIRECT-COVERED
-tilepuzzle.metta		LEATTA-TIMEOUT	2		tilepuzzle-mini-bfs	AGREE	WITNESS-COVERED
-torch.metta	python-host	EXTERNAL-UNAVAILABLE					EXTERNAL-UNAVAILABLE
-translatepredicate.metta	prolog-host-ffi	EXTERNAL-UNAVAILABLE					EXTERNAL-UNAVAILABLE
-translatorrule.metta		AGREE	5	5			DIRECT-COVERED
-translatorrule_fib.metta		AGREE	2	2			DIRECT-COVERED
-translatorrule_for.metta		AGREE	2	2			DIRECT-COVERED
-twostage.metta		AGREE	2	2			DIRECT-COVERED
-types.metta		AGREE	13	13			DIRECT-COVERED
-types_dependent.metta		AGREE	2	2			DIRECT-COVERED
-types_nondet.metta		AGREE	4	4			DIRECT-COVERED
-xor.metta		AGREE	2	2			DIRECT-COVERED
+file	dependency	direct_verdict	petta_n	pleatta_n	witness	witness_verdict	semantic_status	pleatta_independent
+and_or.metta		AGREE	1	1			DIRECT-COVERED	-
+atomops.metta		AGREE	9	9			DIRECT-COVERED	-
+booleansolver.metta		AGREE	1	1			DIRECT-COVERED	-
+builin_types.metta		AGREE	37	37			DIRECT-COVERED	-
+callquoteevalreduce.metta		AGREE	4	4			DIRECT-COVERED	-
+callquoteevalreduce2.metta		AGREE	4	4			DIRECT-COVERED	-
+case.metta		AGREE	1	1			DIRECT-COVERED	-
+case2.metta		AGREE	1	1			DIRECT-COVERED	-
+caseconstrain.metta		AGREE	1	1			DIRECT-COVERED	-
+caseempty.metta		AGREE	2	2			DIRECT-COVERED	-
+casenew.metta		AGREE	1	1			DIRECT-COVERED	-
+chain.metta		AGREE	2	2			DIRECT-COVERED	-
+collapse.metta		AGREE	1	1			DIRECT-COVERED	-
+comments.metta		AGREE	1	1			DIRECT-COVERED	-
+constanthead.metta		AGREE	1	1			DIRECT-COVERED	-
+curry.metta		AGREE	6	6			DIRECT-COVERED	-
+cut.metta		AGREE	2	2			DIRECT-COVERED	-
+empty.metta		AGREE	1	1			DIRECT-COVERED	-
+eval.metta		AGREE	2	2			DIRECT-COVERED	-
+factorial.metta		AGREE	1	1			DIRECT-COVERED	-
+fib.metta		LEATTA-TIMEOUT	1		fib-small	AGREE	WITNESS-COVERED	-
+fibadd.metta		LEATTA-TIMEOUT	2		fibadd-small	AGREE	WITNESS-COVERED	-
+fibsmart.metta		AGREE	1	1			DIRECT-COVERED	-
+fibsmartimport.metta		AGREE	2	2			DIRECT-COVERED	-
+foldall.metta		AGREE	10	10			DIRECT-COVERED	-
+foldallmatch.metta		AGREE	2	2			DIRECT-COVERED	-
+foldallspacecount.metta		AGREE	1	1			DIRECT-COVERED	-
+forall.metta		AGREE	12	12			DIRECT-COVERED	-
+functionhead.metta		AGREE	2	2			DIRECT-COVERED	-
+functionhead2.metta		AGREE	1	1			DIRECT-COVERED	-
+functionhead3.metta		AGREE	6	6			DIRECT-COVERED	-
+functionremoval.metta		AGREE	8	8			DIRECT-COVERED	-
+functionremovalspec.metta		AGREE	5	5			DIRECT-COVERED	-
+functiontypes.metta		AGREE	4	4			DIRECT-COVERED	-
+git_import.metta	git-network-plugin	EXTERNAL-UNAVAILABLE					EXTERNAL-UNAVAILABLE	-
+git_import2.metta	git-network-plugin	EXTERNAL-UNAVAILABLE					EXTERNAL-UNAVAILABLE	-
+greedy_chess.metta	python-host	EXTERNAL-UNAVAILABLE					EXTERNAL-UNAVAILABLE	-
+he_assert.metta		AGREE	6	6			DIRECT-COVERED	-
+he_atomspace.metta		AGREE	9	9			DIRECT-COVERED	-
+he_equalreduct.metta		AGREE	5	5			DIRECT-COVERED	-
+he_error.metta		AGREE	6	6			DIRECT-COVERED	-
+he_evaluation.metta		AGREE	5	5			DIRECT-COVERED	-
+he_math.metta		AGREE	19	19			DIRECT-COVERED	-
+he_minimalmetta.metta		LEATTA-TIMEOUT	2		he-minimal-div-small	AGREE	WITNESS-COVERED	-
+he_quoting.metta		AGREE	7	7			DIRECT-COVERED	-
+he_types.metta		AGREE	8	8			DIRECT-COVERED	-
+holbenchmark.metta		LEATTA-TIMEOUT	4		holbenchmark-small	AGREE	WITNESS-COVERED	-
+holfunctions.metta		AGREE	7	7			DIRECT-COVERED	-
+holfunctions_intrinsicop.metta		AGREE	1	1			DIRECT-COVERED	-
+hyperpose_primes.metta		LEATTA-TIMEOUT	3		hyperpose-primes-small	AGREE	WITNESS-COVERED	-
+identity.metta		AGREE	1	1			DIRECT-COVERED	-
+if.metta		AGREE	1	1			DIRECT-COVERED	-
+if2.metta		AGREE	1	1			DIRECT-COVERED	-
+if3.metta		AGREE	1	1			DIRECT-COVERED	-
+if4.metta		AGREE	1	1			DIRECT-COVERED	-
+ifcasenondet.metta		AGREE	2	2			DIRECT-COVERED	-
+ifsimple.metta		AGREE	1	1			DIRECT-COVERED	-
+invertfunction.metta		AGREE	3	3			DIRECT-COVERED	-
+invertpeanoplus.metta		AGREE	5	5			DIRECT-COVERED	-
+is_alpha_member_test.metta		AGREE	23	23			DIRECT-COVERED	-
+iter.metta		AGREE	1	1			DIRECT-COVERED	-
+lambda.metta		AGREE	7	7			DIRECT-COVERED	-
+let_superpose_if_case.metta		AGREE	1	1			DIRECT-COVERED	-
+letext.metta		AGREE	1	1			DIRECT-COVERED	-
+letlet.metta		AGREE	1	1			DIRECT-COVERED	-
+letstar.metta		AGREE	1	1			DIRECT-COVERED	-
+library.metta		AGREE	2	2			DIRECT-COVERED	-
+listhead.metta		AGREE	3	3			DIRECT-COVERED	-
+llm_cities.metta	llm-python-host	EXTERNAL-UNAVAILABLE					EXTERNAL-UNAVAILABLE	-
+logicprog.metta		AGREE	1	1			DIRECT-COVERED	-
+logicprogset.metta		AGREE	1	1			DIRECT-COVERED	-
+matchnested.metta		AGREE	1	1			DIRECT-COVERED	-
+matchnested2.metta		AGREE	1	1			DIRECT-COVERED	-
+matchsingle.metta		AGREE	2	2			DIRECT-COVERED	-
+matchtypes.metta		AGREE	6	6			DIRECT-COVERED	-
+matespace.metta		LEATTA-TIMEOUT	1		matespace-small	AGREE	WITNESS-COVERED	-
+matespace2.metta		LEATTA-TIMEOUT	1		matespace2-small	AGREE	WITNESS-COVERED	-
+matespacefast.metta		LEATTA-TIMEOUT	1		matespacefast-small	AGREE	WITNESS-COVERED	-
+math.metta		AGREE	19	19			DIRECT-COVERED	-
+meta_types.metta		AGREE	6	6			DIRECT-COVERED	-
+metta4_prog.metta		AGREE	3	3			DIRECT-COVERED	-
+metta4_streams.metta		AGREE	5	5			DIRECT-COVERED	-
+mettaset.metta		AGREE	9	9			DIRECT-COVERED	-
+multicall.metta		AGREE	1	1			DIRECT-COVERED	-
+multiset_operations.metta		AGREE	4	4			DIRECT-COVERED	-
+mutex_and_transaction.metta		AGREE	8	8			DIRECT-COVERED	-
+myinterpreter.metta		AGREE	2	2			DIRECT-COVERED	-
+nars_direct.metta		AGREE	7	7			DIRECT-COVERED	-
+nars_tuffy.metta		LEATTA-TIMEOUT	2		nars-lookup+ground+variable	AGREE-VALUE	WITNESS-COVERED	-
+nestedcons.metta		AGREE	1	1			DIRECT-COVERED	-
+nilbc.metta		AGREE	25	25			DIRECT-COVERED	-
+once.metta		AGREE	2	2			DIRECT-COVERED	-
+parametric_types.metta		AGREE	1	1			DIRECT-COVERED	-
+parse.metta		AGREE	5	5			DIRECT-COVERED	-
+partialdef.metta		AGREE	2	2			DIRECT-COVERED	-
+patrick_iterate_fib.metta		AGREE	2	2			DIRECT-COVERED	-
+patrick_iterate_quad.metta		LEATTA-EXHAUSTED	2		patrick-iterate-quad-small	AGREE	WITNESS-COVERED	-
+patrick_test.metta		AGREE	4	4			DIRECT-COVERED	-
+peano.metta		AGREE	1	1			DIRECT-COVERED	-
+peanofast.metta		LEATTA-TIMEOUT	2		peanofast-small	AGREE	WITNESS-COVERED	-
+permutations.metta		LEATTA-EXHAUSTED	1		permutations-small	AGREE	WITNESS-COVERED	-
+pln_direct.metta		AGREE	7	7			DIRECT-COVERED	-
+pln_roman.metta		AGREE	2	2			DIRECT-COVERED	-
+pln_tuffy.metta		LEATTA-TIMEOUT	2		pln-variable-deduction	AGREE-VALUE	WITNESS-COVERED	-
+plntest.metta		AGREE	1	1			DIRECT-COVERED	-
+plntestdirect.metta		AGREE	1	1			DIRECT-COVERED	-
+prologimport.metta	prolog-host-ffi	AGREE	17	17			TRUSTED-HOST-COVERED	-
+python.metta	python-host	AGREE	3	3			TRUSTED-HOST-COVERED	-
+python_import.metta	python-host	AGREE	3	3			TRUSTED-HOST-COVERED	-
+recursive_types.metta		AGREE	4	4			DIRECT-COVERED	-
+recursive_types2.metta		AGREE	2	2			DIRECT-COVERED	-
+repl.metta	interactive-stdin	WITNESS-AGREE	1	1			TRUSTED-HOST-WITNESS-COVERED	-
+repr.metta		AGREE	6	6			DIRECT-COVERED	-
+roman_test.metta		AGREE	27	27			DIRECT-COVERED	-
+scale.metta		LEATTA-TIMEOUT	1		scale-small	AGREE	WITNESS-COVERED	-
+selfprog.metta		AGREE	4	4			DIRECT-COVERED	-
+smartdispatch.metta		AGREE	1	1			DIRECT-COVERED	-
+spacefunction.metta		AGREE	8	8			DIRECT-COVERED	-
+spaces.metta		AGREE	1	1			DIRECT-COVERED	-
+spaces2.metta		AGREE	3	3			DIRECT-COVERED	-
+spaces3.metta		AGREE	7	7			DIRECT-COVERED	-
+spaces_find.metta		AGREE	2	2			DIRECT-COVERED	-
+spaces_removeallatoms.metta		AGREE	5	5			DIRECT-COVERED	-
+spaces_succeedspredicate.metta		AGREE	3	3			DIRECT-COVERED	-
+specialize.metta		AGREE	11	11			DIRECT-COVERED	-
+specializecyclic.metta		AGREE	2	2			DIRECT-COVERED	-
+specializefunctiontypes.metta		AGREE	3	3			DIRECT-COVERED	-
+state.metta		AGREE	4	4			DIRECT-COVERED	-
+streamops.metta		AGREE	4	4			DIRECT-COVERED	-
+string.metta		AGREE	1	1			DIRECT-COVERED	-
+supercollapse.metta		AGREE	1	1			DIRECT-COVERED	-
+superpose_nested.metta		AGREE	1	1			DIRECT-COVERED	-
+superpose_primes.metta		AGREE	1	1			DIRECT-COVERED	-
+tabling_fib.metta		AGREE	3	3			DIRECT-COVERED	-
+test_alpha_unique_atom.metta		AGREE	13	13			DIRECT-COVERED	-
+test_backward_v01.metta		PETTA-ERROR		6	test_backward_v01.witness	AGREE	ORACLE-WITNESS-COVERED	PLEATTA-OK:6
+test_backward_v02.metta		AGREE	2	2			DIRECT-COVERED	-
+test_backward_v03.metta		AGREE	5	5			DIRECT-COVERED	-
+test_backward_v04.metta		AGREE	5	5			DIRECT-COVERED	-
+test_backward_v05.metta		AGREE	5	5			DIRECT-COVERED	-
+test_backward_v06.metta		AGREE	7	7			DIRECT-COVERED	-
+test_backward_v06_fixed.metta		AGREE	7	7			DIRECT-COVERED	-
+test_backward_v07.metta		AGREE	5	5			DIRECT-COVERED	-
+test_backward_v08.metta		AGREE	5	5			DIRECT-COVERED	-
+test_backward_v09.metta		AGREE	10	10			DIRECT-COVERED	-
+test_collapse.metta		AGREE	5	5			DIRECT-COVERED	-
+test_deduce_raw.metta		AGREE	3	3			DIRECT-COVERED	-
+test_evidence_kind.metta		PETTA-ERROR			test_evidence_kind.witness	AGREE	ORACLE-WITNESS-COVERED	LEATTA-ERROR
+test_evidence_kind_import.metta		AGREE	6	6			DIRECT-COVERED	-
+test_evidence_kind_inline.metta		AGREE	5	5			DIRECT-COVERED	-
+test_let_match.metta		AGREE	3	3			DIRECT-COVERED	-
+test_match_3arg.metta		PETTA-ERROR			test_match_3arg.witness	AGREE	ORACLE-WITNESS-COVERED	LEATTA-ERROR
+test_match_simple.metta		AGREE	5	5			DIRECT-COVERED	-
+test_match_simple2.metta		AGREE	1	1			DIRECT-COVERED	-
+test_nal_import.metta		AGREE	5	5			DIRECT-COVERED	-
+test_nal_test_primitive.metta		PETTA-ERROR			test_nal_test_primitive.witness	AGREE	ORACLE-WITNESS-COVERED	LEATTA-ERROR
+test_nal_v032.metta		AGREE	7	7			DIRECT-COVERED	-
+test_nal_v033.metta		AGREE	5	5			DIRECT-COVERED	-
+test_nal_v034.metta		AGREE	7	7			DIRECT-COVERED	-
+test_protocosmoMain.metta		AGREE	2	2			DIRECT-COVERED	-
+test_string_comments.metta		AGREE	11	11			DIRECT-COVERED	-
+test_stv_match.metta		AGREE	2	2			DIRECT-COVERED	-
+test_ulc_accessors.metta		AGREE	3	3			DIRECT-COVERED	-
+test_unify_eval_branches.metta		AGREE	6	6			DIRECT-COVERED	-
+tests.metta		AGREE	1	1			DIRECT-COVERED	-
+tilepuzzle.metta		LEATTA-TIMEOUT	2		tilepuzzle-mini-bfs	AGREE	WITNESS-COVERED	-
+torch.metta	python-host	AGREE	1	1			TRUSTED-HOST-COVERED	-
+translatepredicate.metta	prolog-host-ffi	AGREE	1	1			TRUSTED-HOST-COVERED	-
+translatorrule.metta		AGREE	5	5			DIRECT-COVERED	-
+translatorrule_fib.metta		AGREE	2	2			DIRECT-COVERED	-
+translatorrule_for.metta		AGREE	2	2			DIRECT-COVERED	-
+twostage.metta		AGREE	2	2			DIRECT-COVERED	-
+types.metta		AGREE	13	13			DIRECT-COVERED	-
+types_dependent.metta		AGREE	2	2			DIRECT-COVERED	-
+types_nondet.metta		AGREE	4	4			DIRECT-COVERED	-
+xor.metta		AGREE	2	2			DIRECT-COVERED	-

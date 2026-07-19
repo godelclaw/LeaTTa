@@ -172,6 +172,8 @@ def read_existing(path: pathlib.Path) -> dict[str, tuple[str, ...]]:
         if index == 0 and fields == HEADER:
             continue
         if len(fields) == len(HEADER):
+            if fields[-1] == "-":
+                fields = (*fields[:-1], "")
             rows[fields[0]] = fields
     return rows
 
@@ -410,7 +412,11 @@ def main() -> int:
             if row is None:
                 row = measure(path, args.timeout, witnesses, ledger, host_registry)
             rows.append(row)
-            line = "\t".join(row)
+            # Keep the ninth field explicit without a trailing tab. A literal
+            # dash cannot be an independent runner verdict and round-trips to
+            # the empty value in `read_existing`.
+            serialized = (*row[:-1], row[-1] or "-")
+            line = "\t".join(serialized)
             output.write(line + "\n")
             output.flush()
             print(f"[{index}/{len(corpus)}]\t{line}", flush=True)

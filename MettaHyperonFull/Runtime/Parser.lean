@@ -4,14 +4,14 @@
 /-
 Module: MettaHyperonFull.Runtime.Parser
 Layer: Runtime
-Purpose: A parser for a practical subset of MeTTa s-expressions. The tokenizer is a structural state
-  machine that recognises parentheses, the `!` query prefix, `;`-comments, `"`-strings, and
-  whitespace-separated symbols. The parser then folds the token stream against a stack of in-progress
-  expression frames into a list of top-level atoms. Single tokens parse to variables, booleans, the
-  empty expression, strings, integer or float literals, or symbols.
+Purpose: Parsers for PeTTa source programs and runtime `sread`. The tokenizer is a structural state
+  machine that recognises parentheses, the `!` query prefix, `"`-strings, and whitespace-separated
+  symbols. Source mode additionally strips `;`-comments and accepts multiple top-level forms;
+  `sread` mode treats `;` as token content and requires exactly one complete expression.
 Imports: MettaHyperonFull.Core.Atom
 Trusted boundary: none
-Main exports: tokenize, parseFloat?, parseAtomToken, parseTokens, parseProgram
+Main exports: tokenize, tokenizeSExpr, parseFloat?, parseAtomToken, parseTokens, parseProgram,
+  parseSExpr
 Open obligations: float literals are IEEE 64-bit doubles, so values like `0.1` carry the usual binary
   rounding.
 -/
@@ -44,43 +44,55 @@ def decodeStringEscape (c : Char) : Char :=
   else if c == 'r' then '\r'
   else c
 
-/-- Tokenize a character list as a state machine, recursing structurally on the input. It
-    recognises parentheses, the `!` prefix, `;`-comments, `"`-strings, and whitespace-separated
-    symbols. `toks` accumulates completed tokens in reverse. -/
-def tokenizeAux (state : TokState) (toks : List String) : List Char → List String
+/-- Tokenize a character list as a state machine, recursing structurally on the input.
+    `semicolonComments` distinguishes source-file stripping (`true`) from PeTTa `sread`, whose
+    token grammar admits semicolons (`false`). `toks` accumulates completed tokens in reverse. -/
+def tokenizeAux (semicolonComments : Bool) (state : TokState)
+    (toks : List String) : List Char → Except String (List String)
   | [] =>
       match state with
-      | TokState.sym acc => (flushSym acc toks).reverse
-      | TokState.str acc _ => (("\"" ++ String.ofList acc.reverse ++ "\"") :: toks).reverse
-      | TokState.comment => toks.reverse
+      | TokState.sym acc => .ok (flushSym acc toks).reverse
+      | TokState.str _ _ => .error "unterminated string literal"
+      | TokState.comment => .ok toks.reverse
   | c :: cs =>
       match state with
       | TokState.comment =>
-          tokenizeAux (if c == '\n' then TokState.sym [] else TokState.comment) toks cs
+          tokenizeAux semicolonComments
+            (if c == '\n' then TokState.sym [] else TokState.comment) toks cs
       | TokState.str acc escaped =>
           if escaped then
-            tokenizeAux (TokState.str (decodeStringEscape c :: acc) false) toks cs
+            tokenizeAux semicolonComments
+              (TokState.str (decodeStringEscape c :: acc) false) toks cs
           else if c == '\\' then
-            tokenizeAux (TokState.str acc true) toks cs
+            tokenizeAux semicolonComments (TokState.str acc true) toks cs
           else if c == '"' then
-            tokenizeAux (TokState.sym []) (("\"" ++ String.ofList acc.reverse ++ "\"") :: toks) cs
+            tokenizeAux semicolonComments (TokState.sym [])
+              (("\"" ++ String.ofList acc.reverse ++ "\"") :: toks) cs
           else
-            tokenizeAux (TokState.str (c :: acc) false) toks cs
+            tokenizeAux semicolonComments (TokState.str (c :: acc) false) toks cs
       | TokState.sym acc =>
-          if isSpace c then tokenizeAux (TokState.sym []) (flushSym acc toks) cs
-          else if c == ';' && !(match acc.reverse.head? with | some h => h == '$' | none => false) then
-            tokenizeAux TokState.comment (flushSym acc toks) cs
-          else if c == '"' && acc.isEmpty then tokenizeAux (TokState.str [] false) (flushSym acc toks) cs
+          if isSpace c then
+            tokenizeAux semicolonComments (TokState.sym []) (flushSym acc toks) cs
+          else if semicolonComments && c == ';' then
+            tokenizeAux semicolonComments TokState.comment (flushSym acc toks) cs
+          else if c == '"' && acc.isEmpty then
+            tokenizeAux semicolonComments (TokState.str [] false) (flushSym acc toks) cs
           else if c == '(' || c == ')' then
-            tokenizeAux (TokState.sym []) (String.singleton c :: flushSym acc toks) cs
+            tokenizeAux semicolonComments (TokState.sym [])
+              (String.singleton c :: flushSym acc toks) cs
           else if c == '!' && acc.isEmpty && (cs.head?).elim true (fun d => d == '(' || isSpace d) then
             -- a leading `!` before `(`, whitespace, or end-of-input is the query/exec marker; a `!`
             -- inside a symbol (`bind!`, `change-state!`, `!=`, `println!`) is an ordinary symbol char
-            tokenizeAux (TokState.sym []) ("!" :: toks) cs
-          else tokenizeAux (TokState.sym (c :: acc)) toks cs
+            tokenizeAux semicolonComments (TokState.sym []) ("!" :: toks) cs
+          else tokenizeAux semicolonComments (TokState.sym (c :: acc)) toks cs
 
-/-- Tokenizer for a practical subset of MeTTa s-expressions. -/
-def tokenize (s : String) : List String := tokenizeAux (TokState.sym []) [] s.toList
+/-- Source-program tokenizer: semicolons outside strings begin comments. -/
+def tokenize (s : String) : Except String (List String) :=
+  tokenizeAux true (TokState.sym []) [] s.toList
+
+/-- Runtime `sread` tokenizer: PeTTa's token grammar treats semicolons as ordinary content. -/
+def tokenizeSExpr (s : String) : Except String (List String) :=
+  tokenizeAux false (TokState.sym []) [] s.toList
 
 /-- True when the string is non-empty and contains only decimal digits. Lean's own numeric parsers
     accept separators such as `_`, while MeTTa's lexer treats those tokens as symbols. -/
@@ -173,7 +185,46 @@ def parseTokens : List (List Atom) → List String → Except String (List Atom)
   | [], _ :: _ => Except.error "unexpected token at top level"
 
 /-- Parse a whole program: a sequence of top-level atoms. -/
-def parseProgram (s : String) : Except String (List Atom) := parseTokens [[]] (tokenize s)
+def parseProgram (s : String) : Except String (List Atom) := do
+  let tokens ← tokenize s
+  parseTokens [[]] tokens
+
+/-- Parse exactly one runtime S-expression, matching PeTTa `sread/2`'s whole-input DCG. -/
+def parseSExpr (s : String) : Except String Atom := do
+  let tokens ← tokenizeSExpr s
+  match ← parseTokens [[]] tokens with
+  | [atom] => .ok atom
+  | _ => .error "expected exactly one s-expression"
+
+private def parseSucceeded {α : Type} : Except String α → Bool
+  | .ok _ => true
+  | .error _ => false
+
+#guard parseSucceeded (parseSExpr "((shell a;b))")
+#guard parseSucceeded (parseSExpr "((shell \"a;b\"))")
+#guard parseSucceeded (parseSExpr "((cmd a) ... (cmd b))")
+#guard !parseSucceeded (parseSExpr "foo bar")
+#guard !parseSucceeded (parseSExpr "\"unterminated")
+#guard !parseSucceeded (parseSExpr "((send \"unterminated))")
+#guard !parseSucceeded (parseSExpr "\"trailing\\")
+
+private def parsedSExprString? : Except String Atom → Option String
+  | .ok (Atom.gnd (Ground.str value)) => some value
+  | _ => none
+
+-- PeTTa decodes one escape layer per runtime read. In particular, two input
+-- backslashes become one literal backslash rather than a newline or two
+-- retained backslashes.
+#guard parsedSExprString? (parseSExpr "\"\\\\n\"") == some "\\n"
+#guard parsedSExprString? (parseSExpr "\"a\\\\;b\"") == some "a\\;b"
+
+private def namedVariableIdentityCorrect : Bool :=
+  match parseSExpr "($X $X $X→$tail)" with
+  | .ok (Atom.expr [Atom.var first, Atom.var second, Atom.var third]) =>
+      first == second && first != third
+  | _ => false
+
+#guard namedVariableIdentityCorrect
 
 private def parsedSingleString? : Except String (List Atom) → Option String
   | .ok [Atom.gnd (Ground.str value)] => some value

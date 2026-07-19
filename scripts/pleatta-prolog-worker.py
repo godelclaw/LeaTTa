@@ -26,6 +26,7 @@ A <term> is one of: {"int": n} | {"float": bits} | {"atom": s} | {"str": s}
 import ast
 import json
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -42,7 +43,7 @@ PROLOG_LIB = os.environ.get(
 DEFAULT_ALLOWED_GOALS = {
     "+", "-", "*", "/", "//", "mod", "is",
     "<", "=<", ">", ">=", "=:=", r"=\=",
-    "atom_codes",
+    "atom_codes", "re_replace",
 }
 ALLOWED_GOALS = DEFAULT_ALLOWED_GOALS | {
     item.strip()
@@ -79,9 +80,50 @@ def term_to_prolog(term, varmap):
     raise ValueError("bad term")
 
 
+def _compound_open(text):
+    """Return the first top-level compound `(`, excluding quoted text."""
+    quote = None
+    escaped = False
+    for index, char in enumerate(text):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in {"'", '"'}:
+            quote = char
+        elif char == "(":
+            return index
+    return None
+
+
 def _parse_value(text):
-    """Parse a Prolog value token into a structured term (int/float/atom)."""
+    """Parse a canonical Prolog value into the typed protocol term tree."""
     text = text.strip()
+    if not text:
+        raise ValueError("empty Prolog value")
+    if text.startswith("[") and text.endswith("]"):
+        body = text[1:-1].strip()
+        if not body:
+            return {"list": []}
+        if len(_split_top_level(body, "|")) != 1:
+            raise ValueError("improper Prolog lists are unsupported")
+        return {"list": [
+            _parse_value(item) for item in _split_top_level(body, ",")
+        ]}
+    compound_open = _compound_open(text)
+    if compound_open is not None and text.endswith(")"):
+        functor_term = _parse_value(text[:compound_open])
+        if "atom" not in functor_term:
+            raise ValueError("compound functor is not an atom")
+        body = text[compound_open + 1:-1].strip()
+        args = [] if not body else [
+            _parse_value(item) for item in _split_top_level(body, ",")
+        ]
+        return {"compound": [functor_term["atom"], *args]}
     try:
         return {"int": int(text)}
     except ValueError:
@@ -96,6 +138,8 @@ def _parse_value(text):
             return {kind: ast.literal_eval(text)}
         except (SyntaxError, ValueError):
             pass
+    if re.fullmatch(r"[_A-Z][A-Za-z0-9_]*", text):
+        return {"var": text}
     return {"atom": text.strip("'")}
 
 

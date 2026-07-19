@@ -3,9 +3,9 @@
 # PLeaTTa — core PeTTa, formalized in Lean 4
 
 A machine-checked model of **core PeTTa** (Patrick Hammer's Prolog-hosted MeTTa — [trueagi-io/PeTTa](https://github.com/trueagi-io/PeTTa)).
-PeTTa's semantics *is* compilation of MeTTa to Prolog definite clauses run
-under SLD resolution; PLeaTTa formalizes exactly that, with a proof tying the
-executable engine to the spec:
+PeTTa compiles MeTTa to Prolog clauses run under SLD resolution; PLeaTTa
+formalizes an explicit model of that pipeline, with a proof tying the
+executable engine to its formal transition-system spec:
 
 ```
 compile equations (PLeaTTa/Compile.lean)  →  executable SLD machine (Machine.lean)
@@ -27,11 +27,12 @@ returning a wrong one, so `eval` (MeTTa's meta-circular core) is covered by the
 proof, not footnoted.
 
 Scope, stated plainly: the proof shows the machine faithfully implements the
-*spec*. It does **not** yet prove the spec faithfully models *real PeTTa* —
-that (compile-equation adequacy vs the transpiler) is future work. Model
-correctness currently rests on source-anchoring (every compile equation cites
-`[SPEC translator.pl:lines]`) plus differential agreement with native PeTTa,
-both strong but incomplete.
+*spec*. It does **not** yet prove the entire source-to-observation pipeline
+faithfully models *real PeTTa*. Independent reader, compiler, and Prolog-core
+relations and initial adequacy theorems are present, but their universal
+composition is active work. Fidelity to the remaining native PeTTa/SWI
+surface rests on source anchoring plus differential agreement, which are
+regression evidence rather than theorem substitutes.
 
 ## Try it
 
@@ -44,7 +45,7 @@ lake build pleatta                                        # build (Lean 4 via el
 ./run-bench.sh                                            # full corpus + tiered summary
 ```
 
-Some things it does correctly (all verified against native PeTTa):
+Some things it does correctly (all differentially checked against native PeTTa):
 
 | Example | What it shows | Result |
 |---|---|---|
@@ -59,35 +60,39 @@ The certificate checker is a companion `algos-lp` package; point
 
 ## Coverage — tiered by evidence, not a flat number
 
-Measured vs pinned PeTTa `6b7f52f` over its 176-example corpus (same answer
-bag; latest run `diffbench/run-full-current-petta-2026-07-14.log`):
+Measured vs pinned PeTTa `6b7f52f` over its frozen 176-example corpus (same
+ordered answers and multiplicity; denominator and hashes in
+`diffbench/corpus-176.{txt,sha256}`, latest results in
+`diffbench/coverage-extended-index.tsv`):
 
-- **Certified-core agreement: 166/176** — the proven in-Lean machine produces
-  PeTTa's answers: 148 by direct value+multiplicity agreement, 14 by a
+- **Certified-core evidence: 166 cases** — 147 have direct
+  value/order/multiplicity agreement, 15 have a
   same-family performance witness (the full-scale file is scale-bound, e.g.
   `matespace` builds ~1.5M atoms; a small same-family case agrees, so it's
-  genuine scale, not a hidden bug), and 4 by a corrected-capability witness
-  where the pinned test itself is malformed. A subset also carry a re-checked
+  evidence of the same semantic family rather than direct full-scale
+  execution), and 4 have a corrected-capability witness where the pinned test
+  itself is malformed. These are differential evidence for PeTTa fidelity;
+  the refinement proof separately establishes that the executable follows
+  PLeaTTa's formal `Step` relation. A subset also carry a re-checked
   `checktrace` certificate.
-- **Trusted-host tier: 5** (real host execution through the *certified* host
+- **Trusted-host tier: 6** (real host execution through the *certified* host
   bridge, reported separately, never merged into certified-core) — `python`,
-  `python_import`, `torch` (Python/Janus) and `translatepredicate` (SWI-Prolog)
-  agree with pinned PeTTa answer-for-answer; `repl` agrees on a bounded one-turn
-  stdin witness. Live host calls go through an explicit typed request/response
-  transition; verification mode replays a recorded transcript through the pure
-  stepper. The seal certifies the reductions *around* accepted host responses,
-  not the external implementation.
-- **Operational coverage (adjudicated): 171/176.**
-- **Known-open correctness/performance boundary: 0.** Value-sensitive NARS and
-  PLN witnesses now establish lookup, ground deduction, and variable-quantified
-  deduction with exact STVs and evidence stamps. Full `nars_tuffy` and
-  `pln_tuffy` remain in the witnessed performance tier.
+  `python_import`, `torch` (Python/Janus), `translatepredicate`, and
+  `prologimport` (typed SWI-Prolog interoperation) agree with pinned PeTTa
+  answer-for-answer; `repl` agrees on a bounded one-turn stdin witness. Locally
+  owned definite clauses execute in PLeaTTa's core, while genuinely external
+  predicates use the typed recorded boundary. Verification mode replays a
+  recorded transcript through the pure stepper. The seal certifies the
+  reductions *around* accepted host responses, not the external implementation.
+- **Operational coverage (adjudicated): 172/176.**
+- **Unexplained engine gaps: 0.** Value-sensitive NARS and PLN witnesses
+  establish lookup, ground deduction, and variable-quantified deduction with
+  exact STVs and evidence stamps. Full `nars_tuffy` and `pln_tuffy` remain in
+  the witnessed performance tier.
 - **Known semantic divergence: 0.**
-- **Not yet covered: 5** — `prologimport` needs a stateful bidirectional
-  MeTTa↔Prolog FFI (persistent clause DB with `consult`/`asserta`/`callPredicate`
-  and Prolog↔MeTTa callback) with no clean certified boundary yet; `git_import`,
-  `git_import2` (network + external build), `llm_cities` (live LLM), and
-  `greedy_chess` (interactive loop) are deferred external dependencies.
+- **Not yet covered: 4** — `git_import`, `git_import2` (network + external
+  build), `llm_cities` (live LLM), and `greedy_chess` (interactive loop) are
+  deferred external dependencies.
 
 The honest one-liner: **a principled, proof-backed core of PeTTa with `eval`
 proven, host effects behind a certified bridge in an explicit trusted tier, and

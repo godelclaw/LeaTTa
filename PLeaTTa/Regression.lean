@@ -3,6 +3,20 @@ import PLeaTTa.Machine
 
 namespace PLeaTTa
 
+private def sreadSemicolonExpected : Metta.Atom :=
+  chainify (Metta.Atom.expr [Metta.Atom.expr
+    [Metta.Atom.sym "shell", Metta.Atom.sym "a;b"]])
+
+-- Runtime `sread` follows PeTTa's token grammar rather than the source-file
+-- reader: semicolons are token content, and exactly one complete form must be
+-- consumed.
+#guard sreadC [Metta.Atom.gnd (.str "((shell a;b))")] ==
+  .ok [sreadSemicolonExpected]
+#guard sreadC [Metta.Atom.gnd (.str "((send ok)) ((rest))")] ==
+  .runtimeError "((send ok)) ((rest))"
+#guard sreadC [Metta.Atom.gnd (.str "\"unterminated")] ==
+  .runtimeError "\"unterminated"
+
 -- PeTTa's Prolog clause constructs `[Head|Tail]` for every tail, including
 -- improper lists.  Proper and improper tails therefore share the same
 -- constant-time constructor path; only arity is rejected.
@@ -28,6 +42,18 @@ private def aliasSeed : Metta.Subst :=
   some aliasSeed
 
 #guard (unifyB aliasSeed (Metta.Atom.sym "left") (Metta.Atom.sym "right")).isNone
+
+-- Pinned PeTTa delegates clause-head unification to SWI-Prolog: integer and
+-- float terms remain distinct even when they have the same numeric value.
+-- The broader Hyperon matcher may still use numeric equivalence elsewhere.
+#guard (unifyB [] (Metta.Atom.gnd (.int 1))
+  (Metta.Atom.gnd (.float 1.0))).isNone
+#guard unifyB [] (Metta.Atom.gnd (.int 1)) (Metta.Atom.gnd (.int 1)) == some []
+#guard unifyB [] (Metta.Atom.gnd (.float 1.0))
+  (Metta.Atom.gnd (.float 1.0)) == some []
+#guard (unifyB []
+  (Metta.Atom.expr [.sym "pair", .var "x", .var "x"])
+  (Metta.Atom.expr [.sym "pair", .gnd (.int 1), .gnd (.float 1.0)])).isNone
 
 private def trimSeed : Metta.Subst :=
   [("live", Metta.Atom.var "needed"),

@@ -354,16 +354,16 @@ def extremumC (isMin : Bool) : List Atom → ReduceResult
 
 def parseOp : List Atom → ReduceResult
   | [Atom.gnd (Ground.str s)] =>
-      match Metta.Runtime.parseProgram s with
-      | .ok (a :: _) => .ok [chainify a]
-      | _ => .incorrectArgument "parse"
+      match Metta.Runtime.parseSExpr s with
+      | .ok a => .ok [chainify a]
+      | .error _ => .runtimeError s
   | _ => .incorrectArgument "parse"
 
 def sreadC : List Atom → ReduceResult
   | [Atom.gnd (Ground.str source)] | [Atom.sym source] =>
-      match Metta.Runtime.parseProgram source with
-      | .ok (atom :: _) => .ok [chainify atom]
-      | _ => .incorrectArgument "sread"
+      match Metta.Runtime.parseSExpr source with
+      | .ok atom => .ok [chainify atom]
+      | .error _ => .runtimeError source
   | _ => .incorrectArgument "sread"
 
 private def stringLikeText? : Atom → Option String

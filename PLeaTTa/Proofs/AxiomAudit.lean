@@ -6,11 +6,77 @@ import PLeaTTa.Proofs.Specialize
 import PLeaTTa.Proofs.Unification
 import PLeaTTa.Proofs.Reachability
 import PLeaTTa.Proofs.Simulation
+import PLeaTTa.Proofs.CompilerAdequacy
+import PLeaTTa.Proofs.PrologCoreAdequacy
+import PLeaTTa.Proofs.ObservationAgreement
 import PLeaTTa.SubstEngine
 import PLeaTTa.HostMachine
 import PLeaTTa.HostReplay
 
 #print axioms PLeaTTa.machineMirrorsSpecTotal_proved
+#print axioms PLeaTTa.CompilerAdequacy.compileExprFuel_initial_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileSeqFuel_initial_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_complete
+#print axioms PLeaTTa.compileAppCoreFuel_let_eq
+#print axioms PLeaTTa.compileExprFuel_chain_eq
+#print axioms PLeaTTa.compileExprFuel_withMutex_eq
+#print axioms PLeaTTa.CompilerAdequacy.compileExprFuel_withMutex_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileExpr_withMutex_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileExpr_withMutex_complete
+#print axioms PLeaTTa.compileExprFuel_once_eq
+#print axioms PLeaTTa.CompilerAdequacy.compileExprFuel_once_shape_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileExpr_once_shape_sound
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.LogicVar.source_ne_generated
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.LogicVar.anonymous_ne_generated
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_collapse
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_let
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_chain
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_chain_with_let_shadowed
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_withMutex
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.withMutex_hook_blocks_builtin
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_once
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.once_hook_blocks_builtin
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.withMutex_equivalent
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.withMutex_conjunction_all_equivalent
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.once_answers_length_le_one
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.once_duplicate_truth_keeps_first
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.once_failure_has_no_answer
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.once_cannot_return_two
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.duplicate_truth_preserves_multiplicity
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.fail_cannot_return_valuation
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.empty_call_false_unification_equivalent
+#print axioms PLeaTTa.PrologCoreAdequacy.compiled_empty_step_fails
+#print axioms PLeaTTa.PrologCoreAdequacy.compileExpr_empty_failure_adequate
+#print axioms PLeaTTa.PrologCoreAdequacy.unifyTop_fresh_variable
+#print axioms PLeaTTa.PrologCoreAdequacy.unifyB_fresh_capture
+#print axioms PLeaTTa.PrologCoreAdequacy.unifyB_fresh_capture_denotes
+#print axioms PLeaTTa.PrologCoreAdequacy.fresh_capture_closed_example
+#print axioms PLeaTTa.PrologCoreAdequacy.recursive_capture_rejected
+#print axioms PLeaTTa.PrologCoreAdequacy.onceg_enters_scoped_branch
+#print axioms PLeaTTa.PrologCoreAdequacy.cutTo_own_barrier
+#print axioms PLeaTTa.PrologCoreAdequacy.once_cut_commits_inner_alternatives
+#print axioms PLeaTTa.PrologCoreAdequacy.once_capture_eq_step_observable
+#print axioms PLeaTTa.ObservationAgreement.TermAgrees.denotes
+#print axioms PLeaTTa.ObservationAgreement.ProperListAgrees.denotes
+#print axioms PLeaTTa.ObservationAgreement.AtomDenotes.subst
+#print axioms PLeaTTa.ObservationAgreement.TermAgrees.subst_denotes
+#print axioms PLeaTTa.ObservationAgreement.pull_answers
+#print axioms PLeaTTa.ObservationAgreement.pull_answerValues
+#print axioms PLeaTTa.ObservationAgreement.Step.answerValues_shape
+#print axioms PLeaTTa.ObservationAgreement.Step.answerValues_prefix
+#print axioms PLeaTTa.ObservationAgreement.StepStar.answerValues_prefix
+#print axioms PLeaTTa.ObservationAgreement.step_answer_appends_denoting_observation
+#print axioms PLeaTTa.ObservationAgreement.OrderedAnswersDenote.append
+#print axioms PLeaTTa.ObservationAgreement.OrderedAnswersDenote.length_eq
+#print axioms PLeaTTa.ObservationAgreement.step_answer_extends_ordered_observations
+#print axioms PLeaTTa.ObservationAgreement.literal_compile_step_observation
+#print axioms PLeaTTa.ObservationAgreement.ordered_integer_answers_denote
+#print axioms PLeaTTa.ObservationAgreement.ordered_integer_answers_not_swapped
+#print axioms PLeaTTa.ObservationAgreement.source_integer_list_denotes
+#print axioms PLeaTTa.ObservationAgreement.true_encoding_has_two_atom_readings
+#print axioms PLeaTTa.ObservationAgreement.nil_encoding_has_atom_and_list_readings
+#print axioms PLeaTTa.ObservationAgreement.source_generated_collision_requires_equal
 #print axioms PLeaTTa.PersistentSubst.State.subst_eq_reference
 #print axioms PLeaTTa.PersistentSubst.Graph.subst_eq_reference
 #print axioms PLeaTTa.PersistentSubst.Graph.cons_subst_eq_reference
@@ -36,12 +102,16 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.HostSession.resolve_replay_entry
 #print axioms PLeaTTa.HostSession.supply_then_resolve
 #print axioms PLeaTTa.HostMachine.consumeResponse_observation_host_independent
+#print axioms PLeaTTa.HostMachine.prologAnswerBranches_length
+#print axioms PLeaTTa.HostMachine.prologAnswerBranches_map
+#print axioms PLeaTTa.HostMachine.mapStepOutcome_handleTranslatePredicate
 #print axioms PLeaTTa.HostMachine.live_ready_replay_handlePyCall_observation
 #print axioms PLeaTTa.HostMachine.live_ready_replay_handlePyCall_observation_at
 #print axioms PLeaTTa.HostMachine.checked_stepWith_simulation
 #print axioms PLeaTTa.HostMachine.checked_runWith_simulation
 #print axioms PLeaTTa.HostMachine.runWith_disabled
 #print axioms PLeaTTa.HostReplay.recordedStepWith_replay
+#print axioms PLeaTTa.HostReplay.completeRecordedStep_handleTranslatePredicate_aligned
 #print axioms PLeaTTa.HostReplay.runRecordedWith_replay
 #print axioms PLeaTTa.HostReplay.runRecordedWith_replay_observation
 #print axioms PLeaTTa.HostReplay.fixedTranscript_replay_observation

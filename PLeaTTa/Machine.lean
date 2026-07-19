@@ -17,6 +17,7 @@ import PLeaTTa.OrderedIndex
 import PLeaTTa.PersistentSubstCore
 import PLeaTTa.Chain
 import PLeaTTa.Specialize
+import MettaHyperonFull.Runtime.Parser
 import MettaHyperonFull.Core.Unification
 import MettaHyperonFull.Core.FreeVars
 import MettaHyperonFull.Core.Grounding
@@ -946,21 +947,6 @@ def resolutionConfHighWater (prog : Prog) (conf : Conf) : Nat :=
     (resolutionProgVars prog ++ resolutionConfVars conf)
 
 def trueA : Atom := Atom.sym "True"
-
-def substN : Nat → Subst → Atom → Atom
-  | 0, _, a => a
-  | k + 1, b, Atom.var x =>
-      match Metta.Subst.lookup b x with
-      | some a => substN k b a
-      | none => Atom.var x
-  | k + 1, b, Atom.expr xs =>
-      Atom.expr (xs.map (substN (k + 1) b))
-  | _ + 1, _, a => a
-
-/-- Deep substitution (to fixpoint): one-step `apply` leaves stale reads when
-    a single unifier contains internal variable chains; iterating to the
-    fixpoint (bounded by the substitution's length) resolves every chain. -/
-def subst (b : Subst) (a : Atom) : Atom := substN (b.length + 1) b a
 
 private theorem substLookup_mem (b : Subst) (name : String) (value : Atom)
     (hlookup : Metta.Subst.lookup b name = some value) :
@@ -2076,9 +2062,10 @@ def binArity : String → Nat
   | "is-ground" | "is-expr" | "is-space" | "argv" => 1
   | _ => 0
 
-/-- Unify under current bindings; result composes. -/
+/-- Unify under current bindings with PeTTa's exact-ground discipline; the
+accepted generated substitution composes with the current binding. -/
 def unifyB (b : Subst) (x y : Atom) : Option Subst :=
-  match Metta.Unify.unifyTop (subst b x) (subst b y) with
+  match unifyTopExact (subst b x) (subst b y) with
   | some [] => some b
   | some u => some (Metta.Subst.compose u b)
   | none => none
@@ -4782,6 +4769,177 @@ def wactRun (w : PWorld) (op : String) (args : List Atom) :
       (w.store.lookup name).map (fun v => (v, w))
   | _, _ => none
 
+/-- Remove one source-level `Predicate` wrapper. -/
+private def unwrapPredicate : Atom → Atom
+  | .expr [.sym "Predicate", body] => body
+  | other => other
+
+/-- Read the function-convention shape `p(inputs..., output)` used by PeTTa's
+    Prolog interoperability layer. -/
+private def predicateCallParts? (atom : Atom) :
+    Option (String × List Atom × Atom) :=
+  match unwrapPredicate atom with
+  | .expr (.sym functor :: args) =>
+      match args.reverse with
+      | [] => none
+      | output :: reversedInputs =>
+          some (functor, reversedInputs.reverse, output)
+  | _ => none
+
+private def predicateRelationGoal (gt : GroundingTable) (functor : String)
+    (inputs : List Atom) (output : Atom) : Goal :=
+  if (Metta.GroundingTable.lookup gt functor).isSome then
+    .bin functor inputs output
+  else
+    .call functor inputs output
+
+/-- Translate the right-hand value of Prolog `is/2` into the same relation IR
+    used by compiled MeTTa expressions. -/
+private def predicateValueGoals? (gt : GroundingTable) (target : Atom) :
+    Atom → Option (List Goal)
+  | .expr [.sym "Predicate", value] => predicateValueGoals? gt target value
+  | .expr (.sym functor :: inputs) =>
+      some [predicateRelationGoal gt functor inputs target]
+  | value => some [.eq target value]
+
+/-- Translate the supported definite-clause body: ordered conjunction,
+    `is/2`, and function-convention predicate calls.  Unsupported syntax is
+    rejected instead of being silently reinterpreted. -/
+private def predicateBodyGoals? (gt : GroundingTable) :
+    Atom → Option (List Goal)
+  | .expr [.sym "Predicate", body] => predicateBodyGoals? gt body
+  | .expr [.sym ",", left, right] => do
+      let leftGoals ← predicateBodyGoals? gt left
+      let rightGoals ← predicateBodyGoals? gt right
+      pure (leftGoals ++ rightGoals)
+  | .expr [.sym "is", target, value] =>
+      predicateValueGoals? gt target value
+  | call => do
+      let (functor, inputs, output) ← predicateCallParts? call
+      pure [predicateRelationGoal gt functor inputs output]
+
+/-- Decode a quoted Prolog fact or definite clause into PLeaTTa's canonical
+    clause representation.  This is a general function-convention mapping;
+    no corpus name or test value participates in dispatch. -/
+private def predicateClause? (gt : GroundingTable) (value : Atom) :
+    Option (String × Clause) :=
+  match unchainify 10000 value with
+  | .expr [.sym "Predicate", .expr [.sym ":-", head, body]] => do
+      let (functor, inputs, output) ← predicateCallParts? head
+      let goals ← predicateBodyGoals? gt body
+      pure (functor, { params := inputs, result := output, body := goals })
+  | .expr [.sym "Predicate", fact] => do
+      let (functor, inputs, output) ← predicateCallParts? fact
+      pure (functor, { params := inputs, result := output, body := [] })
+  | _ => none
+
+/-- Install a dynamic predicate at the requested Prolog clause-order edge,
+    maintaining the canonical key list and the executable clause index. -/
+private def installPredicateClause (w : PWorld) (front : Bool)
+    (functor : String) (clause : Clause) : PWorld :=
+  let base := w.invalidateSpecializations functor
+  let entry := (functor, clause)
+  let clauses := if front then entry :: base.progClauses
+    else base.progClauses ++ [entry]
+  let key := clauseAlphaKey clause
+  let keys := if front then key :: base.effectiveProgClauseKeys
+    else base.effectiveProgClauseKeys ++ [key]
+  let installed := base.replaceProgClauses clauses
+  { installed with
+      progClauseKeys := keys
+      knownHeads := (functor :: installed.knownHeads).eraseDups
+      knownArities := ((functor, clause.params.length) ::
+        installed.knownArities.filter (fun entry =>
+          !(entry.1 == functor && entry.2 == clause.params.length))) }
+
+/-- Retract the first alpha-equivalent clause of the named predicate. -/
+private def retractPredicateClause (w : PWorld) (functor : String)
+    (clause : Clause) : Option PWorld :=
+  let key := clauseAlphaKey clause
+  let base := w.invalidateSpecializations functor
+  let dropped := (base.progClauses.zip base.effectiveProgClauseKeys).foldl
+    (fun (acc : List ((String × Clause) × String) × Bool) entry =>
+      if !acc.2 && entry.1.1 == functor && entry.2 == key then
+        (acc.1, true)
+      else
+        (acc.1 ++ [entry], acc.2)) ([], false)
+  if !dropped.2 then none
+  else
+    let clauses := dropped.1.map (fun entry => entry.1)
+    let keys := dropped.1.map (fun entry => entry.2)
+    some { base.replaceProgClauses clauses with progClauseKeys := keys }
+
+private def dynamicRuleSource? : Atom →
+    Option (String × List Atom × Atom)
+  | .expr [.sym "=", .expr (.sym functor :: params), rhs] =>
+      some (functor, params, rhs)
+  | _ => none
+
+private def compileDynamicRules (env : CEnv) : Nat → List Atom →
+    Option (List (Atom × String × Clause) × Nat)
+  | counter, [] => some ([], counter)
+  | counter, source :: rest =>
+      match dynamicRuleSource? source with
+      | none => compileDynamicRules env counter rest
+      | some (functor, params, rhs) => do
+          let (clause, next) ← (compileRule env counter params rhs).toOption
+          let (compiled, finalCounter) ← compileDynamicRules env next rest
+          pure ((source, functor, clause) :: compiled, finalCounter)
+
+/-- Install parsed runtime source in source order.  Queries and split bang
+    markers are deliberately rejected here: installing definitions is a world
+    transition, while executing nested top-level queries requires its own
+    continuation semantics. -/
+private def installDynamicSource (w : PWorld) : List Atom →
+    List (Atom × String × Clause) → Option PWorld
+  | [], [] => some w
+  | [], _ :: _ => none
+  | source :: rest, compiled =>
+      match source with
+      | .sym "!" | .expr (.sym "!" :: _) => none
+      | .expr [.sym "=", .expr (.sym functor :: _), _] =>
+          match compiled with
+          | (compiledSource, compiledFunctor, clause) :: compiledRest =>
+              if source != compiledSource || functor != compiledFunctor then none
+              else
+                let installed := installPredicateClause w false functor clause
+                let visible := installed.addAtom selfSpace (chainify source)
+                installDynamicSource (visible.captureMeta source clause) rest
+                  compiledRest
+          | [] => none
+      | .expr [.sym ":", subject, ty] =>
+          let visible := w.addAtom selfSpace (chainify source)
+          installDynamicSource
+            { visible with typeDecls := visible.typeDecls ++ [(subject, ty)] }
+            rest compiled
+      | fact =>
+          installDynamicSource (w.addAtom selfSpace (chainify fact)) rest compiled
+
+/-- Parse and install a definition-only MeTTa source string into the live
+    program.  Compilation sees both the new source heads and the existing
+    world, so recursion and references to prior definitions use the ordinary
+    compiler rather than a second evaluator. -/
+private def processMettaString? (w : PWorld) (gt : GroundingTable)
+    (counter : Nat) (source : String) : Option (PWorld × Nat) := do
+  let atoms ← (Metta.Runtime.parseProgram source).toOption
+  let newRules := atoms.filterMap dynamicRuleSource?
+  let newHeads := newRules.map (fun (functor, _, _) => functor)
+  let newArities := newRules.map
+    (fun (functor, params, _) => (functor, params.length))
+  let newDecls := atoms.filterMap fun atom => match atom with
+    | .expr [.sym ":", subject, ty] => some (subject, ty)
+    | _ => none
+  let env := { mkEnv
+      (fun name => (Metta.GroundingTable.lookup gt name).isSome)
+      (newHeads ++ w.compileHeads).eraseDups
+      (newArities ++ w.compileArities)
+      (w.typeDecls ++ newDecls) with
+    prologFunctions := w.prologFunctions }
+  let (compiled, nextCounter) ←
+    compileDynamicRules env (counter * 1000 + 500000) atoms
+  let world ← installDynamicSource w atoms compiled
+  pure (world, max counter nextCounter)
+
 /-- The COMPLETE world-effect dispatch, SHARED verbatim by the executable
     and the Step relation (the same by-construction gate as `resolveAlts`).
     Rule-form add/remove-atom assert/retract compiled clauses (Prolog
@@ -4789,6 +4947,22 @@ def wactRun (w : PWorld) (op : String) (args : List Atom) :
     Returns (result atom, new world, new counter). -/
 private def wactDispatchRaw (w : PWorld) (gt : GroundingTable) (counter : Nat)
     (op : String) (av : List Atom) : Option (Atom × PWorld × Nat) :=
+  let predicateAction : Option (Atom × PWorld × Nat) :=
+    match op, av with
+    | "assertaPredicate", [value] => do
+        let (functor, clause) ← predicateClause? gt value
+        pure (trueA, installPredicateClause w true functor clause, counter + 1)
+    | "assertzPredicate", [value] => do
+        let (functor, clause) ← predicateClause? gt value
+        pure (trueA, installPredicateClause w false functor clause, counter + 1)
+    | "retractPredicate", [value] => do
+        let (functor, clause) ← predicateClause? gt value
+        let world ← retractPredicateClause w functor clause
+        pure (trueA, world, counter)
+    | "process_metta_string", [.gnd (.str source)] => do
+        let (world, nextCounter) ← processMettaString? w gt counter source
+        pure (nilA, world, nextCounter)
+    | _, _ => none
   let ruleForm : Option (Bool × Atom × Atom) := match op, av with
     | "add-atom", [a] =>
         if shallowRuleChain? a then
@@ -4823,7 +4997,9 @@ private def wactDispatchRaw (w : PWorld) (gt : GroundingTable) (counter : Nat)
           | _ => none
         else none
     | _, _ => none
-  match ruleForm with
+  match predicateAction with
+  | some result => some result
+  | none => match ruleForm with
   | some (isAdd, sp, Atom.expr [Atom.sym "=", Atom.expr (Atom.sym f :: ps), rhs]) =>
       if isAdd then
         let env : CEnv :=
@@ -5077,14 +5253,30 @@ private def undefinedEvaluationErrorAtom : Atom :=
         chainOf [Atom.sym "/", Atom.sym "is", Atom.gnd (.int 2)]],
       Atom.var "_errorContext"]]
 
+/-- PeTTa `sread/2` and its `parse/2` alias raise
+    `error(syntax_error('Parse error in form: ...'), none)` when their
+    whole-input grammar rejects the source. -/
+private def syntaxErrorAtom (source : String) : Atom :=
+  chainOf [Atom.sym "Error",
+    chainOf [Atom.sym "syntax_error",
+      Atom.sym s!"Parse error in form: {source}"],
+    Atom.sym "none"]
+
 private def runtimeErrorAtom (op msg : String) : Atom :=
-  if msg == "undefined" then
+  if op == "sread" || op == "parse" then
+    syntaxErrorAtom msg
+  else if msg == "undefined" then
     undefinedEvaluationErrorAtom
   else if op == "/" && msg == "division by zero" then
     zeroDivisorErrorAtom "/"
   else if op == "%" && msg == "mod zero" then
     zeroDivisorErrorAtom "mod"
   else catchErrorAtom "runtime_error" msg
+
+#guard runtimeErrorAtom "sread" "foo bar" ==
+  chainOf [Atom.sym "Error",
+    chainOf [Atom.sym "syntax_error", Atom.sym "Parse error in form: foo bar"],
+    Atom.sym "none"]
 
 inductive CatchResult where
   | answers (xs : List Atom)

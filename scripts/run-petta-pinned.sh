@@ -44,14 +44,33 @@ case "$PROGRAM" in
   "$PETTA_DIR"/*)
     REL="${PROGRAM#"$PETTA_DIR"/}"
     REL_DIR="$(dirname "$REL")"
-    SUFFIX="${PROGRAM##*.}"
+    BASENAME="${PROGRAM##*/}"
+    if [[ "$BASENAME" == *.* ]]; then
+      SUFFIX="${BASENAME##*.}"
+    else
+      SUFFIX="metta"
+    fi
     RUN_FILE="$CLEAN_ROOT/$REL_DIR/.pleatta-oracle-$$.$SUFFIX"
     cp "$PROGRAM" "$RUN_FILE"
     trap 'rm -f "$RUN_FILE"' EXIT
     ;;
   *)
-    echo "program must be inside PETTA_DIR so relative imports remain pinned" >&2
-    exit 2
+    if [[ "${PLEATTA_PINNED_ALLOW_EXTERNAL:-0}" != "1" ]]; then
+      echo "program must be inside PETTA_DIR so relative imports remain pinned" >&2
+      exit 2
+    fi
+    # Synthetic, import-free differential fixtures may live in this repository.
+    # Stage them at the pinned checkout root, whose working-directory semantics
+    # are then identical for both the fixture and PeTTa itself.
+    BASENAME="${PROGRAM##*/}"
+    if [[ "$BASENAME" == *.* ]]; then
+      SUFFIX="${BASENAME##*.}"
+    else
+      SUFFIX="metta"
+    fi
+    RUN_FILE="$CLEAN_ROOT/.pleatta-oracle-external-$$.$SUFFIX"
+    cp "$PROGRAM" "$RUN_FILE"
+    trap 'rm -f "$RUN_FILE"' EXIT
     ;;
 esac
 

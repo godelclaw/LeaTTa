@@ -1,4 +1,4 @@
-import MettaHyperonFull.Core.Unification
+import PLeaTTa.PeTTaUnification
 import Std.Data.HashMap
 import Std.Data.HashSet
 import Std.Data.String.ToNat
@@ -841,7 +841,7 @@ as one shared composition layer. -/
 def Memo.unifyB (state : Memo) (left right : Atom) : Option Memo :=
   let leftResult := state.subst left
   let rightResult := leftResult.2.subst right
-  match Metta.Unify.unifyTop leftResult.1 rightResult.1 with
+  match PLeaTTa.unifyTopExact leftResult.1 rightResult.1 with
   | none => none
   | some [] => some rightResult.2
   | some generated => some (rightResult.2.compose generated)
@@ -1454,7 +1454,7 @@ def Scoped.substMany (state : Scoped) (atoms : List Atom) : List Atom × Scoped 
 def Scoped.unifyB (state : Scoped) (left right : Atom) : Option Scoped :=
   let leftResult := state.subst left
   let rightResult := leftResult.2.subst right
-  match Metta.Unify.unifyTop leftResult.1 rightResult.1 with
+  match PLeaTTa.unifyTopExact leftResult.1 rightResult.1 with
   | none => none
   | some [] => some rightResult.2
   | some generated => some (rightResult.2.compose generated)

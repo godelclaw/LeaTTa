@@ -964,17 +964,17 @@ def substituteAtomPrepared (source : String)
 def substituteOne (source : String)
     (replacement : PersistentSubst.PreparedAtom) :
     PersistentSubst.PreparedAtom → PersistentSubst.PreparedAtom
-  | .summary atom variables exact exactSound =>
-      if variables.contains source then
+  | .summary atom cachedVariables exact exactSound =>
+      if cachedVariables.contains source then
         substituteAtomPrepared source replacement atom
       else
-        .summary atom variables exact exactSound
-  | .expr atom children variables exact exactSound =>
-      if variables.contains source then
+        .summary atom cachedVariables exact exactSound
+  | .expr atom children cachedVariables exact exactSound =>
+      if cachedVariables.contains source then
         PersistentSubst.PreparedAtom.mkExpr
           (children.map (substituteOne source replacement))
       else
-        .expr atom children variables exact exactSound
+        .expr atom children cachedVariables exact exactSound
 
 abbrev Equation :=
   PersistentSubst.PreparedAtom × PersistentSubst.PreparedAtom
@@ -1888,12 +1888,12 @@ theorem substituteOne_valid (source : String)
       · exact substituteAtomPrepared_valid source replacement
           replacementValid atom
       · exact .summary atom
-  | cached atom variables exact exactSound variablesSound =>
+  | cached atom cachedVariables exact exactSound variablesSound =>
       simp only [substituteOne]
       split
       · exact substituteAtomPrepared_valid source replacement
           replacementValid atom
-      · exact .cached atom variables exact exactSound variablesSound
+      · exact .cached atom cachedVariables exact exactSound variablesSound
   | expr children valid ih =>
       simp only [PersistentSubst.PreparedAtom.mkExpr, substituteOne]
       split
@@ -1918,7 +1918,7 @@ theorem substituteOne_atom (source : String)
           simpa using absent
         exact (apply_singleton_eq_self_of_not_mem source replacement.atom
           atom sourceAbsent).symm
-  | cached atom variables exact exactSound variablesSound =>
+  | cached atom cachedVariables exact exactSound variablesSound =>
       simp only [substituteOne]
       split
       · exact substituteAtomPrepared_atom source replacement atom
@@ -2173,7 +2173,7 @@ private theorem not_mem_vars_of_occurs_eq_false (name : String) (atom : Atom)
       simp only [Metta.Subst.occurs] at occursFalse
       simp only [Atom.vars, List.mem_flatten, List.mem_map]
       intro member
-      rcases member with ⟨variables, ⟨child, childMember, rfl⟩,
+      rcases member with ⟨_variableNames, ⟨child, childMember, rfl⟩,
         nameMember⟩
       have childFalse : Metta.Subst.occurs name child = false := by
         have allFalse := List.any_eq_false.mp occursFalse
@@ -2419,7 +2419,7 @@ decreasing_by
   all_goals
     simp only [List.map_cons, List.sum_cons]
     have hsize : 0 < atom.size := by
-      cases atom <;> simp [Atom.size] <;> omega
+      cases atom <;> simp [Atom.size]
     omega
 end
 
@@ -3131,6 +3131,28 @@ theorem unifyTopPrepared_eq (left right : PersistentSubst.PreparedAtom)
                   simp only [if_true]
                   rw [eraseReverse, unified]
 
+/-- PeTTa-facing prepared unification retains the prepared fast path while
+rejecting the integer/float constructor equivalence admitted by the shared
+Hyperon unifier. -/
+def unifyTopPreparedExact (left right : PersistentSubst.PreparedAtom) :
+    Option Subst :=
+  match unifyTopPrepared left right with
+  | some generated =>
+      if pettaUnifyCompatible (PLeaTTa.subst generated left.atom)
+          (PLeaTTa.subst generated right.atom) then
+        some generated
+      else none
+  | none => none
+
+theorem unifyTopPreparedExact_eq
+    (left right : PersistentSubst.PreparedAtom)
+    (leftValid : left.Valid) (rightValid : right.Valid) :
+    unifyTopPreparedExact left right =
+      PLeaTTa.unifyTopExact left.atom right.atom := by
+  unfold unifyTopPreparedExact PLeaTTa.unifyTopExact
+  rw [unifyTopPrepared_eq left right leftValid rightValid]
+  rfl
+
 /-- A unifier batch distinguishes cached prepared constraints from the
 verified raw fallback. -/
 inductive PreparedUnify.Result where
@@ -3307,7 +3329,7 @@ def unifyB (engine : SubstEngine) (state : engine.State)
     (left right : Atom) : Option engine.State :=
   let leftResult := engine.substPrepared state left
   let rightResult := engine.substPrepared leftResult.2 right
-  match unifyTopPrepared leftResult.1 rightResult.1 with
+  match unifyTopPreparedExact leftResult.1 rightResult.1 with
   | none => none
   | some [] => some rightResult.2
   | some generated => some (engine.compose rightResult.2 generated)
@@ -3339,10 +3361,10 @@ theorem unifyB_map_denote (engine : SubstEngine) (state : engine.State)
           dsimp only
           rw [hright]
           dsimp only
-          rw [unifyTopPrepared_eq leftValue rightValue hleftMetadata
+          rw [unifyTopPreparedExact_eq leftValue rightValue hleftMetadata
             hrightMetadata]
           rw [hleftValue, hrightValue, hleftDenote]
-          cases hunify : Metta.Unify.unifyTop
+          cases hunify : PLeaTTa.unifyTopExact
               (PLeaTTa.subst (engine.denote state) left)
               (PLeaTTa.subst (engine.denote state) right) with
           | none => rfl
@@ -3371,7 +3393,7 @@ theorem unifyB_valid (engine : SubstEngine) (state : engine.State)
           dsimp only at hnext
           rw [hright] at hnext
           dsimp only at hnext
-          cases hunify : unifyTopPrepared leftValue rightValue with
+          cases hunify : unifyTopPreparedExact leftValue rightValue with
           | none => simp [hunify] at hnext
           | some generated =>
               cases generated with
@@ -3410,9 +3432,15 @@ def checkedUnifyPreparedValues (engine : SubstEngine)
     (left right : PersistentSubst.PreparedAtom)
     (leftValid : left.Valid) (rightValid : right.Valid) :
     Option (CheckedState engine) :=
-  (unifyTopPreparedCertified left right leftValid rightValid).map
-    fun result =>
-      checkedComposeUnifierResult engine state stateValid result.1 result.2
+  match unifyTopPreparedCertified left right leftValid rightValid with
+  | none => none
+  | some result =>
+      if pettaUnifyCompatible
+          (PLeaTTa.subst result.1.erase left.atom)
+          (PLeaTTa.subst result.1.erase right.atom) then
+        some (checkedComposeUnifierResult engine state stateValid
+          result.1 result.2)
+      else none
 
 /-- Proof-carrying unification for a checked state.  Prepared constraints
 flow directly into prepared composition; unsupported shapes retain the raw
@@ -3462,7 +3490,7 @@ theorem checkedUnifyPreparedValues_denote_raw (engine : SubstEngine)
     (leftValid : left.Valid) (rightValid : right.Valid) :
     (checkedUnifyPreparedValues engine state stateValid left right
         leftValid rightValid).map (fun next => engine.denote next.1) =
-      (match unifyTopPrepared left right with
+      (match unifyTopPreparedExact left right with
        | none => none
        | some generated => some (composeRawResult engine state generated)).map
         engine.denote := by
@@ -3475,18 +3503,24 @@ theorem checkedUnifyPreparedValues_denote_raw (engine : SubstEngine)
       simp only [hcertified, Option.map_none] at certifiedValue
       rw [← certifiedValue] at erased
       simp only [Option.map_none] at erased
-      simp [checkedUnifyPreparedValues, hcertified, ← erased]
+      simp [checkedUnifyPreparedValues, hcertified,
+        unifyTopPreparedExact, ← erased]
   | some certified =>
       rcases certified with ⟨result, resultValid⟩
       simp only [hcertified, Option.map_some] at certifiedValue
       rw [← certifiedValue] at erased
       simp only [Option.map_some] at erased
-      have composed := checkedComposeUnifierResult_denote engine state
-        stateValid result resultValid
-      simp only [checkedUnifyPreparedValues, hcertified, Option.map_some]
-      rw [← erased]
-      simp only [Option.map_some]
-      exact congrArg some composed
+      cases compatible : pettaUnifyCompatible
+          (PLeaTTa.subst result.erase left.atom)
+          (PLeaTTa.subst result.erase right.atom) with
+      | false =>
+          simp [checkedUnifyPreparedValues, hcertified, compatible,
+            unifyTopPreparedExact, ← erased]
+      | true =>
+          have composed := checkedComposeUnifierResult_denote engine state
+            stateValid result resultValid
+          simpa [checkedUnifyPreparedValues, hcertified, compatible,
+            unifyTopPreparedExact, ← erased] using congrArg some composed
 
 theorem checkedUnifyPrepared_denote_raw (engine : SubstEngine)
     (state : CheckedState engine) (left right : Atom) :
@@ -3508,18 +3542,18 @@ theorem checkedUnifyPrepared_denote_raw (engine : SubstEngine)
             rightState hrightValid leftValue rightValue hleftMetadata
               hrightMetadata
           have shapes :
-              (match unifyTopPrepared leftValue rightValue with
+              (match unifyTopPreparedExact leftValue rightValue with
                | none => none
                | some generated =>
                    some (composeRawResult engine rightState generated)).map
                   engine.denote =
-                (match unifyTopPrepared leftValue rightValue with
+                (match unifyTopPreparedExact leftValue rightValue with
                  | none => none
                  | some [] => some rightState
                  | some generated =>
                      some (engine.compose rightState generated)).map
                   engine.denote := by
-            cases hunify : unifyTopPrepared leftValue rightValue with
+            cases hunify : unifyTopPreparedExact leftValue rightValue with
             | none => rfl
             | some generated => cases generated <;> rfl
           have combined := helper.trans shapes

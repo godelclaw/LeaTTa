@@ -122,6 +122,9 @@ def consumeResponse {Binding : Type} (state : State Binding)
       .progressed { state with
         core := enqueueHostAnswers core [value.toAtom] rest res binding
         host := session }
+  | .prologReturned _ =>
+      unwindError { state with core, host := session }
+        (marshallingErrorAtom "Prolog response used outside a Prolog request")
   | .failed =>
       .progressed { state with
         core := pull { core with cur := none }
@@ -156,6 +159,11 @@ theorem consumeResponse_observation_host_independent {Binding : Type}
           core rest res binding response rightResult) := by
   cases response with
   | returned value => rfl
+  | prologReturned answers =>
+      unfold consumeResponse unwindError
+      exact observe_unwindFrames_host_independent core state.frames
+        (marshallingErrorAtom "Prolog response used outside a Prolog request")
+        leftResult rightResult
   | failed => rfl
   | raised error =>
       unfold consumeResponse unwindError
@@ -206,6 +214,9 @@ def consumePrintLineResponse {Binding : Type} (state : State Binding)
         core := { core with
           cur := some (Goal.eq res (Atom.sym "True") :: rest, binding) }
         host := session }
+  | .prologReturned _ =>
+      unwindError { state with core, host := session }
+        (marshallingErrorAtom "Prolog response used outside a Prolog request")
   | .failed =>
       .progressed { state with
         core := pull { core with cur := none }
@@ -239,11 +250,53 @@ def handleClock {Binding : Type} (state : State Binding)
       .requested { state with host := session } pending
   | .fail error => unwindError state (protocolErrorAtom error)
 
-/-- Decode a Prolog answer substitution (var -> solved value) into equality
-    goals that bind those variables in the machine. -/
-def prologBindingGoals : HostValue → List Goal
-  | .mapping items => items.map (fun kv => Goal.eq (Atom.var kv.1) kv.2.toAtom)
-  | _ => []
+/-- Decode one typed Prolog answer substitution into equality goals that bind
+    those variables in the machine.  Binding order remains observable. -/
+def prologBindingGoals (answer : PrologAnswer) : List Goal :=
+  answer.map fun binding =>
+    Goal.eq (Atom.var binding.name) binding.value.toAtom
+
+/-- Continue the enclosing PeTTa computation after one successful Prolog
+    answer. -/
+def prologAnswerGoals (answer : PrologAnswer) (res : Atom)
+    (rest : List Goal) : List Goal :=
+  prologBindingGoals answer ++ Goal.eq res (Atom.sym "True") :: rest
+
+/-- Turn the complete ordered Prolog answer bag into machine alternatives.
+    `List.map` preserves both clause order and duplicate multiplicity. -/
+def prologAnswerBranches {Binding : Type} (answers : List PrologAnswer)
+    (res : Atom) (rest : List Goal) (binding : Binding) : List (Alt Binding) :=
+  answers.map fun answer => Alt.br (prologAnswerGoals answer res rest) binding
+
+@[simp] theorem prologAnswerBranches_length {Binding : Type}
+    (answers : List PrologAnswer) (res : Atom) (rest : List Goal)
+    (binding : Binding) :
+    (prologAnswerBranches answers res rest binding).length = answers.length := by
+  simp [prologAnswerBranches]
+
+@[simp] theorem prologAnswerBranches_map {Source Target : Type}
+    (map : Source → Target) (answers : List PrologAnswer) (res : Atom)
+    (rest : List Goal) (binding : Source) :
+    (prologAnswerBranches answers res rest binding).map
+        (SubstEngine.mapAlt map) =
+      prologAnswerBranches answers res rest (map binding) := by
+  simp [prologAnswerBranches, SubstEngine.mapAlt]
+
+/-- Route a function-convention Prolog goal through the live PLeaTTa clause
+    database when that predicate is locally owned.  The final Prolog argument
+    is the relation result; preceding arguments are the MeTTa inputs.  A
+    missing local clause leaves dispatch to the explicitly trusted worker. -/
+def localPrologGoals? (world : PWorld) (functor : String)
+    (ptArgs : List PrologTerm) (res : Atom) (rest : List Goal) :
+    Option (List Goal) :=
+  match ptArgs.reverse with
+  | [] => none
+  | output :: reversedInputs =>
+      let inputs := reversedInputs.reverse.map PrologTerm.toAtom
+      if (world.clauseCandidates functor inputs.length).isEmpty then none
+      else some
+        (Goal.call functor inputs output.toAtom ::
+          Goal.eq res (Atom.sym "True") :: rest)
 
 /-- `translatePredicate` runs a Prolog goal at the trusted SWI boundary and
     unifies the returned answer substitution back into the machine: each bound
@@ -253,22 +306,30 @@ def handleTranslatePredicate {Binding : Type} (state : State Binding)
     (core : Conf Binding) (functor : String) (ptArgs : List PrologTerm)
     (vars : List String) (res : Atom) (rest : List Goal)
     (next : Binding) : StepOutcome Binding :=
-  match state.host.resolve (HostRequest.ofPrologCall functor ptArgs vars) with
-  | .respond (.returned value) session =>
-      .progressed { state with
-        core := { core with
-          cur := some (prologBindingGoals value ++
-            (Goal.eq res (Atom.sym "True") :: rest), next) }
-        host := session }
-  | .respond .failed session =>
-      .progressed { state with
-        core := pull { core with cur := none }
-        host := session }
-  | .respond (.raised error) session =>
-      unwindError { state with host := session } (pythonErrorAtom error)
-  | .suspend pending session =>
-      .requested { state with host := session } pending
-  | .fail error => unwindError state (protocolErrorAtom error)
+  match localPrologGoals? core.world functor ptArgs res rest with
+  | some goals =>
+      .progressed { state with core := { core with cur := some (goals, next) } }
+  | none =>
+      match state.host.resolve (HostRequest.ofPrologCall functor ptArgs vars) with
+      | .respond (.prologReturned answers) session =>
+          .progressed { state with
+            core := pull { core with
+              cur := none
+              alts := prologAnswerBranches answers res rest next ++ core.alts }
+            host := session }
+      | .respond (.returned _) session =>
+          unwindError { state with host := session }
+            (marshallingErrorAtom
+              "ordinary host response used for a Prolog request")
+      | .respond .failed session =>
+          .progressed { state with
+            core := pull { core with cur := none }
+            host := session }
+      | .respond (.raised error) session =>
+          unwindError { state with host := session } (pythonErrorAtom error)
+      | .suspend pending session =>
+          .requested { state with host := session } pending
+      | .fail error => unwindError state (protocolErrorAtom error)
 
 /-- A live response already supplied for the pending call and the matching
     replay entry induce exactly the same complete machine observation. -/
@@ -617,6 +678,10 @@ theorem mapStepOutcome_consumeResponse {Source Target : Type}
   | returned value =>
       simp [consumeResponse, mapStepOutcome, mapState,
         SubstEngine.mapConf_enqueueHostAnswers]
+  | prologReturned answers =>
+      unfold consumeResponse unwindError
+      exact mapStepOutcome_unwindFrames map core session state.frames
+        (marshallingErrorAtom "Prolog response used outside a Prolog request")
   | failed =>
       simp only [consumeResponse, mapStepOutcome, mapState]
       rw [SubstEngine.mapConf_pull, SubstEngine.mapConf_setCurNone]
@@ -685,6 +750,10 @@ theorem mapStepOutcome_consumePrintLineResponse {Source Target : Type}
   | returned value =>
       simp only [consumePrintLineResponse, mapStepOutcome, mapState]
       rw [SubstEngine.mapConf_setCurSome]
+  | prologReturned answers =>
+      unfold consumePrintLineResponse unwindError
+      exact mapStepOutcome_unwindFrames map core session state.frames
+        (marshallingErrorAtom "Prolog response used outside a Prolog request")
   | failed =>
       simp only [consumePrintLineResponse, mapStepOutcome, mapState]
       rw [SubstEngine.mapConf_pull, SubstEngine.mapConf_setCurNone]
@@ -741,23 +810,36 @@ theorem mapStepOutcome_handleTranslatePredicate {Source Target : Type}
         functor ptArgs vars res rest (map binding) := by
   unfold handleTranslatePredicate
   simp only [mapState]
-  cases decision :
-      state.host.resolve (HostRequest.ofPrologCall functor ptArgs vars) with
-  | respond response session =>
-      cases response with
-      | returned value =>
-          simp only [mapStepOutcome, mapState]
-          rw [SubstEngine.mapConf_setCurSome]
-      | failed =>
-          simp only [mapStepOutcome, mapState]
-          rw [SubstEngine.mapConf_pull, SubstEngine.mapConf_setCurNone]
-      | raised error =>
+  have mappedLocal :
+      localPrologGoals? (SubstEngine.mapConf map core).world functor ptArgs
+          res rest =
+        localPrologGoals? core.world functor ptArgs res rest := by
+    rfl
+  rw [mappedLocal]
+  cases hlocal : localPrologGoals? core.world functor ptArgs res rest with
+  | some goals => simp [mapStepOutcome, mapState, SubstEngine.mapConf]
+  | none =>
+      cases decision :
+          state.host.resolve (HostRequest.ofPrologCall functor ptArgs vars) with
+      | respond response session =>
+          cases response with
+          | returned value =>
+              unfold unwindError
+              exact mapStepOutcome_unwindFrames map state.core session state.frames _
+          | prologReturned answers =>
+              simp only [mapStepOutcome, mapState]
+              rw [SubstEngine.mapConf_pull]
+              simp [SubstEngine.mapConf, List.map_append]
+          | failed =>
+              simp only [mapStepOutcome, mapState]
+              rw [SubstEngine.mapConf_pull, SubstEngine.mapConf_setCurNone]
+          | raised error =>
+              unfold unwindError
+              exact mapStepOutcome_unwindFrames map state.core session state.frames _
+      | suspend pending session => simp [mapStepOutcome, mapState]
+      | fail error =>
           unfold unwindError
-          exact mapStepOutcome_unwindFrames map state.core session state.frames _
-  | suspend pending session => simp [mapStepOutcome, mapState]
-  | fail error =>
-      unfold unwindError
-      exact mapStepOutcome_unwindFrames map state.core state.host state.frames _
+          exact mapStepOutcome_unwindFrames map state.core state.host state.frames _
 
 theorem mapStepOutcome_fromCoreOutcome {Source Target : Type}
     (map : Source → Target) (state : State Source)

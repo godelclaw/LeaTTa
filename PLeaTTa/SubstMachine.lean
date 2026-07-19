@@ -763,8 +763,8 @@ theorem indexedChildrenOfPrepared_eq
     indexedChildrenOfPrepared prepared =
       SpaceIndex.prepareChildren prepared.atom := by
   cases prepared with
-  | summary atom variables exact exactSound => rfl
-  | expr atom children variables exact exactSound =>
+  | summary atom cachedVariables exact exactSound => rfl
+  | expr atom children cachedVariables exact exactSound =>
       cases atom with
       | sym symbol | var symbol | gnd symbol => rfl
       | expr atoms =>
@@ -3305,13 +3305,18 @@ theorem erase_stepWith_of_run (engine : SubstEngine) (prog : Prog)
                   rw [headValue]
                   split
                   · split
-                    · apply Conf.ext <;> simp_all [mapConf] <;> rfl
+                    · apply Conf.ext <;> simp_all [mapConf]
+                      case cur => rfl
                     · split
-                      · apply Conf.ext <;> simp_all [mapConf] <;> rfl
-                      · apply Conf.ext <;> simp_all [mapConf] <;> rfl
+                      · apply Conf.ext <;> simp_all [mapConf]
+                        case cur => rfl
+                      · apply Conf.ext <;> simp_all [mapConf]
+                        case cur => rfl
                   · split
-                    · apply Conf.ext <;> simp_all [mapConf] <;> rfl
-                    · apply Conf.ext <;> simp_all [mapConf] <;> rfl
+                    · apply Conf.ext <;> simp_all [mapConf]
+                      case cur => rfl
+                    · apply Conf.ext <;> simp_all [mapConf]
+                      case cur => rfl
           | evalg value res =>
               have valueEq := engine.subst_value state value stateValid
               have valueDenote := engine.subst_denote state value stateValid
@@ -4273,12 +4278,12 @@ theorem reference_run_step (prog : Prog) (gt : GroundingTable) :
         rcases c with ⟨cur, alts, world, counter, qterm, answers,
     answerKeys, answerKeys_sound, barriers⟩
         cases current : cur with
-        | none => simp [stepWith, step] <;> rfl
+        | none => (simp [stepWith, step]; rfl)
         | some branch =>
             rcases branch with ⟨goals, binding⟩
             cases goals with
             | nil =>
-                simp [stepWith, step] <;> rfl
+                (simp [stepWith, step]; rfl)
             | cons goal rest =>
                 cases goal <;>
                   simp [stepWith, step, runZero, subConfOfWith,
@@ -4315,12 +4320,12 @@ theorem reference_run_step (prog : Prog) (gt : GroundingTable) :
         rcases c with ⟨cur, alts, world, counter, qterm, answers,
     answerKeys, answerKeys_sound, barriers⟩
         cases current : cur with
-        | none => simp [stepWith, step] <;> rfl
+        | none => (simp [stepWith, step]; rfl)
         | some branch =>
             rcases branch with ⟨goals, binding⟩
             cases goals with
             | nil =>
-                simp [stepWith, step] <;> rfl
+                (simp [stepWith, step]; rfl)
             | cons goal rest =>
                 cases goal <;>
                   simp [stepWith, step, runCurrent, subConfOfWith,

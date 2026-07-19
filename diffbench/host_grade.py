@@ -99,6 +99,9 @@ def grade_python_live(path, timeout):
         except subprocess.TimeoutExpired:
             return ("PETTA-TIMEOUT", "", "", str(transcript))
         env = _host_env()
+        # File-capable host effects are confined to the same checkout root
+        # against which the pinned oracle resolves this example's paths.
+        env["PLEATTA_HOST_ROOT"] = str(path.parent.parent.resolve())
         cmd = [D.LEATTA_BIN, "--host-live", str(tpath), str(transcript), "4000000"]
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              text=True, env=env, start_new_session=True)

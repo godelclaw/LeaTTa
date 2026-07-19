@@ -48,6 +48,42 @@ inductive PrologTerm where
 deriving instance Lean.ToJson for PrologTerm
 deriving instance Lean.FromJson for PrologTerm
 
+/-- One variable binding in a Prolog answer.  A structure, rather than a
+Python-oriented mapping entry, keeps the Prolog term type visible in the JSON
+protocol and preserves binding order. -/
+structure PrologBinding where
+  name : String
+  value : PrologTerm
+  deriving Repr, BEq, Inhabited, ToJson, FromJson
+
+/-- One answer substitution.  The outer response is a list of these answers,
+so clause order and duplicate multiplicity remain observable. -/
+abbrev PrologAnswer := List PrologBinding
+
+mutual
+
+/-- Decode a typed Prolog value into the executable Atom representation.
+Lists and compounds use the same internal chain encoding as compiled PeTTa
+values; atoms and strings remain distinct. -/
+def PrologTerm.toAtom : PrologTerm → Atom
+  | .var name => .var name
+  | .int value => .gnd (.int value)
+  | .floating bits => .gnd (.float (Float.ofBits bits))
+  | .atom name => .sym name
+  | .str value => .gnd (.str value)
+  | .list items => chainOf (prologTermsToAtoms items)
+  | .compound functor args =>
+      chainOf (.sym functor :: prologTermsToAtoms args)
+  | .resource kind id => .gnd (.external kind (toString id))
+termination_by structural term => term
+
+def prologTermsToAtoms : List PrologTerm → List Atom
+  | [] => []
+  | term :: terms => term.toAtom :: prologTermsToAtoms terms
+termination_by structural terms => terms
+
+end
+
 /-- Marshal a PLeaTTa atom into a Prolog term for a `translatePredicate` goal.
     Variables and compounds are preserved; unsupported grounds fail. -/
 partial def atomToPrologTerm : Atom → Option PrologTerm
@@ -85,10 +121,22 @@ partial def deepUnchain (a : Atom) : Atom :=
     non-goal or an unmarshallable argument. -/
 def buildPrologCall (innerExpr : Atom) :
     Option (String × List PrologTerm × List String) :=
-  match deepUnchain innerExpr with
+  let decoded := deepUnchain innerExpr
+  let goal := match decoded with
+    | .expr [.sym "Predicate", wrapped] => deepUnchain wrapped
+    | other => other
+  match goal with
   | e@(.expr (.sym functor :: goalArgs)) =>
       (goalArgs.mapM atomToPrologTerm).map
         (fun ptArgs => (functor, ptArgs, prologVars e))
+  | _ => none
+
+/-- Decode the value produced by PeTTa's `Predicate` constructor and build
+    the corresponding typed Prolog call. -/
+def buildCallPredicate (predicate : Atom) :
+    Option (String × List PrologTerm × List String) :=
+  match deepUnchain predicate with
+  | .expr [.sym "Predicate", _] => buildPrologCall predicate
   | _ => none
 
 structure HostError where
@@ -98,6 +146,7 @@ structure HostError where
 
 inductive HostResponse where
   | returned (value : HostValue)
+  | prologReturned (answers : List PrologAnswer)
   | failed
   | raised (error : HostError)
   deriving Repr, BEq, Inhabited, ToJson, FromJson

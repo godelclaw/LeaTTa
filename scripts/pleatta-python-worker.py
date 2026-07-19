@@ -224,22 +224,40 @@ def _prolog_term(term):
     raise TypeError(f"unsupported PrologTerm {tag}")
 
 
-def _prolog_hostvalue(value):
-    """solve() answer value ({"int"}|{"float"}|{"atom"}) -> HostValue JSON."""
+def _prolog_protocol_term(value):
+    """Encode a solve() value as the exact Lean `PrologTerm` JSON variant."""
     if "int" in value:
-        return tagged("integer", "value", value["int"])
+        return tagged("int", "value", value["int"])
     if "float" in value:
         return tagged("floating", "bits", str(value["float"]))
     if "atom" in value:
-        return tagged("string", "value", value["atom"])
+        return tagged("atom", "name", value["atom"])
     if "str" in value:
-        return tagged("string", "value", value["str"])
+        return tagged("str", "value", value["str"])
+    if "var" in value:
+        return tagged("var", "name", value["var"])
+    if "list" in value:
+        return tagged("list", "items", [
+            _prolog_protocol_term(item) for item in value["list"]
+        ])
+    if "compound" in value:
+        functor, *args = value["compound"]
+        return {"compound": {
+            "functor": functor,
+            "args": [_prolog_protocol_term(item) for item in args],
+        }}
+    if "resource" in value:
+        payload = value["resource"]
+        return {"resource": {
+            "kind": payload["kind"],
+            "id": int(payload["id"]),
+        }}
     raise TypeError("unsupported Prolog answer value")
 
 
 def prolog_call(payload, module_path=None):
-    """Evaluate one translatePredicate-lowered goal; PLeaTTa threads bindings, so
-    this stays stateless -- a single answer substitution is returned as a mapping."""
+    """Evaluate one translatePredicate-lowered goal and return every ordered,
+    typed answer substitution.  Duplicate answers remain duplicate entries."""
     global _prolog
     if _prolog is None:
         _prolog = _load_prolog()
@@ -255,10 +273,13 @@ def prolog_call(payload, module_path=None):
     if "error" in out:
         raise RuntimeError(f"prolog:{out['error']}")
     answers = out.get("answers", [])
-    if not answers:
-        return "failed"
-    items = [[key, _prolog_hostvalue(val)] for key, val in answers[0].items()]
-    return {"returned": {"value": tagged("mapping", "items", items)}}
+    encoded_answers = []
+    for answer in answers:
+        encoded_answers.append([
+            {"name": key, "value": _prolog_protocol_term(value)}
+            for key, value in answer.items()
+        ])
+    return {"prologReturned": {"answers": encoded_answers}}
 
 
 def _host_number(encoded):
@@ -367,6 +388,29 @@ def host_effect(operation):
     raise TypeError(f"unsupported HostEffect {tag}")
 
 
+def prolog_effect_response(value):
+    """Turn a typed host-effect mapping into one typed Prolog substitution."""
+    tag, payload = next(iter(value.items()))
+    if tag != "mapping":
+        raise TypeError("Prolog host effect did not return a substitution")
+    answer = []
+    for name, encoded in payload["items"]:
+        value_tag, value_payload = next(iter(encoded.items()))
+        if value_tag == "integer":
+            term = {"int": value_payload["value"]}
+        elif value_tag == "floating":
+            term = {"float": int(value_payload["bits"])}
+        elif value_tag == "string":
+            term = {"str": value_payload["value"]}
+        elif value_tag == "resource":
+            term = {"resource": value_payload}
+        else:
+            raise TypeError(
+                f"unsupported Prolog host-effect value {value_tag}")
+        answer.append({"name": name, "value": _prolog_protocol_term(term)})
+    return {"prologReturned": {"answers": [answer]}}
+
+
 def dispatch(command):
     request = command["request"]
     if "call" in request:
@@ -380,7 +424,11 @@ def dispatch(command):
     elif "effect" in request:
         payload = request["effect"]
         operation = payload.get("operation", payload)
-        return {"returned": {"value": host_effect(operation)}}
+        value = host_effect(operation)
+        if operation == "clock" or (
+                isinstance(operation, dict) and "printLine" in operation):
+            return {"returned": {"value": value}}
+        return prolog_effect_response(value)
     else:
         raise TypeError("unknown HostRequest")
     return {"returned": {"value": encode_value(result)}}

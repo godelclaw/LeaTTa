@@ -8,7 +8,7 @@ package «MettaHyperonFull» where
   version := v!"1.0.8"
   keywords := #["MeTTa", "Hyperon", "formal semantics", "metatheory", "verified interpreter"]
   leanOptions := #[⟨`autoImplicit, false⟩, ⟨`relaxedAutoImplicit, false⟩]
-  weakLeanArgs := #["-j", "1", "-s", "1024"]
+  weakLeanArgs := #["-j", "1", "-s", "8192"]
 
 -- Mathlib backs the *metatheory layer only* (Multiset, Relation.ReflTransGen, order and
 -- decidability infrastructure, aesop). Pinned to the release whose toolchain matches ours

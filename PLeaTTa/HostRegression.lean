@@ -159,6 +159,258 @@ private def nestedValue : HostValue :=
       .expr [.gnd (.int 10)]])) ==
   some ("atom_codes", [.var "NL", .list [.int 10]], ["NL"])
 
+-- Prolog atoms and strings remain observably distinct, while nested lists and
+-- compounds decode into the executable chain representation.
+#guard (PrologTerm.atom "same").toAtom == Atom.sym "same"
+#guard (PrologTerm.str "same").toAtom == Atom.gnd (.str "same")
+#guard (PrologTerm.list [.int 1, .atom "a"]).toAtom ==
+  chainOf [Atom.gnd (.int 1), Atom.sym "a"]
+#guard (PrologTerm.compound "f" [.atom "a", .str "s"]).toAtom ==
+  chainOf [Atom.sym "f", Atom.sym "a", Atom.gnd (.str "s")]
+
+private def orderedPrologRequest : HostRequest :=
+  .prologCall "between" [.int 1, .int 2, .var "X"] ["X"]
+
+private def orderedPrologExchange : HostExchange := {
+  request := orderedPrologRequest
+  response := .prologReturned [
+    [{ name := "X", value := .int 1 }],
+    [{ name := "X", value := .int 2 }],
+    [{ name := "X", value := .int 2 }]]
+}
+
+private def orderedPrologConf : Conf := {
+  cur := some ([Goal.bin "translatePredicate"
+    [chainify (.expr [.sym "between", .gnd (.int 1), .gnd (.int 2),
+      .var "X"])] resultVar], [])
+  alts := []
+  world := {}
+  counter := 0
+  qterm := .var "X"
+}
+
+private def orderedPrologReplay : HostMachine.RunOutcome Subst :=
+  HostMachine.runWith reference emptyProg pleattaTable 80
+    { core := orderedPrologConf, host := .replay [orderedPrologExchange] } none
+
+-- Returned clause order and duplicate multiplicity survive all the way to
+-- ordered PeTTa answers.
+#guard match orderedPrologReplay with
+  | .done state => state.core.answerValues ==
+      [Atom.gnd (.int 1), Atom.gnd (.int 2), Atom.gnd (.int 2)]
+  | _ => false
+
+private def wrongKindPrologReplay : HostMachine.RunOutcome Subst :=
+  HostMachine.runWith reference emptyProg pleattaTable 20 {
+    core := orderedPrologConf
+    host := .replay [{
+      request := orderedPrologRequest
+      response := .returned (.mapping [("X", .integer 1)]) }] } none
+
+-- An ordinary Python-shaped mapping is never silently accepted as a typed
+-- Prolog substitution.
+#guard match wrongKindPrologReplay with
+  | .errored _ _ => true
+  | _ => false
+
+private def localIdentityClause : Clause := {
+  params := [.var "Input"]
+  result := .var "Input"
+  body := [] }
+
+private def localPredicateWorld : PWorld :=
+  ({ progClauses := [("localIdentity", localIdentityClause)]
+     knownHeads := ["localIdentity"]
+     knownArities := [("localIdentity", 1)] } : PWorld).reindexClauses
+
+private def localPredicateConf : Conf := {
+  cur := some ([Goal.bin "translatePredicate"
+    [chainify (.expr [.sym "Predicate",
+      .expr [.sym "localIdentity", .gnd (.int 42), .var "Output"]])]
+    resultVar], [])
+  alts := []
+  world := localPredicateWorld
+  counter := 0
+  qterm := .var "Output"
+}
+
+private def localPredicateReplay : HostMachine.RunOutcome Subst :=
+  HostMachine.runWith reference emptyProg pleattaTable 80
+    { core := localPredicateConf, host := .replay [] } none
+
+-- A locally owned predicate remains inside the certified machine and consumes
+-- no host exchange.
+#guard match localPredicateReplay with
+  | .done state =>
+      state.core.answers == [Atom.gnd (.int 42)] && state.host.cursor == 0
+  | _ => false
+
+private def helloPredicate : Atom :=
+  chainify (.expr [.sym "Predicate", .expr [.sym "hello", .sym "world"]])
+
+private def assertedHelloConf : Conf := {
+  cur := some ([
+    Goal.wact "assertaPredicate" [helloPredicate] (.var "Asserted"),
+    Goal.bin "translatePredicate"
+      [chainify (.expr [.sym "Predicate",
+        .expr [.sym "hello", .var "Output"]])]
+      resultVar], [])
+  alts := []
+  world := ({} : PWorld).reindexClauses
+  counter := 0
+  qterm := .var "Output"
+}
+
+private def assertedHelloRun : HostMachine.RunOutcome Subst :=
+  HostMachine.runWith reference emptyProg pleattaTable 120
+    { core := assertedHelloConf, host := .replay [] } none
+
+#guard match assertedHelloRun with
+  | .done state =>
+      state.core.answers == [Atom.sym "world"] &&
+      state.core.world.clauseCandidates "hello" 0 ==
+        [{ params := [], result := .sym "world", body := [] }] &&
+      state.host.cursor == 0
+  | _ => false
+
+private def factPredicate (functor value : String) : Atom :=
+  chainify (.expr [.sym "Predicate", .expr [.sym functor, .sym value]])
+
+private def orderedDynamicPredicateConf : Conf := {
+  cur := some ([
+    Goal.wact "assertzPredicate" [factPredicate "ordered" "first"]
+      (.var "A1"),
+    Goal.wact "assertzPredicate" [factPredicate "ordered" "second"]
+      (.var "A2"),
+    Goal.wact "assertaPredicate" [factPredicate "ordered" "zero"]
+      (.var "A0"),
+    Goal.bin "translatePredicate"
+      [chainify (.expr [.sym "Predicate",
+        .expr [.sym "ordered", .var "Output"]])]
+      resultVar], [])
+  alts := []
+  world := ({} : PWorld).reindexClauses
+  counter := 0
+  qterm := .var "Output"
+}
+
+-- `asserta` prepends, `assertz` appends, and resolution exposes exact clause
+-- order.
+#guard match HostMachine.runWith reference emptyProg pleattaTable 200
+    { core := orderedDynamicPredicateConf, host := .replay [] } none with
+  | .done state => state.core.answerValues ==
+      [Atom.sym "zero", Atom.sym "first", Atom.sym "second"]
+  | _ => false
+
+private def retractFirstPredicateConf : Conf := {
+  cur := some ([
+    Goal.wact "assertzPredicate" [factPredicate "retractable" "same"]
+      (.var "A1"),
+    Goal.wact "assertzPredicate" [factPredicate "retractable" "middle"]
+      (.var "A2"),
+    Goal.wact "assertzPredicate" [factPredicate "retractable" "same"]
+      (.var "A3"),
+    Goal.wact "retractPredicate" [factPredicate "retractable" "same"]
+      (.var "Removed"),
+    Goal.bin "translatePredicate"
+      [chainify (.expr [.sym "Predicate",
+        .expr [.sym "retractable", .var "Output"]])]
+      resultVar], [])
+  alts := []
+  world := ({} : PWorld).reindexClauses
+  counter := 0
+  qterm := .var "Output"
+}
+
+-- Retraction removes only the first matching clause; later duplicates remain.
+#guard match HostMachine.runWith reference emptyProg pleattaTable 240
+    { core := retractFirstPredicateConf, host := .replay [] } none with
+  | .done state =>
+      state.core.answerValues == [Atom.sym "middle", Atom.sym "same"]
+  | _ => false
+
+private def malformedPredicateConf : Conf := {
+  cur := some ([Goal.wact "assertaPredicate"
+    [chainify (.expr [.sym "Predicate", .sym "not-a-call"])] resultVar], [])
+  alts := []
+  world := ({} : PWorld).reindexClauses
+  counter := 0
+  qterm := resultVar
+}
+
+-- Malformed predicate syntax fails the branch and never mutates the world.
+#guard match HostMachine.runWith reference emptyProg pleattaTable 40
+    { core := malformedPredicateConf, host := .replay [] } none with
+  | .done state =>
+      state.core.answers.isEmpty && state.core.world.progClauses.isEmpty
+  | _ => false
+
+private def addTwoPredicate : Atom :=
+  chainify (.expr [.sym "Predicate",
+    .expr [.sym ":-",
+      .expr [.sym "Predicate",
+        .expr [.sym "addTwo", .var "Input", .var "Output"]],
+      .expr [.sym "Predicate",
+        .expr [.sym ",",
+          .expr [.sym "Predicate",
+            .expr [.sym "is", .var "Intermediate",
+              .expr [.sym "Predicate",
+                .expr [.sym "+", .var "Input", .gnd (.int 1)]]]],
+          .expr [.sym "Predicate",
+            .expr [.sym "+", .var "Intermediate", .gnd (.int 1),
+              .var "Output"]]]]]])
+
+private def assertedAddTwoConf : Conf := {
+  cur := some ([
+    Goal.wact "assertaPredicate" [addTwoPredicate] (.var "Asserted"),
+    Goal.bin "translatePredicate"
+      [chainify (.expr [.sym "Predicate",
+        .expr [.sym "addTwo", .gnd (.int 40), .var "Output"]])]
+      resultVar], [])
+  alts := []
+  world := ({} : PWorld).reindexClauses
+  counter := 0
+  qterm := .var "Output"
+}
+
+#guard match HostMachine.runWith reference emptyProg pleattaTable 200
+    { core := assertedAddTwoConf, host := .replay [] } none with
+  | .done state => state.core.answers == [Atom.gnd (.int 42)]
+  | _ => false
+
+private def dynamicSourceConf : Conf := {
+  cur := some ([
+    Goal.wact "process_metta_string"
+      [.gnd (.str "(= (increment $x) (+ $x 1))")]
+      (.var "Installed"),
+    Goal.call "increment" [.gnd (.int 41)] (.var "Output")], [])
+  alts := []
+  world := ({} : PWorld).reindexClauses
+  counter := 0
+  qterm := .var "Output"
+}
+
+#guard match HostMachine.runWith reference emptyProg pleattaTable 200
+    { core := dynamicSourceConf, host := .replay [] } none with
+  | .done state => state.core.answers == [Atom.gnd (.int 42)]
+  | _ => false
+
+private def dynamicQuerySourceConf : Conf := {
+  cur := some ([Goal.wact "process_metta_string"
+    [.gnd (.str "!(+ 1 1)")] resultVar], [])
+  alts := []
+  world := ({} : PWorld).reindexClauses
+  counter := 0
+  qterm := resultVar
+}
+
+-- Runtime source queries are not silently executed as installation effects.
+#guard match HostMachine.runWith reference emptyProg pleattaTable 40
+    { core := dynamicQuerySourceConf, host := .replay [] } none with
+  | .done state =>
+      state.core.answers.isEmpty && state.core.world.progClauses.isEmpty
+  | _ => false
+
 #guard HostRequest.ofPrologCall "open"
     [.str "history.metta", .atom "append", .var "out"] ["out"] ==
   .effect (.fileOpen "history.metta" .append "out")
