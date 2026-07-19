@@ -11,7 +11,10 @@ private def bang (items : List Atom) : Atom :=
   (bang [.sym "import_prolog_function", .sym "get_time"])).isNone
 
 #guard (unsupportedRuntimeDirective?
-  (bang [.sym "import_prolog_function", .sym "not_registered"])).isSome
+  (bang [.sym "import_prolog_function", .sym "not_registered"])).isNone
+
+#guard (unsupportedRuntimeDirective?
+  (bang [.sym "import_prolog_function"])).isSome
 
 #guard (unsupportedRuntimeDirective?
   (bang [.sym "import_prolog_functions_from_file", .sym "skills.pl",

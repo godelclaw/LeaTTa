@@ -56,7 +56,7 @@ def loadImportsFuel (libRoot : System.FilePath) :
           | none => pure m
           | some fp =>
               if ← fp.pathExists then
-                match parseProgram (← IO.FS.readFile fp) with
+                match parseFile (← IO.FS.readFile fp) with
                 | Except.ok fatoms =>
                     loadImportsFuel libRoot fuel catalog (name :: visited) (fp.parent.getD dir) fatoms
                       (m.insert name fatoms)
@@ -74,6 +74,6 @@ def loadImports (path : String) (src : String) : IO (Std.HashMap String (List At
     | none =>
         let home := (← IO.getEnv "HOME").getD "."
         pure (System.FilePath.mk home / "repos" / "PeTTa" / "lib")
-  match parseProgram src with
+  match parseFile src with
   | Except.error _ => pure Std.HashMap.emptyWithCapacity
   | Except.ok atoms => loadImportsFuel libRoot 64 Std.HashMap.emptyWithCapacity [] dir atoms Std.HashMap.emptyWithCapacity

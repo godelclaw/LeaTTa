@@ -643,7 +643,7 @@ def preludeSrc : String :=
    (= (add-atoms $space $tuple) (foldl-atom $tuple () $a $b (add-atom $space $b)))"
 
 def preludeAtoms : List Atom :=
-  match parseProgram preludeSrc with
+  match parseFile preludeSrc with
   | Except.ok xs => xs
   | Except.error _ => []
 
@@ -777,7 +777,7 @@ def runMinimalSource (src : String) (fuel : Nat := 100000)
     (imports : Std.HashMap String (List Atom) := Std.HashMap.emptyWithCapacity)
     (importDeps : Std.HashMap String (List String) := Std.HashMap.emptyWithCapacity)
     (profile : EvalProfile := heProfile) : String :=
-  match parseProgram src with
+  match parseFile src with
   | Except.error e => "parse error: " ++ e
   | Except.ok atoms =>
       Pretty.atoms ((evalSequential atoms fuel imports importDeps profile).flatMap (·.2))
@@ -788,7 +788,7 @@ def oracleReport (src : String) (fuel : Nat := 100000)
     (imports : Std.HashMap String (List Atom) := Std.HashMap.emptyWithCapacity)
     (importDeps : Std.HashMap String (List String) := Std.HashMap.emptyWithCapacity)
     (profile : EvalProfile := heProfile) : String :=
-  match parseProgram src with
+  match parseFile src with
   | Except.error e => "parse error: " ++ e
   | Except.ok atoms =>
       let res := (evalSequential atoms fuel imports importDeps profile).foldl

@@ -291,4 +291,128 @@ def ReadsSExpr (Leaf : Nat → String → Atom → Prop)
   ∃ tokens, RuntimeLexes source tokens ∧
     ParsesTokens Leaf [[]] tokens [output]
 
+/-- Independent state for pinned `filereader.pl:strip/3`.  It is deliberately
+not the executable `Metta.Runtime.FileStripState`.
+
+Source anchor: PeTTa revision `6b7f52f`, `src/filereader.pl:72-78`. -/
+inductive StripState where
+  | text (inString : Bool)
+  | comment
+deriving Repr, DecidableEq
+
+/-- Relational specification of pinned source-comment stripping.  The pinned
+revision toggles at every quote, does not recognize escapes at this pass, and
+drops the newline which terminates a comment.
+
+Constructor crosswalk at revision `6b7f52f`: `done` is line 73; `quote` is
+lines 74-75; emitted newlines are covered by `textChar` from line 76;
+`commentStart`, `commentChar`, and `commentNewline` relationally expand the
+search-and-resume clause at line 77; all other emitted characters are
+`textChar` from line 78. -/
+inductive FileStrips : StripState → List Char → List Char → Prop where
+  | done (state : StripState) : FileStrips state [] []
+  | commentNewline {input output : List Char}
+      (tail : FileStrips (.text false) input output) :
+      FileStrips .comment ('\n' :: input) output
+  | commentChar {char : Char} {input output : List Char}
+      (notNewline : char ≠ '\n')
+      (tail : FileStrips .comment input output) :
+      FileStrips .comment (char :: input) output
+  | quote {inString : Bool} {input output : List Char}
+      (tail : FileStrips (.text (!inString)) input output) :
+      FileStrips (.text inString) ('"' :: input) ('"' :: output)
+  | commentStart {input output : List Char}
+      (tail : FileStrips .comment input output) :
+      FileStrips (.text false) (';' :: input) output
+  | textChar {inString : Bool} {char : Char} {input output : List Char}
+      (notQuote : char ≠ '"')
+      (notComment : inString = true ∨ char ≠ ';')
+      (tail : FileStrips (.text inString) input output) :
+      FileStrips (.text inString) (char :: input) (char :: output)
+
+/-- Independent form-collection state.  Unlike the executable collector,
+completed characters are stored in source order. -/
+inductive FileFormState where
+  | between
+  | afterBang
+  | form (runnable : Bool) (depth : Nat) (inString : Bool)
+      (chars : List Char)
+deriving Repr, DecidableEq
+
+/-- Pinned `grab_until_balanced/6` quote transition.
+
+Source anchor: PeTTa revision `6b7f52f`, `src/filereader.pl:51-60`. -/
+def nextFileString (inString : Bool) (char : Char) : Bool :=
+  if char = '"' then !inString else inString
+
+/-- Pinned `grab_until_balanced/6` parenthesis-depth transition. -/
+def nextFileDepth (inString : Bool) (depth : Nat) (char : Char) : Nat :=
+  if inString then depth
+  else if char = '(' then depth + 1
+  else if char = ')' then depth - 1
+  else depth
+
+/-- Append one parsed top-level form in source order.  A runnable contributes
+the marker and its expression, matching the existing source-form convention. -/
+def appendFileForm (runnable : Bool) (atoms : List Atom) (atom : Atom) :
+    List Atom :=
+  if runnable then atoms ++ [Atom.sym "!", atom] else atoms ++ [atom]
+
+/-- Independent successful judgment for pinned `top_forms//2` and
+`grab_until_balanced/6`.  Invalid prefixes, unfinished forms, and forms which
+have no independent `ReadsSExpr` derivation have no constructor.
+
+Constructor crosswalk at revision `6b7f52f`: `done` and `blank` are line 63;
+`bang`, `open`, and `runnableOpen` are lines 64-67; `finish` and `continue`
+expand the character/depth/string transitions at lines 51-60; `finish`'s
+`ReadsSExpr` premise is the `parse_form`/`sread` call at lines 20-24; recursive
+form order is line 70. -/
+inductive SourceForms (Leaf : Nat → String → Atom → Prop) :
+    FileFormState → List Atom → List Char → List Atom → Prop where
+  | done (atoms : List Atom) :
+      SourceForms Leaf .between atoms [] atoms
+  | blank {atoms : List Atom} {char : Char} {input : List Char}
+      {output : List Atom}
+      (isBlank : IsBlank char)
+      (tail : SourceForms Leaf .between atoms input output) :
+      SourceForms Leaf .between atoms (char :: input) output
+  | bang {atoms : List Atom} {input : List Char} {output : List Atom}
+      (tail : SourceForms Leaf .afterBang atoms input output) :
+      SourceForms Leaf .between atoms ('!' :: input) output
+  | open {atoms : List Atom} {input : List Char} {output : List Atom}
+      (tail : SourceForms Leaf (.form false 1 false ['(']) atoms input output) :
+      SourceForms Leaf .between atoms ('(' :: input) output
+  | runnableOpen {atoms : List Atom} {input : List Char}
+      {output : List Atom}
+      (tail : SourceForms Leaf (.form true 1 false ['(']) atoms input output) :
+      SourceForms Leaf .afterBang atoms ('(' :: input) output
+  | finish {runnable inString : Bool} {depth : Nat}
+      {chars : List Char} {atoms : List Atom} {char : Char}
+      {input : List Char} {atom : Atom} {output : List Atom}
+      (depthDone : nextFileDepth inString depth char = 0)
+      (stringDone : nextFileString inString char = false)
+      (read : ReadsSExpr Leaf (String.ofList (chars ++ [char])) atom)
+      (tail : SourceForms Leaf .between
+        (appendFileForm runnable atoms atom) input output) :
+      SourceForms Leaf (.form runnable depth inString chars) atoms
+        (char :: input) output
+  | continue {runnable inString : Bool} {depth : Nat}
+      {chars : List Char} {atoms : List Atom} {char : Char}
+      {input : List Char} {output : List Atom}
+      (notDone : ¬ (nextFileDepth inString depth char = 0 ∧
+        nextFileString inString char = false))
+      (tail : SourceForms Leaf
+        (.form runnable (nextFileDepth inString depth char)
+          (nextFileString inString char) (chars ++ [char]))
+        atoms input output) :
+      SourceForms Leaf (.form runnable depth inString chars) atoms
+        (char :: input) output
+
+/-- Independent pinned-file success judgment: comment stripping followed by
+top-level form extraction and independent runtime reading of each form. -/
+def ReadsFile (Leaf : Nat → String → Atom → Prop)
+    (source : String) (output : List Atom) : Prop :=
+  ∃ stripped, FileStrips (.text false) source.toList stripped ∧
+    SourceForms Leaf .between [] stripped output
+
 end PLeaTTa.PeTTaSpec.Reader

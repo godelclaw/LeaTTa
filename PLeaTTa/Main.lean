@@ -380,7 +380,7 @@ def main (args : List String) : IO UInt32 := do
     IO.eprintln usage; return 2
   let budget := budget?.getD 4000000
   let src ← IO.FS.readFile path
-  match Metta.Runtime.parseProgram src with
+  match Metta.Runtime.parseFile src with
   | .error e => IO.eprintln s!"PLEATTA-NOCOMPILE: parse error: {e}"; return 2
   | .ok atoms0 =>
     let importAttempt ← loadRuntimeImports ⟨path⟩ atoms0
@@ -399,7 +399,7 @@ def main (args : List String) : IO UInt32 := do
     let groundingTable := argvGrounding (path :: programArgs) :: pleattaTable
     let isBin := fun (s : String) =>
       (groundingTable.map (·.name)).contains s
-    let preAtoms := (Metta.Runtime.parseProgram preludeSrc).toOption.getD []
+    let preAtoms := (Metta.Runtime.parseFile preludeSrc).toOption.getD []
     let preForms := preAtoms.map (SourceForm.atom · true)
     let preEventCount ←
       match compileProgramSequentialForms isBin preForms with

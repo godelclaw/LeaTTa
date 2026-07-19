@@ -4921,7 +4921,7 @@ private def installDynamicSource (w : PWorld) : List Atom →
     compiler rather than a second evaluator. -/
 private def processMettaString? (w : PWorld) (gt : GroundingTable)
     (counter : Nat) (source : String) : Option (PWorld × Nat) := do
-  let atoms ← (Metta.Runtime.parseProgram source).toOption
+  let atoms ← (Metta.Runtime.parseFile source).toOption
   let newRules := atoms.filterMap dynamicRuleSource?
   let newHeads := newRules.map (fun (functor, _, _) => functor)
   let newArities := newRules.map

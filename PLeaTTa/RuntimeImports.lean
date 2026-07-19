@@ -185,7 +185,7 @@ private def readModule (path : System.FilePath) : ImportM (List Atom) := do
   if !(← path.pathExists) then
     throw s!"import target does not exist: {path}"
   let source ← IO.FS.readFile path
-  match Metta.Runtime.parseProgram source with
+  match Metta.Runtime.parseFile source with
   | .ok atoms => pure atoms
   | .error error => throw s!"cannot parse imported module {path}: {error}"
 

@@ -39,6 +39,14 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.ReaderAdequacy.parseSExpr_complete
 #print axioms PLeaTTa.ReaderAdequacy.parseProgram_iff_readsProgram
 #print axioms PLeaTTa.ReaderAdequacy.parseSExpr_iff_readsSExpr
+#print axioms PLeaTTa.ReaderAdequacy.stripFileCommentsAux_sound
+#print axioms PLeaTTa.ReaderAdequacy.stripFileCommentsAux_complete
+#print axioms PLeaTTa.ReaderAdequacy.stripFileComments_iff_fileStrips
+#print axioms PLeaTTa.ReaderAdequacy.parseFileFormsAux_sound
+#print axioms PLeaTTa.ReaderAdequacy.parseFileFormsAux_complete
+#print axioms PLeaTTa.ReaderAdequacy.parseFile_iff_readsFile
+#print axioms PLeaTTa.ReaderAdequacy.readsFile_deterministic
+#print axioms PLeaTTa.ReaderAdequacy.parseFile_rejected_iff_no_read
 #print axioms PLeaTTa.CompilerAdequacy.compileExprFuel_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileSeqFuel_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_sound

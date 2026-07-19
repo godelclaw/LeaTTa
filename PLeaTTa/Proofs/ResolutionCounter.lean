@@ -177,7 +177,6 @@ theorem confBelowResolutionCounter_iff (conf : Conf) :
       simp [ConfBelowResolutionCounter, resolutionLiveHighWater,
         resolutionLiveVars, resolutionCurVars, resolutionSeedHighWaterNames,
         hcur]
-      omega
   | some branch =>
       rcases branch with ⟨goals, binding⟩
       simp [ConfBelowResolutionCounter, resolutionLiveHighWater,
@@ -289,7 +288,6 @@ theorem resolutionSeedHighWaterAtom_renameCompact_le
   rw [mem_renameAtomSuffix_vars] at member
   obtain ⟨source, _, rfl⟩ := member
   rw [resolutionSeedHighWaterName_append_compact]
-  exact Nat.le_refl _
 
 theorem resolutionSeedHighWaterAtomList_renameCompact_le
     (atoms : List Atom) (seed : Nat) :
@@ -876,7 +874,7 @@ theorem chainOf_vars_subset (atoms : List Atom) (name : String)
   | cons atom rest ih =>
       simp only [chainOf, List.foldr_cons, consC, Atom.vars,
         List.mem_flatten, List.mem_map] at member
-      rcases member with ⟨variables, hvariables, hname⟩
+      rcases member with ⟨vars, hvariables, hname⟩
       rcases hvariables with ⟨child, hchild, rfl⟩
       simp only [List.mem_cons] at hchild
       rcases hchild with hclosed | hatom | htail
@@ -1410,9 +1408,6 @@ theorem Step.counter_mono {prog : Prog} {gt : GroundingTable}
       rest c.qterm
     rw [hsmatch] at hcounter
     exact hcounter
-  case wact_ok c operation args res result rest binding world counter' hcur
-      hdispatch =>
-    exact Nat.le_max_left _ _
   all_goals omega
 
 theorem StepStar.counter_mono {prog : Prog} {gt : GroundingTable}
@@ -1424,9 +1419,6 @@ theorem StepStar.counter_mono {prog : Prog} {gt : GroundingTable}
     (motive_3 := fun _ _ _ _ => True)
     (t := run)
   all_goals try { intros; trivial }
-  case refl =>
-    intro conf
-    exact Nat.le_refl _
   case tail =>
     intro first middle last step tail _ tailMono
     exact Nat.le_trans step.counter_mono tailMono
@@ -1442,9 +1434,6 @@ theorem Raises.counter_mono {prog : Prog} {gt : GroundingTable}
       source.counter ≤ target.counter)
     (t := run)
   all_goals try { intros; trivial }
-  case bin =>
-    intros
-    exact Nat.le_refl _
   case step =>
     intro first middle last err step raise _ raiseMono
     exact Nat.le_trans step.counter_mono raiseMono
@@ -1819,28 +1808,37 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
       List.append_nil, resolutionSeedHighWaterNames_append] at hsubArgs
     have hsubRes := resolutionSeedHighWaterAtom_subst_le binding res
       c.counter hrawRes hbinding
-    subst goal
-    apply ConfBelowResolutionCounter.of_components
-    · by_cases hplus : operation = "+"
-      · subst operation
-        by_cases hground : Metta.isGround left = true <;>
-          simp [resolutionCurVars, hground, specializationGoalsVars,
-            specializationGoalVars, resolutionSeedHighWaterNames_append] <;>
-          omega
-      · by_cases hminus : operation = "-"
-        · subst operation
-          by_cases hground : Metta.isGround left = true <;>
-            simp [resolutionCurVars, hground, specializationGoalsVars,
-              specializationGoalVars, resolutionSeedHighWaterNames_append] <;>
-            omega
-        · by_cases hground : Metta.isGround left = true <;>
-            simp [resolutionCurVars, hplus, hminus, hground,
-              specializationGoalsVars, specializationGoalVars,
-              resolutionSeedHighWaterNames_append] <;>
-            omega
-    · exact below.alts
-    · exact below.qterm
-    · exact below.answers
+    have hleft : resolutionSeedHighWaterNames left.vars ≤ c.counter := by
+      omega
+    have hright : resolutionSeedHighWaterNames right.vars ≤ c.counter := by
+      omega
+    have binBound (op : String) (first second result : Atom)
+        (hfirst : resolutionSeedHighWaterNames first.vars ≤ c.counter)
+        (hsecond : resolutionSeedHighWaterNames second.vars ≤ c.counter)
+        (hresult : resolutionSeedHighWaterNames result.vars ≤ c.counter) :
+        resolutionSeedHighWaterNames
+          (specializationGoalVars (Goal.bin op [first, second] result)) ≤
+            c.counter := by
+      simp only [specializationGoalVars, List.flatMap_cons,
+        List.flatMap_nil, List.append_nil,
+        resolutionSeedHighWaterNames_append]
+      omega
+    have finish (next : Goal)
+        (hnext : resolutionSeedHighWaterNames
+          (specializationGoalVars next) ≤ c.counter) :
+        ConfBelowResolutionCounter
+          { c with cur := some (next :: rest, binding) } := by
+      apply ConfBelowResolutionCounter.of_components
+      · simp only [resolutionCurVars, specializationGoalsVars,
+          resolutionSeedHighWaterNames_append]
+        omega
+      · exact below.alts
+      · exact below.qterm
+      · exact below.answers
+    split at hgoal <;> split at hgoal
+    all_goals subst goal
+    all_goals apply finish
+    all_goals apply binBound <;> assumption
   case bin_delay =>
     intro c operation args res rest binding hcur hpartial hspecial hmode
       hground hnonempty below

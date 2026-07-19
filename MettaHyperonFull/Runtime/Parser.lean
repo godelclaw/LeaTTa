@@ -10,8 +10,8 @@ Purpose: Parsers for PeTTa source programs and runtime `sread`. The tokenizer is
   `sread` mode treats `;` as token content and requires exactly one complete expression.
 Imports: MettaHyperonFull.Core.Atom
 Trusted boundary: none
-Main exports: tokenize, tokenizeSExpr, parseFloat?, parseAtomToken, parseTokens, parseProgram,
-  parseSExpr
+Main exports: tokenize, tokenizeSExpr, parseFloat?, parseAtomToken, parseTokens,
+  parseProgram, parseSExpr, parseFile
 Open obligations: float literals are IEEE 64-bit doubles, so values like `0.1` carry the usual binary
   rounding.
 -/
@@ -198,6 +198,86 @@ def parseSExpr (s : String) : Except String Atom := do
   match ← parseTokens [[]] tokens with
   | [atom] => .ok atom
   | _ => .error "expected exactly one s-expression"
+
+/-- State of pinned revision `6b7f52f`'s `filereader.pl:strip/3`.  That
+revision toggles string state at every quote, including an escaped quote. -/
+inductive FileStripState where
+  | text (inString : Bool)
+  | comment
+
+/-- Strip source-file comments exactly as the pinned first pass does.  The
+newline which terminates a comment is removed with the comment text. -/
+def stripFileCommentsAux : FileStripState → List Char → List Char
+  | _, [] => []
+  | .comment, '\n' :: rest => stripFileCommentsAux (.text false) rest
+  | .comment, _ :: rest => stripFileCommentsAux .comment rest
+  | .text inString, '"' :: rest =>
+      '"' :: stripFileCommentsAux (.text (!inString)) rest
+  | .text false, ';' :: rest => stripFileCommentsAux .comment rest
+  | .text true, ';' :: rest =>
+      ';' :: stripFileCommentsAux (.text true) rest
+  | .text inString, char :: rest =>
+      char :: stripFileCommentsAux (.text inString) rest
+
+def stripFileComments (source : String) : List Char :=
+  stripFileCommentsAux (.text false) source.toList
+
+/-- Single-pass transparent form collector for pinned
+`filereader.pl:top_forms//2` plus `grab_until_balanced//6`. -/
+inductive FileParseState where
+  | between
+  | afterBang
+  | form (runnable : Bool) (depth : Nat) (inString : Bool)
+      (charsRev : List Char)
+
+def parseFileFormsAux (state : FileParseState) (atomsRev : List Atom) :
+    List Char → Except String (List Atom)
+  | [] =>
+      match state with
+      | .between => .ok atomsRev.reverse
+      | .afterBang => .error "expected '(' after '!'"
+      | .form _ _ _ _ => .error "missing ')'"
+  | char :: rest =>
+      match state with
+      | .between =>
+          if isSpace char then
+            parseFileFormsAux .between atomsRev rest
+          else if char == '!' then
+            parseFileFormsAux .afterBang atomsRev rest
+          else if char == '(' then
+            parseFileFormsAux (.form false 1 false ['(']) atomsRev rest
+          else
+            .error "expected '(' or '!('"
+      | .afterBang =>
+          if char == '(' then
+            parseFileFormsAux (.form true 1 false ['(']) atomsRev rest
+          else
+            .error "expected '(' after '!'"
+      | .form runnable depth inString charsRev =>
+          let nextString := if char == '"' then !inString else inString
+          let nextDepth :=
+            if inString then depth
+            else if char == '(' then depth + 1
+            else if char == ')' then depth - 1
+            else depth
+          let nextChars := char :: charsRev
+          if nextDepth == 0 && !nextString then
+            match parseSExpr (String.ofList nextChars.reverse) with
+            | .error error => .error error
+            | .ok atom =>
+                let nextAtoms :=
+                  if runnable then atom :: Atom.sym "!" :: atomsRev
+                  else atom :: atomsRev
+                parseFileFormsAux .between nextAtoms rest
+          else
+            parseFileFormsAux
+              (.form runnable nextDepth nextString nextChars) atomsRev rest
+
+/-- Parse a source file through the pinned two-pass file-loader contract:
+comment stripping, top-level `(`/`!(` form collection, then runtime `sread` of
+each balanced form. -/
+def parseFile (source : String) : Except String (List Atom) :=
+  parseFileFormsAux .between [] (stripFileComments source)
 
 private def parseSucceeded {α : Type} : Except String α → Bool
   | .ok _ => true

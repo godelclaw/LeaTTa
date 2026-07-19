@@ -988,4 +988,397 @@ theorem parseSExpr_iff_readsSExpr (source : String) (output : Atom) :
   ⟨parseSExpr_sound parseTokenAt_sound,
     parseSExpr_complete (fun _ _ _ => parseTokenAt_complete)⟩
 
+/-- Translate the independent strip state to the executable representation.
+The two types remain separate so the specification cannot reduce to the
+implementation by definition. -/
+def runtimeStripStateOf : StripState → Metta.Runtime.FileStripState
+  | .text inString => .text inString
+  | .comment => .comment
+
+/-- Executable source-comment stripping is sound for every intermediate
+state, not only the public initial state. -/
+theorem stripFileCommentsAux_sound {state : StripState}
+    {input output : List Char}
+    (run : Metta.Runtime.stripFileCommentsAux (runtimeStripStateOf state) input =
+      output) :
+    FileStrips state input output := by
+  induction input generalizing state output with
+  | nil =>
+      simp [Metta.Runtime.stripFileCommentsAux] at run
+      subst output
+      exact FileStrips.done state
+  | cons char rest ih =>
+      cases state with
+      | comment =>
+          by_cases newline : char = '\n'
+          · subst char
+            change Metta.Runtime.stripFileCommentsAux
+              (.text false) rest = output at run
+            exact FileStrips.commentNewline
+              (ih (state := .text false) (output := output) run)
+          · simp [runtimeStripStateOf,
+              Metta.Runtime.stripFileCommentsAux] at run
+            exact FileStrips.commentChar newline
+              (ih (state := .comment) (output := output) run)
+      | text inString =>
+          cases inString with
+          | false =>
+              by_cases quote : char = '"'
+              · subst char
+                change '"' :: Metta.Runtime.stripFileCommentsAux
+                  (.text true) rest = output at run
+                subst output
+                exact FileStrips.quote
+                  (ih (state := .text true) rfl)
+              · by_cases semicolon : char = ';'
+                · subst char
+                  change Metta.Runtime.stripFileCommentsAux
+                    .comment rest = output at run
+                  exact FileStrips.commentStart
+                    (ih (state := .comment) (output := output) run)
+                · simp [runtimeStripStateOf,
+                    Metta.Runtime.stripFileCommentsAux, semicolon]
+                    at run
+                  subst output
+                  exact FileStrips.textChar quote (Or.inr semicolon)
+                    (ih (state := .text false) rfl)
+          | true =>
+              by_cases quote : char = '"'
+              · subst char
+                change '"' :: Metta.Runtime.stripFileCommentsAux
+                  (.text false) rest = output at run
+                subst output
+                exact FileStrips.quote
+                  (ih (state := .text false) rfl)
+              · by_cases semicolon : char = ';'
+                · subst char
+                  change ';' :: Metta.Runtime.stripFileCommentsAux
+                    (.text true) rest = output at run
+                  subst output
+                  exact FileStrips.textChar quote (Or.inl rfl)
+                    (ih (state := .text true) rfl)
+                · simp [runtimeStripStateOf,
+                    Metta.Runtime.stripFileCommentsAux, semicolon]
+                    at run
+                  subst output
+                  exact FileStrips.textChar quote (Or.inl rfl)
+                    (ih (state := .text true) rfl)
+
+/-- Every independent source-comment stripping derivation is executed by the
+Lean loader. -/
+theorem stripFileCommentsAux_complete {state : StripState}
+    {input output : List Char}
+    (derivation : FileStrips state input output) :
+    Metta.Runtime.stripFileCommentsAux (runtimeStripStateOf state) input =
+      output := by
+  induction derivation with
+  | done => rfl
+  | commentNewline tail ih => exact ih
+  | commentChar notNewline tail ih =>
+      simpa [runtimeStripStateOf, Metta.Runtime.stripFileCommentsAux,
+        notNewline] using ih
+  | @quote inString input output tail ih =>
+      cases inString <;>
+        simpa [runtimeStripStateOf, Metta.Runtime.stripFileCommentsAux]
+          using congrArg (List.cons '"') ih
+  | commentStart tail ih => exact ih
+  | @textChar inString char input output notQuote notComment tail ih =>
+      cases inString with
+      | false =>
+          have notSemicolon : char ≠ ';' := by
+            simpa using notComment
+          simpa [runtimeStripStateOf, Metta.Runtime.stripFileCommentsAux,
+            notQuote, notSemicolon] using congrArg (List.cons char) ih
+      | true =>
+          by_cases semicolon : char = ';'
+          · subst char
+            exact congrArg (List.cons ';') ih
+          · simpa [runtimeStripStateOf, Metta.Runtime.stripFileCommentsAux,
+              notQuote, semicolon] using congrArg (List.cons char) ih
+
+theorem stripFileComments_iff_fileStrips
+    (source : String) (output : List Char) :
+    Metta.Runtime.stripFileComments source = output ↔
+      FileStrips (.text false) source.toList output := by
+  constructor
+  · intro run
+    exact stripFileCommentsAux_sound (by
+      simpa [Metta.Runtime.stripFileComments, runtimeStripStateOf] using run)
+  · intro derivation
+    simpa [Metta.Runtime.stripFileComments, runtimeStripStateOf] using
+      stripFileCommentsAux_complete derivation
+
+/-- Translate the independent source-order form state into the executable
+reverse-accumulator state. -/
+def runtimeFileFormStateOf : FileFormState → Metta.Runtime.FileParseState
+  | .between => .between
+  | .afterBang => .afterBang
+  | .form runnable depth inString chars =>
+      .form runnable depth inString chars.reverse
+
+theorem executable_nextFileString (inString : Bool) (char : Char) :
+    (if char == '"' then !inString else inString) =
+      nextFileString inString char := by
+  simp [nextFileString, beq_iff_eq]
+
+theorem executable_nextFileDepth (inString : Bool) (depth : Nat)
+    (char : Char) :
+    (if inString then depth
+      else if char == '(' then depth + 1
+      else if char == ')' then depth - 1
+      else depth) = nextFileDepth inString depth char := by
+  simp [nextFileDepth, beq_iff_eq]
+
+theorem appendFileForm_reverse (runnable : Bool) (atoms : List Atom)
+    (atom : Atom) :
+    (appendFileForm runnable atoms atom).reverse =
+      if runnable then atom :: Atom.sym "!" :: atoms.reverse
+      else atom :: atoms.reverse := by
+  cases runnable <;> simp [appendFileForm]
+
+/-- Soundness of the executable top-level form collector from every
+intermediate state. -/
+theorem parseFileFormsAux_sound {state : FileFormState}
+    {atoms : List Atom} {input : List Char} {output : List Atom}
+    (run : Metta.Runtime.parseFileFormsAux (runtimeFileFormStateOf state)
+      atoms.reverse input = .ok output) :
+    SourceForms TokenDenotes state atoms input output := by
+  induction input generalizing state atoms output with
+  | nil =>
+      cases state with
+      | between =>
+          simp [runtimeFileFormStateOf,
+            Metta.Runtime.parseFileFormsAux] at run
+          subst output
+          exact SourceForms.done atoms
+      | afterBang =>
+          simp [runtimeFileFormStateOf,
+            Metta.Runtime.parseFileFormsAux] at run
+      | form runnable depth inString chars =>
+          simp [runtimeFileFormStateOf,
+            Metta.Runtime.parseFileFormsAux] at run
+  | cons char rest ih =>
+      cases state with
+      | between =>
+          by_cases blank : IsBlank char
+          · have space : Metta.Runtime.isSpace char = true :=
+              (runtime_isSpace_iff char).2 blank
+            have recurse :
+                Metta.Runtime.parseFileFormsAux .between atoms.reverse rest =
+                  .ok output := by
+              simpa [runtimeFileFormStateOf,
+                Metta.Runtime.parseFileFormsAux, space] using run
+            exact SourceForms.blank blank
+              (ih (state := .between) (atoms := atoms) recurse)
+          · have notSpace : Metta.Runtime.isSpace char = false :=
+              (runtime_isSpace_eq_false_iff char).2 blank
+            by_cases bang : char = '!'
+            · subst char
+              have recurse :
+                  Metta.Runtime.parseFileFormsAux .afterBang atoms.reverse rest =
+                    .ok output := by
+                simpa [runtimeFileFormStateOf,
+                  Metta.Runtime.parseFileFormsAux, notSpace] using run
+              exact SourceForms.bang
+                (ih (state := .afterBang) (atoms := atoms) recurse)
+            · by_cases isOpen : char = '('
+              · subst char
+                have recurse :
+                    Metta.Runtime.parseFileFormsAux
+                        (.form false 1 false ['(']) atoms.reverse rest =
+                      .ok output := by
+                  simpa [runtimeFileFormStateOf,
+                    Metta.Runtime.parseFileFormsAux, notSpace] using run
+                exact SourceForms.open
+                  (ih (state := .form false 1 false ['('])
+                    (atoms := atoms) recurse)
+              · simp [runtimeFileFormStateOf,
+                  Metta.Runtime.parseFileFormsAux, notSpace, bang, isOpen]
+                  at run
+      | afterBang =>
+          by_cases isOpen : char = '('
+          · subst char
+            have recurse :
+                Metta.Runtime.parseFileFormsAux
+                    (.form true 1 false ['(']) atoms.reverse rest =
+                  .ok output := by
+              simpa [runtimeFileFormStateOf,
+                Metta.Runtime.parseFileFormsAux] using run
+            exact SourceForms.runnableOpen
+              (ih (state := .form true 1 false ['('])
+                (atoms := atoms) recurse)
+          · simp [runtimeFileFormStateOf,
+              Metta.Runtime.parseFileFormsAux, isOpen] at run
+      | form runnable depth inString chars =>
+          let nextString := nextFileString inString char
+          let nextDepth := nextFileDepth inString depth char
+          have nextStringEq :
+              (if char == '"' then !inString else inString) = nextString := by
+            simpa only [nextString] using
+              executable_nextFileString inString char
+          have nextDepthEq :
+              (if inString then depth
+                else if char == '(' then depth + 1
+                else if char == ')' then depth - 1
+                else depth) = nextDepth := by
+            simpa only [nextDepth] using
+              executable_nextFileDepth inString depth char
+          simp only [runtimeFileFormStateOf,
+            Metta.Runtime.parseFileFormsAux, nextStringEq, nextDepthEq,
+            List.reverse_cons, List.reverse_reverse] at run
+          by_cases done : nextDepth = 0 ∧ nextString = false
+          · rcases done with ⟨depthDone, stringDone⟩
+            cases readRun : Metta.Runtime.parseSExpr
+                ((String.ofList chars).push char) with
+            | error error =>
+                simp [depthDone, stringDone, readRun] at run
+            | ok atom =>
+                have recurse :
+                    Metta.Runtime.parseFileFormsAux .between
+                        (appendFileForm runnable atoms atom).reverse rest =
+                      .ok output := by
+                  simpa [depthDone, stringDone, readRun,
+                    appendFileForm_reverse] using run
+                have read : ReadsSExpr TokenDenotes
+                    (String.ofList (chars ++ [char])) atom := by
+                  simpa using
+                    (parseSExpr_iff_readsSExpr
+                      ((String.ofList chars).push char) atom).1 readRun
+                exact SourceForms.finish depthDone stringDone
+                  read
+                  (ih (state := .between)
+                    (atoms := appendFileForm runnable atoms atom) recurse)
+          · have recurse :
+                Metta.Runtime.parseFileFormsAux
+                    (runtimeFileFormStateOf
+                      (.form runnable nextDepth nextString
+                        (chars ++ [char])))
+                    atoms.reverse rest = .ok output := by
+              simpa [runtimeFileFormStateOf, done] using run
+            exact SourceForms.continue done
+              (ih (state := .form runnable nextDepth nextString
+                (chars ++ [char])) (atoms := atoms) recurse)
+
+/-- Completeness of the executable top-level form collector from every
+intermediate state. -/
+theorem parseFileFormsAux_complete {state : FileFormState}
+    {atoms : List Atom} {input : List Char} {output : List Atom}
+    (derivation : SourceForms TokenDenotes state atoms input output) :
+    Metta.Runtime.parseFileFormsAux (runtimeFileFormStateOf state)
+      atoms.reverse input = .ok output := by
+  induction derivation with
+  | done =>
+      simp [runtimeFileFormStateOf, Metta.Runtime.parseFileFormsAux]
+  | @blank atoms char input output isBlank tail ih =>
+      have space : Metta.Runtime.isSpace char = true :=
+        (runtime_isSpace_iff char).2 isBlank
+      simpa [runtimeFileFormStateOf,
+        Metta.Runtime.parseFileFormsAux, space] using ih
+  | @bang atoms input output tail ih =>
+      simpa [runtimeFileFormStateOf,
+        Metta.Runtime.parseFileFormsAux, Metta.Runtime.isSpace] using ih
+  | @«open» atoms input output tail ih =>
+      simpa [runtimeFileFormStateOf,
+        Metta.Runtime.parseFileFormsAux, Metta.Runtime.isSpace] using ih
+  | @runnableOpen atoms input output tail ih =>
+      simpa [runtimeFileFormStateOf,
+        Metta.Runtime.parseFileFormsAux] using ih
+  | @finish runnable inString depth chars atoms char input atom output
+      depthDone stringDone read tail ih =>
+      have nextStringEq :
+          (if char == '"' then !inString else inString) =
+            nextFileString inString char :=
+        executable_nextFileString inString char
+      have nextDepthEq :
+          (if inString then depth
+            else if char == '(' then depth + 1
+            else if char == ')' then depth - 1
+            else depth) = nextFileDepth inString depth char :=
+        executable_nextFileDepth inString depth char
+      have readRun : Metta.Runtime.parseSExpr
+          ((String.ofList chars).push char) = .ok atom := by
+        simpa using (parseSExpr_iff_readsSExpr
+          (String.ofList (chars ++ [char])) atom).2 read
+      simp only [runtimeFileFormStateOf,
+        Metta.Runtime.parseFileFormsAux, nextStringEq, nextDepthEq,
+        List.reverse_cons, List.reverse_reverse]
+      simpa [runtimeFileFormStateOf, depthDone, stringDone, readRun,
+        appendFileForm_reverse] using ih
+  | @«continue» runnable inString depth chars atoms char input output
+      notDone tail ih =>
+      have nextStringEq :
+          (if char == '"' then !inString else inString) =
+            nextFileString inString char :=
+        executable_nextFileString inString char
+      have nextDepthEq :
+          (if inString then depth
+            else if char == '(' then depth + 1
+            else if char == ')' then depth - 1
+            else depth) = nextFileDepth inString depth char :=
+        executable_nextFileDepth inString depth char
+      simp only [runtimeFileFormStateOf,
+        Metta.Runtime.parseFileFormsAux, nextStringEq, nextDepthEq,
+        List.reverse_cons, List.reverse_reverse]
+      simpa [runtimeFileFormStateOf, notDone] using ih
+
+/-- End-to-end soundness of the executable source-file reader against the
+independent pinned-loader judgment. -/
+theorem parseFile_sound {source : String} {output : List Atom}
+    (run : Metta.Runtime.parseFile source = .ok output) :
+    ReadsFile TokenDenotes source output := by
+  let stripped := Metta.Runtime.stripFileComments source
+  have stripDerivation :
+      FileStrips (.text false) source.toList stripped :=
+    (stripFileComments_iff_fileStrips source stripped).1 rfl
+  have formsRun :
+      Metta.Runtime.parseFileFormsAux .between [] stripped = .ok output := by
+    simpa [Metta.Runtime.parseFile, stripped] using run
+  exact ⟨stripped, stripDerivation,
+    parseFileFormsAux_sound (by
+      simpa [runtimeFileFormStateOf] using formsRun)⟩
+
+/-- End-to-end completeness of the executable source-file reader. -/
+theorem parseFile_complete {source : String} {output : List Atom}
+    (derivation : ReadsFile TokenDenotes source output) :
+    Metta.Runtime.parseFile source = .ok output := by
+  obtain ⟨stripped, stripDerivation, formsDerivation⟩ := derivation
+  have stripRun :=
+    (stripFileComments_iff_fileStrips source stripped).2 stripDerivation
+  have formsRun := parseFileFormsAux_complete formsDerivation
+  rw [Metta.Runtime.parseFile, stripRun]
+  simpa [runtimeFileFormStateOf] using formsRun
+
+theorem parseFile_iff_readsFile (source : String) (output : List Atom) :
+    Metta.Runtime.parseFile source = .ok output ↔
+      ReadsFile TokenDenotes source output :=
+  ⟨parseFile_sound, parseFile_complete⟩
+
+/-- The independent judgment cannot admit a second successful interpretation
+of the same source. -/
+theorem readsFile_deterministic {source : String} {left right : List Atom}
+    (leftRead : ReadsFile TokenDenotes source left)
+    (rightRead : ReadsFile TokenDenotes source right) :
+    left = right := by
+  have leftRun := parseFile_complete leftRead
+  have rightRun := parseFile_complete rightRead
+  rw [leftRun] at rightRun
+  exact Except.ok.inj rightRun
+
+/-- Rejection is preserved as an observable class.  Exact diagnostic strings
+are intentionally outside this theorem: pinned PeTTa includes source-line
+context, while the executable currently reports stable error categories. -/
+theorem parseFile_rejected_iff_no_read (source : String) :
+    (∃ message, Metta.Runtime.parseFile source = .error message) ↔
+      ¬ ∃ output, ReadsFile TokenDenotes source output := by
+  constructor
+  · rintro ⟨message, rejected⟩ ⟨output, derivation⟩
+    have accepted := parseFile_complete derivation
+    rw [rejected] at accepted
+    contradiction
+  · intro noRead
+    cases run : Metta.Runtime.parseFile source with
+    | error message => exact ⟨message, rfl⟩
+    | ok output =>
+        exact False.elim (noRead ⟨output, parseFile_sound run⟩)
+
 end PLeaTTa.ReaderAdequacy
