@@ -10,6 +10,8 @@ import MettaHyperonFull.Core.Atom
 
 namespace PLeaTTa.PeTTaSpec.Reader
 
+open Metta
+
 /-- PeTTa has two distinct reader modes.  Source loading removes semicolon
 comments before reading forms; runtime `sread/2` admits semicolons inside atom
 tokens. -/
@@ -143,5 +145,150 @@ def RuntimeLexes (input : String) (tokens : List String) : Prop :=
 /-- Source-file lexical judgment. -/
 def SourceLexes (input : String) (tokens : List String) : Prop :=
   Lexes .source (.symbol []) input.toList tokens
+
+/-- Nonempty base-ten digits.  This deliberately excludes Lean numeric
+separators such as `_`, matching the decimal fragment accepted by PeTTa's
+`number//1` and supported by PLeaTTa. -/
+def DigitString (text : String) : Prop :=
+  text ≠ "" ∧ ∀ char ∈ text.toList, Char.isDigit char = true
+
+/-- Meaning of a signed decimal integer token.  This is a proposition over
+standard string operations, not a call to the executable integer parser. -/
+def DecimalInteger (token : String) (value : Int) : Prop :=
+  let negative := token.startsWith "-"
+  let positive := token.startsWith "+"
+  let body := if negative || positive then (token.drop 1).toString else token
+  DigitString body ∧ ∃ magnitude,
+    body.toNat? = some magnitude ∧
+    value = if negative then -Int.ofNat magnitude else Int.ofNat magnitude
+
+/-- Meaning of a decimal mantissa before an optional exponent is applied. -/
+def DecimalMantissa (token : String) (negative : Bool)
+    (magnitude fractionalDigits : Nat) : Prop :=
+  let isNegative := token.startsWith "-"
+  let isPositive := token.startsWith "+"
+  let body :=
+    if isNegative || isPositive then (token.drop 1).toString else token
+  negative = isNegative ∧
+    match body.splitOn "." with
+    | [digits] =>
+        DigitString digits ∧ digits.toNat? = some magnitude ∧
+          fractionalDigits = 0
+    | [integerPart, fractionalPart] =>
+        DigitString integerPart ∧ DigitString fractionalPart ∧
+          (integerPart ++ fractionalPart).toNat? = some magnitude ∧
+          fractionalDigits = fractionalPart.length
+    | _ => False
+
+/-- Pinned reader convention for selecting lower- or upper-case exponent
+separators.  Lower-case `e` has priority when present. -/
+def exponentParts (token : String) : List String :=
+  if token.contains "e" then token.splitOn "e" else token.splitOn "E"
+
+def signedScientific (negative : Bool) (magnitude fractionalDigits : Nat) : Float :=
+  let value := Float.ofScientific magnitude true fractionalDigits
+  if negative then -value else value
+
+def signedExponentScientific (negative : Bool) (magnitude fractionalDigits : Nat)
+    (exponent : Int) : Float :=
+  let scale := Int.ofNat fractionalDigits - exponent
+  let value := if scale >= 0 then
+    Float.ofScientific magnitude true scale.toNat
+  else
+    Float.ofScientific magnitude false (-scale).toNat
+  if negative then -value else value
+
+/-- Independent relation for the supported decimal-float fragment. -/
+inductive DecimalFloat : String → Float → Prop where
+  | fixed {token mantissa : String} {negative : Bool}
+      {magnitude fractionalDigits : Nat}
+      (parts : exponentParts token = [mantissa])
+      (hasPoint : mantissa.contains "." = true)
+      (mantissaMeaning :
+        DecimalMantissa mantissa negative magnitude fractionalDigits) :
+      DecimalFloat token
+        (signedScientific negative magnitude fractionalDigits)
+  | exponent {token mantissa exponentToken : String} {negative : Bool}
+      {magnitude fractionalDigits : Nat} {exponentValue : Int}
+      (parts : exponentParts token = [mantissa, exponentToken])
+      (mantissaMeaning :
+        DecimalMantissa mantissa negative magnitude fractionalDigits)
+      (exponentMeaning : DecimalInteger exponentToken exponentValue) :
+      DecimalFloat token
+        (signedExponentScientific negative magnitude fractionalDigits exponentValue)
+
+/-- Earlier `parseAtomToken` cases are false, so numeric/symbol fallback is
+reachable. -/
+def BeforeNumber (token : String) : Prop :=
+  token.startsWith "$" = false ∧ token ≠ "True" ∧ token ≠ "False" ∧
+    token ≠ "()" ∧ token.startsWith "\"" = false
+
+/-- Independent meaning relation for a non-parenthesis token.  Constructor
+order records `parser.pl`'s variable/string/number/atom priority. -/
+inductive TokenDenotes : Nat → String → Atom → Prop where
+  | anonymous (position : Nat) :
+      TokenDenotes position "$_" (Atom.var s!"_ anonymous {position}")
+  | namedVariable {position : Nat} {token : String}
+      (notAnonymous : token ≠ "$_")
+      (startsDollar : token.startsWith "$" = true) :
+      TokenDenotes position token (Atom.var (token.drop 1).toString)
+  | trueLiteral (position : Nat) :
+      TokenDenotes position "True" (Atom.gnd (Ground.bool true))
+  | falseLiteral (position : Nat) :
+      TokenDenotes position "False" (Atom.gnd (Ground.bool false))
+  | emptyExpression (position : Nat) :
+      TokenDenotes position "()" (Atom.expr [])
+  | string {position : Nat} {token : String}
+      (before : token.startsWith "$" = false ∧ token ≠ "True" ∧
+        token ≠ "False" ∧ token ≠ "()")
+      (startsQuote : token.startsWith "\"" = true) :
+      TokenDenotes position token
+        (Atom.gnd (Ground.str ((token.drop 1).dropEnd 1).toString))
+  | integer {position : Nat} {token : String} {value : Int}
+      (before : BeforeNumber token)
+      (meaning : DecimalInteger token value) :
+      TokenDenotes position token (Atom.gnd (Ground.int value))
+  | float {position : Nat} {token : String} {value : Float}
+      (before : BeforeNumber token)
+      (notInteger : ¬ ∃ integer, DecimalInteger token integer)
+      (meaning : DecimalFloat token value) :
+      TokenDenotes position token (Atom.gnd (Ground.float value))
+  | symbol {position : Nat} {token : String}
+      (before : BeforeNumber token)
+      (notInteger : ¬ ∃ integer, DecimalInteger token integer)
+      (notFloat : ¬ ∃ value, DecimalFloat token value) :
+      TokenDenotes position token (Atom.sym token)
+
+/-- Independent stack-machine judgment for balanced token streams. `Leaf`
+supplies token meaning separately, so structural reader adequacy cannot hide a
+claim about numbers, strings, or variables. Positions count the tokens still
+to the right, matching PeTTa's per-read freshness convention for `$_`. -/
+inductive ParsesTokens (Leaf : Nat → String → Atom → Prop) :
+    List (List Atom) → List String → List Atom → Prop where
+  | done (top : List Atom) :
+      ParsesTokens Leaf [top] [] top.reverse
+  | push {stack : List (List Atom)} {rest : List String} {output : List Atom}
+      (tail : ParsesTokens Leaf ([] :: stack) rest output) :
+      ParsesTokens Leaf stack ("(" :: rest) output
+  | pop {inner outer : List Atom} {more : List (List Atom)}
+      {rest : List String} {output : List Atom}
+      (tail : ParsesTokens Leaf
+        ((Atom.expr inner.reverse :: outer) :: more) rest output) :
+      ParsesTokens Leaf (inner :: outer :: more) (")" :: rest) output
+  | leaf {top : List Atom} {more : List (List Atom)} {token : String}
+      {rest : List String} {atom : Atom} {output : List Atom}
+      (notOpen : token ≠ "(") (notClose : token ≠ ")")
+      (denotes : Leaf rest.length token atom)
+      (tail : ParsesTokens Leaf ((atom :: top) :: more) rest output) :
+      ParsesTokens Leaf (top :: more) (token :: rest) output
+
+def ReadsProgram (Leaf : Nat → String → Atom → Prop)
+    (source : String) (output : List Atom) : Prop :=
+  ∃ tokens, SourceLexes source tokens ∧ ParsesTokens Leaf [[]] tokens output
+
+def ReadsSExpr (Leaf : Nat → String → Atom → Prop)
+    (source : String) (output : Atom) : Prop :=
+  ∃ tokens, RuntimeLexes source tokens ∧
+    ParsesTokens Leaf [[]] tokens [output]
 
 end PLeaTTa.PeTTaSpec.Reader

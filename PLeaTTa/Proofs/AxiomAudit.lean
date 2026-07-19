@@ -9,11 +9,36 @@ import PLeaTTa.Proofs.Simulation
 import PLeaTTa.Proofs.CompilerAdequacy
 import PLeaTTa.Proofs.PrologCoreAdequacy
 import PLeaTTa.Proofs.ObservationAgreement
+import PLeaTTa.Proofs.ReaderAdequacy
 import PLeaTTa.SubstEngine
 import PLeaTTa.HostMachine
 import PLeaTTa.HostReplay
 
 #print axioms PLeaTTa.machineMirrorsSpecTotal_proved
+#print axioms PLeaTTa.ReaderAdequacy.tokenizeAux_complete
+#print axioms PLeaTTa.ReaderAdequacy.tokenizeAux_sound
+#print axioms PLeaTTa.ReaderAdequacy.runtime_allDigits_iff
+#print axioms PLeaTTa.ReaderAdequacy.parseInt?_iff_decimalInteger
+#print axioms PLeaTTa.ReaderAdequacy.parseInt?_eq_none_iff
+#print axioms PLeaTTa.ReaderAdequacy.parseMantissa?_iff_decimalMantissa
+#print axioms PLeaTTa.ReaderAdequacy.parseFloat?_sound
+#print axioms PLeaTTa.ReaderAdequacy.parseFloat?_complete
+#print axioms PLeaTTa.ReaderAdequacy.parseFloat?_iff_decimalFloat
+#print axioms PLeaTTa.ReaderAdequacy.parseFloat?_eq_none_iff
+#print axioms PLeaTTa.ReaderAdequacy.parseTokenAt_sound
+#print axioms PLeaTTa.ReaderAdequacy.parseTokenAt_complete
+#print axioms PLeaTTa.ReaderAdequacy.tokenize_iff_sourceLexes
+#print axioms PLeaTTa.ReaderAdequacy.tokenizeSExpr_iff_runtimeLexes
+#print axioms PLeaTTa.ReaderAdequacy.tokenize_error_has_no_source_derivation
+#print axioms PLeaTTa.ReaderAdequacy.tokenizeSExpr_error_has_no_runtime_derivation
+#print axioms PLeaTTa.ReaderAdequacy.parseTokens_complete
+#print axioms PLeaTTa.ReaderAdequacy.parseTokens_sound
+#print axioms PLeaTTa.ReaderAdequacy.parseProgram_sound
+#print axioms PLeaTTa.ReaderAdequacy.parseProgram_complete
+#print axioms PLeaTTa.ReaderAdequacy.parseSExpr_sound
+#print axioms PLeaTTa.ReaderAdequacy.parseSExpr_complete
+#print axioms PLeaTTa.ReaderAdequacy.parseProgram_iff_readsProgram
+#print axioms PLeaTTa.ReaderAdequacy.parseSExpr_iff_readsSExpr
 #print axioms PLeaTTa.CompilerAdequacy.compileExprFuel_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileSeqFuel_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_sound

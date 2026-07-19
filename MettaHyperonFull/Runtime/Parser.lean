@@ -161,11 +161,14 @@ def parseAtomToken (s : String) : Atom :=
       | some f => Atom.gnd (Ground.float f)
       | none => Atom.sym s
 
-/-- PeTTa maps every `$_` token to a fresh Prolog anonymous variable instead
-    of interning it by name (`parser.pl:41-42`).  The embedded space makes the
-    generated name unreachable through the surface token grammar; the number
-    is the token's unique position in this parse. -/
-private def parseTokenAt (position : Nat) (token : String) : Atom :=
+/-- Interpret a non-parenthesis token at its unique position in the current
+token stream. PeTTa maps every `$_` token to a fresh Prolog anonymous variable
+instead of interning it by name (`parser.pl:41-42`). The embedded space makes
+the generated name unreachable through the surface token grammar; the number
+is the token's unique position in this parse. Public for the independent
+reader-adequacy proof; callers should normally use `parseProgram` or
+`parseSExpr`. -/
+def parseTokenAt (position : Nat) (token : String) : Atom :=
   if token == "$_" then Atom.var s!"_ anonymous {position}"
   else parseAtomToken token
 
