@@ -1,0 +1,4 @@
+case	size	source_sha256	source_bytes	plain_runs	median_s	min_s	max_s	profile_s	steps	answers	done	stalled	goals	subst	max_subst	alts	max_alt_subst	self_atoms	clauses	counter_delta	verdict
+remove-miss	1000	494be6ee2a91eec9b3dd1be1511675692da2005fe846e3717815b3b9ca57eb03	17078	3	0.046726	0.044991	0.054097	0.061701	711	1	true	none	0	0	67	0	0	1001	43	65	OK
+remove-miss	2000	b82812a681f3ac788e2004c3bfa63429485b4bbeacdcf87ef5965ce1229c0ffb	35078	3	0.083065	0.081509	0.093021	0.110770	711	1	true	none	0	0	67	0	0	2001	43	65	OK
+remove-miss	4000	1e0ea35d4642859c3ad0ecc2e1a72e81476378974168ae6c11ed95388d9c3085	71078	3	0.214880	0.213389	0.215007	0.261450	711	1	true	none	0	0	67	0	0	4001	43	65	OK

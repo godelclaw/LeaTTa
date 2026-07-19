@@ -1,0 +1,25 @@
+family	indexed_path	full_scale_30s	semantic_witness	remaining_mechanism
+peanofast	clause+space candidates	LEATTA-TIMEOUT	VALUE-PASS	2500-frame nested-term and substitution growth; final 2500-result enumeration
+peano	exact duplicate+outer candidates	LEATTA-TIMEOUT	VALUE-PASS	persistent substitution/dependency representation
+tilepuzzle	exact duplicate+outer candidates	LEATTA-TIMEOUT	VALUE-PASS	181441 BFS reductions and queue/substitution cost
+
+# Selective index micro-results.  Total time includes source loading; query
+# overhead is bound-head minus source-only at the same size.
+case	size	before_s	after_s	result
+source-only	4000	0.163	0.171	loading/index-build control
+bound-head	4000	0.197	0.186	query overhead about 0.034s -> 0.015s
+exact-dedup	400	1.172	1.012	candidate pruning helps; substitution remains dominant
+remove-miss	4000	0.211	0.215	no regression after unchanged-index reuse
+
+# Rejected local substitution alternatives, all proved or behavior-isolated
+# before measurement.  These demonstrate that the remaining fix must persist
+# state across calls rather than rebuild another local view.
+alternative	case	size	baseline_s	candidate_s	verdict
+per-call-hash-index	loop-control	800	4.189	4.574	REJECT
+per-call-hash-index	term-growth	400	0.776	0.767	NO-BENEFIT
+closed-target-sharing	loop-control	800	4.189	6.631	REJECT
+closed-target-sharing	term-growth	400	0.776	1.265	REJECT
+lazy-list-compose	loop-control	800	4.189	5.806	REJECT
+lazy-list-compose	term-growth	400	0.776	0.862	REJECT
+skip-trimming	loop-control	800	4.189	15.397	REJECT; peak substitution 803 -> 4004
+skip-trimming	term-growth	400	0.776	10.273	REJECT; peak substitution 404 -> 2806

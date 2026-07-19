@@ -1,0 +1,69 @@
+diff --git a/src/filereader.pl b/src/filereader.pl
+index 2305a85..b34c5e5 100644
+--- a/src/filereader.pl
++++ b/src/filereader.pl
+@@ -48,16 +48,26 @@ process_form(_, In, _) :- format(atom(Msg), "failed to process form: ~w", [In]),
+ newlines(C0, C2) --> blanks_to_nl, !, {C1 is C0+1}, newlines(C1,C2).
+ newlines(C, C) --> blanks.
+ 
++next_string_state(0'\\, 1, 0, 1, 1) :- !.
++next_string_state(_,    1, 1, 1, 0) :- !.
++next_string_state(0'",  0, 0, 1, 0) :- !.
++next_string_state(0'",  1, 0, 0, 0) :- !.
++next_string_state(_,    InS, _, InS, 0).
++
++next_depth(0'(, 0, D0, D1) :- !, D1 is D0+1.
++next_depth(0'), 0, D0, D1) :- !, D1 is D0-1.
++next_depth(_,   _, D,  D).
++
+ %Collect characters until all parentheses are balanced (depth 0), accumulating codes, and also counting newlines:
+-grab_until_balanced(D, Acc, Cs, LC0, LC2, InS) --> [C], { ( C=0'" -> InS1 is 1-InS ; InS1 = InS ),
+-                                                                     ( InS = 0 -> ( C=0'( -> D1 is D+1
+-                                                                                           ; C=0') -> D1 is D-1
+-                                                                                                    ; D1 = D )
+-                                                                                ; D1 = D ),
+-                                                                     Acc1=[C|Acc],
+-                                                                     ( C=10 -> LC1 is LC0+1 ; LC1 = LC0 ) },
+-                                                          ( { D1=:=0, InS1=0 } -> { reverse(Acc1,Cs) , LC2 = LC1 }
+-                                                                                ; grab_until_balanced(D1,Acc1,Cs,LC1,LC2,InS1) ).
++grab_until_balanced(D, Acc, Cs, LC0, LC2, InS) -->
++    grab_until_balanced(D, Acc, Cs, LC0, LC2, InS, 0).
++grab_until_balanced(D, Acc, Cs, LC0, LC2, InS, Esc) --> [C],
++    { next_string_state(C, InS, Esc, InS1, Esc1),
++      next_depth(C, InS, D, D1),
++      Acc1=[C|Acc],
++      ( C=10 -> LC1 is LC0+1 ; LC1 = LC0 ) },
++    ( { D1=:=0, InS1=0 } -> { reverse(Acc1,Cs) , LC2 = LC1 }
++                            ; grab_until_balanced(D1,Acc1,Cs,LC1,LC2,InS1,Esc1) ).
+ 
+ %Read a balanced (...) block if available, turn into string, then continue with rest, ignoring comments:
+ top_forms([],_) --> blanks, eos.
+@@ -70,9 +80,10 @@ top_forms([Term|Fs], LC0) --> newlines(LC0, LC1),
+                               top_forms(Fs, LC2).
+ 
+ %Strip off code that is commented out, while tracking when inside of string:
+-strip([], _, []).
+-strip([0'"|R], 0, [0'"|O]) :- !, strip(R, 1, O).
+-strip([0'"|R], 1, [0'"|O]) :- !, strip(R, 0, O).
+-strip([0'\n|R], In, [0'\n|O]) :- !, strip(R, In, O).
+-strip([0';|R], 0, Out) :- !, (append(_, [0'\n|Rest], R) -> strip(Rest, 0, Out) ; Out = []).
+-strip([C|R], In, [C|O]) :- strip(R, In, O).
++strip(Cs, In, Out) :- strip(Cs, In, 0, Out).
++strip([], _, _, []).
++strip([0';|R], 0, 0, Out) :- !,
++    (append(_, [0'\n|Rest], R) -> strip([0'\n|Rest], 0, 0, Out) ; Out = []).
++strip([C|R], In, Esc, [C|O]) :-
++    next_string_state(C, In, Esc, In1, Esc1),
++    strip(R, In1, Esc1, O).
+diff --git a/src/parser.pl b/src/parser.pl
+index d11dec0..5993fe8 100644
+--- a/src/parser.pl
++++ b/src/parser.pl
+@@ -14,6 +14,7 @@ swrite_exp(Term)  --> { Term =.. [F|Args] }, "(", atom(F), ( { Args == [] } -> [
+ seq([X])    --> swrite_exp(X).
+ seq([X|Xs]) --> swrite_exp(X), " ", seq(Xs).
+ escape_quotes([], []).
++escape_quotes([0'\\|T], [0'\\,0'\\|R]) :- !, escape_quotes(T, R).
+ escape_quotes([0'"|T], [0'\\,0'"|R]) :- !, escape_quotes(T, R).
+ escape_quotes([H|T], [H|R]) :- escape_quotes(T, R).
+ 

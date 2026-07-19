@@ -1,0 +1,103 @@
+and_or.metta	EMPTY-LEATTA	P-only[1]: 1	L-only[0]: 
+atomops.metta	INERT-FORM:=alpha,first-from-pair,second-from-pair	P-only[4]: true ;; false ;; A	L-only[4]: (=alpha (Father $v1) (Father $v2)) ;; (=alpha (Father $v1) (Son $v1)) ;; (first-from-pair (A B))
+case.metta	VALUE	P-only[0]: 	L-only[1]: $v1
+caseempty.metta	VALUE	P-only[1]: 42	L-only[0]: 
+chain.metta	EMPTY-LEATTA	P-only[2]: 18 ;; 12	L-only[0]: 
+curry.metta	EMPTY-LEATTA	P-only[6]: "(partial f (1))" ;; 3 ;; "(partial g (1 2))"	L-only[0]: 
+fibadd.metta	INERT-FORM:fib	P-only[2]: true ;; 832040	L-only[1]: (fib 30)
+foldall.metta	INERT-FORM:foldall	P-only[10]: 5 ;; 5 ;; 5	L-only[4]: (foldall merge 2 0) ;; (foldall merge 2 0) ;; (foldall merge 3 0)
+foldallmatch.metta	INERT-FORM:foldall	P-only[2]: 5 ;; 5	L-only[4]: (foldall + 2 0) ;; (foldall + 2 0) ;; (foldall + 3 0)
+foldallspacecount.metta	INERT-FORM:foldall	P-only[1]: 3	L-only[3]: (foldall merge 1 0) ;; (foldall merge 1 0) ;; (foldall merge 1 0)
+forall.metta	INERT-FORM:forall	P-only[12]: false ;; false ;; false	L-only[6]: (forall 1 P) ;; (forall 1 P) ;; (forall 2 P)
+functionhead2.metta	INERT-FORM:msort	P-only[1]: (cat42 garfield)	L-only[1]: (msort (garfield cat42))
+functionremoval.metta	VALUE	P-only[4]: (2 42) ;; (2) ;; (42)	L-only[4]: ((g 1) 42) ;; ((g 1) 42) ;; ((g 1) 42)
+functionremovalspec.metta	INERT-FORM:g	P-only[4]: (2 3) ;; 3 ;; 3	L-only[5]: ((g 1) (g 2)) ;; (g 1) ;; (g 1)
+functiontypes.metta	VALUE	P-only[1]: (42 6 (+ 4 2))	L-only[1]: (42 6 6)
+he_equalreduct.metta	INERT-FORM:=alpha	P-only[2]: true ;; false	L-only[2]: (=alpha (Father $v1) (Father $v2)) ;; (=alpha (Father $v1) (Son $v1))
+he_error.metta	VALUE	P-only[2]: (if-error 42 Error 42) ;; (if-error (Error (type_error evaluable (/ a 0)) (context (: system (/ is 2)) $v1)) Error (Error (type_error evaluable (/ a 0)) (contex	L-only[1]: (if-error (catch 42) Error (catch 42))
+he_math.metta	VALUE	P-only[2]: 2 ;; 9	L-only[0]: 
+he_types.metta	INERT-FORM:first-from-pair,second-from-pair	P-only[2]: A ;; B	L-only[2]: (first-from-pair (A B)) ;; (second-from-pair (A B))
+holfunctions_intrinsicop.metta	EMPTY-LEATTA	P-only[1]: (true false false)	L-only[0]: 
+if2.metta	EMPTY-LEATTA	P-only[1]: 4	L-only[0]: 
+if3.metta	EMPTY-LEATTA	P-only[1]: 42	L-only[0]: 
+ifcasenondet.metta	VALUE	P-only[2]: (a b a) ;; (a b a)	L-only[2]: () ;; ()
+is_alpha_member_test.metta	INERT-FORM:is-alpha-member	P-only[24]: (pattern:- (hi name boss)) ;; (is member:- false in pattern:- (hi name boss)) ;; false	L-only[22]: (is-alpha-member x ()) ;; (is-alpha-member $v1 (a b c)) ;; (is-alpha-member a (a b c))
+let_superpose_if_case.metta	VALUE	P-only[1]: (answertoeverything 42 (42 42) (42 42 42))	L-only[1]: (answertoeverything 42 (42 42 42) (42 42) (42 42 42) (42 42 42))
+letext.metta	EMPTY-LEATTA	P-only[1]: 47	L-only[0]: 
+library.metta	VALUE	P-only[1]: (2 3 4)	L-only[0]: 
+matchnested.metta	INERT-FORM:msort	P-only[1]: ((transitive sim som sam) (transitive tim tom tam))	L-only[1]: (msort ((transitive tim tom tam) (transitive sim som sam)))
+matchnested2.metta	INERT-FORM:msort	P-only[1]: ((transitive sim som sam) (transitive tim tom tam))	L-only[1]: (msort ())
+math.metta	VALUE	P-only[2]: 2 ;; 9	L-only[0]: 
+metta4_prog.metta	INERT-FORM:prog1,progn	P-only[3]: tim ;; 1 ;; 3	L-only[3]: (progn true true true tim) ;; (prog1 1 2 3) ;; (progn 1 2 3)
+metta4_streams.metta	INERT-FORM:forall	P-only[4]: true ;; ((num 1) (num 2) (num 3) (num 4)) ;; ((num 1))	L-only[6]: (forall 1 (|-> ($v1) true)) ;; (forall 2 (|-> ($v1) true)) ;; (forall 3 (|-> ($v1) true))
+multiset_operations.metta	INERT-FORM:intersection-atom,subtraction-atom,union-atom,unique-atom	P-only[4]: (a b c d) ;; (a b b c b c c d) ;; (b c c)	L-only[4]: (unique-atom (a b c d d)) ;; (union-atom (a b b c) (b c c d)) ;; (intersection-atom (a b c c) (b c c c d))
+mutex_and_transaction.metta	INERT-FORM:hyperpose	P-only[7]: (true true) ;; (true true) ;; (true true)	L-only[3]: (hyperpose ((with_mutex testmutex (true true)) (with_mutex testmutex (true true)) (with_mutex testmutex (true true)) (with_mutex testmutex (true true)) (with_mu
+nars_tuffy.metta	EMPTY-PETTA|INERT-FORM:NARS.Query	P-only[0]: 	L-only[1]: (NARS.Query ((Sentence ((==> (--> (× $v1 $v2) friend) (==> (--> $v1 ([] smokes)) (--> $v2 ([] smokes)))) (stv 0.4 0.9)) (1)) (Sentence ((==> (--> $v1 ([] smokes
+parse.metta	INERT-FORM:parse	P-only[5]: A ;; (R A B) ;; (R A (S B C))	L-only[5]: (parse "A") ;; (parse "(R A B)") ;; (parse "(R A (S B C))")
+partialdef.metta	EMPTY-LEATTA	P-only[2]: 2 ;; 4	L-only[0]: 
+patrick_iterate_fib.metta	VALUE	P-only[1]: 354224848179261931520	L-only[1]: fib-step
+patrick_iterate_quad.metta	VALUE	P-only[1]: 125417041750	L-only[0]: 
+patrick_test.metta	VALUE	P-only[2]: (4 5 6) ;; 46	L-only[1]: ()
+permutations.metta	VALUE	P-only[1]: 362880	L-only[1]: 0
+plntest.metta	EMPTY-LEATTA	P-only[1]: ((Inheritance a c) (stv 0.733333 0.9))	L-only[0]: 
+repr.metta	INERT-FORM:repr	P-only[6]: "42" ;; "\"42\"" ;; "(A (B C))"	L-only[6]: (repr 42) ;; (repr "42") ;; (repr (A (B C)))
+roman_test.metta	INERT-FORM:prog1,progn	P-only[8]: (map-flat (partial + (1)) (1 2 3)) ;; (map-nested (partial + (1)) (1 (2 3))) ;; (. (partial + (1)) (partial * (2)) 1)	L-only[3]: () ;; (prog1 2 4) ;; (progn 2 4)
+selfprog.metta	INERT-FORM:repr	P-only[3]: true ;; "(function1)" ;; "(OK)"	L-only[2]: (repr OK) ;; (repr OK)
+smartdispatch.metta	VALUE	P-only[1]: (42 (justdata f 2) 4 42 ((lol 84)))	L-only[1]: (42 (justdata f 2) (f 2) (f 21) ((lol 84)))
+spacefunction.metta	INERT-FORM:g	P-only[4]: true ;; true ;; true	L-only[1]: (g 3 4)
+spaces2.metta	VALUE	P-only[1]: (space ((foo 1) (foo 2) (foo 42 42) (foo (42 42))) 42)	L-only[1]: (space (msort ((foo 1) (foo 2) (foo (42 42)) (foo 42 42))) 42)
+spaces3.metta	INERT-FORM:msort	P-only[2]: ((wu) (wu 42)) ;; ((wu (wu)) (wu (wu 42)))	L-only[2]: (msort ((wu) (wu 42))) ;; (msort ((wu (wu)) (wu (wu 42))))
+spaces_find.metta	VALUE	P-only[1]: ((MissedAllPieces))	L-only[1]: ()
+spaces_removeallatoms.metta	INERT-FORM:repr	P-only[4]: (true true true true true true true true true true true) ;; "(remove-all-atoms &self)" ;; "(f 42)"	L-only[4]: (true) ;; (repr ()) ;; (repr 42)
+spaces_succeedspredicate.metta	INERT-FORM:case	P-only[2]: false ;; (a b)	L-only[1]: (case (translatePredicate (catch (Predicate (&self friend tim tom)) $v1 fail)) (($v2 true) (Empty false)))
+specialize.metta	EMPTY-LEATTA	P-only[12]: Not specialized wrapper2_Spec_[partial(+,[1])]/2 ;; (2 3 4) ;; (2 3 4)	L-only[0]: 
+specializecyclic.metta	VALUE	P-only[2]: Not specialized f4_Spec_[+]/3 ;; Not specialized f3_Spec_[+]/3	L-only[0]: 
+specializefunctiontypes.metta	INERT-FORM:repra	P-only[3]: 42 ;; ok ;; ok	L-only[1]: (repra (g 42))
+streamops.metta	VALUE	P-only[4]: (a b c d) ;; (a b b c b c c d) ;; (b c c)	L-only[4]: ((unique a) (unique b) (unique c) (unique d) (unique d)) ;; ((union a b) (union a c) (union a c) (union a d) (union b b) (union b c) (union b c) (union b d) (un
+string.metta	EMPTY-PETTA	P-only[0]: 	L-only[1]: "a "
+supercollapse.metta	VALUE	P-only[1]: (1 2 3 4 5 6 7 8 9)	L-only[1]: ((superpose (1)) (superpose ((superpose (2)) (superpose ((superpose (3)) (superpose ((superpose (4)) (superpose ((superpose (5)) (superpose ((superpose (6)) (su
+test_alpha_unique_atom.metta	INERT-FORM:=alpha	P-only[13]: true ;; true ;; true	L-only[13]: (=alpha (alpha-unique-atom ((link $v1 human) (link $v2 human) (link $v3 human))) ((link $v4 human))) ;; (=alpha (alpha-unique-atom ((parent $v1 human) (parent $
+test_backward_v01.metta	INERT-FORM:Inherits,backward-chain,match	P-only[3]: ERROR: [Thread main] <PeTTa>/src/main.pl:23: user:main findall_loop/4: Unknown procedure: 'fact?'/2 ;; ERROR: [Thread main] However, there are d	L-only[6]: true ;; (Inherits Cat Animal (stv 0.9 0.95)) ;; (match &self (Inherits $v1 $v2 $v3))
+test_backward_v06.metta	VALUE	P-only[2]: (partial nal-deduce-freq (0.95 0.99 0.8 0.9)) ;; (partial nal-deduce-conf (0.95 0.99 0.8 0.9))	L-only[0]: 
+test_match_simple.metta	INERT-FORM:match	P-only[2]: (partial match (&self (Inherits $v1 Animal $v2))) ;; (partial match (&self (Inherits Cat $v1 $v2)))	L-only[2]: (match &self (Inherits $v1 Animal $v2)) ;; (match &self (Inherits Cat $v1 $v2))
+test_nal_import.metta	VALUE	P-only[2]: (partial nal-deduce-freq (0.95 0.99 0.8 0.9)) ;; (partial nal-deduce-conf (0.95 0.99 0.8 0.9))	L-only[0]: 
+test_nal_v033.metta	INERT-FORM:/	P-only[1]: 0.5	L-only[1]: (/ 0.5 1)
+test_nal_v034.metta	INERT-FORM:/	P-only[1]: 0.5	L-only[1]: (/ 0.5 1)
+test_unify_eval_branches.metta	INERT-FORM:unify	P-only[6]: true ;; (Error (Constant wff) "already declared") ;; ()	L-only[5]: (unify &self (Constant wff (Type "$v1")) (Error (Constant wff) "already declared") ()) ;; (unify &self (Constant y (Type "$v1")) (Error (Constant y) "already de
+tests.metta	VALUE	P-only[1]: (((12 46) 1 (42 43)) ((12 46) 2 (42 43)) ((12 46) 3 (42 43)))	L-only[1]: (((12 46) (superpose ((superpose (1 2 3)))) (42 43)))
+translatorrule.metta	INERT-FORM:add-translator-rule!,cons	P-only[3]: true ;; true ;; (42 43)	L-only[3]: (add-translator-rule! compileeval42) ;; (add-translator-rule! compile42) ;; (cons 42 (43))
+translatorrule_fib.metta	INERT-FORM:add-translator-rule!	P-only[1]: true	L-only[1]: (add-translator-rule! compilefib)
+translatorrule_for.metta	INERT-FORM:add-translator-rule!	P-only[2]: true ;; ((odd 3) (even 4))	L-only[2]: (add-translator-rule! for) ;; ()
+types_nondet.metta	VALUE	P-only[0]: 	L-only[1]: Tdefault
+xor.metta	EMPTY-LEATTA	P-only[2]: 42 ;; 42	L-only[0]: 
+
+# CRUX buckets: {'INERT-FORM': 35, 'VALUE': 24, 'EMPTY-LEATTA': 11, 'EMPTY-PETTA': 2}
+# INERT-FORM head symbols (the missing/wrong-op worklist):
+#   msort	4
+#   =alpha	3
+#   foldall	3
+#   repr	3
+#   add-translator-rule!	3
+#   first-from-pair	2
+#   second-from-pair	2
+#   forall	2
+#   g	2
+#   prog1	2
+#   progn	2
+#   match	2
+#   /	2
+#   fib	1
+#   is-alpha-member	1
+#   intersection-atom	1
+#   subtraction-atom	1
+#   union-atom	1
+#   unique-atom	1
+#   hyperpose	1
+#   NARS.Query	1
+#   parse	1
+#   case	1
+#   repra	1
+#   Inherits	1
+#   backward-chain	1
+#   unify	1
+#   cons	1

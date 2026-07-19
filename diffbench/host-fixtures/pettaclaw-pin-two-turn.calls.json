@@ -1,0 +1,66 @@
+{
+  "allow": [
+    "dict",
+    "eval",
+    "helper.balance_parentheses",
+    "helper.decode_safe_text",
+    "helper.history_window",
+    "helper.int_env",
+    "helper.normalize_string",
+    "helper.path_from_env",
+    "helper.recycle_requested",
+    "helper.strip_trailing_affect",
+    "operator.add",
+    "str"
+  ],
+  "responses": [
+    {
+      "spec": "openai.OpenAI",
+      "value": "none"
+    },
+    {
+      "spec": "telegram.start_telegram",
+      "value": {"boolean": {"value": true}}
+    },
+    {
+      "spec": "telegram.getLastMessage",
+      "value": {"string": {"value": "fixture human message"}}
+    },
+    {
+      "spec": "telegram.lastMessageIsHuman",
+      "value": {"integer": {"value": 1}}
+    },
+    {
+      "spec": "synthetic_llm.current_model",
+      "value": {"string": {"value": "fixture-model"}}
+    },
+    {
+      "spec": "telegram.recent_activity",
+      "value": {"string": {"value": "fixture recent activity"}}
+    },
+    {
+      "spec": "synthetic_llm.chat",
+      "value": {"string": {"value": "((pin \"pin-roundtrip-fixture\"))"}}
+    },
+    {
+      "spec": "telegram.getLastMessage",
+      "value": {"string": {"value": "fixture human message"}}
+    },
+    {
+      "spec": "telegram.lastMessageIsHuman",
+      "value": {"integer": {"value": 1}}
+    },
+    {
+      "spec": "synthetic_llm.current_model",
+      "value": {"string": {"value": "fixture-model"}}
+    },
+    {
+      "spec": "telegram.recent_activity",
+      "value": {"string": {"value": "fixture recent activity"}}
+    },
+    {
+      "spec": "synthetic_llm.chat",
+      "value": {"string": {"value": "((rest))"}}
+    }
+  ]
+}

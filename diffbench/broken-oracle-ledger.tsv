@@ -1,0 +1,17 @@
+# Broken-oracle ledger — pinned-PeTTa-malformed tests, adjudicated with evidence.
+#
+# A file listed here is one where the PINNED PeTTa oracle itself errors or
+# asserts-out on a malformed test, AND PLeaTTa's independent result (recorded in
+# every coverage row as pleatta_independent) shows PLeaTTa is not the defect.
+# Each file has a corrected same-capability witness in oracle-witnesses/ that
+# both engines AGREE on; membership therefore yields ORACLE-WITNESS-COVERED
+# (capability demonstrated) while the original malformed test stays adjudicated.
+# It is never inferred from a bare PETTA-ERROR: each entry is justified by the
+# captured both-engines evidence in the reason column.
+#
+# Columns: file<TAB>reason
+#
+test_backward_v01.metta	pinned crashes (fact? defined via 2-arg match -> partial app -> fact?/2 vs /3); backward-chain undefined; facts via !(...) execute not store. PLeaTTa runs cleanly (PLEATTA-OK:6). Witness exercises match / fact? DB lookup.
+test_evidence_kind.metta	imports a machine-local .md; both engines faithfully mangle .md -> .md.metta so the import fails in both (pinned exit 1 on the failed test, PLeaTTa NOCOMPILE). Witness inlines the evidence-kind definitions.
+test_match_3arg.metta	facts asserted via !(Inherits ...) execute rather than store, so the 3-arg match returns () in both engines (pinned exit 1, PLeaTTa "test failed"). Witness stores the facts (bare) and exercises 3-arg match / collapse / let.
+test_nal_test_primitive.metta	numeric NAL primitives agree in both; the final backward deduction returns () because facts via !(...) are not stored (pinned exit 1, PLeaTTa "test failed"). Witness stores the facts and runs a nested-match deduction.

@@ -1,0 +1,21 @@
+# Host-case grading registry (explicit — never auto-route by dependency).
+#
+# Names exactly which host-effect corpus files are graded through the certified
+# host bridge, and how. Files NOT listed here are never auto-run and remain
+# deferred EXTERNAL-UNAVAILABLE:
+#   greedy_chess.metta  (interactive unbounded game loop)
+#   llm_cities.metta    (live nondeterministic LLM/network)
+#   git_import.metta    (network clone + module load)
+#   git_import2.metta   (network clone + external build + FAISS plugin)
+#
+# A trusted-host grade runs PLeaTTa through the certified host bridge and
+# compares its answer bag against pinned PeTTa on the same file; it is reported
+# in the trusted-host tier, never merged into certified-core equivalence.
+#
+# Columns: file  driver  timeout_s  tier  note
+python.metta	python-live	30	trusted-host	SimpleNamespace / getattr / setattr / importlib / math.pi / .upper / .__add__
+python_import.metta	python-live	30	trusted-host	imports python_import_file.py; greet / add
+torch.metta	python-live	90	trusted-host	torch.tensor / matmul / tolist / shape
+repl.metta	stdin-replay	30	trusted-host-witness	one bounded readln! turn (Phase 4)
+prologimport.metta	swi-worker	90	trusted-host	consult / callPredicate / asserta / re_replace / read_file (Phase 5)
+translatepredicate.metta	swi-worker	30	trusted-host	translatePredicate arithmetic conjunction (Phase 5)

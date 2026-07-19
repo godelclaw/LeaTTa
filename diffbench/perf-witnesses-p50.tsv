@@ -1,0 +1,16 @@
+target	witness	fragment	verdict	petta_n	leatta_n	components
+fib.metta	fib-small	IN	AGREE	1	1	same exponential recursive fib, smaller n
+fibadd.metta	fibadd-small	OUT	AGREE	2	2	dynamic add-atom of recursive rule, smaller n
+he_minimalmetta.metta	he-minimal-div-small	OUT	AGREE	2	2	lib_he chain/eval/unify recursion, smaller dividend
+holbenchmark.metta	holbenchmark-small	IN	DIFF-COUNT	4	3	HOF partial application, is-expr, nested folds, smaller ranges
+hyperpose_primes.metta	hyperpose-primes-small	IN	LEATTA-NOOUT	0		hyperpose plus primality recursion, smaller primes
+invertpeanoplus.metta	invertpeanoplus-small	IN	LEATTA-TIMEOUT	5		recursive Peano plus with forward and inverted calls, target 2
+matespace.metta	matespace-small	OUT	AGREE	1	1	add-atom-no-duplicate, case/match, collapse, smaller K
+matespace2.metta	matespace2-small	OUT	AGREE	1	1	matespace plus superpose/collapse rewrite loop, smaller K
+matespacefast.metta	matespacefast-small	OUT	AGREE	1	1	binary add-atom expansion and final match, smaller depth
+patrick_iterate_quad.metta	patrick-iterate-quad-small	OUT	DIFF-VAL	2	2	lib_patrick iterate with dynamic step function, smaller n
+peano.metta	peano-small	OUT	AGREE	1	1	space-backed Peano expansion with duplicate guard, smaller K
+peanofast.metta	peanofast-small	OUT	AGREE	2	2	bulk add-atom plus match, smaller K
+permutations.metta	permutations-small	OUT	AGREE	1	1	comma structural match and factorial search, 4 variables
+pln_roman.metta	pln-roman-small	OUT	LEATTA-TIMEOUT	2		same PLN.Query path with explicit small step/queue bounds
+scale.metta	scale-small	OUT	AGREE	1	1	bulk add-atom and index-shaped match queries, smaller K

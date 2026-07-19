@@ -1,0 +1,118 @@
+and_or.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+atomops.metta	TRACED	9/9	CHECKED	9	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+booleansolver.metta	TRACED	2/2	CHECKED	2	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+builin_types.metta	TRACED	0/36	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+case.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+case2.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.102	
+caseconstrain.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+caseempty.metta	TRACED	2/2	CHECKED	2	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+casenew.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+chain.metta	TRACED	2/2	CHECKED	2	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+collapse.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.102	
+comments.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+constanthead.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+curry.metta	TRACED	0/6	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+cut.metta	TRACED	0/2	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+empty.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.102	
+factorial.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+fibsmart.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+fibsmartimport.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+foldall.metta	TRACED	10/10	CHECKED	10	PLEATTA-CERTIFIED	trusted=10	rejected=0	exit=0	budget=3000000	seconds=0.102	
+foldallmatch.metta	TRACED	2/2	CHECKED	2	PLEATTA-CERTIFIED	trusted=2	rejected=0	exit=0	budget=3000000	seconds=0.102	
+foldallspacecount.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.102	
+forall.metta	TRACED	12/12	CHECKED	12	PLEATTA-CERTIFIED	trusted=12	rejected=0	exit=0	budget=3000000	seconds=0.102	
+functionhead.metta	TRACED	2/2	CHECKED	2	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+functionhead2.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.102	
+functionhead3.metta	TRACED	6/6	CHECKED	6	PLEATTA-CERTIFIED	trusted=6	rejected=0	exit=0	budget=3000000	seconds=0.103	
+functionremoval.metta	TRACED	1/8	CHECKED	1	PARTIAL	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.102	
+functionremovalspec.metta	TRACED	3/6	CHECKED	3	PARTIAL	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+functiontypes.metta	TRACED	4/4	CHECKED	4	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+he_assert.metta	TRACED	4/0	CHECKED	4	TRACE-FAIL	trusted=0	rejected=0	exit=1	budget=3000000	seconds=7.807	INTERNAL PANIC: out of memory
+he_equalreduct.metta	TRACED	4/4	CHECKED	4	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.103	
+he_evaluation.metta	TRACED	2/4	CHECKED	2	PARTIAL	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+he_math.metta	TRACED	19/19	CHECKED	19	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+he_quoting.metta	TRACED	3/6	CHECKED	3	PARTIAL	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+he_types.metta	TRACED	7/7	CHECKED	7	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+holfunctions.metta	TRACED	7/7	CHECKED	7	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+holfunctions_intrinsicop.metta	TRACED	0/1	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+identity.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.103	
+if.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+if2.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+if3.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+if4.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+ifcasenondet.metta	TRACED	1/2	CHECKED	1	PARTIAL	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.102	
+ifsimple.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+invertfunction.metta	TRACED	1/0	CHECKED	1	TRACE-FAIL	trusted=0	rejected=0	exit=1	budget=3000000	seconds=6.406	INTERNAL PANIC: out of memory
+iter.metta	TRACED	0/0	CHECKED	0	TRACE-FAIL	trusted=0	rejected=0	exit=1	budget=3000000	seconds=6.107	INTERNAL PANIC: out of memory
+let_superpose_if_case.metta	TRACED	0/1	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+letext.metta	TRACED	0/0	CHECKED	0	TRACE-FAIL	trusted=0	rejected=0	exit=1	budget=3000000	seconds=6.707	INTERNAL PANIC: out of memory
+letlet.metta	TRACED	0/0	CHECKED	0	TRACE-FAIL	trusted=0	rejected=0	exit=1	budget=3000000	seconds=6.207	INTERNAL PANIC: out of memory
+letstar.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+library.metta	TRACED	1/2	CHECKED	1	PARTIAL	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+listhead.metta	TRACED	3/3	CHECKED	3	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+llm_cities.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.103	
+logicprog.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.102	
+logicprogset.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+matchnested.metta	TRACED	0/1	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+matchnested2.metta	TRACED	0/1	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.103	
+matchsingle.metta	TRACED	2/2	CHECKED	2	PLEATTA-CERTIFIED	trusted=2	rejected=0	exit=0	budget=3000000	seconds=0.102	
+matchtypes.metta	TRACED	6/6	CHECKED	6	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+math.metta	TRACED	19/19	CHECKED	19	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+meta_types.metta	TRACED	0/6	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+metta4_prog.metta	TRACED	2/3	CHECKED	2	PARTIAL	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.103	
+mettaset.metta	TRACED	0/9	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+multicall.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.102	
+multiset_operations.metta	TRACED	4/4	CHECKED	4	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+nestedcons.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+once.metta	TRACED	0/2	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+patrick_iterate_fib.metta	TRACED	1/0	CHECKED	1	TRACE-FAIL	trusted=0	rejected=0	exit=1	budget=3000000	seconds=6.206	INTERNAL PANIC: out of memory
+pln_roman.metta	TRACED	0/0	CHECKED	0	TRACE-FAIL	trusted=0	rejected=0	exit=1	budget=3000000	seconds=55.941	INTERNAL PANIC: out of memory
+pln_tuffy.metta	TRACED	0/0	CHECKED	0	TRACE-FAIL	trusted=0	rejected=0	exit=1	budget=3000000	seconds=55.939	INTERNAL PANIC: out of memory
+plntest.metta	TRACED	0/0	CHECKED	0	TRACE-FAIL	trusted=0	rejected=0	exit=1	budget=3000000	seconds=6.106	INTERNAL PANIC: out of memory
+plntestdirect.metta	TRACED	1/1	CHECKED	0	PARTIAL	trusted=0	rejected=1	exit=0	budget=3000000	seconds=0.102	plntestdirect-q0-0.sexp:REJECTED: derivation does not check against the program
+recursive_types2.metta	TRACED	2/2	CHECKED	2	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+roman_test.metta	TRACED	7/18	CHECKED	7	PARTIAL	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+selfprog.metta	TRACED	0/4	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+smartdispatch.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+spacefunction.metta	TRACED	2/8	CHECKED	2	PARTIAL	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.102	
+spaces.metta	TRACED	0/1	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+spaces2.metta	TRACED	3/3	CHECKED	2	PARTIAL	trusted=0	rejected=1	exit=0	budget=3000000	seconds=0.102	spaces2-q2-0.sexp:REJECTED: derivation does not check against the program
+spaces3.metta	TRACED	0/7	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+spaces_find.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.102	
+state.metta	TRACED	0/4	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+streamops.metta	TRACED	0/4	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+supercollapse.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=1	rejected=0	exit=0	budget=3000000	seconds=9.908	
+superpose_nested.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.802	
+test_alpha_unique_atom.metta	TRACED	13/13	CHECKED	13	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_backward_v02.metta	TRACED	2/2	CHECKED	2	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_backward_v03.metta	TRACED	5/5	CHECKED	5	PLEATTA-CERTIFIED	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_backward_v04.metta	TRACED	5/5	CHECKED	5	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.101	
+test_backward_v05.metta	TRACED	5/5	CHECKED	5	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_backward_v06.metta	TRACED	5/7	CHECKED	5	PARTIAL	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_backward_v06_fixed.metta	TRACED	7/7	CHECKED	7	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_backward_v07.metta	TRACED	5/5	CHECKED	5	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.101	
+test_backward_v08.metta	TRACED	5/5	CHECKED	5	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_backward_v09.metta	TRACED	10/10	CHECKED	10	PLEATTA-CERTIFIED	trusted=5	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_collapse.metta	TRACED	5/5	CHECKED	5	PLEATTA-CERTIFIED	trusted=2	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_deduce_raw.metta	TRACED	3/3	CHECKED	3	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_evidence_kind.metta	TRACED	5/5	CHECKED	5	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_evidence_kind_import.metta	TRACED	6/6	CHECKED	6	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_evidence_kind_inline.metta	TRACED	5/5	CHECKED	5	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_let_match.metta	TRACED	3/3	CHECKED	3	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_match_3arg.metta	TRACED	3/3	CHECKED	3	PLEATTA-CERTIFIED	trusted=1	rejected=0	exit=0	budget=3000000	seconds=0.104	
+test_match_simple.metta	TRACED	5/5	CHECKED	3	PARTIAL	trusted=0	rejected=2	exit=0	budget=3000000	seconds=0.102	test_match_simple-q3-0.sexp:REJECTED: derivation does not check against the program | test_match_simple-q4-0.sexp:REJECTED: derivation does not check against the program
+test_match_simple2.metta	TRACED	1/1	CHECKED	1	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_nal_import.metta	TRACED	3/5	CHECKED	3	PARTIAL	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_nal_test_primitive.metta	TRACED	9/9	CHECKED	9	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_nal_v032.metta	TRACED	7/7	CHECKED	7	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_nal_v033.metta	TRACED	5/5	CHECKED	4	PARTIAL	trusted=0	rejected=1	exit=0	budget=3000000	seconds=0.102	test_nal_v033-q3-0.sexp:REJECTED: derivation does not check against the program
+test_nal_v034.metta	TRACED	7/7	CHECKED	6	PARTIAL	trusted=0	rejected=1	exit=0	budget=3000000	seconds=0.102	test_nal_v034-q3-0.sexp:REJECTED: derivation does not check against the program
+test_protocosmoMain.metta	TRACED	2/2	CHECKED	2	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_stv_match.metta	TRACED	2/2	CHECKED	2	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+test_ulc_accessors.metta	TRACED	3/3	CHECKED	3	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+tests.metta	TRACED	0/1	CHECKED	0	NOTRACE	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.202	
+twostage.metta	TRACED	2/2	CHECKED	2	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+types.metta	TRACED	0/0	CHECKED	0	TRACE-FAIL	trusted=0	rejected=0	exit=1	budget=3000000	seconds=6.006	INTERNAL PANIC: out of memory
+types_dependent.metta	TRACED	2/2	CHECKED	2	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+xor.metta	TRACED	2/2	CHECKED	2	PLEATTA-CERTIFIED	trusted=0	rejected=0	exit=0	budget=3000000	seconds=0.102	
+superpose_primes.metta	TRACED	0/0	CHECKED	0	TRACE-FAIL	trusted=0	rejected=0	exit=-9	budget=3000000	seconds=60.141	

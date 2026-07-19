@@ -1,0 +1,22 @@
+# SEMANTIC-WITNESS-COVERED / FULL-SCALE-PERF-BOUND. Each row has a
+# same-family value/multiplicity witness; the large corpus file does not finish
+# within the canonical cap. These count as semantic functionality, never as
+# full-scale completion.
+fib.metta	WITNESS-COVERED/PERF-BOUND	same exponential recursive fib, smaller n
+fibadd.metta	WITNESS-COVERED/PERF-BOUND	dynamic add-atom of the recursive rule, smaller n
+he_minimalmetta.metta	WITNESS-COVERED/PERF-BOUND	chain/eval/unify recursion, smaller dividend
+holbenchmark.metta	WITNESS-COVERED/PERF-BOUND	higher-order partial application and nested folds, smaller ranges
+hyperpose_primes.metta	WITNESS-COVERED/PERF-BOUND	hyperpose plus primality recursion, smaller primes
+matespace.metta	WITNESS-COVERED/PERF-BOUND	space mutation/match expansion, smaller depth
+matespace2.metta	WITNESS-COVERED/PERF-BOUND	space mutation plus superpose rewrite, smaller depth
+matespacefast.metta	WITNESS-COVERED/PERF-BOUND	binary add-atom expansion, smaller depth
+nars_tuffy.metta	WITNESS-COVERED/PERF-BOUND	exact lookup, ground-deduction, and quantified-deduction STVs
+patrick_iterate_quad.metta	WITNESS-COVERED/PERF-BOUND	iterate/quad-sum path, smaller n
+peano.metta	WITNESS-COVERED/PERF-BOUND	space-backed Peano expansion, smaller depth
+peanofast.metta	WITNESS-COVERED/PERF-BOUND	bulk add-atom/match, smaller depth
+permutations.metta	WITNESS-COVERED/PERF-BOUND	same factorial structural search, four variables
+pln_roman.metta	WITNESS-COVERED/PERF-BOUND	same PLN.Query path, smaller queue/step bounds
+pln_tuffy.metta	WITNESS-COVERED/PERF-BOUND	exact quantified PLN deduction STV
+scale.metta	WITNESS-COVERED/PERF-BOUND	bulk add-atom and index-shaped queries, smaller K
+superpose_primes.metta	WITNESS-COVERED/PERF-BOUND	same four-branch trial division, smaller primes
+tilepuzzle.metta	WITNESS-COVERED/PERF-BOUND	tile patterns and duplicate-filtered BFS, smaller graph

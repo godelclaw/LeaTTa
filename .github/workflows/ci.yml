@@ -1,0 +1,79 @@
+# SPDX-FileCopyrightText: 2026 MesTTo
+# SPDX-License-Identifier: Apache-2.0
+
+name: CI
+
+# Gate for contributions. Every pull request and every push to a main branch must build the whole
+# development, keep the no-placeholder invariant, and pass the differential oracle and the regression
+# suite. A change that fails any of these does not merge.
+
+on:
+  pull_request:
+  push:
+    branches: [metatheory, future-work, main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch the prebuilt Mathlib cache (used by the metatheory layer)
+        run: lake exe cache get
+
+      - name: License headers
+        run: scripts/ci/check-license-headers.sh
+
+      - name: Build (kernel, interpreter binary, metatheory, operational)
+        run: lake build 2>&1 | tee build.log
+
+      - name: No Lean build warnings
+        run: scripts/ci/check-build-warnings.sh build.log
+
+      - name: No forbidden placeholders (partial, unsafe, native_decide)
+        run: scripts/ci/check-no-forbidden.sh
+
+      - name: Differential oracle against Hyperon's corpus (270/270)
+        run: ./scripts/run-oracle.sh
+
+      - name: Regression suite
+        run: ./scripts/run-regression.sh
+
+  book:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Build the Verso book library
+        working-directory: book
+        run: lake build Docs 2>&1 | tee book-build.log
+
+      - name: No unreviewed book build warnings
+        run: scripts/ci/check-book-warnings.sh book/book-build.log
+
+      - name: Build the Verso book site
+        working-directory: book
+        run: lake exe docs 2>&1 | tee book-docs.log
+
+      - name: No unreviewed book generation warnings
+        run: scripts/ci/check-book-warnings.sh book/book-docs.log

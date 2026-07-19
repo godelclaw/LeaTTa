@@ -1,0 +1,52 @@
+builin_types.metta	IN		DIFF-COUNT	37	36
+fibsmartimport.metta	IN		DIFF-COUNT	3	1
+git_import.metta	OUT	git-import	LEATTA-NOOUT	4	
+git_import2.metta	OUT	git-import	LEATTA-NOOUT	11	
+he_assert.metta	IN		DIFF-COUNT	6	5
+he_atomspace.metta	IN		DIFF-COUNT	9	8
+he_equalreduct.metta	IN		DIFF-COUNT	5	4
+he_error.metta	IN		DIFF-COUNT	6	3
+he_evaluation.metta	IN		DIFF-COUNT	11	4
+he_minimalmetta.metta	IN		LEATTA-TIMEOUT	2	
+he_quoting.metta	IN		DIFF-COUNT	7	6
+he_types.metta	IN		DIFF-COUNT	8	7
+library.metta	IN		AGREE	2	2
+llm_cities.metta	IN		DIFF-VAL	1	1
+nars_direct.metta	IN		AGREE	7	7
+nars_tuffy.metta	IN		DIFF-COUNT	0	1
+patrick_iterate_fib.metta	IN		AGREE	2	2
+patrick_iterate_quad.metta	IN		LEATTA-TIMEOUT	2	
+patrick_test.metta	IN		AGREE	4	4
+pln_direct.metta	IN		AGREE	7	7
+pln_roman.metta	IN		LEATTA-TIMEOUT	102	
+pln_tuffy.metta	IN		DIFF-COUNT	32	1
+prologimport.metta	OUT	import_prolog	DIFF-COUNT	1	3
+python_import.metta	OUT	py-call	DIFF-COUNT	3	2
+roman_test.metta	IN		DIFF-COUNT	27	18
+spaces_find.metta	IN		DIFF-COUNT	2	1
+spaces_removeallatoms.metta	IN		AGREE	5	5
+spaces_succeedspredicate.metta	IN		AGREE	3	3
+tabling_fib.metta	IN		AGREE	3	3
+test_backward_v01.metta	IN		DIFF-COUNT	3	6
+test_backward_v04.metta	IN		AGREE	5	5
+test_backward_v05.metta	IN		AGREE	5	5
+test_backward_v06.metta	IN		AGREE	7	7
+test_backward_v06_fixed.metta	IN		AGREE	7	7
+test_backward_v07.metta	IN		AGREE	5	5
+test_backward_v08.metta	IN		AGREE	5	5
+test_backward_v09.metta	IN		AGREE	10	10
+test_collapse.metta	IN		AGREE	5	5
+test_deduce_raw.metta	IN		AGREE	3	3
+test_evidence_kind.metta	IN		AGREE	5	5
+test_evidence_kind_import.metta	IN		AGREE	6	6
+test_let_match.metta	IN		AGREE	3	3
+test_match_simple.metta	IN		AGREE	5	5
+test_nal_import.metta	IN		AGREE	5	5
+test_nal_test_primitive.metta	IN		AGREE	9	9
+test_nal_v032.metta	IN		AGREE	7	7
+test_nal_v033.metta	IN		AGREE	5	5
+test_nal_v034.metta	IN		AGREE	7	7
+test_protocosmoMain.metta	IN		AGREE	2	2
+test_ulc_accessors.metta	IN		AGREE	3	3
+test_unify_eval_branches.metta	IN		AGREE	6	6
+tilepuzzle.metta	IN		DIFF-COUNT	2	0
