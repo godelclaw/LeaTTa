@@ -11,6 +11,7 @@ import PLeaTTa.Proofs.CompilerDesugaring
 import PLeaTTa.Proofs.PrologCoreAdequacy
 import PLeaTTa.Proofs.ObservationAgreement
 import PLeaTTa.Proofs.ReaderAdequacy
+import PLeaTTa.PeTTaSpec.OpenSubstitution
 import PLeaTTa.SubstEngine
 import PLeaTTa.HostMachine
 import PLeaTTa.HostReplay
@@ -58,6 +59,12 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerAdequacy.GoalsAgree.flatWidth
 #print axioms PLeaTTa.CompilerAdequacy.compileBranch_normalized_sound
 #print axioms PLeaTTa.CompilerAdequacy.GoalsAgree.conditionThen
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.unifies_empty_distinct_alias_output
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.empty_distinct_variables_not_identical
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.singleton_alias_makes_variables_identical
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.explicit_alias_prefix_equivalent_to_shared
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.BuildsBranchNormalized.variable_nonempty_shape
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.normalized_variable_branch_alias_semantics
 #print axioms PLeaTTa.CompilerAdequacy.letStarExpands_bindings_nonempty
 #print axioms PLeaTTa.CompilerAdequacy.letStarExpands_desugar
 #print axioms PLeaTTa.CompilerAdequacy.letStarExpands_nested_size_le_twice_source

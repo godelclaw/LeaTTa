@@ -19,7 +19,7 @@ inductive LogicVar where
   | source (name : String)
   | anonymous (index : Nat)
   | generated (index : Nat)
-deriving Repr, Inhabited
+deriving Repr, Inhabited, DecidableEq
 
 /-- Source and translator-generated variables cannot alias. -/
 theorem LogicVar.source_ne_generated (name : String) (index : Nat) :
@@ -262,6 +262,24 @@ theorem BuildsBranchNormalized.zero_width_no_alias {output value : Term}
   | empty => rfl
   | aliasVariable _ _ nonempty => omega
   | nonVariable _ _ nonempty _ => omega
+
+/-- Positive priority inversion for `build_branch/4`: a variable-valued
+nonempty branch has exactly the explicit alias prefix and unchanged branch
+body used by the normalization. -/
+theorem BuildsBranchNormalized.variable_nonempty_shape
+    {output : Term} {source : LogicVar} {goals aliases : List Goal}
+    {template : Term} {branch : Goal}
+    (translation :
+      BuildsBranchNormalized output (.variable source) goals aliases template
+        branch)
+    (nonempty : 0 < Goals.flatWidth goals) :
+    aliases = [.unify (.variable source) output] ∧
+      template = output ∧ branch = .conjunction goals := by
+  cases translation with
+  | empty _ _ empty => omega
+  | aliasVariable => exact ⟨rfl, rfl, rfl⟩
+  | nonVariable _ _ _ notVariable =>
+      exact False.elim (notVariable source rfl)
 
 mutual
 
