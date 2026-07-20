@@ -958,6 +958,41 @@ theorem compileListFuel_cons_eq (fuel : Nat) (env : CEnv) (counter : Nat)
   rfl
 
 set_option maxHeartbeats 2000000 in
+/-- Atomic pattern variables are preserved, emit no constraints, and leave
+the fresh-variable counter unchanged. -/
+theorem compilePatternFuel_var_eq (fuel : Nat) (env : CEnv) (counter : Nat)
+    (name : String) :
+    compilePatternFuel (fuel + 1) env counter (.var name) =
+      .ok (.var name, [], counter) := by
+  rfl
+
+set_option maxHeartbeats 2000000 in
+/-- Atomic pattern symbols are preserved modulo the executable boolean
+representation, with no emitted constraints. -/
+theorem compilePatternFuel_sym_eq (fuel : Nat) (env : CEnv) (counter : Nat)
+    (name : String) :
+    compilePatternFuel (fuel + 1) env counter (.sym name) =
+      .ok (canonBool (.sym name), [], counter) := by
+  rfl
+
+set_option maxHeartbeats 2000000 in
+/-- Atomic grounded pattern values are preserved modulo the executable boolean
+representation, with no emitted constraints. -/
+theorem compilePatternFuel_gnd_eq (fuel : Nat) (env : CEnv) (counter : Nat)
+    (value : Metta.Ground) :
+    compilePatternFuel (fuel + 1) env counter (.gnd value) =
+      .ok (canonBool (.gnd value), [], counter) := by
+  rfl
+
+set_option maxHeartbeats 2000000 in
+/-- The empty source list is the atomic empty-list pattern. -/
+theorem compilePatternFuel_nil_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) :
+    compilePatternFuel (fuel + 1) env counter (.expr []) =
+      .ok (nilA, [], counter) := by
+  rfl
+
+set_option maxHeartbeats 2000000 in
 /-- Empty pattern-list compilation preserves the counter and emits no goals. -/
 theorem compilePatternListFuel_nil_eq (fuel : Nat) (env : CEnv)
     (counter : Nat) :

@@ -87,6 +87,26 @@ inductive Literal : Atom → Term → Prop where
   | falseGround : Literal (.gnd (.bool false)) (.atom "false")
   | emptyList : Literal (.expr []) (.list [] none)
 
+/-- Independently specified atomic fragment of pinned `constrain_args/3`.
+Variables and atomic values are preserved without goals by
+`translator.pl:2`; the supported ground/value representation is shared with
+the independent literal relation, not with the executable pattern compiler. -/
+inductive ConstrainsAtomicPattern : Atom → Term → Prop where
+  | literal {source : Atom} {term : Term} (value : Literal source term) :
+      ConstrainsAtomicPattern source term
+
+/-- Pointwise left-to-right `maplist(constrain_args, ...)` traversal for the
+atomic fragment used by `translate_clause/3` at `translator.pl:20-22`.  Every
+atomic member emits an empty goal list, so flattening preserves `[]`.  Nested
+compound patterns are added only when their dispatch is independently proved. -/
+inductive ConstrainsAtomicPatternSeq : List Atom → List Term → Prop where
+  | nil : ConstrainsAtomicPatternSeq [] []
+  | cons {source : Atom} {term : Term} {sources : List Atom}
+      {terms : List Term}
+      (head : ConstrainsAtomicPattern source term)
+      (tail : ConstrainsAtomicPatternSeq sources terms) :
+      ConstrainsAtomicPatternSeq (source :: sources) (term :: terms)
+
 mutual
 
 /-- Deep syntactic quotation into native Prolog terms. -/
@@ -474,6 +494,21 @@ theorem letStar_hook_blocks_builtin (counter : Nat)
   cases translation with
   | expand notShadowed _ _ => exact notShadowed trivial
 
+/-- Positive pattern-traversal example: atomic pattern members retain order and
+their independent Prolog representations. -/
+theorem translates_atomic_pattern_pair (name : String) (value : Int) :
+    ConstrainsAtomicPatternSeq [.var name, .gnd (.int value)]
+      [.variable (.source name), .integer value] :=
+  .cons (.literal (.variable name))
+    (.cons (.literal (.integer value)) .nil)
+
+/-- Host payloads are not part of pinned atomic pattern syntax. -/
+theorem external_not_atomic_pattern (tag payload : String) (term : Term) :
+    ¬ ConstrainsAtomicPattern (.gnd (.external tag payload)) term := by
+  intro translation
+  cases translation with
+  | literal value => cases value
+
 /-- The current independently specified compiler fragment.  Membership is a
 native translation derivation, never an executable-compiler success test. -/
 def SupportedExpr (state : TranslatorState) (counter : Nat) (source : Atom) :
@@ -499,6 +534,23 @@ def SupportedLetStar (state : TranslatorState) (counter : Nat)
     (source : Atom) : Prop :=
   ∃ term goals nextCounter,
     TranslatesLetStar state counter source term goals nextCounter
+
+/-- Independently supported atomic pattern forms. -/
+def SupportedAtomicPattern (source : Atom) : Prop :=
+  ∃ term, ConstrainsAtomicPattern source term
+
+/-- Independently supported left-to-right atomic pattern sequences. -/
+def SupportedAtomicPatternSeq (sources : List Atom) : Prop :=
+  ∃ terms, ConstrainsAtomicPatternSeq sources terms
+
+/-- A host payload is outside the independently supported source-pattern
+fragment even though the executable compiler has an internal ground-value
+branch for runtime-produced atoms. -/
+theorem external_not_supported_atomic_pattern (tag payload : String) :
+    ¬ SupportedAtomicPattern (.gnd (.external tag payload)) := by
+  intro supported
+  obtain ⟨term, translation⟩ := supported
+  exact external_not_atomic_pattern tag payload term translation
 
 /-- Imported host payloads are not literals in the certified compiler fragment. -/
 theorem external_not_literal (tag payload : String) (term : Term) :

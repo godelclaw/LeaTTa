@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=152a2ba6f44d3476240ae6e0bd4bff6ae9a945568e43ede43656fe7d792eb7c5
+# compiler_sha256=e92426c3ccad972b9f0608e947d669aad3bbc87a7e24310d17c124b0f6b58d50
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -15,7 +15,7 @@ EX.symbol_head	T97-333	X	-	N	GAP	dispatcher-unproved
 EX.variable_head	T332-333	S	-	N	GAP	callDyn-models-reduce
 EX.compound_head	T97-99,329-333	S	-	N	GAP	static-data-or-callDyn-shortcut
 PAT.fuel0	-	P	-	N	GAP	totalization
-PAT.atomic	T2,T13-14	X	-	N	GAP	no-pattern-reference
+PAT.atomic	T2	X	ConstrainsAtomicPattern	SC	PASS	atomic-source-fragment; host-external-excluded
 PAT.internal_chain	-	P	-	N	GAP	internal-encoding
 PAT.cons	T3-8	X	-	N	GAP	no-pattern-reference
 PAT.known_head	T9-12	X	-	N	GAP	native-fun-premise-unproved
@@ -31,8 +31,8 @@ ARGS.expression_typed	T363-370	X	-	N	GAP	syntactic-staging-unproved
 ARGS.evaluated	T363-370	X	-	N	GAP	ordered-translation-unproved
 LIST.nil	T409	X	-	EQ	GAP	implementation-equation-only
 LIST.cons	T410-412	X	TranslatesSeq-partial	EQ	GAP	first-last-only
-PATLIST.nil	T20-22	X	-	EQ	GAP	implementation-equation-only
-PATLIST.cons	T20-22	X	-	EQ	GAP	no-pattern-adequacy
+PATLIST.nil	T20-22	X	ConstrainsAtomicPatternSeq	SC	PASS	atomic-fragment-empty-traversal
+PATLIST.cons	T20-22	X	ConstrainsAtomicPatternSeq	SC	PASS	atomic-members-left-to-right; nested-pattern-proof-open
 APP.quote	T297-299	X	TranslatesExpr.quote	SC	PASS	covered
 APP.Predicate	M275	H	-	N	BOUNDARY	typed-wrapper
 APP.translatePredicate	T271-275	H	-	N	BOUNDARY	ownership-dispatch

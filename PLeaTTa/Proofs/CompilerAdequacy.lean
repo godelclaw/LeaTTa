@@ -41,6 +41,14 @@ inductive ProperListAgrees : List Term → Atom → Prop where
 
 end
 
+/-- Pointwise ordered agreement between independent Prolog terms and the
+executable atoms produced by compiler traversals. -/
+inductive TermsAgree : List Term → List Atom → Prop where
+  | nil : TermsAgree [] []
+  | cons {term : Term} {atom : Atom} {terms : List Term} {atoms : List Atom}
+      (head : TermAgrees term atom) (tail : TermsAgree terms atoms) :
+      TermsAgree (term :: terms) (atom :: atoms)
+
 /-- Agreement between the independent translator-rule predicate and the
 executable compiler environment. -/
 structure EnvAgrees (state : TranslatorState) (env : CEnv) : Prop where
@@ -258,6 +266,208 @@ theorem compileExpr_literal_adequate {source : Atom} {term : Term}
   simpa only [compileExpr, Nat.add_assoc, Nat.reduceAdd] using
     compileExprFuel_literal_adequate (compilerFuel source + 63) env counter
       literal
+
+/-- Soundness of the executable atomic `constrain_args/3` branches.  The
+independent source relation is `ConstrainsAtomicPattern`; executable pattern
+compilation preserves the value, emits no goals, and leaves the fresh counter
+unchanged.  [SPEC translator.pl:2] -/
+theorem compilePatternFuel_atomic_sound {source : Atom} {term : Term}
+    (fuel : Nat) (env : CEnv) (counter : Nat)
+    (native : ConstrainsAtomicPattern source term) :
+    ∃ internal : Atom,
+      compilePatternFuel (fuel + 1) env counter source =
+        .ok (internal, [], counter) ∧
+      TermAgrees term internal := by
+  cases native with
+  | literal literal =>
+      cases literal with
+      | «variable» name =>
+          exact ⟨.var name, compilePatternFuel_var_eq fuel env counter name,
+            .sourceVariable name⟩
+      | symbol name =>
+          by_cases trueName : name = "true"
+          · subst name
+            exact ⟨.sym "True", by
+                simpa [canonBool] using
+                  compilePatternFuel_sym_eq fuel env counter "true",
+              .trueAtom⟩
+          · by_cases falseName : name = "false"
+            · subst name
+              exact ⟨.sym "False", by
+                  simpa [canonBool] using
+                    compilePatternFuel_sym_eq fuel env counter "false",
+                .falseAtom⟩
+            · exact ⟨.sym name,
+                by
+                  simpa [canonBool, trueName, falseName] using
+                    compilePatternFuel_sym_eq fuel env counter name,
+                .atom trueName falseName⟩
+      | integer value =>
+          exact ⟨.gnd (.int value), by
+              simpa [canonBool] using
+                compilePatternFuel_gnd_eq fuel env counter (.int value),
+            .integer value⟩
+      | float value =>
+          exact ⟨.gnd (.float value), by
+              simpa [canonBool] using
+                compilePatternFuel_gnd_eq fuel env counter (.float value),
+            .float value⟩
+      | string value =>
+          exact ⟨.gnd (.str value), by
+              simpa [canonBool] using
+                compilePatternFuel_gnd_eq fuel env counter (.str value),
+            .string value⟩
+      | trueGround =>
+          exact ⟨.sym "True", by
+              simpa [canonBool] using
+                compilePatternFuel_gnd_eq fuel env counter (.bool true),
+            .trueAtom⟩
+      | falseGround =>
+          exact ⟨.sym "False", by
+              simpa [canonBool] using
+                compilePatternFuel_gnd_eq fuel env counter (.bool false),
+            .falseAtom⟩
+      | emptyList =>
+          exact ⟨nilA, compilePatternFuel_nil_eq fuel env counter,
+            .properList .nil⟩
+
+/-- Public atomic-pattern compiler soundness at the source-derived budget. -/
+theorem compilePattern_atomic_sound {source : Atom} {term : Term}
+    (env : CEnv) (counter : Nat)
+    (native : ConstrainsAtomicPattern source term) :
+    ∃ internal : Atom,
+      compilePattern env counter source = .ok (internal, [], counter) ∧
+      TermAgrees term internal := by
+  simpa only [compilePattern, Nat.add_assoc, Nat.reduceAdd] using
+    compilePatternFuel_atomic_sound (compilerFuel source + 63) env counter
+      native
+
+/-- Completeness on the independently supported atomic pattern fragment:
+every successful executable result is represented by the pinned
+`constrain_args/3` clause, with exactly the same output, empty goal list, and
+counter. -/
+theorem compilePattern_atomic_complete {source internal : Atom}
+    (env : CEnv) (counter : Nat) {executableGoals : List PLeaTTa.Goal}
+    {nextCounter : Nat} (supported : SupportedAtomicPattern source)
+    (compiled : compilePattern env counter source =
+      .ok (internal, executableGoals, nextCounter)) :
+    ∃ term,
+      ConstrainsAtomicPattern source term ∧
+      TermAgrees term internal ∧ executableGoals = [] ∧ nextCounter = counter := by
+  obtain ⟨term, native⟩ := supported
+  obtain ⟨referenceInternal, referenceCompiled, termAgreement⟩ :=
+    compilePattern_atomic_sound env counter native
+  have resultEquality :
+      (internal, executableGoals, nextCounter) =
+        (referenceInternal, [], counter) :=
+    Except.ok.inj (compiled.symm.trans referenceCompiled)
+  cases resultEquality
+  exact ⟨term, native, termAgreement, rfl, rfl⟩
+
+/-- Structural atom size is always positive. -/
+theorem atom_size_positive_for_compiler (source : Atom) : 0 < source.size := by
+  cases source <;> simp [Atom.size] <;> omega
+
+/-- A source list's length is bounded by the sum of its members' structural
+sizes.  This connects the independent traversal depth to the public compiler's
+syntax-derived fuel budget. -/
+theorem source_length_le_size_sum (sources : List Atom) :
+    sources.length ≤ (sources.map Atom.size).sum := by
+  induction sources with
+  | nil => simp
+  | cons source sources inductionHypothesis =>
+      simp only [List.length_cons, List.map, List.sum_cons]
+      have positive := atom_size_positive_for_compiler source
+      omega
+
+/-- Fuel-parametric soundness of left-to-right atomic pattern traversal.  The
+base `sources.length + 1` pays for one list node per member plus the terminal
+empty list; extra fuel cannot change the result.  [SPEC translator.pl:20-22] -/
+theorem compilePatternListFuel_atomic_sound (env : CEnv) (counter : Nat)
+    {sources : List Atom} {terms : List Term}
+    (native : ConstrainsAtomicPatternSeq sources terms) (extraFuel : Nat) :
+    ∃ internals,
+      compilePatternListFuel (sources.length + 1 + extraFuel) env counter
+          sources = .ok (internals, [], counter) ∧
+      TermsAgree terms internals := by
+  induction native with
+  | nil =>
+      refine ⟨[], ?_, .nil⟩
+      simpa [Nat.add_comm] using
+        compilePatternListFuel_nil_eq extraFuel env counter
+  | @cons source term sources terms head tail inductionHypothesis =>
+      obtain ⟨headInternal, headCompiled, headAgreement⟩ :=
+        compilePatternFuel_atomic_sound (sources.length + extraFuel) env
+          counter head
+      obtain ⟨tailInternals, tailCompiled, tailAgreement⟩ :=
+        inductionHypothesis
+      have childFuelEq :
+          (sources.length + extraFuel) + 1 =
+            sources.length + 1 + extraFuel := by
+        omega
+      rw [childFuelEq] at headCompiled
+      refine ⟨headInternal :: tailInternals, ?_,
+        .cons headAgreement tailAgreement⟩
+      rw [show (source :: sources).length + 1 + extraFuel =
+          (sources.length + 1 + extraFuel) + 1 by simp; omega]
+      rw [compilePatternListFuel_cons_eq, headCompiled]
+      dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+      rw [tailCompiled]
+      rfl
+
+/-- Public soundness of atomic `maplist(constrain_args, ...)` traversal.  The
+public source-sized budget is proved sufficient rather than assumed. -/
+theorem compilePatternList_atomic_sound (env : CEnv) (counter : Nat)
+    {sources : List Atom} {terms : List Term}
+    (native : ConstrainsAtomicPatternSeq sources terms) :
+    ∃ internals,
+      compilePatternList env counter sources = .ok (internals, [], counter) ∧
+      TermsAgree terms internals := by
+  have lengthBound := source_length_le_size_sum sources
+  have fuelBound :
+      sources.length + 1 ≤ compilerListFuel sources + 64 := by
+    simp only [compilerListFuel]
+    omega
+  obtain ⟨extraFuel, fuelEquality⟩ :
+      ∃ extraFuel,
+        compilerListFuel sources + 64 =
+          sources.length + 1 + extraFuel := by
+    exact ⟨compilerListFuel sources + 64 - (sources.length + 1), by omega⟩
+  obtain ⟨internals, compiled, termsAgreement⟩ :=
+    compilePatternListFuel_atomic_sound env counter native extraFuel
+  exact ⟨internals, by simpa [compilePatternList, fuelEquality] using compiled,
+    termsAgreement⟩
+
+/-- Completeness on independently supported atomic pattern sequences: every
+successful executable result has the same ordered terms, empty flattened goal
+list, and unchanged fresh counter as pinned `translate_clause/3`. -/
+theorem compilePatternList_atomic_complete (env : CEnv) (counter : Nat)
+    {sources internals : List Atom} {executableGoals : List PLeaTTa.Goal}
+    {nextCounter : Nat} (supported : SupportedAtomicPatternSeq sources)
+    (compiled : compilePatternList env counter sources =
+      .ok (internals, executableGoals, nextCounter)) :
+    ∃ terms,
+      ConstrainsAtomicPatternSeq sources terms ∧
+      TermsAgree terms internals ∧ executableGoals = [] ∧ nextCounter = counter := by
+  obtain ⟨terms, native⟩ := supported
+  obtain ⟨referenceInternals, referenceCompiled, termsAgreement⟩ :=
+    compilePatternList_atomic_sound env counter native
+  have resultEquality :
+      (internals, executableGoals, nextCounter) =
+        (referenceInternals, [], counter) :=
+    Except.ok.inj (compiled.symm.trans referenceCompiled)
+  cases resultEquality
+  exact ⟨terms, native, termsAgreement, rfl, rfl⟩
+
+/-- Concrete positive witness for ordered two-member pattern traversal. -/
+theorem compilePatternList_atomic_pair_sound (env : CEnv) (counter : Nat)
+    (name : String) (value : Int) :
+    ∃ internals,
+      compilePatternList env counter [.var name, .gnd (.int value)] =
+        .ok (internals, [], counter) ∧
+      TermsAgree [.variable (.source name), .integer value] internals := by
+  exact compilePatternList_atomic_sound env counter
+    (translates_atomic_pattern_pair name value)
 
 /-- Syntactic quotation compiles to the deep chain encoding related to the
 independent native quotation term. -/
