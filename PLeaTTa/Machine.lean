@@ -3838,6 +3838,39 @@ theorem trimFor_eq_self_of_root_keys (goals : List Goal) (qterm : Atom)
   simp [isTrimRoot, goalsVars, goalsVarsFuel, goalVarsFuel, goalsFuel, goalFuel,
     addAtomVars]
 
+/-- A variable used by the first equality in an `if` then-branch remains
+directly live while the conditional is pending.  This is the proof-facing
+fact needed to show that substitution trimming cannot discard a branch alias
+before the selected branch executes. -/
+@[simp] theorem isTrimRoot_ite_then_eq_left (condition template result query rhs :
+    Atom) (source : String) (thenRest : List Goal)
+    (elseBranch : Atom × List Goal) :
+    isTrimRoot
+      [Goal.ite condition
+        (template, Goal.eq (Atom.var source) rhs :: thenRest)
+        elseBranch result]
+      query source = true := by
+  let thenGoals := Goal.eq (Atom.var source) rhs :: thenRest
+  let fuel := Nat.max (goalsFuel thenGoals) (goalsFuel elseBranch.2) + 1
+  let initial := addAtomVars
+    (addAtomVars
+      (addAtomVars (Std.HashSet.emptyWithCapacity 64) result) condition)
+    template
+  have thenContains :
+      (goalsVarsFuel fuel thenGoals initial).contains source = true := by
+    apply goalsVarsFuel_eq_left_mem source fuel thenGoals initial rhs
+    · exact Nat.add_le_add_right
+        (Nat.le_max_left (goalsFuel thenGoals) (goalsFuel elseBranch.2)) 1
+    · simp [thenGoals]
+  have elseTemplateContains :=
+    addAtomVars_preserves_contains source _ thenContains elseBranch.1
+  have elseContains := goalsVarsFuel_preserves_contains fuel source
+    elseBranch.2 _ elseTemplateContains
+  have queryContains :=
+    addAtomVars_preserves_contains source _ elseContains query
+  simpa [isTrimRoot, goalsVars, goalsVarsFuel, goalVarsFuel, goalsFuel,
+    goalFuel, thenGoals, fuel, initial] using queryContains
+
 theorem trimFor_target_effect_generic (g input answer marker : String) :
     trimFor
       [Goal.wact "add-atom" [Atom.sym marker] (Atom.var "effectResult#r11")]

@@ -10,6 +10,7 @@ import PLeaTTa.Proofs.CompilerAdequacy
 import PLeaTTa.Proofs.CompilerDesugaring
 import PLeaTTa.Proofs.PrologCoreAdequacy
 import PLeaTTa.Proofs.ObservationAgreement
+import PLeaTTa.Proofs.OpenOrderedStep
 import PLeaTTa.Proofs.ReaderAdequacy
 import PLeaTTa.PeTTaSpec.OpenSubstitution
 import PLeaTTa.PeTTaSpec.OpenOrdered
@@ -88,6 +89,14 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.StateAgrees.identical_iff
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.Runs.forward
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.RunsAll.forward
+#print axioms PLeaTTa.isTrimRoot_ite_then_eq_left
+#print axioms PLeaTTa.OpenOrderedStep.aliasIf_translates
+#print axioms PLeaTTa.OpenOrderedStep.aliasIf_compiles
+#print axioms PLeaTTa.OpenOrderedStep.aliasIf_compiler_agrees
+#print axioms PLeaTTa.OpenOrderedStep.aliasIf_reference_runs
+#print axioms PLeaTTa.OpenOrderedStep.aliasIf_reference_query_value
+#print axioms PLeaTTa.OpenOrderedStep.aliasIf_executable_steps
+#print axioms PLeaTTa.OpenOrderedStep.aliasIf_source_to_observation
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.RunsMany.forward
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.RunsBranches.forward
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.PrimitiveBisimulation.ofCalls
