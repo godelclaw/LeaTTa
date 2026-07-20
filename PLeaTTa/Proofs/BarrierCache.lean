@@ -95,6 +95,14 @@ theorem barrierCount_foldl {Binding : Type}
   | nil => rfl
   | cons item rest => simp [barrierCount_cons_branch, *]
 
+@[simp] theorem barrierCount_localGetTypeExtensionAlts {Binding : Type}
+    (world : PWorld) (value result : Atom) (rest : List Goal)
+    (binding : Binding) :
+    barrierCount
+      (localGetTypeExtensionAlts world value result rest binding) = 0 := by
+  unfold localGetTypeExtensionAlts
+  split <;> simp
+
 @[simp] theorem barrierCount_reverse {Binding : Type}
     (alts : List (Alt Binding)) :
     barrierCount alts.reverse = barrierCount alts := by

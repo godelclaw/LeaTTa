@@ -158,6 +158,33 @@ private def indexedWorldRemoved : PWorld :=
 #guard indexedWorldRemoved.clauseHeadCandidates "f" == [clauseIndexZero]
 #guard (indexedWorldRemoved.resolutionCandidates "f" 1).isEmpty
 
+private def getTypeExtensionClause : Clause :=
+  { params := [Metta.Atom.var "value"]
+    result := Metta.Atom.sym "CustomType"
+    body := [] }
+
+private def getTypeExtensionWorld : PWorld :=
+  PWorld.reindexClauses
+    ({ progClauses := [("get-type", getTypeExtensionClause)] } : PWorld)
+
+private def getTypeExtensionResult : Metta.Atom :=
+  Metta.Atom.var "type"
+
+-- Pinned `get-type/2` has one built-in clause followed by source-asserted
+-- extensions. An empty world contributes no extension choice; a locally
+-- compiled unary clause contributes exactly one continuation after built-in
+-- answers, retaining the current substitution.
+#guard (localGetTypeExtensionAlts ({} : PWorld) (Metta.Atom.gnd (.int 2))
+  getTypeExtensionResult [] ([] : Metta.Subst)).isEmpty
+
+#guard match localGetTypeExtensionAlts getTypeExtensionWorld
+    (Metta.Atom.gnd (.int 2)) getTypeExtensionResult []
+    ([] : Metta.Subst) with
+  | [Alt.br goals binding] =>
+      goals == [Goal.call "get-type" [Metta.Atom.gnd (.int 2)]
+        getTypeExtensionResult] && binding.isEmpty
+  | _ => false
+
 private def spaceOld : Metta.Atom :=
   Metta.Atom.expr [Metta.Atom.sym "record", Metta.Atom.sym "kind",
     Metta.Atom.sym "old"]

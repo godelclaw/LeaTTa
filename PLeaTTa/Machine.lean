@@ -4744,6 +4744,17 @@ def localTranslatePredicateGoals? (world : PWorld) (gt : GroundingTable)
         | none => none
     | _ => none
 
+/-- User-defined `get-type/2` clauses follow PeTTa's built-in type clause.
+    The builtin answers are therefore tried first; this single continuation
+    exposes locally compiled extensions only after those answers backtrack.
+    An absent extension contributes no choice point. [SPEC metta.pl:172-173;
+    filereader.pl:36-43] -/
+def localGetTypeExtensionAlts {Binding : Type} (world : PWorld)
+    (value result : Atom) (rest : List Goal) (binding : Binding) :
+    List (Alt Binding) :=
+  if (world.clauseCandidates "get-type" 1).isEmpty then []
+  else [Alt.br (Goal.call "get-type" [value] result :: rest) binding]
+
 /-- Builtin dispatch after arguments and the result position have been
 substituted. The reference and persistent machines share this entire control
 tree; only the binding representation and precomputed reverse-union branches
@@ -4758,13 +4769,15 @@ def binResolvedStep {Binding : Type} (gt : GroundingTable)
   match localTranslatePredicateGoals? c.world gt op av res rest with
   | some goals => { c with cur := some (goals, binding) }
   | none => if op == "get-type" then
+    let value := av.headD (Atom.sym "?")
     let (types, counter') := getTypeP c.world 100 c.counter
-      (av.headD (Atom.sym "?"))
+      value
     pull { c with
       cur := none
       counter := advanceCounterPastAtoms (max c.counter counter') types
       alts := types.map (fun type =>
-        Alt.br (Goal.eq res type :: rest) binding) ++ c.alts }
+        Alt.br (Goal.eq res type :: rest) binding) ++
+        localGetTypeExtensionAlts c.world value res rest binding ++ c.alts }
   else if op == "get-metatype" then
     let metatype := match av.headD (Atom.sym "?") with
       | Atom.var _ => "Variable"

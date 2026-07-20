@@ -16,6 +16,9 @@ import PLeaTTa.HostMachine
 import PLeaTTa.HostReplay
 
 #print axioms PLeaTTa.machineMirrorsSpecTotal_proved
+#print axioms PLeaTTa.barrierCount_localGetTypeExtensionAlts
+#print axioms PLeaTTa.SubstEngine.mapAlt_localGetTypeExtensionAlts
+#print axioms PLeaTTa.SubstEngine.localGetTypeExtensionAlts_valid
 #print axioms PLeaTTa.ReaderAdequacy.tokenizeAux_complete
 #print axioms PLeaTTa.ReaderAdequacy.tokenizeAux_sound
 #print axioms PLeaTTa.ReaderAdequacy.runtime_allDigits_iff
@@ -91,6 +94,18 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerAdequacy.compileArgs_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileArgs_complete
 #print axioms PLeaTTa.CompilerAdequacy.compileArgs_staged_value_sound
+#print axioms PLeaTTa.compileTypeCheck_unchecked_symbol_eq
+#print axioms PLeaTTa.compileTypeCheck_refined_symbol_eq
+#print axioms PLeaTTa.compileTypedArgsFuel_nil_eq
+#print axioms PLeaTTa.compileTypedArgsFuel_expression_eq
+#print axioms PLeaTTa.compileTypedArgsFuel_evaluated_eq
+#print axioms PLeaTTa.compileTypedArgsFuel_missing_type_eq
+#print axioms PLeaTTa.compileTypedArgsFuel_surplus_type_eq
+#print axioms PLeaTTa.CompilerAdequacy.compileTypeCheck_refined_symbol_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileTypedArgsFuel_initial_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileTypedArgs_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileTypedArgs_complete
+#print axioms PLeaTTa.CompilerAdequacy.compileTypedArgs_refined_integer_sound
 #print axioms PLeaTTa.compileAppFuel_hashPlus_eq
 #print axioms PLeaTTa.compileAppFuel_hashMinus_eq
 #print axioms PLeaTTa.compileAppFuel_trace_eq
@@ -125,6 +140,7 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_empty_args
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_two_literal_args
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_staged_value_args
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_refined_integer_arg
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_atomic_pattern
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_supported_atomic_pattern
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_supported_pattern

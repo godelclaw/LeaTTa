@@ -108,6 +108,31 @@ private def bindingTemplate (base : Atom) (sources : List Atom) : Atom :=
   let vars := (sources.flatMap Atom.vars).eraseDups
   chainOf (base :: vars.map Atom.var)
 
+/-- Whether pinned `translate_args_by_type/4` emits a post-translation
+`get-type`/`get-metatype` check for this declared type. -/
+def typeRequiresCheck : Atom → Bool
+  | Atom.sym name =>
+      name != "%Undefined%" && name != "Atom" && name != "Expression"
+  | _ => true
+
+/-- Compile the ordered type/meta-type fallback used for refined argument and
+result types. This is outside application dispatch so its exact goal and
+fresh-counter behavior is kernel-visible to adequacy proofs.
+[SPEC translator.pl:356-370] -/
+def compileTypeCheck (value expected : Atom) (counter : Nat) :
+    List Goal × Nat :=
+  if typeRequiresCheck expected then
+    let (directType, nextCounter) := fresh counter
+    let (metaType, finalCounter) := fresh nextCounter
+    ([Goal.softcut (Atom.sym "#u")
+       [Goal.bin "get-type" [value] directType,
+        Goal.eq directType (chainify expected)]
+       []
+       [Goal.bin "get-metatype" [value] metaType,
+        Goal.eq metaType expected]], finalCounter)
+  else
+    ([], counter)
+
 /-- PeTTa's `build_branch/4` aliases a variable-valued branch result to the
 enclosing result while translating a nonempty branch conjunction. This is a
 translation-time alias, so recursive calls remain in last-call position
@@ -775,10 +800,21 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
               match ty with
               | Atom.expr _ => true
               | _ => false)
+          let isSimpleType : Atom → Bool
+            | Atom.sym _ => true
+            | _ => false
+          let isSimpleRefinedType : Atom → Bool
+            | Atom.sym name =>
+                name != "%Undefined%" && name != "Atom" &&
+                  name != "Expression" && name != "true" && name != "false"
+            | _ => false
+          let hasSupportedSimpleRefinement : List Atom → Bool := fun chain =>
+            chain.all isSimpleType && chain.any isSimpleRefinedType
           let useTypedDispatch :=
             match chains0 with
             | [] => false
-            | [_] => chains0.any hasCompoundParam
+            | [chain] =>
+                hasCompoundParam chain || hasSupportedSimpleRefinement chain
             | _ :: _ :: _ => true
           if useTypedDispatch then do
             let chains := chains0
@@ -788,33 +824,14 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
             -- the OUTPUT unless the type is %Undefined%/Atom;
             -- Expression-typed args pass syntactically.
             let (r, n0) := fresh n
-            let checkable : Atom → Bool := fun ty => match ty with
-              | Atom.sym s => s != "%Undefined%" && s != "Atom" &&
-                              s != "Expression"
-              | _ => true
-            let mkCheck : Atom → Atom → Nat → (List Goal × Nat) := fun v ty m =>
-              if !checkable ty then ([], m) else
-              let (g1, m1) := fresh m
-              let (g2, m2) := fresh m1
-              ([Goal.softcut (Atom.sym "#u")
-                 [Goal.bin "get-type" [v] g1, Goal.eq g1 (chainify ty)]
-                 []
-                 [Goal.bin "get-metatype" [v] g2, Goal.eq g2 ty]], m2)
             let (branches, n3) ← chains.foldlM
               (fun (acc : List (Atom × List Goal) × Nat) chain => do
                 match chain.dropLast, chain.getLast? with
                 | ptys, some rty => do
                   if ptys.length != args.length then pure acc else do
-                  let (ts, gs, m1) ← args.zip ptys |>.foldlM
-                    (fun (a2 : List Atom × List Goal × Nat) (arg, ty) => do
-                      if ty == Atom.sym "Expression" then
-                        pure (a2.1 ++ [chainify arg], a2.2.1, a2.2.2)
-                      else do
-                        let (t, g, m) ← compileExprFuel fuel env a2.2.2 arg
-                        let (chk, m') := mkCheck t ty m
-                        pure (a2.1 ++ [t], a2.2.1 ++ g ++ chk, m'))
-                    (([], [], acc.2))
-                  let (outChk, m2) := mkCheck r rty m1
+                  let (ts, gs, m1) ←
+                    compileTypedArgsFuel fuel env acc.2 args ptys
+                  let (outChk, m2) := compileTypeCheck r rty m1
                   pure (acc.1 ++ [(r, gs ++ [Goal.call h ts r] ++ outChk)], m2)
                 | _, none => pure acc)
               (([], n0))
@@ -908,6 +925,30 @@ def compileArgsAtFuel : Nat → CEnv → Nat → String → Nat → List Atom �
         .ok (t :: ts, g ++ gs, n2)
 termination_by structural fuel _ _ _ _ _ => fuel
 
+/-- Translate arguments against one explicit pinned arrow-chain input-type
+list. Unlike the staging-mask helper, this traversal retains each full
+declared type and therefore emits refined type checks.
+[SPEC translator.pl:362-370] -/
+def compileTypedArgsFuel : Nat → CEnv → Nat → List Atom → List Atom →
+    CompileM (List Atom × List Goal × Nat)
+  | 0, _, _, _, _ => .error "compiler fuel exhausted"
+  | _ + 1, _, counter, [], [] => .ok ([], [], counter)
+  | fuel + 1, env, counter, source :: sources, ty :: types => do
+      if ty == Atom.sym "Expression" then
+        let (terms, goals, nextCounter) ←
+          compileTypedArgsFuel fuel env counter sources types
+        .ok (chainify source :: terms, goals, nextCounter)
+      else
+        let (term, termGoals, middleCounter) ←
+          compileExprFuel fuel env counter source
+        let (checkGoals, checkedCounter) :=
+          compileTypeCheck term ty middleCounter
+        let (terms, goals, nextCounter) ←
+          compileTypedArgsFuel fuel env checkedCounter sources types
+        .ok (term :: terms, termGoals ++ checkGoals ++ goals, nextCounter)
+  | _ + 1, _, _, _, _ => .error "typed arguments: arity mismatch"
+termination_by structural fuel _ _ _ _ => fuel
+
 def compileListFuel : Nat → CEnv → Nat → List Atom →
     CompileM (List Atom × List Goal × Nat)
   | 0, _, _, _ => .error "compiler fuel exhausted"
@@ -996,6 +1037,91 @@ theorem compileArgsAtFuel_evaluated_eq (fuel : Nat) (env : CEnv)
           compileArgsAtFuel fuel env middleCounter head (index + 1) sources
         pure (term :: terms, termGoals ++ goals, nextCounter))) = _
   simp only [evaluated, Bool.false_eq_true, ↓reduceIte]
+
+/-- The three pinned no-check input types leave goals and the fresh counter
+unchanged. [SPEC translator.pl:367-368] -/
+theorem compileTypeCheck_unchecked_symbol_eq (value : Atom) (counter : Nat) :
+    (∀ expected ∈ ["%Undefined%", "Atom", "Expression"],
+      compileTypeCheck value (.sym expected) counter = ([], counter)) := by
+  intro expected member
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+  rcases member with rfl | rfl | rfl <;>
+    simp [compileTypeCheck, typeRequiresCheck]
+
+/-- A supported simple refined type emits the exact pinned soft-cut fallback
+and consumes two generated variables. [SPEC translator.pl:367-370] -/
+theorem compileTypeCheck_refined_symbol_eq (value : Atom) (counter : Nat)
+    (expected : String)
+    (notUndefined : expected ≠ "%Undefined%")
+    (notAtom : expected ≠ "Atom")
+    (notExpression : expected ≠ "Expression")
+    (notTrue : expected ≠ "true")
+    (notFalse : expected ≠ "false") :
+    compileTypeCheck value (.sym expected) counter =
+      ([Goal.softcut (.sym "#u")
+         [Goal.bin "get-type" [value] (.var s!"_q{counter}"),
+          Goal.eq (.var s!"_q{counter}") (.sym expected)]
+         []
+         [Goal.bin "get-metatype" [value] (.var s!"_q{counter + 1}"),
+          Goal.eq (.var s!"_q{counter + 1}") (.sym expected)]],
+       counter + 2) := by
+  simp [compileTypeCheck, typeRequiresCheck, notUndefined, notAtom,
+    notExpression, notTrue, notFalse, fresh, chainify, canonBool]
+
+/-- Empty exact typed traversal preserves the counter. -/
+theorem compileTypedArgsFuel_nil_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) :
+    compileTypedArgsFuel (fuel + 1) env counter [] [] =
+      .ok ([], [], counter) := by
+  rfl
+
+/-- `Expression` preserves its source argument as data and recurses without a
+type check. [SPEC translator.pl:363-365] -/
+theorem compileTypedArgsFuel_expression_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (source : Atom) (sources types : List Atom) :
+    compileTypedArgsFuel (fuel + 1) env counter (source :: sources)
+        (.sym "Expression" :: types) =
+      (do
+        let (terms, goals, nextCounter) ←
+          compileTypedArgsFuel fuel env counter sources types
+        pure (chainify source :: terms, goals, nextCounter)) := by
+  simp only [compileTypedArgsFuel,
+    show ((.sym "Expression" : Atom) == .sym "Expression") = true by decide,
+    if_true]
+  rfl
+
+/-- Every non-`Expression` declared type evaluates its source argument, emits
+the type-specific check, then recurses left-to-right. -/
+theorem compileTypedArgsFuel_evaluated_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (source ty : Atom) (sources types : List Atom)
+    (notExpression : (ty == .sym "Expression") = false) :
+    compileTypedArgsFuel (fuel + 1) env counter (source :: sources)
+        (ty :: types) =
+      (do
+        let (term, termGoals, middleCounter) ←
+          compileExprFuel fuel env counter source
+        let (checkGoals, checkedCounter) :=
+          compileTypeCheck term ty middleCounter
+        let (terms, goals, nextCounter) ←
+          compileTypedArgsFuel fuel env checkedCounter sources types
+        pure (term :: terms, termGoals ++ checkGoals ++ goals, nextCounter)) := by
+  simp only [compileTypedArgsFuel, notExpression, Bool.false_eq_true,
+    ↓reduceIte]
+  rfl
+
+/-- Exact typed traversal rejects mismatched source/type arities. -/
+theorem compileTypedArgsFuel_missing_type_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (source : Atom) (sources : List Atom) :
+    compileTypedArgsFuel (fuel + 1) env counter (source :: sources) [] =
+      .error "typed arguments: arity mismatch" := by
+  rfl
+
+/-- Exact typed traversal also rejects surplus type entries. -/
+theorem compileTypedArgsFuel_surplus_type_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (ty : Atom) (types : List Atom) :
+    compileTypedArgsFuel (fuel + 1) env counter [] (ty :: types) =
+      .error "typed arguments: arity mismatch" := by
+  rfl
 
 set_option maxHeartbeats 2000000 in
 /-- Empty expression-list compilation preserves the counter and emits no
@@ -1492,6 +1618,14 @@ def compileAppCore (env : CEnv) (n : Nat) (head : String) (args : List Atom) :
 def compileArgs (env : CEnv) (n : Nat) (head : String) (args : List Atom) :
     CompileM (List Atom × List Goal × Nat) :=
   compileArgsFuel (compilerListFuel (Atom.sym head :: args) + 64) env n head args
+
+/-- Public exact typed-argument traversal used by adequacy statements. Runtime
+application compilation invokes the same `compileTypedArgsFuel` function with
+its enclosing source-derived budget. -/
+def compileTypedArgs (env : CEnv) (counter : Nat) (arguments types : List Atom) :
+    CompileM (List Atom × List Goal × Nat) :=
+  compileTypedArgsFuel (compilerListFuel arguments + 64) env counter arguments
+    types
 
 /-- Public expression-list compiler entry point. -/
 def compileList (env : CEnv) (n : Nat) (atoms : List Atom) :

@@ -138,7 +138,10 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
         (pull { c with cur := none,
                        counter := advanceCounterPastAtoms (max c.counter c') ts,
                        alts := ts.map (fun t =>
-                         Alt.br (Goal.eq res t :: rest) b) ++ c.alts })
+                         Alt.br (Goal.eq res t :: rest) b) ++
+                         localGetTypeExtensionAlts c.world
+                           ((args.map (subst b)).headD (Atom.sym "?"))
+                           res rest b ++ c.alts })
   -- get-metatype (machine computes a fixed tag from the head atom)
   | bin_getmetatype (c : Conf) (args : List Atom) (res : Atom)
       (rest : List Goal) (b : Subst) (mt : String)

@@ -1642,6 +1642,25 @@ theorem unionReverseAltsWithForOp_valid (engine : SubstEngine)
   · exact unionReverseAltsWith_valid engine args res rest state valid
   · simp
 
+@[simp] theorem mapAlt_localGetTypeExtensionAlts {Source Target : Type}
+    (map : Source → Target) (world : PWorld) (value result : Atom)
+    (rest : List Goal) (state : Source) :
+    (localGetTypeExtensionAlts world value result rest state).map
+        (mapAlt map) =
+      localGetTypeExtensionAlts world value result rest (map state) := by
+  unfold localGetTypeExtensionAlts
+  split <;> simp [mapAlt]
+
+theorem localGetTypeExtensionAlts_valid (engine : SubstEngine)
+    (world : PWorld) (value result : Atom) (rest : List Goal)
+    (state : engine.State) (stateValid : engine.Valid state) :
+    AltsValid engine
+      (localGetTypeExtensionAlts world value result rest state) := by
+  unfold localGetTypeExtensionAlts
+  split
+  · simp [AltsValid]
+  · exact altsValid_cons engine stateValid (by simp [AltsValid])
+
 theorem mapConf_binResolvedStep {Source Target : Type}
     (map : Source → Target) (gt : GroundingTable) (conf : Conf Source)
     (op : String) (args : List Atom) (res : Atom) (rest : List Goal)
@@ -1707,8 +1726,11 @@ theorem binResolvedStep_valid (engine : SubstEngine) (gt : GroundingTable)
     · apply pull_valid engine
       apply confValid_none engine
       apply altsValid_append engine
-      · apply altsValid_map_br engine
-        exact stateValid
+      · apply altsValid_append engine
+        · apply altsValid_map_br engine
+          exact stateValid
+        · exact localGetTypeExtensionAlts_valid engine world
+            (av.headD (Atom.sym "?")) res rest state stateValid
       · exact oldAltsValid
     · split
       · apply confValid_some engine

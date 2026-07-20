@@ -375,7 +375,10 @@ theorem step_bin_nonlocal (c : Conf) (op : String) (args : List Atom)
             = pull { c with cur := none,
                             counter := advanceCounterPastAtoms (max c.counter c') ts,
                             alts := ts.map (fun t =>
-                              Alt.br (Goal.eq res t :: rest) b) ++ c.alts } := by
+                              Alt.br (Goal.eq res t :: rest) b) ++
+                              localGetTypeExtensionAlts c.world
+                                ((args.map (subst b)).headD (Atom.sym "?"))
+                                res rest b ++ c.alts } := by
           unfold step; rw [h]
           simp only [binResolvedStep, hlocal, h1, Bool.false_eq_true, if_false, beq_self_eq_true,
             if_true, hty]

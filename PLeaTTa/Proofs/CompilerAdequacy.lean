@@ -89,6 +89,25 @@ inductive ArgModesAgree (env : CEnv) (head : String) : Nat →
       (tail : ArgModesAgree env head (index + 1) modes) :
       ArgModesAgree env head index (.value :: modes)
 
+/-- Exact agreement between independent typed-argument modes and one pinned
+arrow chain's executable input-type list. Unlike the staging-mask relation,
+this preserves whether an evaluated argument is unchecked or refined. -/
+inductive DeclaredArgTypesAgree : List ArgumentMode → List Atom → Prop where
+  | nil : DeclaredArgTypesAgree [] []
+  | expression {modes : List ArgumentMode} {types : List Atom}
+      (tail : DeclaredArgTypesAgree modes types) :
+      DeclaredArgTypesAgree (.expression :: modes)
+        (.sym "Expression" :: types)
+  | value {modes : List ArgumentMode} {types : List Atom} {expected : String}
+      (unchecked : expected = "%Undefined%" ∨ expected = "Atom")
+      (tail : DeclaredArgTypesAgree modes types) :
+      DeclaredArgTypesAgree (.value :: modes) (.sym expected :: types)
+  | refined {modes : List ArgumentMode} {types : List Atom}
+      {expected : String} (supported : RefinedSymbolType expected)
+      (tail : DeclaredArgTypesAgree modes types) :
+      DeclaredArgTypesAgree (.refined expected :: modes)
+        (.sym expected :: types)
+
 /-- Absence from the independent translator-rule set is reflected by the
 executable list representation. -/
 theorem EnvAgrees.notContains {state : TranslatorState} {env : CEnv}
@@ -114,6 +133,22 @@ inductive GoalAgrees : PeTTaSpec.PrologCore.Goal → PLeaTTa.Goal → Prop where
       GoalAgrees (.unify referenceLeft referenceRight)
         (.eq executableLeft executableRight)
   | cut : GoalAgrees .cut .cut
+  | builtin {predicate : String} {referenceArguments : List Term}
+      {referenceResult : Term} {executableArguments : List Atom}
+      {executableResult : Atom}
+      (arguments : TermsAgree referenceArguments executableArguments)
+      (result : TermAgrees referenceResult executableResult) :
+      GoalAgrees (.call predicate (referenceArguments ++ [referenceResult]))
+        (.bin predicate executableArguments executableResult)
+  | softCutTruth {referenceCondition referenceElse :
+        List PeTTaSpec.PrologCore.Goal}
+      {executableCondition executableElse : List PLeaTTa.Goal}
+      (condition : GoalsAgree referenceCondition executableCondition)
+      (otherwise : GoalsAgree referenceElse executableElse) :
+      GoalAgrees
+        (.softCut (.conjunction referenceCondition) .truth
+          (.conjunction referenceElse))
+        (.softcut (.sym "#u") executableCondition [] executableElse)
   | findall {referenceTemplate referenceOutput : Term}
       {executableTemplate executableOutput : Atom}
       {referenceGoals : List PeTTaSpec.PrologCore.Goal}
@@ -152,6 +187,64 @@ theorem GoalsAgree.append {leftReference rightReference :
   | nil => simpa using right
   | cons head tail =>
       exact .cons head (GoalsAgree.append tail right)
+
+/-- The executable refined-symbol check agrees with the exact pinned
+`get-type` soft-cut `get-metatype` fallback and consumes the same two fresh
+variables. -/
+theorem compileTypeCheck_refined_symbol_sound {referenceValue : Term}
+    {executableValue : Atom} (value : TermAgrees referenceValue executableValue)
+    (expected : String) (counter : Nat)
+    (supported : RefinedSymbolType expected) :
+    GoalsAgree (refinedTypeCheckGoals referenceValue expected counter)
+        (compileTypeCheck executableValue (.sym expected) counter).1 ∧
+      (compileTypeCheck executableValue (.sym expected) counter).2 =
+        counter + 2 := by
+  rcases supported with
+    ⟨notUndefined, notAtom, notExpression, notTrue, notFalse⟩
+  rw [compileTypeCheck_refined_symbol_eq executableValue counter expected
+    notUndefined notAtom notExpression notTrue notFalse]
+  constructor
+  · let directReference := Term.variable (.generated counter)
+    let directExecutable := Atom.var s!"_q{counter}"
+    let metaReference := Term.variable (.generated (counter + 1))
+    let metaExecutable := Atom.var s!"_q{counter + 1}"
+    have expectedAgreement :
+        TermAgrees (.atom expected) (.sym expected) :=
+      .atom notTrue notFalse
+    have directAgreement :
+        TermAgrees directReference directExecutable := by
+      exact .generatedVariable counter
+    have metaAgreement : TermAgrees metaReference metaExecutable := by
+      exact .generatedVariable (counter + 1)
+    have directCall :
+        GoalAgrees (.call "get-type" [referenceValue, directReference])
+          (.bin "get-type" [executableValue] directExecutable) := by
+      simpa [directReference, directExecutable] using
+        GoalAgrees.builtin (.cons value .nil) directAgreement
+    have metaCall :
+        GoalAgrees (.call "get-metatype" [referenceValue, metaReference])
+          (.bin "get-metatype" [executableValue] metaExecutable) := by
+      simpa [metaReference, metaExecutable] using
+        GoalAgrees.builtin (.cons value .nil) metaAgreement
+    have condition : GoalsAgree
+        [.call "get-type" [referenceValue, directReference],
+          .unify directReference (.atom expected)]
+        [.bin "get-type" [executableValue] directExecutable,
+          .eq directExecutable (.sym expected)] :=
+      .cons directCall
+        (.cons (.unify directAgreement expectedAgreement) .nil)
+    have otherwise : GoalsAgree
+        [.call "get-metatype" [referenceValue, metaReference],
+          .unify metaReference (.atom expected)]
+        [.bin "get-metatype" [executableValue] metaExecutable,
+          .eq metaExecutable (.sym expected)] :=
+      .cons metaCall
+        (.cons (.unify metaAgreement expectedAgreement) .nil)
+    simpa [refinedTypeCheckGoals, directReference, directExecutable,
+      metaReference, metaExecutable] using
+      GoalsAgree.cons (GoalAgrees.softCutTruth condition otherwise)
+        GoalsAgree.nil
+  · rfl
 
 /-- Behavioral agreement for optimized executable targets. `normalized` is an
 independent reference goal list that still agrees structurally with the
@@ -1392,6 +1485,9 @@ theorem compileArgsAtFuel_initial_sound {state : TranslatorState} (env : CEnv)
             dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
             rw [tailCompiled]
             rfl
+  | refined supportedType translated tail tailInduction =>
+      intro index modeAgreement
+      cases modeAgreement
 
 /-- Public soundness of the explicit `Expression`/value typed-argument
 fragment at the source-derived compiler budget. -/
@@ -1466,6 +1562,247 @@ theorem compileArgs_staged_value_sound (state : TranslatorState) (env : CEnv)
     (.expression staged (.value evaluated (.nil 2)))
     (translates_staged_value_args state counter dataHead stagedValue
       evaluatedValue)
+
+/-- Every exact typed-argument derivation has a positive, syntax-bounded
+shared fuel budget. Terms, generated checks, goal order, and the fresh counter
+agree with pinned `translate_args_by_type/4`. -/
+theorem compileTypedArgsFuel_initial_sound {state : TranslatorState}
+    (env : CEnv) (stateAgreement : EnvAgrees state env) {counter : Nat}
+    {modes : List ArgumentMode} {sources : List Atom} {terms : List Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (native :
+      TranslatesTypedArgs state counter modes sources terms goals nextCounter) :
+    ∀ {types : List Atom}, DeclaredArgTypesAgree modes types →
+      ∃ baseFuel,
+        0 < baseFuel ∧
+        baseFuel < 16 * ((sources.map Atom.size).sum + 1) ∧
+        ∀ extraFuel, ∃ internals executableGoals,
+          compileTypedArgsFuel (baseFuel + extraFuel) env counter sources types =
+              .ok (internals, executableGoals, nextCounter) ∧
+          TermsAgree terms internals ∧ GoalsAgree goals executableGoals := by
+  induction native with
+  | @nil nilCounter =>
+      intro types typeAgreement
+      cases typeAgreement
+      refine ⟨1, by omega, by simp, ?_⟩
+      intro extraFuel
+      exact ⟨[], [], by
+          simpa [Nat.add_comm] using
+            compileTypedArgsFuel_nil_eq extraFuel env nilCounter,
+        .nil, .nil⟩
+  | @expression typedCounter typedNextCounter source sources term terms modes
+      tailGoals quoted tail tailInduction =>
+      intro types typeAgreement
+      cases typeAgreement with
+      | expression tailTypes =>
+          obtain ⟨tailFuel, tailPositive, tailBound, tailCompiles⟩ :=
+            tailInduction tailTypes
+          refine ⟨tailFuel + 1, by omega, ?_, ?_⟩
+          · have sourcePositive := atom_size_positive_for_compiler source
+            simp only [List.map, List.sum_cons]
+            omega
+          · intro extraFuel
+            obtain ⟨tailInternals, tailExecutableGoals, tailCompiled,
+                tailAgreement, tailGoalsAgreement⟩ :=
+              tailCompiles extraFuel
+            refine ⟨chainify source :: tailInternals, tailExecutableGoals,
+              ?_, .cons (quotes_term_agrees quoted) tailAgreement,
+              tailGoalsAgreement⟩
+            rw [show (tailFuel + 1) + extraFuel =
+                (tailFuel + extraFuel) + 1 by omega]
+            rw [compileTypedArgsFuel_expression_eq]
+            rw [tailCompiled]
+            rfl
+  | @value valueCounter middleCounter valueNextCounter source sources term terms
+      modes headGoals tailGoals translated tail tailInduction =>
+      intro types typeAgreement
+      cases typeAgreement with
+      | @value _ _ expected unchecked tailTypes =>
+          obtain ⟨headFuel, headPositive, headBound, headCompiles⟩ :=
+            compileExprFuel_initial_sound env stateAgreement translated
+          obtain ⟨tailFuel, tailPositive, tailBound, tailCompiles⟩ :=
+            tailInduction tailTypes
+          let childFuel := max headFuel tailFuel
+          have headLe : headFuel ≤ childFuel := Nat.le_max_left _ _
+          have tailLe : tailFuel ≤ childFuel := Nat.le_max_right _ _
+          have notExpression :
+              ((.sym expected : Atom) == .sym "Expression") = false := by
+            rcases unchecked with rfl | rfl <;> decide
+          have uncheckedMember :
+              expected ∈ ["%Undefined%", "Atom", "Expression"] := by
+            rcases unchecked with rfl | rfl <;> simp
+          refine ⟨childFuel + 1, by omega, ?_, ?_⟩
+          · have sourcePositive := atom_size_positive_for_compiler source
+            simp only [List.map, List.sum_cons]
+            omega
+          · intro extraFuel
+            obtain ⟨headInternal, headExecutableGoals, headCompiled,
+                headAgreement, headGoalsAgreement⟩ :=
+              headCompiles (childFuel + extraFuel - headFuel)
+            obtain ⟨tailInternals, tailExecutableGoals, tailCompiled,
+                tailAgreement, tailGoalsAgreement⟩ :=
+              tailCompiles (childFuel + extraFuel - tailFuel)
+            have headFuelEq :
+                headFuel + (childFuel + extraFuel - headFuel) =
+                  childFuel + extraFuel := by
+              omega
+            have tailFuelEq :
+                tailFuel + (childFuel + extraFuel - tailFuel) =
+                  childFuel + extraFuel := by
+              omega
+            rw [headFuelEq] at headCompiled
+            rw [tailFuelEq] at tailCompiled
+            have checkEq :
+                compileTypeCheck headInternal (.sym expected) middleCounter =
+                  ([], middleCounter) :=
+              compileTypeCheck_unchecked_symbol_eq headInternal middleCounter
+                expected uncheckedMember
+            refine ⟨headInternal :: tailInternals,
+              headExecutableGoals ++ tailExecutableGoals, ?_,
+              .cons headAgreement tailAgreement,
+              GoalsAgree.append headGoalsAgreement tailGoalsAgreement⟩
+            rw [show (childFuel + 1) + extraFuel =
+                (childFuel + extraFuel) + 1 by omega]
+            rw [compileTypedArgsFuel_evaluated_eq _ _ _ _ _ _ _
+              notExpression]
+            rw [headCompiled]
+            dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+            rw [checkEq]
+            dsimp only
+            rw [tailCompiled]
+            dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+            simp only [List.append_nil]
+            rfl
+  | @refined refinedCounter middleCounter refinedNextCounter source sources
+      term terms modes headGoals tailGoals expected supportedType translated
+      tail tailInduction =>
+      intro types typeAgreement
+      cases typeAgreement with
+      | refined declaredType tailTypes =>
+          obtain ⟨headFuel, headPositive, headBound, headCompiles⟩ :=
+            compileExprFuel_initial_sound env stateAgreement translated
+          obtain ⟨tailFuel, tailPositive, tailBound, tailCompiles⟩ :=
+            tailInduction tailTypes
+          let childFuel := max headFuel tailFuel
+          have headLe : headFuel ≤ childFuel := Nat.le_max_left _ _
+          have tailLe : tailFuel ≤ childFuel := Nat.le_max_right _ _
+          refine ⟨childFuel + 1, by omega, ?_, ?_⟩
+          · have sourcePositive := atom_size_positive_for_compiler source
+            simp only [List.map, List.sum_cons]
+            omega
+          · intro extraFuel
+            obtain ⟨headInternal, headExecutableGoals, headCompiled,
+                headAgreement, headGoalsAgreement⟩ :=
+              headCompiles (childFuel + extraFuel - headFuel)
+            obtain ⟨tailInternals, tailExecutableGoals, tailCompiled,
+                tailAgreement, tailGoalsAgreement⟩ :=
+              tailCompiles (childFuel + extraFuel - tailFuel)
+            have headFuelEq :
+                headFuel + (childFuel + extraFuel - headFuel) =
+                  childFuel + extraFuel := by
+              omega
+            have tailFuelEq :
+                tailFuel + (childFuel + extraFuel - tailFuel) =
+                  childFuel + extraFuel := by
+              omega
+            rw [headFuelEq] at headCompiled
+            rw [tailFuelEq] at tailCompiled
+            have checkSound :=
+              compileTypeCheck_refined_symbol_sound headAgreement expected
+                middleCounter supportedType
+            rcases supportedType with
+              ⟨notUndefined, notAtom, notExpressionName, notTrue, notFalse⟩
+            have notExpression :
+                ((.sym expected : Atom) == .sym "Expression") = false := by
+              change (expected == "Expression") = false
+              exact beq_eq_false_iff_ne.mpr notExpressionName
+            have checkEq :=
+              compileTypeCheck_refined_symbol_eq headInternal middleCounter
+                expected notUndefined notAtom notExpressionName notTrue notFalse
+            refine ⟨headInternal :: tailInternals,
+              headExecutableGoals ++
+                (compileTypeCheck headInternal (.sym expected) middleCounter).1 ++
+                tailExecutableGoals, ?_,
+              .cons headAgreement tailAgreement, ?_⟩
+            · rw [show (childFuel + 1) + extraFuel =
+                  (childFuel + extraFuel) + 1 by omega]
+              rw [compileTypedArgsFuel_evaluated_eq _ _ _ _ _ _ _
+                notExpression]
+              rw [headCompiled]
+              dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+              rw [checkEq]
+              dsimp only
+              rw [tailCompiled]
+              rfl
+            · exact GoalsAgree.append
+                (GoalsAgree.append headGoalsAgreement checkSound.1)
+                tailGoalsAgreement
+
+/-- Public soundness of exact typed-argument traversal at the source-derived
+compiler budget. -/
+theorem compileTypedArgs_sound {state : TranslatorState} (env : CEnv)
+    (stateAgreement : EnvAgrees state env) {counter : Nat}
+    {modes : List ArgumentMode} {sources types : List Atom}
+    {terms : List Term} {goals : List PeTTaSpec.PrologCore.Goal}
+    {nextCounter : Nat}
+    (declaredTypes : DeclaredArgTypesAgree modes types)
+    (native :
+      TranslatesTypedArgs state counter modes sources terms goals nextCounter) :
+    ∃ internals executableGoals,
+      compileTypedArgs env counter sources types =
+          .ok (internals, executableGoals, nextCounter) ∧
+      TermsAgree terms internals ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨baseFuel, basePositive, baseBound, compiles⟩ :=
+    compileTypedArgsFuel_initial_sound env stateAgreement native declaredTypes
+  have baseLe : baseFuel ≤ compilerListFuel sources + 64 := by
+    simp only [compilerListFuel]
+    omega
+  obtain ⟨extraFuel, fuelEquality⟩ :
+      ∃ extraFuel, compilerListFuel sources + 64 = baseFuel + extraFuel :=
+    ⟨compilerListFuel sources + 64 - baseFuel, by omega⟩
+  obtain ⟨internals, executableGoals, compiled, termsAgreement,
+      goalsAgreement⟩ := compiles extraFuel
+  exact ⟨internals, executableGoals,
+    by simpa [compileTypedArgs, fuelEquality] using compiled,
+    termsAgreement, goalsAgreement⟩
+
+/-- Completeness of exact typed traversal on independently supported source
+and declared-type lists. -/
+theorem compileTypedArgs_complete {state : TranslatorState} (env : CEnv)
+    (stateAgreement : EnvAgrees state env) {counter : Nat}
+    {modes : List ArgumentMode} {sources types internals : List Atom}
+    {executableGoals : List PLeaTTa.Goal} {nextCounter : Nat}
+    (declaredTypes : DeclaredArgTypesAgree modes types)
+    (supported : SupportedTypedArgs state counter modes sources)
+    (compiled : compileTypedArgs env counter sources types =
+      .ok (internals, executableGoals, nextCounter)) :
+    ∃ terms goals,
+      TranslatesTypedArgs state counter modes sources terms goals nextCounter ∧
+      TermsAgree terms internals ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨terms, goals, referenceCounter, native⟩ := supported
+  obtain ⟨referenceInternals, referenceGoals, referenceCompiled,
+      termsAgreement, goalsAgreement⟩ :=
+    compileTypedArgs_sound env stateAgreement declaredTypes native
+  have resultEquality :
+      (internals, executableGoals, nextCounter) =
+        (referenceInternals, referenceGoals, referenceCounter) :=
+    Except.ok.inj (compiled.symm.trans referenceCompiled)
+  cases resultEquality
+  exact ⟨terms, goals, native, termsAgreement, goalsAgreement⟩
+
+/-- Executable witness for one simple refined argument. -/
+theorem compileTypedArgs_refined_integer_sound (state : TranslatorState)
+    (env : CEnv) (stateAgreement : EnvAgrees state env) (counter : Nat)
+    (value : Int) :
+    ∃ internals executableGoals,
+      compileTypedArgs env counter [.gnd (.int value)] [.sym "Number"] =
+          .ok (internals, executableGoals, counter + 2) ∧
+      TermsAgree [.integer value] internals ∧
+      GoalsAgree (refinedTypeCheckGoals (.integer value) "Number" counter)
+        executableGoals := by
+  exact compileTypedArgs_sound env stateAgreement
+    (.refined ⟨by decide, by decide, by decide, by decide, by decide⟩ .nil)
+    (translates_refined_integer_arg state counter value)
 
 /-- Soundness of the executable compiler for independently specified,
 well-formed pinned `let*` forms.  The nested expansion may be syntactically

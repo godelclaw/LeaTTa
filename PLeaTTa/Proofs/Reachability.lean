@@ -415,13 +415,22 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
       exact htop.replaceActive h
   | bin_gettype c args res rest b ts counter' h hnp hlocal ho =>
       have hb := htop.active h
+      have hext : AltsTopological
+          (localGetTypeExtensionAlts c.world
+            ((args.map (subst b)).headD (Atom.sym "?")) res rest b) := by
+        unfold localGetTypeExtensionAlts
+        split
+        · simp [AltsTopological]
+        · exact AltsTopological.cons_branch hb (by
+            simp [AltsTopological])
       have hnew := (altsTopological_map_branch ts
-        (fun t => Goal.eq res t :: rest) b hb).append htop.2
+        (fun t => Goal.eq res t :: rest) b hb).append
+          (hext.append htop.2)
       apply ConfTopological.pull
       constructor
       · intro goals branchSubst hcur
         simp at hcur
-      · exact hnew
+      · simpa [List.append_assoc] using hnew
   | bin_getmetatype c args res rest b mt h hnp hlocal hmt g hg =>
       exact htop.replaceActive h
   | bin_nonstrict_ok c op args res rest b rs h hnp hlocal hns hnso hr =>

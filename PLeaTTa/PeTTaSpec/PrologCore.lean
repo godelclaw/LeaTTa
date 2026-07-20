@@ -309,13 +309,38 @@ inductive TranslatesArgs : TranslatorState → Nat → List Atom → List Term �
       TranslatesArgs state counter (source :: sources) (term :: terms)
         (headGoals ++ tailGoals) nextCounter
 
+/-- Atomic refined type names supported by the first exact type-check bridge.
+The three unchecked names follow pinned translator priority. Truth spellings
+are excluded because their executable boolean encoding is not a type-name
+encoding. Compound/dependent type terms remain a separate obligation. -/
+def RefinedSymbolType (name : String) : Prop :=
+  name ≠ "%Undefined%" ∧ name ≠ "Atom" ∧ name ≠ "Expression" ∧
+    name ≠ "true" ∧ name ≠ "false"
+
 /-- Independently relevant input-type modes for pinned
 `translate_args_by_type/4`. `value` is the no-extra-check `%Undefined%`/`Atom`
-fragment; refined input types remain a separate goal-generation obligation. -/
+fragment; `refined` names the exact simple type checked after evaluation. -/
 inductive ArgumentMode where
   | expression
   | value
+  | refined (expected : String)
 deriving Repr
+
+/-- Exact pinned soft-cut type/meta-type fallback for a translated value.
+Generated variables are named by the independent compiler counter.
+[SPEC translator.pl:356-370] -/
+def refinedTypeCheckGoals (value : Term) (expected : String) (counter : Nat) :
+    List Goal :=
+  let directType := Term.variable (.generated counter)
+  let metaType := Term.variable (.generated (counter + 1))
+  [.softCut
+    (.conjunction
+      [.call "get-type" [value, directType],
+       .unify directType (.atom expected)])
+    .truth
+    (.conjunction
+      [.call "get-metatype" [value, metaType],
+       .unify metaType (.atom expected)])]
 
 /-- Independent ordered fragment of pinned `translate_args_by_type/4`
 (`translator.pl:362-370`). `Expression` inputs remain quoted source data;
@@ -341,6 +366,18 @@ inductive TranslatesTypedArgs : TranslatorState → Nat → List ArgumentMode �
         tailGoals nextCounter) :
       TranslatesTypedArgs state counter (.value :: modes) (source :: sources)
         (term :: terms) (headGoals ++ tailGoals) nextCounter
+  | refined {state : TranslatorState} {counter middleCounter nextCounter : Nat}
+      {source : Atom} {sources : List Atom} {term : Term} {terms : List Term}
+      {modes : List ArgumentMode} {headGoals tailGoals : List Goal}
+      {expected : String}
+      (supportedType : RefinedSymbolType expected)
+      (head : TranslatesExpr state counter source term headGoals middleCounter)
+      (tail : TranslatesTypedArgs state (middleCounter + 2) modes sources terms
+        tailGoals nextCounter) :
+      TranslatesTypedArgs state counter (.refined expected :: modes)
+        (source :: sources) (term :: terms)
+        (headGoals ++ refinedTypeCheckGoals term expected middleCounter ++
+          tailGoals) nextCounter
 
 /-- Independent pinned translation for the first behaviorally normalized
 construct. Native emits a mutex wrapper, while PLeaTTa's sequential target
@@ -628,6 +665,19 @@ theorem translates_staged_value_args (state : TranslatorState) (counter : Nat)
     (.expression
       (.cons (.symbol head) (.cons (.integer stagedValue) .nil)))
     (.value (.literal (.integer evaluatedValue)) .nil)
+
+/-- Positive refined-type example: a translated integer is followed by the
+exact ordered `get-type`/`get-metatype` fallback and consumes two generated
+variables. -/
+theorem translates_refined_integer_arg (state : TranslatorState)
+    (counter : Nat) (value : Int) :
+    TranslatesTypedArgs state counter [.refined "Number"]
+      [.gnd (.int value)] [.integer value]
+      (refinedTypeCheckGoals (.integer value) "Number" counter)
+      (counter + 2) := by
+  exact .refined
+    ⟨by decide, by decide, by decide, by decide, by decide⟩
+    (.literal (.integer value)) .nil
 
 /-- Positive recursive-pattern example: pinned `cons` traversal preserves a
 proper two-element list and leaves both the ordered goal sequence and fresh

@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=f34da548bc4ebbef473ebd80c500cb5f873e21f4d124f918f6db0ae7781207db
+# compiler_sha256=700d7618724b9b348c63053c86df4e4ec4e8230549032e87b8fcd3bbd67f71d4
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -29,7 +29,8 @@ CASE.malformed	T399-406	X	-	N	GAP	explicit-error-vs-native-failure
 ARGS.nil	T362	X	TranslatesTypedArgs	SC	PASS	empty-mode-and-source-traversal
 ARGS.expression_typed	T363-365	X	TranslatesTypedArgs	SC	PASS	deep-source-quotation; no-goals-or-counter-change
 ARGS.evaluated	T365-367	X	TranslatesTypedArgs	SC	PASS	Undefined-or-Atom-value-mode; ordered-translation
-ARGS.evaluated_refined	T365-370	X	-	N	GAP	refined-input-typecheck-goal-unmodeled
+ARGS.evaluated_refined	T365-370	X	TranslatesTypedArgs	SC	PASS	simple-symbol softcut get-type/get-metatype; exact-order-counter
+ARGS.evaluated_refined_compound	T365-370	X	-	N	GAP	compound/dependent-type representation bridge unmodeled
 LIST.nil	T409	X	TranslatesArgs	SC	PASS	empty-ordered-traversal
 LIST.cons	T410-412	X	TranslatesArgs	SC	PASS	supported-expressions-left-to-right; exact-terms-goals-counter
 PATLIST.nil	T20-22	X	ConstrainsPatternSeq	SC	PASS	recursive-fragment-empty-traversal
@@ -102,7 +103,7 @@ APP.bind_other	M246	S	-	N	GAP	explicit-failure-shortcut
 APP.get_state	M248	S	-	N	GAP	world-action
 APP.change_state	M247	S	-	N	GAP	world-action
 FALLBACK.prolog_function	M274,T310-346	H	-	N	BOUNDARY	typed-SWI-boundary
-FALLBACK.typed_branches	T317-370	S	-	N	FAIL	simple-type-chain-skips-dispatch
+FALLBACK.typed_branches	T317-370	S	TranslatesTypedArgs	N	GAP	single-chain dispatch fixed and parity-probed; branch/result assembly proof open
 FALLBACK.typed_empty_direct	T335-346	X	-	N	GAP	arity-fallback-unproved
 FALLBACK.typed_empty_partial	T335-346	X	-	N	GAP	partial-representation-unproved
 FALLBACK.defined_direct	T312-346	X	-	N	GAP	direct-call-unproved
