@@ -12,6 +12,7 @@ import PLeaTTa.Proofs.PrologCoreAdequacy
 import PLeaTTa.Proofs.ObservationAgreement
 import PLeaTTa.Proofs.ReaderAdequacy
 import PLeaTTa.PeTTaSpec.OpenSubstitution
+import PLeaTTa.PeTTaSpec.OpenOrdered
 import PLeaTTa.SubstEngine
 import PLeaTTa.HostMachine
 import PLeaTTa.HostReplay
@@ -65,6 +66,12 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.explicit_alias_prefix_equivalent_to_shared
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.BuildsBranchNormalized.variable_nonempty_shape
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.normalized_variable_branch_alias_semantics
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.runsMany_empty
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.alias_then_identity_succeeds
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.if_before_alias_fails
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.if_after_alias_succeeds
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.alias_then_if_succeeds
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.if_commits_to_first_condition_answer
 #print axioms PLeaTTa.CompilerAdequacy.letStarExpands_bindings_nonempty
 #print axioms PLeaTTa.CompilerAdequacy.letStarExpands_desugar
 #print axioms PLeaTTa.CompilerAdequacy.letStarExpands_nested_size_le_twice_source

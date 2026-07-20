@@ -54,8 +54,8 @@ APP.or_else	T181-183	X	TranslatesExpr.orElse	SC	PASS	nested-conjunction flatteni
 APP.hash_plus	M53,M316	S	-	EQ	FAIL	ordinary-plus-not-CLPFD
 APP.hash_minus	M54,M316	S	-	EQ	FAIL	ordinary-minus-not-CLPFD
 APP.cons	M145,T3-8	S	-	N	GAP	direct-structural-constructor
-APP.if2	T151-155,T394-397	S	TranslatesExpr.ifThen	SC	GAP	compiler-sound-complete-for-explicit-alias-normalization; parametric-open-substitution-bridge proved; ordered-continuation-instantiation open; runtime-alias-differential-pass
-APP.if3	T156-162,T394-397	S	TranslatesExpr.ifThenElse	SC	GAP	compiler-sound-complete-for-explicit-alias-normalization; parametric-open-substitution-bridge proved; ordered-continuation-instantiation open; runtime-cross-branch-differential-pass
+APP.if2	T151-155,T394-397	S	TranslatesExpr.ifThen	SC	GAP	compiler-sound-complete-for-explicit-alias-normalization; open ordered alias-identity-if examples and parametric bridge proved; general substitution-respect/bisimulation open; runtime-alias-differential-pass
+APP.if3	T156-162,T394-397	S	TranslatesExpr.ifThenElse	SC	GAP	compiler-sound-complete-for-explicit-alias-normalization; open ordered alias-identity-if examples and parametric bridge proved; general substitution-respect/bisimulation open; runtime-cross-branch-differential-pass
 APP.let	T185-188	X	TranslatesExpr.letBind	SC	PASS	covered
 APP.let_star	T189-190,T384-386	X	TranslatesLetStar	SC	PASS	well-formed-nonempty-over-supported-nested-fragment; empty-and-malformed-rejected
 APP.case	T163-176,T399-406	S	-	N	GAP	order-failure-binding-proof-missing
