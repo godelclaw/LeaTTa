@@ -65,6 +65,12 @@ CASES = [
         ["()"],
     ),
     (
+        "let-star-valid-source-order",
+        "!(let* (($x 1) ($y (+ $x 2))) (+ $x $y))\n",
+        [],
+        ["4"],
+    ),
+    (
         "current-list-fallbacks",
         """!(car-atom ())
 !(cdr-atom ())

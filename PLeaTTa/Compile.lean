@@ -118,6 +118,18 @@ private def compileBranch (out : Atom) : Atom × List Goal → Atom × List Goal
       else (out, instantiateGoals [(name, out)] goals)
   | branch => branch
 
+/-- [SPEC translator.pl:384-386] A pinned `let*` contains one or more
+well-formed `(pattern value)` pairs and becomes source-ordered nested `let`s.
+The `Option` result keeps malformed input distinct from an empty computation:
+the translator rejects it instead of silently dropping bad entries. -/
+def desugarLetStar? : List Atom → Atom → Option Atom
+  | [Atom.expr [pattern, value]], body =>
+      some (Atom.expr [Atom.sym "let", pattern, value, body])
+  | Atom.expr [pattern, value] :: rest, body =>
+      (desugarLetStar? rest body).map fun nested =>
+        Atom.expr [Atom.sym "let", pattern, value, nested]
+  | _, _ => none
+
 private def specialHead : String → Bool
   | "quote" | "unquote" | "empty" | "cut" | "if" | "let" | "let*" | "case"
   | "and-then" | "or-else"
@@ -328,12 +340,9 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (tb, gb, n3) ← compileExprFuel fuel env n2 b
         .ok (tb, [Goal.eq tp tv] ++ gp ++ gv ++ gb, n3)
     | "let*", [Atom.expr binds, b] => do
-        -- desugar to nested lets
-        let e := binds.foldr (fun bind acc =>
-          match bind with
-          | Atom.expr [p, v] => Atom.expr [Atom.sym "let", p, v, acc]
-          | _ => acc) b
-        compileExprFuel fuel env n e
+        match desugarLetStar? binds b with
+        | some nested => compileExprFuel fuel env n nested
+        | none => .error "malformed let* bindings"
     | "case", [scrut, Atom.expr arms] => do
         -- first-match commits (variable patterns are catch-alls in order);
         -- an `Empty` arm fires when the SCRUTINEE produces no value
