@@ -12,6 +12,7 @@ Unsupported forms are loud `Except.error`s: each is a spec gap to close HERE.
 -/
 import PLeaTTa.Types
 import PLeaTTa.Chain
+import Std.Data.String.ToNat
 
 namespace PLeaTTa
 
@@ -68,7 +69,48 @@ def mkEnv (isBin : String → Bool) (heads : List String)
       else none)
   { defined := heads, arities, isBin, atomTyped, typeChains }
 
-def fresh (n : Nat) : Atom × Nat := (Atom.var s!"_q{n}", n + 1)
+/-- Executable spelling of one compiler-generated logic variable. -/
+def compilerGeneratedName (n : Nat) : String := s!"_q{n}"
+
+/-- Recognize the exact numeric namespace used by compiler-generated logic
+variables.  Leading zeroes are accepted conservatively: source `$_q025`
+therefore reserves the same numeric slot as generated `_q25`. -/
+def compilerGeneratedIndex? (name : String) : Option Nat :=
+  match name.toList with
+  | '_' :: 'q' :: digits => (String.ofList digits).toNat?
+  | _ => none
+
+/-- The first generated index strictly beyond this source-variable name. -/
+def compilerSeedHighWaterName (name : String) : Nat :=
+  match compilerGeneratedIndex? name with
+  | some index => index + 1
+  | none => 0
+
+/-- The first generated index strictly beyond every listed source variable. -/
+def compilerSeedHighWaterNames : List String → Nat
+  | [] => 0
+  | name :: names =>
+      max (compilerSeedHighWaterName name) (compilerSeedHighWaterNames names)
+
+/-- The generated-variable high-water mark of one source atom. -/
+def compilerSeedHighWaterAtom (atom : Atom) : Nat :=
+  compilerSeedHighWaterNames atom.vars
+
+/-- The generated-variable high-water mark of a source-atom collection. -/
+def compilerSeedHighWaterAtoms (atoms : List Atom) : Nat :=
+  compilerSeedHighWaterNames (atoms.flatMap Atom.vars)
+
+/-- Preserve the caller's allocation supply while advancing it beyond every
+source variable that occupies the executable `_qN` namespace. -/
+def compilerFreshCounterForAtom (counter : Nat) (atom : Atom) : Nat :=
+  max counter (compilerSeedHighWaterAtom atom)
+
+/-- Collection form used by rule compilation. -/
+def compilerFreshCounterForAtoms (counter : Nat) (atoms : List Atom) : Nat :=
+  max counter (compilerSeedHighWaterAtoms atoms)
+
+def fresh (n : Nat) : Atom × Nat :=
+  (Atom.var s!"_q{n}", n + 1)
 
 private def trueA : Atom := Atom.sym "True"
 private def falseA : Atom := Atom.sym "False"
@@ -1968,6 +2010,20 @@ def compileRule (env : CEnv) (n : Nat) (params : List Atom) (rhs : Atom) :
   | none =>
       .ok ({ params := ps, result := tr, body := gps ++ gr }, n2)
 
+/-- Source-facing expression compiler.  The raw `compileExpr` remains the
+counter-parametric proof surface; executable callers use this wrapper so a
+legal source variable such as `$_q25` cannot alias generated `_q25`. -/
+def compileExprFresh (env : CEnv) (counter : Nat) (source : Atom) :
+    CompileM (Atom × List Goal × Nat) :=
+  compileExpr env (compilerFreshCounterForAtom counter source) source
+
+/-- Source-facing rule compiler, seeded beyond variables in both the head
+patterns and body before pattern compilation allocates any temporaries. -/
+def compileRuleFresh (env : CEnv) (counter : Nat) (params : List Atom)
+    (rhs : Atom) : CompileM (Clause × Nat) :=
+  compileRule env (compilerFreshCounterForAtoms counter (rhs :: params))
+    params rhs
+
 /-- Surface desugaring: HE-style binder forms become synthesized rules plus
     the function-value form —
     `(map-atom l $x body)`       → `(map-atom l #lamK)`  + `(= (#lamK $x) body)`
@@ -2074,13 +2130,13 @@ def compileProgram (isBin : String → Bool) (atoms0 : List Atom) :
   let mut n := 0
   let mut clauses : List (String × Clause) := []
   for (f, ps, rhs) in rules do
-    let (c, n') ← compileRule env n ps rhs
+    let (c, n') ← compileRuleFresh env n ps rhs
     clauses := clauses ++ [(f, c)]; n := n'
   let queryEnv : CEnv := mkEnv isBin heads
     (arities ++ clauses.map (fun (f, c) => (f, c.params.length))) decls
   let mut queries : List (List Goal × Atom) := []
   for q in bangs do
-    let (t, gs, n') ← compileExpr queryEnv n q
+    let (t, gs, n') ← compileExprFresh queryEnv n q
     -- the query's answers are its result term's instances
     queries := queries ++ [(gs, t)]; n := n'
   .ok ({ clauses, facts, typeDecls := decls }, queries)
@@ -2188,7 +2244,7 @@ def compileProgramSequentialForms (isBin : String → Bool)
           (f, c.params.length))
         let env := { mkEnv isBin heads liveArities decls with
           translatorRules, prologFunctions }
-        let (t, gs, n') ← compileExpr env n a
+        let (t, gs, n') ← compileExprFresh env n a
         events := events ++ [TopEvent.query gs t pendingObservable]
         n := n'; pendingBang := false
       else
@@ -2212,13 +2268,13 @@ def compileProgramSequentialForms (isBin : String → Bool)
               (f, c.params.length))
             let env := { mkEnv isBin heads liveArities decls with
               translatorRules, prologFunctions }
-            let (t, gs, n') ← compileExpr env n q
+            let (t, gs, n') ← compileExprFresh env n q
             events := events ++ [TopEvent.query gs t observable]
             n := n'
         | Atom.expr [Atom.sym "=", Atom.expr (Atom.sym f :: ps), rhs] =>
             let env := { mkEnv isBin heads arities decls with
               translatorRules, prologFunctions }
-            let (c, n') ← compileRule env n ps rhs
+            let (c, n') ← compileRuleFresh env n ps rhs
             clauses := clauses ++ [(f, c)]
             events := events ++ [TopEvent.clause a f c]
             n := n'

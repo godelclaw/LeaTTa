@@ -1164,6 +1164,20 @@ theorem mappedEqAlts_below (items : List Atom) (res : Atom)
   · exact (PersistentSubst.resolutionSeedHighWaterNames_le_iff _ counter).mp
       hsource name (by simp [hbinding])
 
+theorem localGetTypeExtensionAlts_below (world : PWorld) (value res : Atom)
+    (rest : List Goal) (binding : Subst) (counter : Nat)
+    (hsource : resolutionSeedHighWaterNames
+      (value.vars ++ res.vars ++ specializationGoalsVars rest ++
+        resolutionSubstVars binding) ≤ counter) :
+    resolutionSeedHighWaterNames
+      ((localGetTypeExtensionAlts world value res rest binding).flatMap
+        resolutionAltVars) ≤ counter := by
+  unfold localGetTypeExtensionAlts
+  split
+  · simp [resolutionSeedHighWaterNames]
+  · simpa [resolutionAltVars, specializationGoalsVars,
+      specializationGoalVars] using hsource
+
 theorem ConfBelowResolutionCounter.enqueueEqAlts {conf : Conf}
     (below : ConfBelowResolutionCounter conf) (oldGoals : List Goal)
     (binding : Subst) (hcur : conf.cur = some (oldGoals, binding))
@@ -1533,16 +1547,19 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
     intro c rest binding hcur below
     exact below.clearActive.pull
   case bin_nonstrict_fail =>
-    intro c op args res rest binding hcur hnp hns hnso hresult below
+    intro c op args res rest binding hcur hnp hlocal hns hnso hresult below
     exact below.clearActive.pull
   case bin_mode_fail =>
-    intro c op args res rest binding hcur hnp hns hop hng hrv hnav below
+    intro c op args res rest binding hcur hnp hlocal hns hop hng hrv hnav
+      below
     exact below.clearActive.pull
   case bin_fail =>
-    intro c op args res rest binding hcur hnp hns hnmode hgnd hresult below
+    intro c op args res rest binding hcur hnp hlocal hns hnmode hgnd hresult
+      below
     exact below.clearActive.pull
   case bin_flounder =>
-    intro c op args res rest binding hcur hnp hns hnmode hgnd hrest below
+    intro c op args res rest binding hcur hnp hlocal hns hnmode hgnd hrest
+      below
     exact below.clearActive.pull
   case wact_fail =>
     intro c op args res rest binding hcur hdispatch below
@@ -1692,9 +1709,29 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
       · exact Or.inr hbindingOrigin
     · exact Or.inl (Or.inr hrest)
     · exact Or.inr hbinding
+  case bin_local_translate =>
+    intro c operation args res rest binding goals hcur hpartial hlocal below
+    let counter := advanceCounterPastGoals c.counter goals
+    have hcounter : c.counter ≤ counter := by
+      exact advanceCounterPastGoals_mono c.counter goals
+    have hactive := below.active
+      (Goal.bin operation args res :: rest) binding hcur
+    have hbinding : resolutionSeedHighWaterNames
+        (resolutionSubstVars binding) ≤ counter := by
+      simp only [specializationGoalsVars, specializationGoalVars,
+        resolutionSeedHighWaterNames_append] at hactive
+      omega
+    apply ConfBelowResolutionCounter.of_components
+    · simp only [resolutionCurVars, resolutionSeedHighWaterNames_append]
+      exact Nat.max_le.mpr ⟨by
+        unfold advanceCounterPastGoals
+        exact Nat.le_max_right _ _, hbinding⟩
+    · exact Nat.le_trans below.alts hcounter
+    · exact Nat.le_trans below.qterm hcounter
+    · exact Nat.le_trans below.answers hcounter
   case bin_gettype =>
-    intro c args res rest binding types oracleCounter hcur hpartial horacle
-      below
+    intro c args res rest binding types oracleCounter hcur hpartial hlocal
+      horacle below
     let counter := advanceCounterPastAtoms (max c.counter oracleCounter) types
     have hcounter : c.counter ≤ counter := by
       unfold counter advanceCounterPastAtoms
@@ -1704,20 +1741,58 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
       unfold counter advanceCounterPastAtoms
       rw [resolutionSeedHighWaterAtoms_eq]
       exact Nat.le_max_right _ _
-    have hqueued := below.enqueueEqAlts
-      (Goal.bin "get-type" args res :: rest) binding hcur res rest types
-      c.world counter hcounter (by
-        intro name member
-        simp only [specializationGoalsVars, specializationGoalVars,
-          List.mem_append] at member ⊢
-        rcases member with (hres | hrest) | hbinding
-        · exact Or.inl (Or.inl (Or.inr hres))
-        · exact Or.inl (Or.inr hrest)
-        · exact Or.inr hbinding) hitems
-    simpa [counter, List.map_map, Function.comp_def] using hqueued.pull
+    have hactive := below.active
+      (Goal.bin "get-type" args res :: rest) binding hcur
+    have hsource : resolutionSeedHighWaterNames
+        (res.vars ++ specializationGoalsVars rest ++
+          resolutionSubstVars binding) ≤ counter :=
+      Nat.le_trans
+        (resolutionSeedHighWaterNames_le_of_subset (by
+          intro name member
+          simp only [specializationGoalsVars, specializationGoalVars,
+            List.mem_append] at member ⊢
+          rcases member with (hres | hrest) | hbinding
+          · exact Or.inl (Or.inl (Or.inr hres))
+          · exact Or.inl (Or.inr hrest)
+          · exact Or.inr hbinding))
+        (Nat.le_trans hactive hcounter)
+    have hrawArgs : resolutionSeedHighWaterNames
+        (args.flatMap Atom.vars) ≤ c.counter := by
+      simp only [specializationGoalsVars, specializationGoalVars,
+        resolutionSeedHighWaterNames_append] at hactive
+      omega
+    have hrawBinding : resolutionSeedHighWaterNames
+        (resolutionSubstVars binding) ≤ c.counter := by
+      simp only [specializationGoalsVars, specializationGoalVars,
+        resolutionSeedHighWaterNames_append] at hactive
+      omega
+    have hsubArgs := resolutionSeedHighWaterAtomList_subst_le binding args
+      c.counter hrawArgs hrawBinding
+    have hvalue : resolutionSeedHighWaterNames
+        ((args.map (subst binding)).headD (Atom.sym "?")).vars ≤ counter := by
+      apply Nat.le_trans ?_ (Nat.le_trans hsubArgs hcounter)
+      apply resolutionSeedHighWaterNames_le_of_subset
+      intro name member
+      cases args <;> simp_all [Atom.vars]
+    have hext := localGetTypeExtensionAlts_below c.world
+      ((args.map (subst binding)).headD (Atom.sym "?")) res rest binding
+      counter (by
+        simp only [resolutionSeedHighWaterNames_append] at hsource ⊢
+        omega)
+    have hmapped := mappedEqAlts_below types res rest binding counter hsource
+      hitems
+    apply ConfBelowResolutionCounter.pull
+    apply ConfBelowResolutionCounter.of_components
+    · simp [resolutionCurVars, resolutionSeedHighWaterNames]
+    · simp only [List.flatMap_append,
+        resolutionSeedHighWaterNames_append]
+      have hold := Nat.le_trans below.alts hcounter
+      omega
+    · exact Nat.le_trans below.qterm hcounter
+    · exact Nat.le_trans below.answers hcounter
   case bin_getmetatype =>
-    intro c args res rest binding metatype hcur hpartial hmetatype goal hgoal
-      below
+    intro c args res rest binding metatype hcur hpartial hlocal hmetatype goal
+      hgoal below
     subst goal
     apply below.replaceActive (Goal.bin "get-metatype" args res :: rest)
       binding hcur (Goal.eq res (Atom.sym metatype) :: rest) binding
@@ -1729,8 +1804,8 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
     · exact Or.inl (Or.inr hrest)
     · exact Or.inr hbinding
   case bin_nonstrict_ok =>
-    intro c operation args res rest binding results hcur hpartial hspecial
-      hnonstrict hresult below
+    intro c operation args res rest binding results hcur hpartial hlocal
+      hspecial hnonstrict hresult below
     let counter := advanceCounterPastAtoms c.counter results
     have hcounter : c.counter ≤ counter :=
       advanceCounterPastAtoms_mono c.counter results
@@ -1759,7 +1834,7 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
     simpa [counter, List.map_map, Function.comp_def] using hqueued.pull
   case bin_ok =>
     intro c operation args res rest binding results hcur hground hpartial
-      hspecial hmode hresult below
+      hlocal hspecial hmode hresult below
     let counter := advanceCounterPastAtoms c.counter results
     have hcounter : c.counter ≤ counter :=
       advanceCounterPastAtoms_mono c.counter results
@@ -1787,8 +1862,8 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
         · exact Or.inr hbinding) hitems
     simpa [counter, List.map_map, Function.comp_def] using hqueued.pull
   case bin_mode =>
-    intro c operation args res rest binding left right hcur hpartial hspecial
-      hop hargs hnotGround hresGround goal hgoal below
+    intro c operation args res rest binding left right hcur hpartial hlocal
+      hspecial hop hargs hnotGround hresGround goal hgoal below
     have hactive := below.active (Goal.bin operation args res :: rest)
       binding hcur
     simp only [specializationGoalsVars, specializationGoalVars,
@@ -1840,8 +1915,8 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
     all_goals apply finish
     all_goals apply binBound <;> assumption
   case bin_delay =>
-    intro c operation args res rest binding hcur hpartial hspecial hmode
-      hground hnonempty below
+    intro c operation args res rest binding hcur hpartial hlocal hspecial
+      hmode hground hnonempty below
     have hactive := below.active (Goal.bin operation args res :: rest)
       binding hcur
     apply ConfBelowResolutionCounter.of_components
@@ -2222,8 +2297,8 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
         · simp [hbinding]) hitems
     simpa [counter] using hqueued.pull
   case bin_union_reverse =>
-    intro c args res rest binding branches hcur hpartial hnonstrict hmode
-      hground hreverse below
+    intro c args res rest binding branches hcur hpartial hlocal hnonstrict
+      hmode hground hreverse below
     have hactive := below.active
       (Goal.bin "union-atom" args res :: rest) binding hcur
     have hsource : resolutionSeedHighWaterNames

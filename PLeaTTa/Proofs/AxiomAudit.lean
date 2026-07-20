@@ -6,10 +6,13 @@ import PLeaTTa.Proofs.Specialize
 import PLeaTTa.Proofs.Unification
 import PLeaTTa.Proofs.Reachability
 import PLeaTTa.Proofs.Simulation
+import PLeaTTa.Proofs.ResolutionCounter
 import PLeaTTa.Proofs.CompilerAdequacy
 import PLeaTTa.Proofs.CompilerDesugaring
 import PLeaTTa.Proofs.PrologCoreAdequacy
 import PLeaTTa.Proofs.ObservationAgreement
+import PLeaTTa.Proofs.OpenBindingAgreement
+import PLeaTTa.Proofs.CompilerFreshness
 import PLeaTTa.Proofs.OpenOrderedStep
 import PLeaTTa.Proofs.ReaderAdequacy
 import PLeaTTa.PeTTaSpec.OpenSubstitution
@@ -19,6 +22,8 @@ import PLeaTTa.HostMachine
 import PLeaTTa.HostReplay
 
 #print axioms PLeaTTa.machineMirrorsSpecTotal_proved
+#print axioms PLeaTTa.localGetTypeExtensionAlts_below
+#print axioms PLeaTTa.Step.preserves_belowResolutionCounter
 #print axioms PLeaTTa.barrierCount_localGetTypeExtensionAlts
 #print axioms PLeaTTa.SubstEngine.mapAlt_localGetTypeExtensionAlts
 #print axioms PLeaTTa.SubstEngine.localGetTypeExtensionAlts_valid
@@ -92,7 +97,19 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.isTrimRoot_ite_then_eq_left
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_translates
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_compiles
+#print axioms PLeaTTa.OpenOrderedStep.aliasIf_compiles_fresh
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_compiler_agrees
+#print axioms PLeaTTa.OpenBindingAgreement.source_generated_pair_not_injective
+#print axioms PLeaTTa.OpenBindingAgreement.source_generated_pair_injective
+#print axioms PLeaTTa.OpenBindingAgreement.alias_bindings_agree_on_pair
+#print axioms PLeaTTa.OpenBindingAgreement.resolved_bindings_agree_on_pair
+#print axioms PLeaTTa.OpenBindingAgreement.collision_cannot_represent_distinct_integers
+#print axioms PLeaTTa.CompilerFreshness.compilerGeneratedIndex?_name
+#print axioms PLeaTTa.CompilerFreshness.compilerGeneratedName_not_mem_source_vars
+#print axioms PLeaTTa.CompilerFreshness.compilerGeneratedName_not_mem_source_atoms
+#print axioms PLeaTTa.CompilerFreshness.source_generated_encoding_injective_of_seed
+#print axioms PLeaTTa.OpenOrderedStep.aliasIf_variable_encoding_injective
+#print axioms PLeaTTa.OpenOrderedStep.aliasIf_resolved_bindings_agree
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_reference_runs
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_reference_query_value
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_executable_steps

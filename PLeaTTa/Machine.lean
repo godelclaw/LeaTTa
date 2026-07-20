@@ -4800,7 +4800,10 @@ def binResolvedStep {Binding : Type} (gt : GroundingTable)
     (grounded : Unit → ReduceResult)
     (unionAlts : Option (List (Alt Binding))) : Conf Binding :=
   match localTranslatePredicateGoals? c.world gt op av res rest with
-  | some goals => { c with cur := some (goals, binding) }
+  | some goals =>
+      { c with
+        cur := some (goals, binding)
+        counter := advanceCounterPastGoals c.counter goals }
   | none => if op == "get-type" then
     let value := av.headD (Atom.sym "?")
     let (types, counter') := getTypeP c.world 100 c.counter
@@ -5002,7 +5005,8 @@ private def compileDynamicRules (env : CEnv) : Nat → List Atom →
       match dynamicRuleSource? source with
       | none => compileDynamicRules env counter rest
       | some (functor, params, rhs) => do
-          let (clause, next) ← (compileRule env counter params rhs).toOption
+          let (clause, next) ←
+            (compileRuleFresh env counter params rhs).toOption
           let (compiled, finalCounter) ← compileDynamicRules env next rest
           pure ((source, functor, clause) :: compiled, finalCounter)
 
@@ -5129,7 +5133,7 @@ private def wactDispatchRaw (w : PWorld) (gt : GroundingTable) (counter : Nat)
                   if g == name then some n else none),
             isBin := fun n => (Metta.GroundingTable.lookup gt n).isSome,
             atomTyped := fun _ _ => false }
-        match compileRule env (counter * 1000 + 500000) ps rhs with
+        match compileRuleFresh env (counter * 1000 + 500000) ps rhs with
         | .ok (cl, _) =>
             let source := Atom.expr
               [Atom.sym "=", Atom.expr (Atom.sym f :: ps), rhs]
@@ -5153,7 +5157,7 @@ private def wactDispatchRaw (w : PWorld) (gt : GroundingTable) (counter : Nat)
                   if g == name then some n else none),
             isBin := fun n => (Metta.GroundingTable.lookup gt n).isSome,
             atomTyped := fun _ _ => false }
-        match compileRule env 900000 ps rhs with
+        match compileRuleFresh env 900000 ps rhs with
         | .ok (pat, _) =>
             let key := clauseAlphaKey pat
             let dropped := (w.progClauses.zip w.effectiveProgClauseKeys).foldl
@@ -5538,7 +5542,7 @@ def step (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf) : Conf :=
         -- shared; compiler temporaries are fresh because compilation starts
         -- from the global counter and returns the next counter.
         let vv := unchainify 10000 (subst b v)
-        (match compileExpr (runtimeEnv c.world gt) (c.counter + 1) vv with
+        (match compileExprFresh (runtimeEnv c.world gt) (c.counter + 1) vv with
          | .ok (t, gs, m) =>
              let (profileWorld, profileGoals) :=
                specializeGoals (specializationIsBin gt)

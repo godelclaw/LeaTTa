@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=e41664d62cac8ebaeae8633dfaa3a69aeace0c3e037e6c3a03d94ce9dd766257
+# compiler_sha256=b88ea4bdf100324bbc103fa525fc2cd2245cf27a9334bdbcdbe7a1b9fc288d01
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -54,7 +54,7 @@ APP.or_else	T181-183	X	TranslatesExpr.orElse	SC	PASS	nested-conjunction flatteni
 APP.hash_plus	M53,M316	S	-	EQ	FAIL	ordinary-plus-not-CLPFD
 APP.hash_minus	M54,M316	S	-	EQ	FAIL	ordinary-minus-not-CLPFD
 APP.cons	M145,T3-8	S	-	N	GAP	direct-structural-constructor
-APP.if2	T151-155,T394-397	S	TranslatesExpr.ifThen	SC	GAP	compiler-sound-complete-for-explicit-alias-normalization; bidirectional ordered substitution simulation and proved unification primitive preserve answer order/multiplicity; one parametric variable-valued true-branch family now compiles, runs in the independent ordered semantics, and reaches the same singleton integer observation through actual Step; universal if-to-Step bisimulation and predicate-call instance remain open; runtime-alias-differential-pass
+APP.if2	T151-155,T394-397	S	TranslatesExpr.ifThen	SC	GAP	compiler-sound-complete-for-explicit-alias-normalization; bidirectional ordered substitution simulation and proved unification primitive preserve answer order/multiplicity; one parametric variable-valued true-branch family now uses the source-facing fresh compiler, runs in the independent ordered semantics, and reaches the same singleton integer observation through actual Step; universal if-to-Step bisimulation and predicate-call instance remain open; runtime-alias-differential-pass
 APP.if3	T156-162,T394-397	S	TranslatesExpr.ifThenElse	SC	GAP	compiler-sound-complete-for-explicit-alias-normalization; bidirectional ordered substitution simulation, proved unification primitive, and concrete call-free alias-prefix bisimulation preserve answer order/multiplicity; predicate-call instance and executable Step bisimulation open; runtime-cross-branch-differential-pass
 APP.let	T185-188	X	TranslatesExpr.letBind	SC	PASS	covered
 APP.let_star	T189-190,T384-386	X	TranslatesLetStar	SC	PASS	well-formed-nonempty-over-supported-nested-fragment; empty-and-malformed-rejected
@@ -132,6 +132,7 @@ PROGRAM.static_split_bang	F13-24	X	-	N	GAP	loader-reference-missing
 PROGRAM.static_partition	F20-45	S	-	N	GAP	groups-rules-and-queries-not-source-order
 PROGRAM.static_compile_rules	F36-44	S	-	N	GAP	program-reference-missing
 PROGRAM.static_compile_queries	F31-35	S	-	N	GAP	program-reference-missing
+PROGRAM.generated_name_freshness	T18-34,T96-110	X	EncodingInjectiveOn	SH	GAP	source-high-water seed and source/generated encoding injectivity proved; executable differential pass; compiler-wide counter monotonicity and universal compilation-output freshness remain open
 SEQ.normalize_host_import	-	H	-	N	BOUNDARY	typed-loader-protocol
 SEQ.normalize_prolog_register	M274	H	-	N	BOUNDARY	typed-registration-protocol
 SEQ.normalize_import_markers	-	P	-	N	GAP	typed-loader-protocol

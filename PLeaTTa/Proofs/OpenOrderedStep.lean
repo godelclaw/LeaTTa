@@ -9,13 +9,15 @@ Main exports: aliasIf_translates, aliasIf_compiles,
 -/
 import PLeaTTa.PeTTaSpec.OpenOrdered
 import PLeaTTa.Proofs.PrologCoreAdequacy
-import PLeaTTa.Proofs.ObservationAgreement
+import PLeaTTa.Proofs.CompilerFreshness
 
 namespace PLeaTTa.OpenOrderedStep
 
 open Metta (Atom Subst GroundingTable)
 open PLeaTTa.CompilerAdequacy
 open PLeaTTa.ObservationAgreement
+open PLeaTTa.OpenBindingAgreement
+open PLeaTTa.CompilerFreshness
 open PLeaTTa.PrologCoreAdequacy
 open PLeaTTa.PeTTaSpec.PrologCore
 open PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution
@@ -136,6 +138,18 @@ theorem aliasIf_compiles (value : Int) :
     .ok (aliasIfExecutableQuery, aliasIfExecutableGoals value, 1) at compiled
   exact compiled
 
+/-- The source-facing compiler wrapper used by executable loaders produces
+the same exact stream for this non-colliding family. -/
+theorem aliasIf_compiles_fresh (value : Int) :
+    compileExprFresh emptyCompilerEnv 0 (aliasIfSource value) =
+      .ok (aliasIfExecutableQuery, aliasIfExecutableGoals value, 1) := by
+  unfold compileExprFresh
+  rw [show compilerFreshCounterForAtom 0 (aliasIfSource value) = 0 by
+    simp [compilerFreshCounterForAtom, compilerSeedHighWaterAtom,
+      compilerSeedHighWaterNames, compilerSeedHighWaterName,
+      compilerGeneratedIndex?, aliasIfSource, Atom.vars]]
+  exact aliasIf_compiles value
+
 /-- The independent result and ordered goal stream are related to the exact
 public compiler output by the general adequacy relations. -/
 theorem aliasIf_compiler_agrees (value : Int) :
@@ -157,6 +171,18 @@ theorem aliasIf_compiler_agrees (value : Int) :
     Except.ok.inj (compiled.symm.trans (aliasIf_compiles value))
   cases resultEquality
   exact ⟨termAgreement, goalsAgreement⟩
+
+/-- The source variable used by this composition witness is genuinely fresh
+from the generated result identity under the executable naming projection. -/
+theorem aliasIf_variable_encoding_injective :
+    EncodingInjectiveOn [.source "x", .generated 0] := by
+  exact source_generated_encoding_injective_of_seed
+    (aliasIfSource 0) 0 0 "x"
+    (by simp [aliasIfSource, Atom.vars])
+    (by
+      simp [compilerFreshCounterForAtom, compilerSeedHighWaterAtom,
+        compilerSeedHighWaterNames, compilerSeedHighWaterName,
+        compilerGeneratedIndex?, aliasIfSource, Atom.vars])
 
 /-- Ordered call-free execution of the independent normalized target.  The
 answer bag retains the explicit alias and its later value binding. -/
@@ -235,6 +261,15 @@ private def aliasBinding : Subst := [("x", aliasIfExecutableQuery)]
 private def resolvedBinding (value : Int) : Subst :=
   [("x", .gnd (.int value)),
    ("_q0", .gnd (.int value))]
+
+/-- The independent answer substitution and executable resolved binding agree
+on both variables used by the translated source. -/
+theorem aliasIf_resolved_bindings_agree (value : Int) :
+    BindingsAgreeOn (aliasIfReferenceAnswer value)
+      (resolvedExecutableBinding "x" 0 value)
+      (sourceGeneratedPairs "x" 0) := by
+  simpa [aliasIfReferenceAnswer, resolvedReferenceBinding] using
+    resolved_bindings_agree_on_pair "x" 0 value
 
 private def finalBinding (value : Int) : Subst :=
   trimFor [] aliasIfExecutableQuery (resolvedBinding value)
@@ -429,11 +464,15 @@ theorem aliasIf_source_to_observation (program : Prog)
     (grounding : GroundingTable) (world : PWorld) (value : Int) :
     TranslatesExpr emptyTranslatorState 0 (aliasIfSource value)
         aliasIfReferenceQuery (aliasIfReferenceGoals value) 1 ∧
-    compileExpr emptyCompilerEnv 0 (aliasIfSource value) =
+    compileExprFresh emptyCompilerEnv 0 (aliasIfSource value) =
         .ok (aliasIfExecutableQuery, aliasIfExecutableGoals value, 1) ∧
     TermAgrees aliasIfReferenceQuery aliasIfExecutableQuery ∧
     GoalsAgree (aliasIfReferenceGoals value)
         (aliasIfExecutableGoals value) ∧
+    EncodingInjectiveOn [.source "x", .generated 0] ∧
+    BindingsAgreeOn (aliasIfReferenceAnswer value)
+        (resolvedExecutableBinding "x" 0 value)
+        (sourceGeneratedPairs "x" 0) ∧
     RunsAll NoCalls [] (aliasIfReferenceGoals value)
         [aliasIfReferenceAnswer value] ∧
     TermAgrees
@@ -444,9 +483,11 @@ theorem aliasIf_source_to_observation (program : Prog)
           final ∧
       Terminal final ∧
       final.answerValues = [.gnd (.int value)] := by
-  refine ⟨aliasIf_translates value, aliasIf_compiles value,
+  refine ⟨aliasIf_translates value, aliasIf_compiles_fresh value,
     (aliasIf_compiler_agrees value).1,
     (aliasIf_compiler_agrees value).2,
+    aliasIf_variable_encoding_injective,
+    aliasIf_resolved_bindings_agree value,
     aliasIf_reference_runs value, ?_,
     aliasIf_executable_steps program grounding world value⟩
   rw [aliasIf_reference_query_value]

@@ -466,7 +466,7 @@ partial def solve {α : Type} (env : PEnv) (g : WAtom) (b : Subst)
     | [v, res] =>
         let vv := unchainify 10000 (subst b v)
         let start ← env.freshK
-        match compileExpr env.cenv start vv with
+        match compileExprFresh env.cenv start vv with
         | .ok (t, gs, n') =>
             env.kref.set n'
             let projStart ← env.freshK

@@ -123,7 +123,10 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
         (args.map (subst b)).length < binArity op))
       (hl : localTranslatePredicateGoals? c.world gt op
         (args.map (subst b)) res rest = some goals) :
-      Step prog gt c { c with cur := some (goals, b) }
+      Step prog gt c
+        { c with
+          cur := some (goals, b)
+          counter := advanceCounterPastGoals c.counter goals }
   -- get-type (machine oracle getTypeP)
   | bin_gettype (c : Conf) (args : List Atom) (res : Atom)
       (rest : List Goal) (b : Subst) (ts : List Atom) (c' : Nat)
@@ -382,7 +385,7 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (t : Atom) (gs : List Goal) (m : Nat) (profileWorld : PWorld)
       (profileGoals newgoals : List Goal)
       (h : c.cur = some (Goal.evalg v res :: rest, b))
-      (ho : compileExpr (runtimeEnv c.world gt) (c.counter + 1)
+      (ho : compileExprFresh (runtimeEnv c.world gt) (c.counter + 1)
               (unchainify 10000 (subst b v)) = .ok (t, gs, m))
       (hs : specializeGoals (specializationIsBin gt) specializationBuildFuel
               c.world gs = (profileWorld, profileGoals))
@@ -395,7 +398,7 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
   | evalg_err (c : Conf) (v res : Atom) (rest : List Goal) (b : Subst)
       (e : String)
       (h : c.cur = some (Goal.evalg v res :: rest, b))
-      (ho : compileExpr (runtimeEnv c.world gt) (c.counter + 1)
+      (ho : compileExprFresh (runtimeEnv c.world gt) (c.counter + 1)
               (unchainify 10000 (subst b v)) = .error e)
       (g : Goal) (hg : g = Goal.eq res (chainify (unchainify 10000 (subst b v)))) :
       Step prog gt c

@@ -151,7 +151,7 @@ theorem step_wact (c : Conf) (op : String) (args : List Atom) (res : Atom)
 theorem step_evalg (c : Conf) (v res : Atom) (rest : List Goal) (b : Subst)
     (h : c.cur = some (Goal.evalg v res :: rest, b)) :
     Step prog gt c (step prog gt fuel c) := by
-  cases hce : compileExpr (runtimeEnv c.world gt) (c.counter + 1)
+  cases hce : compileExprFresh (runtimeEnv c.world gt) (c.counter + 1)
       (unchainify 10000 (subst b v)) with
   | ok val =>
       obtain ⟨t, gs, m⟩ := val
@@ -668,7 +668,9 @@ theorem step_bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
           exact step_bin_nonlocal prog gt fuel c op args res rest b h hlocal
       | some goals =>
           have hstep : step prog gt fuel c =
-              { c with cur := some (goals, b) } := by
+              { c with
+                cur := some (goals, b)
+                counter := advanceCounterPastGoals c.counter goals } := by
             unfold step
             rw [h]
             simp only [h1, Bool.false_eq_true, if_false, binResolvedStep,
