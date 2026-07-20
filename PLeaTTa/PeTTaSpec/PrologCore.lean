@@ -309,6 +309,39 @@ inductive TranslatesArgs : TranslatorState → Nat → List Atom → List Term �
       TranslatesArgs state counter (source :: sources) (term :: terms)
         (headGoals ++ tailGoals) nextCounter
 
+/-- Independently relevant input-type modes for pinned
+`translate_args_by_type/4`. `value` is the no-extra-check `%Undefined%`/`Atom`
+fragment; refined input types remain a separate goal-generation obligation. -/
+inductive ArgumentMode where
+  | expression
+  | value
+deriving Repr
+
+/-- Independent ordered fragment of pinned `translate_args_by_type/4`
+(`translator.pl:362-370`). `Expression` inputs remain quoted source data;
+value inputs use ordinary expression translation. The mode list is consumed
+in lockstep with source arguments, making type-arity assumptions explicit. -/
+inductive TranslatesTypedArgs : TranslatorState → Nat → List ArgumentMode →
+    List Atom → List Term → List Goal → Nat → Prop where
+  | nil {state : TranslatorState} {counter : Nat} :
+      TranslatesTypedArgs state counter [] [] [] [] counter
+  | expression {state : TranslatorState} {counter nextCounter : Nat}
+      {source : Atom} {sources : List Atom} {term : Term} {terms : List Term}
+      {modes : List ArgumentMode} {tailGoals : List Goal}
+      (quoted : Quotes source term)
+      (tail : TranslatesTypedArgs state counter modes sources terms tailGoals
+        nextCounter) :
+      TranslatesTypedArgs state counter (.expression :: modes)
+        (source :: sources) (term :: terms) tailGoals nextCounter
+  | value {state : TranslatorState} {counter middleCounter nextCounter : Nat}
+      {source : Atom} {sources : List Atom} {term : Term} {terms : List Term}
+      {modes : List ArgumentMode} {headGoals tailGoals : List Goal}
+      (head : TranslatesExpr state counter source term headGoals middleCounter)
+      (tail : TranslatesTypedArgs state middleCounter modes sources terms
+        tailGoals nextCounter) :
+      TranslatesTypedArgs state counter (.value :: modes) (source :: sources)
+        (term :: terms) (headGoals ++ tailGoals) nextCounter
+
 /-- Independent pinned translation for the first behaviorally normalized
 construct. Native emits a mutex wrapper, while PLeaTTa's sequential target
 may erase that wrapper only after an ordered-observation theorem. Keeping this
@@ -582,6 +615,20 @@ theorem translates_two_literal_args (state : TranslatorState) (counter : Nat)
   .cons (.literal (.integer first))
     (.cons (.literal (.integer second)) .nil)
 
+/-- Positive mixed typed-argument example: one expression remains source data
+and the following value argument is translated normally. -/
+theorem translates_staged_value_args (state : TranslatorState) (counter : Nat)
+    (head : String) (stagedValue evaluatedValue : Int) :
+    TranslatesTypedArgs state counter [.expression, .value]
+      [.expr [.sym head, .gnd (.int stagedValue)],
+        .gnd (.int evaluatedValue)]
+      [.list [.atom head, .integer stagedValue] none,
+        .integer evaluatedValue] [] counter := by
+  exact .expression
+    (.expression
+      (.cons (.symbol head) (.cons (.integer stagedValue) .nil)))
+    (.value (.literal (.integer evaluatedValue)) .nil)
+
 /-- Positive recursive-pattern example: pinned `cons` traversal preserves a
 proper two-element list and leaves both the ordered goal sequence and fresh
 counter unchanged. -/
@@ -625,6 +672,12 @@ def SupportedArgs (state : TranslatorState) (counter : Nat)
     (sources : List Atom) : Prop :=
   ∃ terms goals nextCounter,
     TranslatesArgs state counter sources terms goals nextCounter
+
+/-- Independently supported typed-argument lists for the explicit mode list. -/
+def SupportedTypedArgs (state : TranslatorState) (counter : Nat)
+    (modes : List ArgumentMode) (sources : List Atom) : Prop :=
+  ∃ terms goals nextCounter,
+    TranslatesTypedArgs state counter modes sources terms goals nextCounter
 
 /-- Supported source forms whose native target requires a proved sequential
 behavioral normalization rather than structural goal identity. -/
@@ -706,6 +759,15 @@ theorem external_singleton_not_supported_args (state : TranslatorState)
   | cons head tail =>
       cases head with
       | literal literal => cases literal
+
+/-- A nonempty source list cannot be translated after its explicit type-mode
+list is exhausted. -/
+theorem typedArgs_exhausted_modes_rejected (state : TranslatorState)
+    (counter : Nat) (source : Atom) :
+    ¬ SupportedTypedArgs state counter [] [source] := by
+  intro supported
+  obtain ⟨terms, goals, nextCounter, translation⟩ := supported
+  cases translation
 
 /-- Imported host payloads are not literals in the certified compiler fragment. -/
 theorem external_not_literal (tag payload : String) (term : Term) :

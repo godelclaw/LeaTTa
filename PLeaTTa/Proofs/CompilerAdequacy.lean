@@ -75,6 +75,20 @@ structure EnvAgrees (state : TranslatorState) (env : CEnv) : Prop where
   translatorRules (name : String) :
     state.hasRule name ↔ env.translatorRules.contains name = true
 
+/-- Cross-representation agreement between an independent finite argument-mode
+list and the executable function-position staging mask. -/
+inductive ArgModesAgree (env : CEnv) (head : String) : Nat →
+    List ArgumentMode → Prop where
+  | nil (index : Nat) : ArgModesAgree env head index []
+  | expression {index : Nat} {modes : List ArgumentMode}
+      (staged : env.atomTyped head index = true)
+      (tail : ArgModesAgree env head (index + 1) modes) :
+      ArgModesAgree env head index (.expression :: modes)
+  | value {index : Nat} {modes : List ArgumentMode}
+      (evaluated : env.atomTyped head index = false)
+      (tail : ArgModesAgree env head (index + 1) modes) :
+      ArgModesAgree env head index (.value :: modes)
+
 /-- Absence from the independent translator-rule set is reflected by the
 executable list representation. -/
 theorem EnvAgrees.notContains {state : TranslatorState} {env : CEnv}
@@ -1281,6 +1295,177 @@ theorem compileList_two_literal_sound (state : TranslatorState) (env : CEnv)
       GoalsAgree [] executableGoals := by
   exact compileList_sound env agreement
     (translates_two_literal_args state counter first second)
+
+/-- Every independently specified typed-argument traversal has a positive,
+syntax-bounded shared budget.  `Expression` inputs are deep-quoted without
+effects; value inputs preserve the ordinary translation's term, ordered goals,
+and fresh counter. -/
+theorem compileArgsAtFuel_initial_sound {state : TranslatorState} (env : CEnv)
+    (stateAgreement : EnvAgrees state env) (head : String) {counter : Nat}
+    {modes : List ArgumentMode} {sources : List Atom} {terms : List Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (native :
+      TranslatesTypedArgs state counter modes sources terms goals nextCounter) :
+    ∀ {index : Nat}, ArgModesAgree env head index modes →
+      ∃ baseFuel,
+        0 < baseFuel ∧
+        baseFuel < 16 * ((sources.map Atom.size).sum + 1) ∧
+        ∀ extraFuel, ∃ internals executableGoals,
+          compileArgsAtFuel (baseFuel + extraFuel) env counter head index
+              sources = .ok (internals, executableGoals, nextCounter) ∧
+          TermsAgree terms internals ∧
+            GoalsAgree goals executableGoals := by
+  induction native with
+  | @nil nilCounter =>
+      intro index modeAgreement
+      cases modeAgreement
+      refine ⟨1, by omega, by simp, ?_⟩
+      intro extraFuel
+      exact ⟨[], [], by
+          simpa [Nat.add_comm] using
+            compileArgsAtFuel_nil_eq extraFuel env nilCounter head index,
+        .nil, .nil⟩
+  | @expression typedCounter typedNextCounter source sources term terms modes
+      tailGoals quoted tail tailInduction =>
+      intro index modeAgreement
+      cases modeAgreement with
+      | expression staged tailModes =>
+          obtain ⟨tailFuel, tailPositive, tailBound, tailCompiles⟩ :=
+            tailInduction tailModes
+          refine ⟨tailFuel + 1, by omega, ?_, ?_⟩
+          · have sourcePositive := atom_size_positive_for_compiler source
+            simp only [List.map, List.sum_cons]
+            omega
+          · intro extraFuel
+            obtain ⟨tailInternals, tailExecutableGoals, tailCompiled,
+                tailAgreement, tailGoalsAgreement⟩ :=
+              tailCompiles extraFuel
+            refine ⟨chainify source :: tailInternals, tailExecutableGoals,
+              ?_, .cons (quotes_term_agrees quoted) tailAgreement,
+              tailGoalsAgreement⟩
+            rw [show (tailFuel + 1) + extraFuel =
+                (tailFuel + extraFuel) + 1 by omega]
+            rw [compileArgsAtFuel_staged_eq _ _ _ _ _ _ _ staged]
+            rw [tailCompiled]
+            rfl
+  | @value valueCounter middleCounter valueNextCounter source sources term terms
+      modes headGoals tailGoals translated tail tailInduction =>
+      intro index modeAgreement
+      cases modeAgreement with
+      | value evaluated tailModes =>
+          obtain ⟨headFuel, headPositive, headBound, headCompiles⟩ :=
+            compileExprFuel_initial_sound env stateAgreement translated
+          obtain ⟨tailFuel, tailPositive, tailBound, tailCompiles⟩ :=
+            tailInduction tailModes
+          let childFuel := max headFuel tailFuel
+          have headLe : headFuel ≤ childFuel := Nat.le_max_left _ _
+          have tailLe : tailFuel ≤ childFuel := Nat.le_max_right _ _
+          refine ⟨childFuel + 1, by omega, ?_, ?_⟩
+          · have sourcePositive := atom_size_positive_for_compiler source
+            simp only [List.map, List.sum_cons]
+            omega
+          · intro extraFuel
+            obtain ⟨headInternal, headExecutableGoals, headCompiled,
+                headAgreement, headGoalsAgreement⟩ :=
+              headCompiles (childFuel + extraFuel - headFuel)
+            obtain ⟨tailInternals, tailExecutableGoals, tailCompiled,
+                tailAgreement, tailGoalsAgreement⟩ :=
+              tailCompiles (childFuel + extraFuel - tailFuel)
+            have headFuelEq :
+                headFuel + (childFuel + extraFuel - headFuel) =
+                  childFuel + extraFuel := by
+              omega
+            have tailFuelEq :
+                tailFuel + (childFuel + extraFuel - tailFuel) =
+                  childFuel + extraFuel := by
+              omega
+            rw [headFuelEq] at headCompiled
+            rw [tailFuelEq] at tailCompiled
+            refine ⟨headInternal :: tailInternals,
+              headExecutableGoals ++ tailExecutableGoals, ?_,
+              .cons headAgreement tailAgreement,
+              GoalsAgree.append headGoalsAgreement tailGoalsAgreement⟩
+            rw [show (childFuel + 1) + extraFuel =
+                (childFuel + extraFuel) + 1 by omega]
+            rw [compileArgsAtFuel_evaluated_eq _ _ _ _ _ _ _ evaluated]
+            rw [headCompiled]
+            dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+            rw [tailCompiled]
+            rfl
+
+/-- Public soundness of the explicit `Expression`/value typed-argument
+fragment at the source-derived compiler budget. -/
+theorem compileArgs_sound {state : TranslatorState} (env : CEnv)
+    (stateAgreement : EnvAgrees state env) (head : String) {counter : Nat}
+    {modes : List ArgumentMode} {sources : List Atom} {terms : List Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (modeAgreement : ArgModesAgree env head 0 modes)
+    (native :
+      TranslatesTypedArgs state counter modes sources terms goals nextCounter) :
+    ∃ internals executableGoals,
+      compileArgs env counter head sources =
+        .ok (internals, executableGoals, nextCounter) ∧
+      TermsAgree terms internals ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨baseFuel, basePositive, baseBound, compiles⟩ :=
+    compileArgsAtFuel_initial_sound env stateAgreement head native modeAgreement
+  have baseLe :
+      baseFuel ≤ compilerListFuel (.sym head :: sources) + 64 := by
+    simp only [compilerListFuel, List.map, List.sum_cons, Atom.size]
+    omega
+  obtain ⟨extraFuel, fuelEquality⟩ :
+      ∃ extraFuel,
+        compilerListFuel (.sym head :: sources) + 64 =
+          baseFuel + extraFuel :=
+    ⟨compilerListFuel (.sym head :: sources) + 64 - baseFuel, by omega⟩
+  obtain ⟨internals, executableGoals, compiled, termsAgreement,
+      goalsAgreement⟩ := compiles extraFuel
+  exact ⟨internals, executableGoals,
+    by simpa [compileArgs, compileArgsFuel, fuelEquality] using compiled,
+    termsAgreement, goalsAgreement⟩
+
+/-- Completeness on independently supported explicit typed-argument lists. -/
+theorem compileArgs_complete {state : TranslatorState} (env : CEnv)
+    (stateAgreement : EnvAgrees state env) (head : String) {counter : Nat}
+    {modes : List ArgumentMode} {sources internals : List Atom}
+    {executableGoals : List PLeaTTa.Goal} {nextCounter : Nat}
+    (modeAgreement : ArgModesAgree env head 0 modes)
+    (supported : SupportedTypedArgs state counter modes sources)
+    (compiled : compileArgs env counter head sources =
+      .ok (internals, executableGoals, nextCounter)) :
+    ∃ terms goals,
+      TranslatesTypedArgs state counter modes sources terms goals nextCounter ∧
+      TermsAgree terms internals ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨terms, goals, referenceCounter, native⟩ := supported
+  obtain ⟨referenceInternals, referenceGoals, referenceCompiled,
+      termsAgreement, goalsAgreement⟩ :=
+    compileArgs_sound env stateAgreement head modeAgreement native
+  have resultEquality :
+      (internals, executableGoals, nextCounter) =
+        (referenceInternals, referenceGoals, referenceCounter) :=
+    Except.ok.inj (compiled.symm.trans referenceCompiled)
+  cases resultEquality
+  exact ⟨terms, goals, native, termsAgreement, goalsAgreement⟩
+
+/-- Executable mixed-mode witness: source data is staged at argument zero and
+the value at argument one is translated normally. -/
+theorem compileArgs_staged_value_sound (state : TranslatorState) (env : CEnv)
+    (stateAgreement : EnvAgrees state env) (head : String) (counter : Nat)
+    (dataHead : String) (stagedValue evaluatedValue : Int)
+    (staged : env.atomTyped head 0 = true)
+    (evaluated : env.atomTyped head 1 = false) :
+    ∃ internals executableGoals,
+      compileArgs env counter head
+        [.expr [.sym dataHead, .gnd (.int stagedValue)],
+          .gnd (.int evaluatedValue)] =
+        .ok (internals, executableGoals, counter) ∧
+      TermsAgree
+        [.list [.atom dataHead, .integer stagedValue] none,
+          .integer evaluatedValue] internals ∧
+      GoalsAgree [] executableGoals := by
+  exact compileArgs_sound env stateAgreement head
+    (.expression staged (.value evaluated (.nil 2)))
+    (translates_staged_value_args state counter dataHead stagedValue
+      evaluatedValue)
 
 /-- Soundness of the executable compiler for independently specified,
 well-formed pinned `let*` forms.  The nested expansion may be syntactically

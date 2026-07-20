@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=b2c86690061b76fee22a8aa8db4619266cbfa8a9a6f25445ea3f2a04fac9c295
+# compiler_sha256=f34da548bc4ebbef473ebd80c500cb5f873e21f4d124f918f6db0ae7781207db
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -26,9 +26,10 @@ CASE.nil	T399-406	S	-	N	GAP	explicit-failure-goal
 CASE.empty_arm	T163-176,T399-406	S	-	N	GAP	default-handling-unproved
 CASE.normal_arm	T399-406	S	-	N	GAP	softcut-IR-unproved
 CASE.malformed	T399-406	X	-	N	GAP	explicit-error-vs-native-failure
-ARGS.nil	T362	X	-	N	GAP	no-reference
-ARGS.expression_typed	T363-370	X	-	N	GAP	syntactic-staging-unproved
-ARGS.evaluated	T363-370	X	-	N	GAP	ordered-translation-unproved
+ARGS.nil	T362	X	TranslatesTypedArgs	SC	PASS	empty-mode-and-source-traversal
+ARGS.expression_typed	T363-365	X	TranslatesTypedArgs	SC	PASS	deep-source-quotation; no-goals-or-counter-change
+ARGS.evaluated	T365-367	X	TranslatesTypedArgs	SC	PASS	Undefined-or-Atom-value-mode; ordered-translation
+ARGS.evaluated_refined	T365-370	X	-	N	GAP	refined-input-typecheck-goal-unmodeled
 LIST.nil	T409	X	TranslatesArgs	SC	PASS	empty-ordered-traversal
 LIST.cons	T410-412	X	TranslatesArgs	SC	PASS	supported-expressions-left-to-right; exact-terms-goals-counter
 PATLIST.nil	T20-22	X	ConstrainsPatternSeq	SC	PASS	recursive-fragment-empty-traversal

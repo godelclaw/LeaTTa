@@ -937,6 +937,67 @@ def compileArgsFuel (fuel : Nat) (env : CEnv) (counter : Nat)
   compileArgsAtFuel fuel env counter head 0 arguments
 
 set_option maxHeartbeats 2000000 in
+/-- Empty typed-argument traversal preserves the counter and emits no terms or
+goals.  [SPEC translator.pl:362] -/
+theorem compileArgsAtFuel_nil_eq (fuel : Nat) (env : CEnv) (counter : Nat)
+    (head : String) (index : Nat) :
+    compileArgsAtFuel (fuel + 1) env counter head index [] =
+      .ok ([], [], counter) := by
+  rfl
+
+set_option maxHeartbeats 2000000 in
+/-- An `Expression`-typed argument is staged as source data before traversal
+continues at the next position.  [SPEC translator.pl:363-365] -/
+theorem compileArgsAtFuel_staged_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (head : String) (index : Nat) (source : Atom)
+    (sources : List Atom) (staged : env.atomTyped head index = true) :
+    compileArgsAtFuel (fuel + 1) env counter head index (source :: sources) =
+      (do
+        let (terms, goals, nextCounter) ←
+          compileArgsAtFuel fuel env counter head (index + 1) sources
+        pure (chainify source :: terms, goals, nextCounter)) := by
+  change (if env.atomTyped head index then
+      (do
+        let (terms, goals, nextCounter) ←
+          compileArgsAtFuel fuel env counter head (index + 1) sources
+        pure (chainify source :: terms, goals, nextCounter))
+    else
+      (do
+        let (term, termGoals, middleCounter) ←
+          compileExprFuel fuel env counter source
+        let (terms, goals, nextCounter) ←
+          compileArgsAtFuel fuel env middleCounter head (index + 1) sources
+        pure (term :: terms, termGoals ++ goals, nextCounter))) = _
+  simp only [staged, if_true]
+
+set_option maxHeartbeats 2000000 in
+/-- A non-`Expression` argument is translated before traversal continues at
+the next position.  [SPEC translator.pl:363,365-370] -/
+theorem compileArgsAtFuel_evaluated_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (head : String) (index : Nat) (source : Atom)
+    (sources : List Atom) (evaluated : env.atomTyped head index = false) :
+    compileArgsAtFuel (fuel + 1) env counter head index (source :: sources) =
+      (do
+        let (term, termGoals, middleCounter) ←
+          compileExprFuel fuel env counter source
+        let (terms, goals, nextCounter) ←
+          compileArgsAtFuel fuel env middleCounter head (index + 1) sources
+        pure (term :: terms, termGoals ++ goals, nextCounter)) := by
+  change (if env.atomTyped head index then
+      (do
+        let (terms, goals, nextCounter) ←
+          compileArgsAtFuel fuel env counter head (index + 1) sources
+        pure (chainify source :: terms, goals, nextCounter))
+    else
+      (do
+        let (term, termGoals, middleCounter) ←
+          compileExprFuel fuel env counter source
+        let (terms, goals, nextCounter) ←
+          compileArgsAtFuel fuel env middleCounter head (index + 1) sources
+        pure (term :: terms, termGoals ++ goals, nextCounter))) = _
+  simp only [evaluated, Bool.false_eq_true, ↓reduceIte]
+
+set_option maxHeartbeats 2000000 in
 /-- Empty expression-list compilation preserves the counter and emits no
 terms or goals. -/
 theorem compileListFuel_nil_eq (fuel : Nat) (env : CEnv) (counter : Nat) :
