@@ -149,6 +149,27 @@ CASES = [
         ["true", "(hooked-if false left right)"],
     ),
     (
+        "stream-rewrite-precedes-translator-hook",
+        """(= (trace! $message $value)
+      (quote (hooked-trace $message $value)))
+!(add-translator-rule! trace!)
+!(trace! stream-rewrite-marker 42)
+""",
+        ["stream-rewrite-marker"],
+        ["true", "42"],
+    ),
+    (
+        "stream-rewrite-values",
+        """!(collapse (unique (superpose (1 1 2))))
+!(collapse (alpha-unique (superpose (1 1 2))))
+!(collapse (union (superpose (1 2)) (superpose (2 3))))
+!(collapse (intersection (superpose (1 2)) (superpose (2 3))))
+!(collapse (subtraction (superpose (1 2 2)) (superpose (2))))
+""",
+        [],
+        ["(1 2)", "(1 2)", "(1 2 2 3)", "(2)", "(1 2)"],
+    ),
+    (
         "transaction-commit-rollback",
         """!(add-atom &tx (value 1))
 !(transaction (progn (remove-atom &tx (value 1))

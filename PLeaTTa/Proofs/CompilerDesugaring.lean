@@ -16,12 +16,11 @@ discharge any construct's semantic obligation.  No agreement relation is
 involved and no constructor is added to `TranslatesExpr` or `GoalAgrees`;
 these are statements about the compiler alone.
 
-Every equation carries the side condition required to select PLeaTTa's
-built-in branch: a `translatorRules` hook on the source head takes precedence
-in `compileAppFuel`, so the unconditional implementation equation would be
-false when that head is shadowed.  This condition must not be confused with a
-claim about pinned priority.  Adequacy also has to account for hooks on the
-re-dispatch target; pinned direct clauses do not necessarily consult them.
+Every ordinary redispatch equation carries the side condition required to
+select PLeaTTa's built-in branch. `trace!` is the deliberate exception: pinned
+stream rewriting precedes translator-rule lookup, and the executable now does
+the same. Adequacy also has to account for hooks on a redispatch target; pinned
+direct clauses do not necessarily consult them.
 -/
 
 namespace PLeaTTa
@@ -40,6 +39,7 @@ theorem compileAppFuel_hashPlus_eq (fuel counter : Nat) (env : CEnv)
     compileAppFuel (fuel + 2) env counter "#+" [a, b]
       = compileAppFuel fuel env counter "+" [a, b] := by
   rw [compileAppFuel.eq_2]
+  rw [rewriteStreamOp_hashPlus_none]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   simp only [compileAppCoreFuel]
 
@@ -54,6 +54,7 @@ theorem compileAppFuel_hashMinus_eq (fuel counter : Nat) (env : CEnv)
     compileAppFuel (fuel + 2) env counter "#-" [a, b]
       = compileAppFuel fuel env counter "-" [a, b] := by
   rw [compileAppFuel.eq_2]
+  rw [rewriteStreamOp_hashMinus_none]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   simp only [compileAppCoreFuel]
 
@@ -61,18 +62,17 @@ set_option maxHeartbeats 4000000 in
 /-- [SPEC translator.pl:74-75] `trace!` is a pinned stream rewrite to
 `(progn (println! message) value)`.
 
-Pinned rewriting occurs before translator-rule lookup.  The `noHook` premise
-below is needed by PLeaTTa's current branch order and records a supported-state
-restriction for the later adequacy theorem. -/
+Pinned rewriting occurs before translator-rule lookup, so this equation holds
+even when a translator rule named `trace!` is registered. -/
 theorem compileAppFuel_trace_eq (fuel counter : Nat) (env : CEnv)
-    (message value : Atom)
-    (noHook : env.translatorRules.contains "trace!" = false) :
+    (message value : Atom) :
     compileAppFuel (fuel + 2) env counter "trace!" [message, value]
       = compileAppFuel fuel env counter "progn"
           [Atom.expr [Atom.sym "println!", message], value] := by
   rw [compileAppFuel.eq_2]
-  simp only [noHook, Bool.false_eq_true, ↓reduceIte]
-  simp only [compileAppCoreFuel]
+  rw [rewriteStreamOp_trace_pair]
+  simp only
+  rw [compileExprFuel.eq_7 (x_4 := by simp)]
 
 set_option maxHeartbeats 4000000 in
 /-- PLeaTTa compiles an immediately quoted `unquote` as `eval`.
@@ -88,6 +88,7 @@ theorem compileAppFuel_unquoteQuote_eq (fuel counter : Nat) (env : CEnv)
         [Atom.expr [Atom.sym "quote", source]]
       = compileAppFuel fuel env counter "eval" [source] := by
   rw [compileAppFuel.eq_2]
+  rw [rewriteStreamOp_unquote_none]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   simp only [compileAppCoreFuel]
 

@@ -154,6 +154,114 @@ private def dynamicUnknownHead : String → Bool
       | c :: _ => c.isLower
       | [] => false
 
+private def rewriteBinaryStreamOp? (atomOp : String) : List Atom → Option Atom
+  | [Atom.expr (Atom.sym "superpose" :: left),
+      Atom.expr (Atom.sym "superpose" :: right)] =>
+      some (Atom.expr [Atom.sym "call", Atom.expr [Atom.sym "superpose",
+        Atom.expr [Atom.sym atomOp,
+          Atom.expr [Atom.sym "collapse",
+            Atom.expr (Atom.sym "superpose" :: left)],
+          Atom.expr [Atom.sym "collapse",
+            Atom.expr (Atom.sym "superpose" :: right)]]]])
+  | _ => none
+
+private def rewriteTrace? : List Atom → Option Atom
+  | [message, value] =>
+      some (Atom.expr [Atom.sym "progn",
+        Atom.expr [Atom.sym "println!", message], value])
+  | _ => none
+
+private def rewriteUnique? (atomOp : String) : List Atom → Option Atom
+  | [source] =>
+      some (Atom.expr [Atom.sym "call", Atom.expr [Atom.sym "superpose",
+        Atom.expr [Atom.sym atomOp,
+          Atom.expr [Atom.sym "collapse", source]]]])
+  | _ => none
+
+private def rewriteStreamOpForHead (head : String) : List Atom → Option Atom :=
+  if head == "trace!" then rewriteTrace?
+  else if head == "unique" then rewriteUnique? "unique-atom"
+  else if head == "alpha-unique" then rewriteUnique? "alpha-unique-atom"
+  else if head == "union" then rewriteBinaryStreamOp? "union-atom"
+  else if head == "intersection" then rewriteBinaryStreamOp? "intersection-atom"
+  else if head == "subtraction" then rewriteBinaryStreamOp? "subtraction-atom"
+  else fun _ => none
+
+/-- [SPEC translator.pl:73-90] The pinned stream rewrites run before head
+translation and translator-rule lookup. Returning `none` means that the source
+shape is not one of those exact rewrites and must continue through ordinary
+translation unchanged. Head-first clauses keep every unrelated compiler
+equation definitionally transparent. -/
+def rewriteStreamOp? : String → List Atom → Option Atom
+  | head, args => rewriteStreamOpForHead head args
+
+/-- `#+` is not one of pinned `rewrite_streamops/2`'s source heads. -/
+theorem rewriteStreamOp_hashPlus_none (args : List Atom) :
+    rewriteStreamOp? "#+" args = none := by
+  simp only [rewriteStreamOp?, rewriteStreamOpForHead,
+    show ("#+" == "trace!") = false by decide,
+    show ("#+" == "unique") = false by decide,
+    show ("#+" == "alpha-unique") = false by decide,
+    show ("#+" == "union") = false by decide,
+    show ("#+" == "intersection") = false by decide,
+    show ("#+" == "subtraction") = false by decide,
+    Bool.false_eq_true, ↓reduceIte]
+
+/-- `#-` is not one of pinned `rewrite_streamops/2`'s source heads. -/
+theorem rewriteStreamOp_hashMinus_none (args : List Atom) :
+    rewriteStreamOp? "#-" args = none := by
+  simp only [rewriteStreamOp?, rewriteStreamOpForHead,
+    show ("#-" == "trace!") = false by decide,
+    show ("#-" == "unique") = false by decide,
+    show ("#-" == "alpha-unique") = false by decide,
+    show ("#-" == "union") = false by decide,
+    show ("#-" == "intersection") = false by decide,
+    show ("#-" == "subtraction") = false by decide,
+    Bool.false_eq_true, ↓reduceIte]
+
+/-- The pinned `trace!` stream rewrite is selected independently of the
+translator-rule environment. -/
+theorem rewriteStreamOp_trace_pair (message value : Atom) :
+    rewriteStreamOp? "trace!" [message, value] =
+      some (.expr [.sym "progn", .expr [.sym "println!", message], value]) := by
+  simp only [rewriteStreamOp?, rewriteStreamOpForHead,
+    show ("trace!" == "trace!") = true by decide,
+    if_true, rewriteTrace?]
+
+/-- `unquote` is not one of pinned `rewrite_streamops/2`'s source heads. -/
+theorem rewriteStreamOp_unquote_none (args : List Atom) :
+    rewriteStreamOp? "unquote" args = none := by
+  simp only [rewriteStreamOp?, rewriteStreamOpForHead,
+    show ("unquote" == "trace!") = false by decide,
+    show ("unquote" == "unique") = false by decide,
+    show ("unquote" == "alpha-unique") = false by decide,
+    show ("unquote" == "union") = false by decide,
+    show ("unquote" == "intersection") = false by decide,
+    show ("unquote" == "subtraction") = false by decide,
+    Bool.false_eq_true, ↓reduceIte]
+
+private theorem rewriteStreamOp_chain_none (args : List Atom) :
+    rewriteStreamOp? "chain" args = none := by
+  simp only [rewriteStreamOp?, rewriteStreamOpForHead,
+    show ("chain" == "trace!") = false by decide,
+    show ("chain" == "unique") = false by decide,
+    show ("chain" == "alpha-unique") = false by decide,
+    show ("chain" == "union") = false by decide,
+    show ("chain" == "intersection") = false by decide,
+    show ("chain" == "subtraction") = false by decide,
+    Bool.false_eq_true, ↓reduceIte]
+
+private theorem rewriteStreamOp_quote_none (args : List Atom) :
+    rewriteStreamOp? "quote" args = none := by
+  simp only [rewriteStreamOp?, rewriteStreamOpForHead,
+    show ("quote" == "trace!") = false by decide,
+    show ("quote" == "unique") = false by decide,
+    show ("quote" == "alpha-unique") = false by decide,
+    show ("quote" == "union") = false by decide,
+    show ("quote" == "intersection") = false by decide,
+    show ("quote" == "subtraction") = false by decide,
+    Bool.false_eq_true, ↓reduceIte]
+
 set_option maxHeartbeats 2000000 in
 mutual
 
@@ -220,16 +328,19 @@ def compileAppFuel : Nat → CEnv → Nat → String → List Atom →
     CompileM (Atom × List Goal × Nat)
   | 0, _, _, _, _ => .error "compiler fuel exhausted"
   | fuel + 1, env, n, h, args => do
-    if env.translatorRules.contains h then
-      -- [SPEC translator.pl:99-110] a translator rule calls the registered
-      -- user predicate to obtain source code, then translates that returned
-      -- code. It does not compile the ordinary builtin of the same name.
-      let (terms, goals, n1) ← compileArgsAtFuel fuel env n h 0 args
-      let (code, n2) := fresh n1
-      let (r, n3) := fresh n2
-      .ok (r, goals ++ [Goal.call h terms code, Goal.evalg code r], n3)
-    else
-      compileAppCoreFuel fuel env n h args
+    match rewriteStreamOp? h args with
+    | some rewritten => compileExprFuel fuel env n rewritten
+    | none =>
+      if env.translatorRules.contains h then
+        -- [SPEC translator.pl:99-110] a translator rule calls the registered
+        -- user predicate to obtain source code, then translates that returned
+        -- code. It does not compile the ordinary builtin of the same name.
+        let (terms, goals, n1) ← compileArgsAtFuel fuel env n h 0 args
+        let (code, n2) := fresh n1
+        let (r, n3) := fresh n2
+        .ok (r, goals ++ [Goal.call h terms code, Goal.evalg code r], n3)
+      else
+        compileAppCoreFuel fuel env n h args
 termination_by structural fuel _ _ _ _ => fuel
 
 def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
@@ -539,6 +650,13 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (te, ge, n1) ← compileExprFuel fuel env n e
         let (r, n2) := fresh n1
         .ok (r, [Goal.catchg te ge r], n2)
+    | "call", [Atom.expr [Atom.sym "superpose", source]] => do
+        -- [SPEC metta.pl:105, translator.pl:278-283] manual dispatch to the
+        -- registered `superpose/2` predicate enumerates an already-computed
+        -- list. Stream rewrites deliberately pass through this exact path.
+        let (term, goals, n1) ← compileExprFuel fuel env n source
+        let (r, n2) := fresh n1
+        .ok (r, goals ++ [Goal.spread term r], n2)
     | "call", [Atom.expr (Atom.sym f :: xs)] => do
         -- [SPEC translator.pl:271-276] manual compile-time dispatch:
         -- translate the embedded expression's arguments, then emit a direct
@@ -951,6 +1069,7 @@ theorem compileExprFuel_progn_singleton_eq (bodyFuel : Nat)
   rw [compileExprFuel.eq_7 (x_4 := by simp)]
   rw [show bodyFuel + 3 = (bodyFuel + 2) + 1 by omega]
   rw [compileAppFuel.eq_2]
+  simp only [rewriteStreamOp?, rewriteStreamOpForHead]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [show bodyFuel + 2 = (bodyFuel + 1) + 1 by omega]
   rw [compileAppCoreFuel.eq_36]
@@ -980,6 +1099,7 @@ theorem compileExprFuel_prog1_singleton_eq (bodyFuel : Nat)
   rw [compileExprFuel.eq_7 (x_4 := by simp)]
   rw [show bodyFuel + 3 = (bodyFuel + 2) + 1 by omega]
   rw [compileAppFuel.eq_2]
+  simp only [rewriteStreamOp?, rewriteStreamOpForHead]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [show bodyFuel + 2 = (bodyFuel + 1) + 1 by omega]
   rw [compileAppCoreFuel.eq_37]
@@ -1124,6 +1244,7 @@ theorem compileExprFuel_chain_eq (childFuel : Nat) (env : CEnv)
   rw [compileExprFuel.eq_7 (x_4 := by simp)]
   rw [show childFuel + 2 = (childFuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
+  rw [rewriteStreamOp_chain_none]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_33]
   rw [firstCompiled]
@@ -1177,6 +1298,7 @@ theorem compileExprFuel_quote_eq (fuel counter : Nat) (env : CEnv)
       .ok (chainify source, [], counter) := by
   rw [compileExprFuel.eq_7 (x_4 := by simp)]
   rw [compileAppFuel.eq_2]
+  rw [rewriteStreamOp_quote_none]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_2]
 
