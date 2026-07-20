@@ -7,6 +7,7 @@ import PLeaTTa.Proofs.Unification
 import PLeaTTa.Proofs.Reachability
 import PLeaTTa.Proofs.Simulation
 import PLeaTTa.Proofs.CompilerAdequacy
+import PLeaTTa.Proofs.CompilerDesugaring
 import PLeaTTa.Proofs.PrologCoreAdequacy
 import PLeaTTa.Proofs.ObservationAgreement
 import PLeaTTa.Proofs.ReaderAdequacy
@@ -51,6 +52,12 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerAdequacy.compileSeqFuel_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_complete
+#print axioms PLeaTTa.compileAppFuel_hashPlus_eq
+#print axioms PLeaTTa.compileAppFuel_hashMinus_eq
+#print axioms PLeaTTa.compileAppFuel_andThen_eq
+#print axioms PLeaTTa.compileAppFuel_orElse_eq
+#print axioms PLeaTTa.compileAppFuel_trace_eq
+#print axioms PLeaTTa.compileAppFuel_unquoteQuote_eq
 #print axioms PLeaTTa.compileAppCoreFuel_let_eq
 #print axioms PLeaTTa.compileExprFuel_chain_eq
 #print axioms PLeaTTa.compileExprFuel_withMutex_eq
