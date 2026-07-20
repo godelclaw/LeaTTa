@@ -45,6 +45,15 @@ inductive Term where
   | list (items : List Term) (tail : Option Term)
 deriving Repr, Inhabited
 
+/-- Canonical Prolog list-cell construction.  `[Head|Tail]` extends an
+already-list tail and otherwise produces a dotted list.  This is independent
+target syntax for pinned `translator.pl`; it does not mention PLeaTTa's
+`#c` encoding. -/
+def Term.prepend (head tail : Term) : Term :=
+  match tail with
+  | .list items finalTail => .list (head :: items) finalTail
+  | other => .list [head] (some other)
+
 /-- Translation-time state whose membership controls the pinned translator's
 highest-priority hook branch.  This is intentionally a proposition-valued
 interface rather than PLeaTTa's executable list representation. -/
@@ -106,6 +115,44 @@ inductive ConstrainsAtomicPatternSeq : List Atom → List Term → Prop where
       (head : ConstrainsAtomicPattern source term)
       (tail : ConstrainsAtomicPatternSeq sources terms) :
       ConstrainsAtomicPatternSeq (source :: sources) (term :: terms)
+
+/-- Independently specified recursive fragment of pinned `constrain_args/3`.
+The atomic rule is `translator.pl:2`; the `cons` rule is lines 3-8.  Pattern
+subterms are visited head before tail, their generated-variable counters are
+threaded in that order, and their goal sequences are concatenated without
+reordering. -/
+inductive ConstrainsPattern : TranslatorState → Nat → Atom → Term →
+    List Goal → Nat → Prop where
+  | atomic {state : TranslatorState} {counter : Nat} {source : Atom}
+      {term : Term} (value : ConstrainsAtomicPattern source term) :
+      ConstrainsPattern state counter source term [] counter
+  | cons {state : TranslatorState} {counter headCounter nextCounter : Nat}
+      {headSource tailSource : Atom} {headTerm tailTerm : Term}
+      {headGoals tailGoals : List Goal}
+      (head : ConstrainsPattern state counter headSource headTerm headGoals
+        headCounter)
+      (tail : ConstrainsPattern state headCounter tailSource tailTerm tailGoals
+        nextCounter) :
+      ConstrainsPattern state counter
+        (.expr [.sym "cons", headSource, tailSource])
+        (Term.prepend headTerm tailTerm) (headGoals ++ tailGoals) nextCounter
+
+/-- Independent left-to-right traversal used by `translate_clause/3` at
+`translator.pl:20-22`.  This relation exposes both counter threading and the
+ordered flattening of each member's constraint goals. -/
+inductive ConstrainsPatternSeq : TranslatorState → Nat → List Atom →
+    List Term → List Goal → Nat → Prop where
+  | nil {state : TranslatorState} {counter : Nat} :
+      ConstrainsPatternSeq state counter [] [] [] counter
+  | cons {state : TranslatorState} {counter headCounter nextCounter : Nat}
+      {source : Atom} {term : Term} {sources : List Atom} {terms : List Term}
+      {headGoals tailGoals : List Goal}
+      (head : ConstrainsPattern state counter source term headGoals
+        headCounter)
+      (tail : ConstrainsPatternSeq state headCounter sources terms tailGoals
+        nextCounter) :
+      ConstrainsPatternSeq state counter (source :: sources) (term :: terms)
+        (headGoals ++ tailGoals) nextCounter
 
 mutual
 
@@ -502,6 +549,30 @@ theorem translates_atomic_pattern_pair (name : String) (value : Int) :
   .cons (.literal (.variable name))
     (.cons (.literal (.integer value)) .nil)
 
+/-- Positive recursive-pattern example: pinned `cons` traversal preserves a
+proper two-element list and leaves both the ordered goal sequence and fresh
+counter unchanged. -/
+theorem constrains_cons_pair (state : TranslatorState) (counter : Nat)
+    (name : String) (value : Int) :
+    ConstrainsPattern state counter
+      (.expr [.sym "cons", .var name,
+        .expr [.sym "cons", .gnd (.int value), .expr []]])
+      (.list [.variable (.source name), .integer value] none) [] counter := by
+  exact .cons (.atomic (.literal (.variable name)))
+    (.cons (.atomic (.literal (.integer value)))
+      (.atomic (.literal .emptyList)))
+
+/-- Positive dotted-list example: a variable tail remains the explicit tail
+of the independent Prolog list cell. -/
+theorem constrains_dotted_cons (state : TranslatorState) (counter : Nat)
+    (headName tailName : String) :
+    ConstrainsPattern state counter
+      (.expr [.sym "cons", .var headName, .var tailName])
+      (.list [.variable (.source headName)]
+        (some (.variable (.source tailName)))) [] counter := by
+  exact .cons (.atomic (.literal (.variable headName)))
+    (.atomic (.literal (.variable tailName)))
+
 /-- Host payloads are not part of pinned atomic pattern syntax. -/
 theorem external_not_atomic_pattern (tag payload : String) (term : Term) :
     ¬ ConstrainsAtomicPattern (.gnd (.external tag payload)) term := by
@@ -543,6 +614,18 @@ def SupportedAtomicPattern (source : Atom) : Prop :=
 def SupportedAtomicPatternSeq (sources : List Atom) : Prop :=
   ∃ terms, ConstrainsAtomicPatternSeq sources terms
 
+/-- Independently supported recursive `constrain_args/3` patterns. -/
+def SupportedPattern (state : TranslatorState) (counter : Nat)
+    (source : Atom) : Prop :=
+  ∃ term goals nextCounter,
+    ConstrainsPattern state counter source term goals nextCounter
+
+/-- Independently supported ordered recursive pattern traversals. -/
+def SupportedPatternSeq (state : TranslatorState) (counter : Nat)
+    (sources : List Atom) : Prop :=
+  ∃ terms goals nextCounter,
+    ConstrainsPatternSeq state counter sources terms goals nextCounter
+
 /-- A host payload is outside the independently supported source-pattern
 fragment even though the executable compiler has an internal ground-value
 branch for runtime-produced atoms. -/
@@ -551,6 +634,27 @@ theorem external_not_supported_atomic_pattern (tag payload : String) :
   intro supported
   obtain ⟨term, translation⟩ := supported
   exact external_not_atomic_pattern tag payload term translation
+
+/-- Host payloads remain outside the larger recursive pattern fragment. -/
+theorem external_not_supported_pattern (state : TranslatorState)
+    (counter : Nat) (tag payload : String) :
+    ¬ SupportedPattern state counter (.gnd (.external tag payload)) := by
+  intro supported
+  obtain ⟨term, goals, nextCounter, translation⟩ := supported
+  cases translation with
+  | atomic value => exact external_not_atomic_pattern tag payload term value
+
+/-- A malformed one-argument `cons` is outside the pinned rule's supported
+source shape. -/
+theorem malformed_cons_not_supported_pattern (state : TranslatorState)
+    (counter : Nat) (head : Atom) :
+    ¬ SupportedPattern state counter (.expr [.sym "cons", head]) := by
+  intro supported
+  obtain ⟨term, goals, nextCounter, translation⟩ := supported
+  cases translation with
+  | atomic value =>
+      cases value with
+      | literal literal => cases literal
 
 /-- Imported host payloads are not literals in the certified compiler fragment. -/
 theorem external_not_literal (tag payload : String) (term : Term) :

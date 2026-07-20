@@ -49,6 +49,26 @@ inductive TermsAgree : List Term → List Atom → Prop where
       (head : TermAgrees term atom) (tail : TermsAgree terms atoms) :
       TermsAgree (term :: terms) (atom :: atoms)
 
+/-- Representation agreement for recursive source patterns.  Unlike the
+observation-level `TermAgrees`, this relation includes Prolog dotted list
+cells; its denotational bridge remains an explicit later obligation. -/
+inductive PatternTermAgrees : Term → Atom → Prop where
+  | atomic {term : Term} {atom : Atom} (value : TermAgrees term atom) :
+      PatternTermAgrees term atom
+  | listCell {headTerm tailTerm : Term} {headAtom tailAtom : Atom}
+      (head : PatternTermAgrees headTerm headAtom)
+      (tail : PatternTermAgrees tailTerm tailAtom) :
+      PatternTermAgrees (Term.prepend headTerm tailTerm)
+        (consC headAtom tailAtom)
+
+/-- Ordered pointwise agreement for recursively constrained pattern lists. -/
+inductive PatternTermsAgree : List Term → List Atom → Prop where
+  | nil : PatternTermsAgree [] []
+  | cons {term : Term} {atom : Atom} {terms : List Term} {atoms : List Atom}
+      (head : PatternTermAgrees term atom)
+      (tail : PatternTermsAgree terms atoms) :
+      PatternTermsAgree (term :: terms) (atom :: atoms)
+
 /-- Agreement between the independent translator-rule predicate and the
 executable compiler environment. -/
 structure EnvAgrees (state : TranslatorState) (env : CEnv) : Prop where
@@ -468,6 +488,260 @@ theorem compilePatternList_atomic_pair_sound (env : CEnv) (counter : Nat)
       TermsAgree [.variable (.source name), .integer value] internals := by
   exact compilePatternList_atomic_sound env counter
     (translates_atomic_pattern_pair name value)
+
+/-- Every independently constrained atomic/`cons` pattern has a positive,
+syntax-bounded compiler budget.  Additional fuel preserves the same native
+term, ordered goal sequence, and fresh-counter result. -/
+theorem compilePatternFuel_initial_sound {state : TranslatorState}
+    (env : CEnv) {counter : Nat} {source : Atom} {term : Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (native : ConstrainsPattern state counter source term goals nextCounter) :
+    ∃ baseFuel,
+      0 < baseFuel ∧
+      baseFuel < 2 * source.size ∧
+      ∀ extraFuel, ∃ internal executableGoals,
+        compilePatternFuel (baseFuel + extraFuel) env counter source =
+          .ok (internal, executableGoals, nextCounter) ∧
+        PatternTermAgrees term internal ∧
+          GoalsAgree goals executableGoals := by
+  induction native with
+  | @atomic atomicCounter atomicSource atomicTerm value =>
+      refine ⟨1, by omega, ?_, ?_⟩
+      · cases value with
+        | literal literal => cases literal <;> simp [Atom.size]
+      · intro extraFuel
+        obtain ⟨internal, compiled, termAgreement⟩ :=
+          compilePatternFuel_atomic_sound extraFuel env atomicCounter value
+        exact ⟨internal, [], by simpa [Nat.add_comm] using compiled,
+          .atomic termAgreement, .nil⟩
+  | @cons patternCounter headCounter nextCounter headSource tailSource _ _ _ _
+      head tail
+      headInduction tailInduction =>
+      obtain ⟨headFuel, headPositive, headBound, headCompiles⟩ :=
+        headInduction
+      obtain ⟨tailFuel, tailPositive, tailBound, tailCompiles⟩ :=
+        tailInduction
+      let childFuel := max headFuel tailFuel
+      have headLe : headFuel ≤ childFuel := Nat.le_max_left _ _
+      have tailLe : tailFuel ≤ childFuel := Nat.le_max_right _ _
+      refine ⟨childFuel + 1, by omega, ?_, ?_⟩
+      · have headSizePositive := atom_size_positive_for_compiler headSource
+        have tailSizePositive := atom_size_positive_for_compiler tailSource
+        simp only [Atom.size, List.map, List.sum_cons, List.sum_nil]
+        omega
+      · intro extraFuel
+        obtain ⟨headInternal, headExecutableGoals, headCompiled,
+            headAgreement, headGoalsAgreement⟩ :=
+          headCompiles (childFuel + extraFuel - headFuel)
+        obtain ⟨tailInternal, tailExecutableGoals, tailCompiled,
+            tailAgreement, tailGoalsAgreement⟩ :=
+          tailCompiles (childFuel + extraFuel - tailFuel)
+        have headFuelEq :
+            headFuel + (childFuel + extraFuel - headFuel) =
+              childFuel + extraFuel := by
+          omega
+        have tailFuelEq :
+            tailFuel + (childFuel + extraFuel - tailFuel) =
+              childFuel + extraFuel := by
+          omega
+        rw [headFuelEq] at headCompiled
+        rw [tailFuelEq] at tailCompiled
+        refine ⟨consC headInternal tailInternal,
+          headExecutableGoals ++ tailExecutableGoals, ?_,
+          .listCell headAgreement tailAgreement,
+          GoalsAgree.append headGoalsAgreement tailGoalsAgreement⟩
+        rw [show (childFuel + 1) + extraFuel =
+            (childFuel + extraFuel) + 1 by omega]
+        rw [compilePatternFuel_cons_eq, headCompiled]
+        dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+        rw [tailCompiled]
+        rfl
+
+/-- Public soundness of the recursive atomic/`cons` pattern fragment.  The
+source-derived compiler budget is proved sufficient rather than assumed. -/
+theorem compilePattern_sound {state : TranslatorState} (env : CEnv)
+    {counter : Nat} {source : Atom} {term : Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (native : ConstrainsPattern state counter source term goals nextCounter) :
+    ∃ internal executableGoals,
+      compilePattern env counter source =
+        .ok (internal, executableGoals, nextCounter) ∧
+      PatternTermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨baseFuel, basePositive, baseBound, compiles⟩ :=
+    compilePatternFuel_initial_sound env native
+  have sourcePositive := atom_size_positive_for_compiler source
+  have baseLe : baseFuel ≤ compilerFuel source + 64 := by
+    simp only [compilerFuel]
+    omega
+  obtain ⟨extraFuel, fuelEquality⟩ :
+      ∃ extraFuel, compilerFuel source + 64 = baseFuel + extraFuel :=
+    ⟨compilerFuel source + 64 - baseFuel, by omega⟩
+  obtain ⟨internal, executableGoals, compiled, termAgreement,
+      goalsAgreement⟩ := compiles extraFuel
+  exact ⟨internal, executableGoals,
+    by simpa [compilePattern, fuelEquality] using compiled,
+    termAgreement, goalsAgreement⟩
+
+/-- Completeness on the independently supported atomic/`cons` fragment:
+every successful executable result agrees with the source relation, including
+ordered goals and the final fresh counter. -/
+theorem compilePattern_complete {state : TranslatorState} (env : CEnv)
+    {counter : Nat} {source internal : Atom}
+    {executableGoals : List PLeaTTa.Goal} {nextCounter : Nat}
+    (supported : SupportedPattern state counter source)
+    (compiled : compilePattern env counter source =
+      .ok (internal, executableGoals, nextCounter)) :
+    ∃ term goals,
+      ConstrainsPattern state counter source term goals nextCounter ∧
+      PatternTermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨term, goals, referenceCounter, native⟩ := supported
+  obtain ⟨referenceInternal, referenceGoals, referenceCompiled,
+      termAgreement, goalsAgreement⟩ := compilePattern_sound env native
+  have resultEquality :
+      (internal, executableGoals, nextCounter) =
+        (referenceInternal, referenceGoals, referenceCounter) :=
+    Except.ok.inj (compiled.symm.trans referenceCompiled)
+  cases resultEquality
+  exact ⟨term, goals, native, termAgreement, goalsAgreement⟩
+
+/-- Every independently specified ordered pattern traversal has a positive,
+syntax-bounded shared budget.  Member counters and flattened constraint goals
+are threaded left-to-right exactly as in `translator.pl:20-22`. -/
+theorem compilePatternListFuel_initial_sound {state : TranslatorState}
+    (env : CEnv) {counter : Nat} {sources : List Atom} {terms : List Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (native :
+      ConstrainsPatternSeq state counter sources terms goals nextCounter) :
+    ∃ baseFuel,
+      0 < baseFuel ∧
+      baseFuel < 8 * ((sources.map Atom.size).sum + 1) ∧
+      ∀ extraFuel, ∃ internals executableGoals,
+        compilePatternListFuel (baseFuel + extraFuel) env counter sources =
+          .ok (internals, executableGoals, nextCounter) ∧
+        PatternTermsAgree terms internals ∧
+          GoalsAgree goals executableGoals := by
+  induction native with
+  | @nil nilCounter =>
+      refine ⟨1, by omega, by simp, ?_⟩
+      intro extraFuel
+      exact ⟨[], [], by
+          simpa [Nat.add_comm] using
+            compilePatternListFuel_nil_eq extraFuel env nilCounter,
+        .nil, .nil⟩
+  | @cons patternCounter headCounter nextCounter source term sources terms
+      headGoals tailGoals head tail tailInduction =>
+      obtain ⟨headFuel, headPositive, headBound, headCompiles⟩ :=
+        compilePatternFuel_initial_sound env head
+      obtain ⟨tailFuel, tailPositive, tailBound, tailCompiles⟩ :=
+        tailInduction
+      let childFuel := max headFuel tailFuel
+      have headLe : headFuel ≤ childFuel := Nat.le_max_left _ _
+      have tailLe : tailFuel ≤ childFuel := Nat.le_max_right _ _
+      refine ⟨childFuel + 1, by omega, ?_, ?_⟩
+      · have sourcePositive := atom_size_positive_for_compiler source
+        simp only [List.map, List.sum_cons]
+        omega
+      · intro extraFuel
+        obtain ⟨headInternal, headExecutableGoals, headCompiled,
+            headAgreement, headGoalsAgreement⟩ :=
+          headCompiles (childFuel + extraFuel - headFuel)
+        obtain ⟨tailInternals, tailExecutableGoals, tailCompiled,
+            tailAgreement, tailGoalsAgreement⟩ :=
+          tailCompiles (childFuel + extraFuel - tailFuel)
+        have headFuelEq :
+            headFuel + (childFuel + extraFuel - headFuel) =
+              childFuel + extraFuel := by
+          omega
+        have tailFuelEq :
+            tailFuel + (childFuel + extraFuel - tailFuel) =
+              childFuel + extraFuel := by
+          omega
+        rw [headFuelEq] at headCompiled
+        rw [tailFuelEq] at tailCompiled
+        refine ⟨headInternal :: tailInternals,
+          headExecutableGoals ++ tailExecutableGoals, ?_,
+          .cons headAgreement tailAgreement,
+          GoalsAgree.append headGoalsAgreement tailGoalsAgreement⟩
+        rw [show (childFuel + 1) + extraFuel =
+            (childFuel + extraFuel) + 1 by omega]
+        rw [compilePatternListFuel_cons_eq, headCompiled]
+        dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+        rw [tailCompiled]
+        rfl
+
+/-- Public soundness of recursive pattern-list traversal at the source-derived
+shared budget. -/
+theorem compilePatternList_sound {state : TranslatorState} (env : CEnv)
+    {counter : Nat} {sources : List Atom} {terms : List Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (native :
+      ConstrainsPatternSeq state counter sources terms goals nextCounter) :
+    ∃ internals executableGoals,
+      compilePatternList env counter sources =
+        .ok (internals, executableGoals, nextCounter) ∧
+      PatternTermsAgree terms internals ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨baseFuel, basePositive, baseBound, compiles⟩ :=
+    compilePatternListFuel_initial_sound env native
+  have baseLe : baseFuel ≤ compilerListFuel sources + 64 := by
+    simp only [compilerListFuel]
+    omega
+  obtain ⟨extraFuel, fuelEquality⟩ :
+      ∃ extraFuel,
+        compilerListFuel sources + 64 = baseFuel + extraFuel :=
+    ⟨compilerListFuel sources + 64 - baseFuel, by omega⟩
+  obtain ⟨internals, executableGoals, compiled, termsAgreement,
+      goalsAgreement⟩ := compiles extraFuel
+  exact ⟨internals, executableGoals,
+    by simpa [compilePatternList, fuelEquality] using compiled,
+    termsAgreement, goalsAgreement⟩
+
+/-- Completeness on independently supported recursive pattern sequences. -/
+theorem compilePatternList_complete {state : TranslatorState} (env : CEnv)
+    {counter : Nat} {sources internals : List Atom}
+    {executableGoals : List PLeaTTa.Goal} {nextCounter : Nat}
+    (supported : SupportedPatternSeq state counter sources)
+    (compiled : compilePatternList env counter sources =
+      .ok (internals, executableGoals, nextCounter)) :
+    ∃ terms goals,
+      ConstrainsPatternSeq state counter sources terms goals nextCounter ∧
+      PatternTermsAgree terms internals ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨terms, goals, referenceCounter, native⟩ := supported
+  obtain ⟨referenceInternals, referenceGoals, referenceCompiled,
+      termsAgreement, goalsAgreement⟩ := compilePatternList_sound env native
+  have resultEquality :
+      (internals, executableGoals, nextCounter) =
+        (referenceInternals, referenceGoals, referenceCounter) :=
+    Except.ok.inj (compiled.symm.trans referenceCompiled)
+  cases resultEquality
+  exact ⟨terms, goals, native, termsAgreement, goalsAgreement⟩
+
+/-- Executable witness for the independent two-element proper-list pattern. -/
+theorem compilePattern_cons_pair_sound (state : TranslatorState) (env : CEnv)
+    (counter : Nat) (name : String) (value : Int) :
+    ∃ internal executableGoals,
+      compilePattern env counter
+        (.expr [.sym "cons", .var name,
+          .expr [.sym "cons", .gnd (.int value), .expr []]]) =
+        .ok (internal, executableGoals, counter) ∧
+      PatternTermAgrees
+        (.list [.variable (.source name), .integer value] none) internal ∧
+      GoalsAgree [] executableGoals := by
+  exact compilePattern_sound env
+    (constrains_cons_pair state counter name value)
+
+/-- Executable witness for the independent dotted-list pattern. -/
+theorem compilePattern_dotted_cons_sound (state : TranslatorState)
+    (env : CEnv) (counter : Nat) (headName tailName : String) :
+    ∃ internal executableGoals,
+      compilePattern env counter
+        (.expr [.sym "cons", .var headName, .var tailName]) =
+        .ok (internal, executableGoals, counter) ∧
+      PatternTermAgrees
+        (.list [.variable (.source headName)]
+          (some (.variable (.source tailName)))) internal ∧
+      GoalsAgree [] executableGoals := by
+  exact compilePattern_sound env
+    (constrains_dotted_cons state counter headName tailName)
 
 /-- Syntactic quotation compiles to the deep chain encoding related to the
 independent native quotation term. -/

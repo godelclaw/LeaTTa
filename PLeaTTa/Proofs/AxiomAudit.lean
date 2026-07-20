@@ -61,6 +61,7 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.compilePatternFuel_sym_eq
 #print axioms PLeaTTa.compilePatternFuel_gnd_eq
 #print axioms PLeaTTa.compilePatternFuel_nil_eq
+#print axioms PLeaTTa.compilePatternFuel_cons_eq
 #print axioms PLeaTTa.CompilerAdequacy.compilePatternFuel_atomic_sound
 #print axioms PLeaTTa.CompilerAdequacy.compilePattern_atomic_sound
 #print axioms PLeaTTa.CompilerAdequacy.compilePattern_atomic_complete
@@ -68,6 +69,14 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerAdequacy.compilePatternList_atomic_sound
 #print axioms PLeaTTa.CompilerAdequacy.compilePatternList_atomic_complete
 #print axioms PLeaTTa.CompilerAdequacy.compilePatternList_atomic_pair_sound
+#print axioms PLeaTTa.CompilerAdequacy.compilePatternFuel_initial_sound
+#print axioms PLeaTTa.CompilerAdequacy.compilePattern_sound
+#print axioms PLeaTTa.CompilerAdequacy.compilePattern_complete
+#print axioms PLeaTTa.CompilerAdequacy.compilePatternListFuel_initial_sound
+#print axioms PLeaTTa.CompilerAdequacy.compilePatternList_sound
+#print axioms PLeaTTa.CompilerAdequacy.compilePatternList_complete
+#print axioms PLeaTTa.CompilerAdequacy.compilePattern_cons_pair_sound
+#print axioms PLeaTTa.CompilerAdequacy.compilePattern_dotted_cons_sound
 #print axioms PLeaTTa.compileAppFuel_hashPlus_eq
 #print axioms PLeaTTa.compileAppFuel_hashMinus_eq
 #print axioms PLeaTTa.compileAppFuel_trace_eq
@@ -97,8 +106,12 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.letStar_malformed_binding_rejected
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.letStar_hook_blocks_builtin
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_atomic_pattern_pair
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.constrains_cons_pair
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.constrains_dotted_cons
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_atomic_pattern
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_supported_atomic_pattern
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_supported_pattern
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.malformed_cons_not_supported_pattern
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.withMutex_equivalent
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.withMutex_conjunction_all_equivalent
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.once_answers_length_le_one

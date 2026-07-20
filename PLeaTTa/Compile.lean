@@ -993,6 +993,21 @@ theorem compilePatternFuel_nil_eq (fuel : Nat) (env : CEnv)
   rfl
 
 set_option maxHeartbeats 2000000 in
+/-- A source `(cons Head Tail)` pattern recursively constrains its head before
+its tail, appends the resulting goals in that order, and constructs one
+internal list cell.  [SPEC translator.pl:3-8] -/
+theorem compilePatternFuel_cons_eq (fuel : Nat) (env : CEnv) (counter : Nat)
+    (head tail : Atom) :
+    compilePatternFuel (fuel + 1) env counter
+        (.expr [.sym "cons", head, tail]) = (do
+      let (headTerm, headGoals, headCounter) ←
+        compilePatternFuel fuel env counter head
+      let (tailTerm, tailGoals, nextCounter) ←
+        compilePatternFuel fuel env headCounter tail
+      pure (consC headTerm tailTerm, headGoals ++ tailGoals, nextCounter)) := by
+  rfl
+
+set_option maxHeartbeats 2000000 in
 /-- Empty pattern-list compilation preserves the counter and emits no goals. -/
 theorem compilePatternListFuel_nil_eq (fuel : Nat) (env : CEnv)
     (counter : Nat) :

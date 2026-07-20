@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=e92426c3ccad972b9f0608e947d669aad3bbc87a7e24310d17c124b0f6b58d50
+# compiler_sha256=b2c86690061b76fee22a8aa8db4619266cbfa8a9a6f25445ea3f2a04fac9c295
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -17,7 +17,7 @@ EX.compound_head	T97-99,329-333	S	-	N	GAP	static-data-or-callDyn-shortcut
 PAT.fuel0	-	P	-	N	GAP	totalization
 PAT.atomic	T2	X	ConstrainsAtomicPattern	SC	PASS	atomic-source-fragment; host-external-excluded
 PAT.internal_chain	-	P	-	N	GAP	internal-encoding
-PAT.cons	T3-8	X	-	N	GAP	no-pattern-reference
+PAT.cons	T3-8	X	ConstrainsPattern	SC	PASS	atomic-recursive-cons-fragment; proper-and-dotted; function-child-and-dotted-observation-bridges-open
 PAT.known_head	T9-12	X	-	N	GAP	native-fun-premise-unproved
 PAT.special_only	T2-14	S	-	N	FAIL	unregistered-special-heads-compiled
 PAT.data_tree	T13-14	X	-	N	GAP	no-pattern-reference
@@ -31,8 +31,8 @@ ARGS.expression_typed	T363-370	X	-	N	GAP	syntactic-staging-unproved
 ARGS.evaluated	T363-370	X	-	N	GAP	ordered-translation-unproved
 LIST.nil	T409	X	-	EQ	GAP	implementation-equation-only
 LIST.cons	T410-412	X	TranslatesSeq-partial	EQ	GAP	first-last-only
-PATLIST.nil	T20-22	X	ConstrainsAtomicPatternSeq	SC	PASS	atomic-fragment-empty-traversal
-PATLIST.cons	T20-22	X	ConstrainsAtomicPatternSeq	SC	PASS	atomic-members-left-to-right; nested-pattern-proof-open
+PATLIST.nil	T20-22	X	ConstrainsPatternSeq	SC	PASS	recursive-fragment-empty-traversal
+PATLIST.cons	T20-22	X	ConstrainsPatternSeq	SC	PASS	atomic-and-cons-members-left-to-right; function-and-data-patterns-open
 APP.quote	T297-299	X	TranslatesExpr.quote	SC	PASS	covered
 APP.Predicate	M275	H	-	N	BOUNDARY	typed-wrapper
 APP.translatePredicate	T271-275	H	-	N	BOUNDARY	ownership-dispatch
