@@ -112,12 +112,26 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (g : Goal) (hg : g = Goal.eq res
         (chainOf [Atom.sym "partial", Atom.sym op, chainOf (args.map (subst b))])) :
       Step prog gt c { c with cur := some (g :: rest, b) }
+  -- `translatePredicate` calls owned by the PLeaTTa world remain in the pure
+  -- core: named spaces become `smatch`, while locally asserted/compiled
+  -- predicates become ordinary `call` goals. Imported predicates are absent
+  -- here and remain an explicit host boundary.
+  | bin_local_translate (c : Conf) (op : String) (args : List Atom)
+      (res : Atom) (rest : List Goal) (b : Subst) (goals : List Goal)
+      (h : c.cur = some (Goal.bin op args res :: rest, b))
+      (hnp : ¬ (binArity op ≠ 0 ∧
+        (args.map (subst b)).length < binArity op))
+      (hl : localTranslatePredicateGoals? c.world gt op
+        (args.map (subst b)) res rest = some goals) :
+      Step prog gt c { c with cur := some (goals, b) }
   -- get-type (machine oracle getTypeP)
   | bin_gettype (c : Conf) (args : List Atom) (res : Atom)
       (rest : List Goal) (b : Subst) (ts : List Atom) (c' : Nat)
       (h : c.cur = some (Goal.bin "get-type" args res :: rest, b))
       (hnp : ¬ (binArity "get-type" ≠ 0 ∧
         (args.map (subst b)).length < binArity "get-type"))
+      (hl : localTranslatePredicateGoals? c.world gt "get-type"
+        (args.map (subst b)) res rest = none)
       (ho : getTypeP c.world 100 c.counter
         ((args.map (subst b)).headD (Atom.sym "?")) = (ts, c')) :
       Step prog gt c
@@ -131,6 +145,8 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (h : c.cur = some (Goal.bin "get-metatype" args res :: rest, b))
       (hnp : ¬ (binArity "get-metatype" ≠ 0 ∧
         (args.map (subst b)).length < binArity "get-metatype"))
+      (hl : localTranslatePredicateGoals? c.world gt "get-metatype"
+        (args.map (subst b)) res rest = none)
       (hmt : mt = (match (args.map (subst b)).headD (Atom.sym "?") with
         | Atom.var _ => "Variable"
         | Atom.gnd _ => "Grounded"
@@ -145,6 +161,8 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (rest : List Goal) (b : Subst) (rs : List Atom)
       (h : c.cur = some (Goal.bin op args res :: rest, b))
       (hnp : ¬ (binArity op ≠ 0 ∧ (args.map (subst b)).length < binArity op))
+      (hl : localTranslatePredicateGoals? c.world gt op
+        (args.map (subst b)) res rest = none)
       (hns : op ≠ "get-type" ∧ op ≠ "get-metatype")
       (hnso : nonstrictOps.contains op)
       (hr : callGrounded gt op (args.map (subst b)) = ReduceResult.ok rs) :
@@ -159,6 +177,8 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (rest : List Goal) (b : Subst)
       (h : c.cur = some (Goal.bin op args res :: rest, b))
       (hnp : ¬ (binArity op ≠ 0 ∧ (args.map (subst b)).length < binArity op))
+      (hl : localTranslatePredicateGoals? c.world gt op
+        (args.map (subst b)) res rest = none)
       (hns : op ≠ "get-type" ∧ op ≠ "get-metatype")
       (hnso : nonstrictOps.contains op)
       (hr : ¬ ∃ rs, callGrounded gt op (args.map (subst b)) = ReduceResult.ok rs) :
@@ -168,6 +188,8 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (h : c.cur = some (Goal.bin op args res :: rest, b))
       (hg : (args.map (subst b)).all Metta.isGround = true)
       (hnp : ¬ (binArity op ≠ 0 ∧ (args.map (subst b)).length < binArity op))
+      (hl : localTranslatePredicateGoals? c.world gt op
+        (args.map (subst b)) res rest = none)
       (hspecial : op ≠ "get-type" ∧ op ≠ "get-metatype" ∧
                   ¬ (nonstrictOps.contains op))
       (hnm : ¬(["+", "-", "*"].contains op ∧
@@ -185,6 +207,8 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (rest : List Goal) (b : Subst) (x y : Atom)
       (h : c.cur = some (Goal.bin op args res :: rest, b))
       (hnp : ¬ (binArity op ≠ 0 ∧ (args.map (subst b)).length < binArity op))
+      (hl : localTranslatePredicateGoals? c.world gt op
+        (args.map (subst b)) res rest = none)
       (hns : op ≠ "get-type" ∧ op ≠ "get-metatype" ∧ ¬ nonstrictOps.contains op)
       (hop : ["+", "-", "*"].contains op)
       (hav : args.map (subst b) = [x, y])
@@ -204,6 +228,8 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (rest : List Goal) (b : Subst)
       (h : c.cur = some (Goal.bin op args res :: rest, b))
       (hnp : ¬ (binArity op ≠ 0 ∧ (args.map (subst b)).length < binArity op))
+      (hl : localTranslatePredicateGoals? c.world gt op
+        (args.map (subst b)) res rest = none)
       (hns : op ≠ "get-type" ∧ op ≠ "get-metatype" ∧ ¬ nonstrictOps.contains op)
       (hop : ["+", "-", "*"].contains op)
       (hng : ¬ ((args.map (subst b)).all Metta.isGround))
@@ -215,6 +241,8 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (rest : List Goal) (b : Subst)
       (h : c.cur = some (Goal.bin op args res :: rest, b))
       (hnp : ¬ (binArity op ≠ 0 ∧ (args.map (subst b)).length < binArity op))
+      (hl : localTranslatePredicateGoals? c.world gt op
+        (args.map (subst b)) res rest = none)
       (hns : op ≠ "get-type" ∧ op ≠ "get-metatype" ∧ ¬ nonstrictOps.contains op)
       (hnmode : ¬ (["+", "-", "*"].contains op ∧
                    ¬ ((args.map (subst b)).all Metta.isGround) ∧
@@ -228,6 +256,8 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (h : c.cur = some (Goal.bin "union-atom" args res :: rest, b))
       (hnp : ¬ (binArity "union-atom" ≠ 0 ∧
         (args.map (subst b)).length < binArity "union-atom"))
+      (hl : localTranslatePredicateGoals? c.world gt "union-atom"
+        (args.map (subst b)) res rest = none)
       (hns : "union-atom" ≠ "get-type" ∧ "union-atom" ≠ "get-metatype" ∧
         ¬ nonstrictOps.contains "union-atom")
       (hnmode : ¬ (["+", "-", "*"].contains "union-atom" ∧
@@ -240,6 +270,8 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (rest : List Goal) (b : Subst)
       (h : c.cur = some (Goal.bin op args res :: rest, b))
       (hnp : ¬ (binArity op ≠ 0 ∧ (args.map (subst b)).length < binArity op))
+      (hl : localTranslatePredicateGoals? c.world gt op
+        (args.map (subst b)) res rest = none)
       (hns : op ≠ "get-type" ∧ op ≠ "get-metatype" ∧ ¬ nonstrictOps.contains op)
       (hnmode : ¬ (["+", "-", "*"].contains op ∧
                    ¬ ((args.map (subst b)).all Metta.isGround) ∧
@@ -251,6 +283,8 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (rest : List Goal) (b : Subst)
       (h : c.cur = some (Goal.bin op args res :: rest, b))
       (hnp : ¬ (binArity op ≠ 0 ∧ (args.map (subst b)).length < binArity op))
+      (hl : localTranslatePredicateGoals? c.world gt op
+        (args.map (subst b)) res rest = none)
       (hns : op ≠ "get-type" ∧ op ≠ "get-metatype" ∧ ¬ nonstrictOps.contains op)
       (hnmode : ¬ (["+", "-", "*"].contains op ∧
                    ¬ ((args.map (subst b)).all Metta.isGround) ∧

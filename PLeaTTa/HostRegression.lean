@@ -48,6 +48,38 @@ private def missingSourceSink : Atom :=
 
 private def resultVar : Atom := Atom.var "hostResult"
 
+private def parsedVar : Atom := Atom.var "Parsed"
+
+-- Imported predicates already implemented by the PLeaTTa grounding table
+-- remain inside the certified machine.  In particular, runtime `sread` uses
+-- the proved Lean reader rather than silently escaping through SWI.
+#guard localPrologGoals? {} pleattaTable "sread"
+    [.atom "((rest))", .var "Parsed"] resultVar [] ==
+  some [Goal.bin "sread" [Atom.sym "((rest))"] parsedVar,
+    Goal.eq resultVar (Atom.sym "True")]
+
+-- Wall-clock ownership is local too, but HostMachine gives this core goal its
+-- explicit typed and replayable clock effect instead of approximating time.
+#guard localPrologGoals? {} pleattaTable "get_time"
+    [.var "Now"] resultVar [] ==
+  some [Goal.bin "get_time" [] (Atom.var "Now"),
+    Goal.eq resultVar (Atom.sym "True")]
+
+-- A marker for a genuinely imported operation is not mistaken for a certified
+-- implementation merely because it appears in the grounding table.
+#guard (localPrologGoals? {} pleattaTable "read_line_to_string"
+    [.atom "user_input", .var "Line"] resultVar []).isNone
+
+private def localSpaceCatch : List PrologTerm :=
+  [.compound "Predicate"
+      [.compound "&self" [.atom "friend", .var "left", .var "right"]],
+    .var "error", .atom "fail"]
+
+#guard localPrologGoals? {} pleattaTable "catch" localSpaceCatch resultVar [] ==
+  some [Goal.smatch (spacePat selfSpace
+          (chainOf [Atom.sym "friend", Atom.var "left", Atom.var "right"])),
+    Goal.eq resultVar (Atom.sym "True")]
+
 private def lengthArgument : Atom :=
   chainOf [Atom.sym "len",
     chainOf [Atom.gnd (.int 1), Atom.gnd (.int 2)]]

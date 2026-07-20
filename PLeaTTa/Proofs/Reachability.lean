@@ -411,7 +411,9 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
       · exact hnew
   | bin_partial c op args res rest b hunder h g hg =>
       exact htop.replaceActive h
-  | bin_gettype c args res rest b ts counter' h hnp ho =>
+  | bin_local_translate c op args res rest b goals h hnp hlocal =>
+      exact htop.replaceActive h
+  | bin_gettype c args res rest b ts counter' h hnp hlocal ho =>
       have hb := htop.active h
       have hnew := (altsTopological_map_branch ts
         (fun t => Goal.eq res t :: rest) b hb).append htop.2
@@ -420,9 +422,9 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
       · intro goals branchSubst hcur
         simp at hcur
       · exact hnew
-  | bin_getmetatype c args res rest b mt h hnp hmt g hg =>
+  | bin_getmetatype c args res rest b mt h hnp hlocal hmt g hg =>
       exact htop.replaceActive h
-  | bin_nonstrict_ok c op args res rest b rs h hnp hns hnso hr =>
+  | bin_nonstrict_ok c op args res rest b rs h hnp hlocal hns hnso hr =>
       have hb := htop.active h
       have hnew := (altsTopological_map_branch rs
         (fun r => Goal.eq res (canonBool r) :: rest) b hb).append htop.2
@@ -431,13 +433,13 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
       · intro goals branchSubst hcur
         simp at hcur
       · exact hnew
-  | bin_nonstrict_fail c op args res rest b h hnp hns hnso hr =>
+  | bin_nonstrict_fail c op args res rest b h hnp hlocal hns hnso hr =>
       apply ConfTopological.pull
       constructor
       · intro goals branchSubst hcur
         simp at hcur
       · exact htop.2
-  | bin_ok c op args res rest b rs h hg hnp hspecial hnm hr =>
+  | bin_ok c op args res rest b rs h hg hnp hlocal hspecial hnm hr =>
       have hb := htop.active h
       have hnew := (altsTopological_map_branch rs
         (fun r => Goal.eq res (canonBool r) :: rest) b hb).append htop.2
@@ -446,21 +448,21 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
       · intro goals branchSubst hcur
         simp at hcur
       · exact hnew
-  | bin_mode c op args res rest b x y h hnp hns hop hav hng hrv g hg =>
+  | bin_mode c op args res rest b x y h hnp hlocal hns hop hav hng hrv g hg =>
       exact htop.replaceActive h
-  | bin_mode_fail c op args res rest b h hnp hns hop hng hrv hnav =>
+  | bin_mode_fail c op args res rest b h hnp hlocal hns hop hng hrv hnav =>
       apply ConfTopological.pull
       constructor
       · intro goals branchSubst hcur
         simp at hcur
       · exact htop.2
-  | bin_fail c op args res rest b h hnp hns hnmode hgnd hr =>
+  | bin_fail c op args res rest b h hnp hlocal hns hnmode hgnd hr =>
       apply ConfTopological.pull
       constructor
       · intro goals branchSubst hcur
         simp at hcur
       · exact htop.2
-  | bin_union_reverse c args res rest b alts h hnp hns hnmode hgnd hur =>
+  | bin_union_reverse c args res rest b alts h hnp hlocal hns hnmode hgnd hur =>
       have hb := htop.active h
       have hnew := (unionReverseAlts_topological args res rest b alts hb hur)
         |>.append htop.2
@@ -469,9 +471,9 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
       · intro goals branchSubst hcur
         simp at hcur
       · exact hnew
-  | bin_delay c op args res rest b h hnp hns hnmode hgnd hrest =>
+  | bin_delay c op args res rest b h hnp hlocal hns hnmode hgnd hrest =>
       exact htop.replaceActive h
-  | bin_flounder c op args res rest b h hnp hns hnmode hgnd hrest =>
+  | bin_flounder c op args res rest b h hnp hlocal hns hnmode hgnd hrest =>
       apply ConfTopological.pull
       constructor
       · intro goals branchSubst hcur

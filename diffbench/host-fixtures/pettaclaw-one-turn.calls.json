@@ -2,6 +2,8 @@
   "allow": [
     "dict",
     "eval",
+    "goals.goals_view",
+    "goals.kernel_pass",
     "helper.balance_parentheses",
     "helper.decode_safe_text",
     "helper.history_window",

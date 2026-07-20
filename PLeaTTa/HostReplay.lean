@@ -467,12 +467,12 @@ theorem completeRecordedStep_handleTranslatePredicate_aligned
         (HostMachine.handleTranslatePredicate {
           core, frames, host := {
             mode := .live, transcript := liveTranscript, cursor } }
-          core functor ptArgs vars res rest (engine.substMany binding args).2))
+          core gt functor ptArgs vars res rest (engine.substMany binding args).2))
       (HostMachine.handleTranslatePredicate {
         core, frames, host := {
           mode := .replay, transcript, cursor } }
-        core functor ptArgs vars res rest (engine.substMany binding args).2) := by
-  cases hlocal : localPrologGoals? core.world functor ptArgs res rest with
+        core gt functor ptArgs vars res rest (engine.substMany binding args).2) := by
+  cases hlocal : localPrologGoals? core.world gt functor ptArgs res rest with
   | some goals =>
       simp [HostMachine.handleTranslatePredicate, hlocal,
         completeRecordedStep, StepAligned, StateAligned]

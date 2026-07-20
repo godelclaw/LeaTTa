@@ -50,6 +50,7 @@ private def bang (items : List Atom) : Atom :=
   some [.importBegin, .importEnd true]
 
 #guard importedPrologHostBacked "shell"
+#guard importedPrologHostBacked "read_line_to_string"
 #guard !importedPrologHostBacked "first_char"
 #guard !importedPrologHostBacked "gc"
 

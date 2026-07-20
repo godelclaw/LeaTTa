@@ -16,6 +16,8 @@ import PLeaTTa.Types
 import PLeaTTa.OrderedIndex
 import PLeaTTa.PersistentSubstCore
 import PLeaTTa.Chain
+import PLeaTTa.Builtins
+import PLeaTTa.HostProtocol
 import PLeaTTa.Specialize
 import MettaHyperonFull.Runtime.Parser
 import MettaHyperonFull.Core.Unification
@@ -4672,6 +4674,76 @@ theorem pull_of_two_barriers {Binding : Type} (c : Conf Binding)
   rw [h, hb]
   rfl
 
+/-- Recognize a Prolog call into a named MeTTa space. `Predicate/2` in pinned
+    PeTTa constructs exactly such a callable term from an expression whose
+    head is a space name. -/
+private def prologSpaceCall? : PrologTerm → Option (Atom × Atom)
+  | .compound "Predicate" [.compound space args] =>
+      if space.startsWith "&" then
+        some (.sym space, chainOf (args.map PrologTerm.toAtom))
+      else none
+  | .compound "Predicate" [.list (.atom space :: args)] =>
+      if space.startsWith "&" then
+        some (.sym space, chainOf (args.map PrologTerm.toAtom))
+      else none
+  | _ => none
+
+/-- Extract the local space relation represented by a direct Prolog goal or
+    by the `catch(Predicate(...), _, fail)` idiom emitted by `lib_spaces`.
+    The latter catches only exceptions; ordinary space-match failure remains
+    ordinary failure. -/
+private def localSpaceCall? (functor : String) (args : List PrologTerm) :
+    Option (Atom × Atom) :=
+  match functor, args with
+  | "catch", [predicate, _, .atom "fail"] => prologSpaceCall? predicate
+  | space, args =>
+      if space.startsWith "&" then
+        some (.sym space, chainOf (args.map PrologTerm.toAtom))
+      else none
+
+/-- Resolve a typed Prolog call that is owned by the pure PLeaTTa world.
+    Named-space relations become `smatch`; asserted/compiled predicates become
+    ordinary certified `call` goals. Calls not owned by the world remain at
+    the explicit host boundary. -/
+def localPrologGoals? (world : PWorld) (gt : GroundingTable) (functor : String)
+    (ptArgs : List PrologTerm) (res : Atom) (rest : List Goal) :
+    Option (List Goal) :=
+  match localSpaceCall? functor ptArgs with
+  | some (space, pattern) =>
+      some (Goal.smatch (spacePat space pattern) ::
+        Goal.eq res trueA :: rest)
+  | none =>
+      match ptArgs.reverse with
+      | [] => none
+      | output :: reversedInputs =>
+          let inputs := reversedInputs.reverse.map PrologTerm.toAtom
+          if !importedPrologHostBacked functor &&
+              (Metta.GroundingTable.lookup gt functor).isSome then
+            some (Goal.bin functor inputs output.toAtom ::
+              Goal.eq res trueA :: rest)
+          else if (world.clauseCandidates functor inputs.length).isEmpty then
+            none
+          else
+            some (Goal.call functor inputs output.toAtom ::
+              Goal.eq res trueA :: rest)
+
+/-- Decode a `translatePredicate` builtin invocation only when its target is
+    owned by the pure world. Returning `none` is deliberate: the host-aware
+    driver may service an imported SWI predicate, while host-disabled core
+    execution retains its ordinary unavailable-builtin behavior. -/
+def localTranslatePredicateGoals? (world : PWorld) (gt : GroundingTable)
+    (op : String)
+    (args : List Atom) (res : Atom) (rest : List Goal) : Option (List Goal) :=
+  if op != "translatePredicate" then none
+  else
+    match args with
+    | [innerExpr] =>
+        match buildPrologCall innerExpr with
+        | some (functor, ptArgs, _) =>
+            localPrologGoals? world gt functor ptArgs res rest
+        | none => none
+    | _ => none
+
 /-- Builtin dispatch after arguments and the result position have been
 substituted. The reference and persistent machines share this entire control
 tree; only the binding representation and precomputed reverse-union branches
@@ -4683,7 +4755,9 @@ def binResolvedStep {Binding : Type} (gt : GroundingTable)
     (advanceResults : List Atom → Nat)
     (grounded : Unit → ReduceResult)
     (unionAlts : Option (List (Alt Binding))) : Conf Binding :=
-  if op == "get-type" then
+  match localTranslatePredicateGoals? c.world gt op av res rest with
+  | some goals => { c with cur := some (goals, binding) }
+  | none => if op == "get-type" then
     let (types, counter') := getTypeP c.world 100 c.counter
       (av.headD (Atom.sym "?"))
     pull { c with
@@ -4746,11 +4820,11 @@ def binResolvedStep {Binding : Type} (gt : GroundingTable)
         | _ =>
             { c with
               cur := some (rest ++ [Goal.bin op args res], binding) }
-  else
-    match rest with
-    | [] => pull { c with cur := none }
-    | _ =>
-        { c with cur := some (rest ++ [Goal.bin op args res], binding) }
+    else
+      match rest with
+      | [] => pull { c with cur := none }
+      | _ =>
+          { c with cur := some (rest ++ [Goal.bin op args res], binding) }
 
 /-- World effects (sequenced, never undone). Returns the result atom. -/
 def wactRun (w : PWorld) (op : String) (args : List Atom) :
@@ -5821,11 +5895,14 @@ def stepClean (prog : Prog) (gt : GroundingTable) :
                     (tableSubConfOf c f argsv tres key) none)
           else
             .progressed (step prog gt fuel c)
-      | some (Goal.bin op args _ :: _, b) =>
+      | some (Goal.bin op args res :: rest, b) =>
           let values := args.map (subst b)
-          match caughtBinErrorResolved? gt op values with
-          | some err => .errored c err
-          | none => .progressed (step prog gt fuel c)
+          match localTranslatePredicateGoals? c.world gt op values res rest with
+          | some _ => .progressed (step prog gt fuel c)
+          | none =>
+              match caughtBinErrorResolved? gt op values with
+              | some err => .errored c err
+              | none => .progressed (step prog gt fuel c)
       | _ => .progressed (step prog gt fuel c)
 
 def runClean (prog : Prog) (gt : GroundingTable) :

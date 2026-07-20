@@ -339,9 +339,12 @@ theorem step_callDyn (c : Conf) (hd : Atom) (args : List Atom) (res : Atom)
         · rw [hhd]
 
 set_option maxHeartbeats 1600000 in
-theorem step_bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
+theorem step_bin_nonlocal (c : Conf) (op : String) (args : List Atom)
+    (res : Atom)
     (rest : List Goal) (b : Subst)
-    (h : c.cur = some (Goal.bin op args res :: rest, b)) :
+    (h : c.cur = some (Goal.bin op args res :: rest, b))
+    (hlocal : localTranslatePredicateGoals? c.world gt op
+      (args.map (subst b)) res rest = none) :
     Step prog gt c (step prog gt fuel c) := by
   cases h1 : (binArity op != 0
       && decide ((args.map (subst b)).length < binArity op)) with
@@ -374,19 +377,19 @@ theorem step_bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
                             alts := ts.map (fun t =>
                               Alt.br (Goal.eq res t :: rest) b) ++ c.alts } := by
           unfold step; rw [h]
-          simp only [binResolvedStep, h1, Bool.false_eq_true, if_false, beq_self_eq_true,
+          simp only [binResolvedStep, hlocal, h1, Bool.false_eq_true, if_false, beq_self_eq_true,
             if_true, hty]
         rw [hstep]
-        exact Step.bin_gettype c args res rest b ts c' h hnp hty
+        exact Step.bin_gettype c args res rest b ts c' h hnp hlocal hty
       · have hgt' : (op == "get-type") = false := by
           simp [hgt]
         by_cases hgm : op = "get-metatype"
         · subst hgm
           have hstep : Step prog gt c (step prog gt fuel c) := by
             unfold step; rw [h]
-            simp only [binResolvedStep, h1, Bool.false_eq_true, if_false, hgt',
+            simp only [binResolvedStep, hlocal, h1, Bool.false_eq_true, if_false, hgt',
               beq_self_eq_true, if_true]
-            exact Step.bin_getmetatype c args res rest b _ h hnp rfl _ rfl
+            exact Step.bin_getmetatype c args res rest b _ h hnp hlocal rfl _ rfl
           exact hstep
         · have hgm' : (op == "get-metatype") = false := by
             simp [hgm]
@@ -400,37 +403,37 @@ theorem step_bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
                                       alts := rs.map (fun r =>
                                         Alt.br (Goal.eq res (canonBool r) :: rest) b) ++ c.alts } := by
                     unfold step; rw [h]
-                    simp only [binResolvedStep, h1, Bool.false_eq_true, if_false, hgt', hgm',
+                    simp only [binResolvedStep, hlocal, h1, Bool.false_eq_true, if_false, hgt', hgm',
                       hns2, if_true, hcg]
                   rw [hstep]
                   exact Step.bin_nonstrict_ok c op args res rest b rs h hnp
-                    ⟨hgt, hgm⟩ hns2 hcg
+                    hlocal ⟨hgt, hgm⟩ hns2 hcg
               | noReduce =>
                   have hstep : step prog gt fuel c = pull { c with cur := none } := by
                     unfold step; rw [h]
-                    simp only [binResolvedStep, h1, Bool.false_eq_true, if_false, hgt', hgm',
+                    simp only [binResolvedStep, hlocal, h1, Bool.false_eq_true, if_false, hgt', hgm',
                       hns2, if_true, hcg]
                   rw [hstep]
                   refine Step.bin_nonstrict_fail c op args res rest b h hnp
-                    ⟨hgt, hgm⟩ hns2 ?_
+                    hlocal ⟨hgt, hgm⟩ hns2 ?_
                   rintro ⟨rs, hrs⟩; rw [hcg] at hrs; simp at hrs
               | incorrectArgument e =>
                   have hstep : step prog gt fuel c = pull { c with cur := none } := by
                     unfold step; rw [h]
-                    simp only [binResolvedStep, h1, Bool.false_eq_true, if_false, hgt', hgm',
+                    simp only [binResolvedStep, hlocal, h1, Bool.false_eq_true, if_false, hgt', hgm',
                       hns2, if_true, hcg]
                   rw [hstep]
                   refine Step.bin_nonstrict_fail c op args res rest b h hnp
-                    ⟨hgt, hgm⟩ hns2 ?_
+                    hlocal ⟨hgt, hgm⟩ hns2 ?_
                   rintro ⟨rs, hrs⟩; rw [hcg] at hrs; simp at hrs
               | runtimeError e =>
                   have hstep : step prog gt fuel c = pull { c with cur := none } := by
                     unfold step; rw [h]
-                    simp only [binResolvedStep, h1, Bool.false_eq_true, if_false, hgt', hgm',
+                    simp only [binResolvedStep, hlocal, h1, Bool.false_eq_true, if_false, hgt', hgm',
                       hns2, if_true, hcg]
                   rw [hstep]
                   refine Step.bin_nonstrict_fail c op args res rest b h hnp
-                    ⟨hgt, hgm⟩ hns2 ?_
+                    hlocal ⟨hgt, hgm⟩ hns2 ?_
                   rintro ⟨rs, hrs⟩; rw [hcg] at hrs; simp at hrs
           | false =>
               have hns3 : op ≠ "get-type" ∧ op ≠ "get-metatype"
@@ -464,7 +467,7 @@ theorem step_bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
                           hgm', hns2, h5x, if_true]
                         all_goals rfl
                       rw [hstep]
-                      exact Step.bin_mode c "+" args res rest b x y h hnp hns3
+                      exact Step.bin_mode c "+" args res rest b x y h hnp hlocal hns3
                         hop hsh hng hrv _ rfl
                     · subst h'
                       have hstep : step prog gt fuel c = { c with cur := some ((if Metta.isGround x then Goal.bin "-" [x, subst b res] y else Goal.bin "+" [subst b res, y] x) :: rest, b) } := by
@@ -473,7 +476,7 @@ theorem step_bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
                           hgm', hns2, h5x, if_true]
                         all_goals rfl
                       rw [hstep]
-                      exact Step.bin_mode c "-" args res rest b x y h hnp hns3
+                      exact Step.bin_mode c "-" args res rest b x y h hnp hlocal hns3
                         hop hsh hng hrv _ rfl
                     · subst h'
                       have hstep : step prog gt fuel c = { c with cur := some ((if Metta.isGround x then Goal.bin "/" [subst b res, x] y else Goal.bin "/" [subst b res, y] x) :: rest, b) } := by
@@ -482,7 +485,7 @@ theorem step_bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
                           hgm', hns2, h5x, if_true]
                         all_goals rfl
                       rw [hstep]
-                      exact Step.bin_mode c "*" args res rest b x y h hnp hns3
+                      exact Step.bin_mode c "*" args res rest b x y h hnp hlocal hns3
                         hop hsh hng hrv _ rfl
                   · have h1x := h1; rw [hsh] at h1x
                     have h5x := h5; rw [hsh] at h5x
@@ -492,7 +495,7 @@ theorem step_bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
                         hgm', hns2, h5x, if_true]
                       all_goals (rcases hop3 with h' | h' | h' <;> subst h' <;> rfl)
                     rw [hstep]
-                    exact Step.bin_mode_fail c op args res rest b h hnp hns3
+                    exact Step.bin_mode_fail c op args res rest b h hnp hlocal hns3
                       hop hng hrv (by simp [hsh])
               | false =>
                   have hnmode : ¬ (["+", "-", "*"].contains op = true
@@ -518,40 +521,40 @@ theorem step_bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
                                               alts := rs.map (fun r =>
                                                 Alt.br (Goal.eq res (canonBool r) :: rest) b) ++ c.alts } := by
                             unfold step; rw [h]
-                            simp only [binResolvedStep, h1, Bool.false_eq_true, if_false, hgt', hgm',
+                            simp only [binResolvedStep, hlocal, h1, Bool.false_eq_true, if_false, hgt', hgm',
                               hns2, h6, Bool.not_true, Bool.and_false, Bool.false_and,
                               if_true, hcg]
                           rw [hstep]
-                          exact Step.bin_ok c op args res rest b rs h h6 hnp hns3
+                          exact Step.bin_ok c op args res rest b rs h h6 hnp hlocal hns3
                             (fun hc => hc.2 h6) hcg
                       | noReduce =>
                           have hstep : step prog gt fuel c = pull { c with cur := none } := by
                             unfold step; rw [h]
-                            simp only [binResolvedStep, h1, Bool.false_eq_true, if_false, hgt', hgm',
+                            simp only [binResolvedStep, hlocal, h1, Bool.false_eq_true, if_false, hgt', hgm',
                               hns2, h6, Bool.not_true, Bool.and_false, Bool.false_and,
                               if_true, hcg]
                           rw [hstep]
-                          refine Step.bin_fail c op args res rest b h hnp hns3
+                          refine Step.bin_fail c op args res rest b h hnp hlocal hns3
                             hnmode h6 ?_
                           rintro ⟨rs, hrs⟩; rw [hcg] at hrs; simp at hrs
                       | incorrectArgument e =>
                           have hstep : step prog gt fuel c = pull { c with cur := none } := by
                             unfold step; rw [h]
-                            simp only [binResolvedStep, h1, Bool.false_eq_true, if_false, hgt', hgm',
+                            simp only [binResolvedStep, hlocal, h1, Bool.false_eq_true, if_false, hgt', hgm',
                               hns2, h6, Bool.not_true, Bool.and_false, Bool.false_and,
                               if_true, hcg]
                           rw [hstep]
-                          refine Step.bin_fail c op args res rest b h hnp hns3
+                          refine Step.bin_fail c op args res rest b h hnp hlocal hns3
                             hnmode h6 ?_
                           rintro ⟨rs, hrs⟩; rw [hcg] at hrs; simp at hrs
                       | runtimeError e =>
                           have hstep : step prog gt fuel c = pull { c with cur := none } := by
                             unfold step; rw [h]
-                            simp only [binResolvedStep, h1, Bool.false_eq_true, if_false, hgt', hgm',
+                            simp only [binResolvedStep, hlocal, h1, Bool.false_eq_true, if_false, hgt', hgm',
                               hns2, h6, Bool.not_true, Bool.and_false, Bool.false_and,
                               if_true, hcg]
                           rw [hstep]
-                          refine Step.bin_fail c op args res rest b h hnp hns3
+                          refine Step.bin_fail c op args res rest b h hnp hlocal hns3
                             hnmode h6 ?_
                           rintro ⟨rs, hrs⟩; rw [hcg] at hrs; simp at hrs
                   | false =>
@@ -566,41 +569,41 @@ theorem step_bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
                             have hstep : step prog gt fuel c =
                                 pull { c with cur := none, alts := alts ++ c.alts } := by
                               unfold step; rw [h]
-                              simp only [binResolvedStep, unionReverseAltsForOp,
+                              simp only [binResolvedStep, hlocal, unionReverseAltsForOp,
                                 h1, Bool.false_eq_true, if_false,
                                 hgt', hgm', hns2, h6, Bool.not_false,
                                 Bool.and_true, h5x, beq_self_eq_true,
                                 if_true, hur]
                             rw [hstep]
                             exact Step.bin_union_reverse c args res rest b alts h
-                              hnp (by simp [nonstrictOps]) hnmode hgnd hur
+                              hnp hlocal (by simp [nonstrictOps]) hnmode hgnd hur
                         | none =>
                             cases rest with
                             | nil =>
                                 have hstep : step prog gt fuel c =
                                     pull { c with cur := none } := by
                                   unfold step; rw [h]
-                                  simp only [binResolvedStep, unionReverseAltsForOp,
+                                  simp only [binResolvedStep, hlocal, unionReverseAltsForOp,
                                     h1, Bool.false_eq_true, if_false,
                                     hgt', hgm', hns2, h6, Bool.not_false,
                                     Bool.and_true, h5x, beq_self_eq_true,
                                     if_true, hur]
                                 rw [hstep]
                                 exact Step.bin_flounder c "union-atom" args res []
-                                  b h hnp (by simp [nonstrictOps]) hnmode hgnd rfl
+                                  b h hnp hlocal (by simp [nonstrictOps]) hnmode hgnd rfl
                             | cons r rs =>
                                 have hstep : step prog gt fuel c
                                     = { c with cur := some ((r :: rs) ++
                                         [Goal.bin "union-atom" args res], b) } := by
                                   unfold step; rw [h]
-                                  simp only [binResolvedStep, unionReverseAltsForOp,
+                                  simp only [binResolvedStep, hlocal, unionReverseAltsForOp,
                                     h1, Bool.false_eq_true, if_false,
                                     hgt', hgm', hns2, h6, Bool.not_false,
                                     Bool.and_true, h5x, beq_self_eq_true,
                                     if_true, hur]
                                 rw [hstep]
                                 exact Step.bin_delay c "union-atom" args res
-                                  (r :: rs) b h hnp (by simp [nonstrictOps])
+                                  (r :: rs) b h hnp hlocal (by simp [nonstrictOps])
                                   hnmode hgnd (by simp)
                       · have hu' : (op == "union-atom") = false := by
                           simp [hu]
@@ -608,22 +611,68 @@ theorem step_bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
                         | nil =>
                             have hstep : step prog gt fuel c = pull { c with cur := none } := by
                               unfold step; rw [h]
-                              simp only [binResolvedStep, unionReverseAltsForOp,
+                              simp only [binResolvedStep, hlocal, unionReverseAltsForOp,
                                 h1, Bool.false_eq_true, if_false, hgt', hgm',
                                 hns2, h6, Bool.not_false, Bool.and_true, h5x, hu']
                             rw [hstep]
-                            exact Step.bin_flounder c op args res [] b h hnp hns3
+                            exact Step.bin_flounder c op args res [] b h hnp hlocal hns3
                               hnmode hgnd rfl
                         | cons r rs =>
                             have hstep : step prog gt fuel c
                                 = { c with cur := some ((r :: rs) ++ [Goal.bin op args res], b) } := by
                               unfold step; rw [h]
-                              simp only [binResolvedStep, unionReverseAltsForOp,
+                              simp only [binResolvedStep, hlocal, unionReverseAltsForOp,
                                 h1, Bool.false_eq_true, if_false, hgt', hgm',
                                 hns2, h6, Bool.not_false, Bool.and_true, h5x, hu']
                             rw [hstep]
-                            exact Step.bin_delay c op args res (r :: rs) b h hnp hns3
+                            exact Step.bin_delay c op args res (r :: rs) b h hnp hlocal hns3
                               hnmode hgnd (by simp)
+
+set_option maxHeartbeats 1600000 in
+theorem step_bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
+    (rest : List Goal) (b : Subst)
+    (h : c.cur = some (Goal.bin op args res :: rest, b)) :
+    Step prog gt c (step prog gt fuel c) := by
+  cases h1 : (binArity op != 0
+      && decide ((args.map (subst b)).length < binArity op)) with
+  | true =>
+      have hb : binArity op ≠ 0 ∧
+          (args.map (subst b)).length < binArity op := by
+        rw [Bool.and_eq_true] at h1
+        exact ⟨by simpa using h1.1, by simpa using h1.2⟩
+      have hstep : step prog gt fuel c =
+          { c with cur := some (Goal.eq res
+              (chainOf [Atom.sym "partial", Atom.sym op,
+                chainOf (args.map (subst b))]) :: rest, b) } := by
+        unfold step
+        rw [h]
+        simp only [h1, if_true]
+      rw [hstep]
+      exact Step.bin_partial c op args res rest b hb h _ rfl
+  | false =>
+      have hnp : ¬ (binArity op ≠ 0 ∧
+          (args.map (subst b)).length < binArity op) := by
+        intro contradiction
+        have truth : (binArity op != 0 && decide
+            ((args.map (subst b)).length < binArity op)) = true := by
+          rw [Bool.and_eq_true, bne_iff_ne, decide_eq_true_eq]
+          exact contradiction
+        rw [h1] at truth
+        exact Bool.false_ne_true truth
+      cases hlocal : localTranslatePredicateGoals? c.world gt op
+          (args.map (subst b)) res rest with
+      | none =>
+          exact step_bin_nonlocal prog gt fuel c op args res rest b h hlocal
+      | some goals =>
+          have hstep : step prog gt fuel c =
+              { c with cur := some (goals, b) } := by
+            unfold step
+            rw [h]
+            simp only [h1, Bool.false_eq_true, if_false, binResolvedStep,
+              hlocal]
+          rw [hstep]
+          exact Step.bin_local_translate c op args res rest b goals h hnp
+            hlocal
 
 /-! ### The correspondence theorem (the Phase-1 gate) -/
 
@@ -1118,16 +1167,25 @@ theorem clean_sound_fuel (prog : Prog) (gt : GroundingTable) :
                     rw [hstepEq] at hs
                     exact hs
                 | bin op args res =>
-                    cases hc : caughtBinErrorResolved? gt op
-                        (args.map (subst b)) with
-                    | none =>
+                    cases hlocal : localTranslatePredicateGoals? c.world gt op
+                        (args.map (subst b)) res rest with
+                    | some goals =>
                         have hstepEq : step prog gt fuel c = c' := by
-                          simpa [stepClean, hcur, hc] using hprog
+                          simpa [stepClean, hcur, hlocal] using hprog
                         have hs := step_bin prog gt fuel c op args res rest b hcur
                         rw [hstepEq] at hs
                         exact hs
-                    | some err =>
-                        simp [stepClean, hcur, hc] at hprog
+                    | none =>
+                        cases hc : caughtBinErrorResolved? gt op
+                            (args.map (subst b)) with
+                        | none =>
+                            have hstepEq : step prog gt fuel c = c' := by
+                              simpa [stepClean, hcur, hlocal, hc] using hprog
+                            have hs := step_bin prog gt fuel c op args res rest b hcur
+                            rw [hstepEq] at hs
+                            exact hs
+                        | some err =>
+                            simp [stepClean, hcur, hlocal, hc] at hprog
                 | callDyn hd args res =>
                     have hstepEq : step prog gt fuel c = c' := by
                       simpa [stepClean, hcur] using hprog
@@ -1296,19 +1354,25 @@ theorem clean_sound_fuel (prog : Prog) (gt : GroundingTable) :
                                   hcur hcan hcache rfl
                                   (by simpa [tableSubConfOf, key] using hraise0)
                 | bin op args res =>
-                    cases hc : caughtBinErrorResolved? gt op
-                        (args.map (subst b)) with
-                    | none => simp [stepClean, hcur, hc] at herror
-                    | some raised =>
-                        have hcatch : catchDirect? gt b res
-                            [Goal.bin op args res] = some (.error raised) :=
-                          (caughtBinErrorResolved_some_iff gt b op args res
-                            raised).1 hc
-                        have hout : StepOutcome.errored c raised =
-                            StepOutcome.errored d err := by
-                          simpa [stepClean, hcur, hc] using herror
-                        cases hout
-                        exact Raises.bin c op args res rest b err hcur hcatch
+                    cases hlocal : localTranslatePredicateGoals? c.world gt op
+                        (args.map (subst b)) res rest with
+                    | some goals =>
+                        simp [stepClean, hcur, hlocal] at herror
+                    | none =>
+                        cases hc : caughtBinErrorResolved? gt op
+                            (args.map (subst b)) with
+                        | none =>
+                            simp [stepClean, hcur, hlocal, hc] at herror
+                        | some raised =>
+                            have hcatch : catchDirect? gt b res
+                                [Goal.bin op args res] = some (.error raised) :=
+                              (caughtBinErrorResolved_some_iff gt b op args res
+                                raised).1 hc
+                            have hout : StepOutcome.errored c raised =
+                                StepOutcome.errored d err := by
+                              simpa [stepClean, hcur, hlocal, hc] using herror
+                            cases hout
+                            exact Raises.bin c op args res rest b err hcur hcatch
                 | eq x y => simp [stepClean, hcur] at herror
                 | cut => simp [stepClean, hcur] at herror
                 | cutAt k => simp [stepClean, hcur] at herror

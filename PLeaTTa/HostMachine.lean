@@ -292,31 +292,16 @@ def prologAnswerBranches {Binding : Type} (answers : List PrologAnswer)
       prologAnswerBranches answers res rest (map binding) := by
   simp [prologAnswerBranches, SubstEngine.mapAlt]
 
-/-- Route a function-convention Prolog goal through the live PLeaTTa clause
-    database when that predicate is locally owned.  The final Prolog argument
-    is the relation result; preceding arguments are the MeTTa inputs.  A
-    missing local clause leaves dispatch to the explicitly trusted worker. -/
-def localPrologGoals? (world : PWorld) (functor : String)
-    (ptArgs : List PrologTerm) (res : Atom) (rest : List Goal) :
-    Option (List Goal) :=
-  match ptArgs.reverse with
-  | [] => none
-  | output :: reversedInputs =>
-      let inputs := reversedInputs.reverse.map PrologTerm.toAtom
-      if (world.clauseCandidates functor inputs.length).isEmpty then none
-      else some
-        (Goal.call functor inputs output.toAtom ::
-          Goal.eq res (Atom.sym "True") :: rest)
-
 /-- `translatePredicate` runs a Prolog goal at the trusted SWI boundary and
     unifies the returned answer substitution back into the machine: each bound
     variable becomes an equality goal, then the call itself yields `True`.  The
     goal already has the current bindings substituted in. -/
 def handleTranslatePredicate {Binding : Type} (state : State Binding)
-    (core : Conf Binding) (functor : String) (ptArgs : List PrologTerm)
+    (core : Conf Binding) (gt : GroundingTable) (functor : String)
+    (ptArgs : List PrologTerm)
     (vars : List String) (res : Atom) (rest : List Goal)
     (next : Binding) : StepOutcome Binding :=
-  match localPrologGoals? core.world functor ptArgs res rest with
+  match localPrologGoals? core.world gt functor ptArgs res rest with
   | some goals =>
       .progressed { state with core := { core with cur := some (goals, next) } }
   | none =>
@@ -544,7 +529,7 @@ def stepWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable) :
             | [innerExpr] =>
                 match buildPrologCall innerExpr with
                 | some (functor, ptArgs, vars) =>
-                    handleTranslatePredicate state core functor ptArgs vars res
+                    handleTranslatePredicate state core gt functor ptArgs vars res
                       rest argsResult.2
                 | none =>
                     unwindError state (marshallingErrorAtom
@@ -812,21 +797,22 @@ theorem mapStepOutcome_handleClock {Source Target : Type}
 
 theorem mapStepOutcome_handleTranslatePredicate {Source Target : Type}
     (map : Source → Target) (state : State Source) (core : Conf Source)
-    (functor : String) (ptArgs : List PrologTerm) (vars : List String)
+    (gt : GroundingTable) (functor : String) (ptArgs : List PrologTerm)
+    (vars : List String)
     (res : Atom) (rest : List Goal) (binding : Source) :
     mapStepOutcome map
-        (handleTranslatePredicate state core functor ptArgs vars res rest binding) =
+        (handleTranslatePredicate state core gt functor ptArgs vars res rest binding) =
       handleTranslatePredicate (mapState map state) (SubstEngine.mapConf map core)
-        functor ptArgs vars res rest (map binding) := by
+        gt functor ptArgs vars res rest (map binding) := by
   unfold handleTranslatePredicate
   simp only [mapState]
   have mappedLocal :
-      localPrologGoals? (SubstEngine.mapConf map core).world functor ptArgs
+      localPrologGoals? (SubstEngine.mapConf map core).world gt functor ptArgs
           res rest =
-        localPrologGoals? core.world functor ptArgs res rest := by
+        localPrologGoals? core.world gt functor ptArgs res rest := by
     rfl
   rw [mappedLocal]
-  cases hlocal : localPrologGoals? core.world functor ptArgs res rest with
+  cases hlocal : localPrologGoals? core.world gt functor ptArgs res rest with
   | some goals => simp [mapStepOutcome, mapState, SubstEngine.mapConf]
   | none =>
       cases decision :
@@ -1143,7 +1129,7 @@ theorem checked_stepWith_simulation (engine : SubstEngine) (prog : Prog)
                                 have mapped :=
                                   mapStepOutcome_handleTranslatePredicate
                                     (SubstEngine.checked engine).denote source
-                                    source.core functor ptArgs vars res rest next
+                                    source.core gt functor ptArgs vars res rest next
                                 simp [stepWith, source, result, ← valuesEq, hbuild,
                                   SubstEngine.referenceSubstMany, mapState,
                                   SubstEngine.mapConf]

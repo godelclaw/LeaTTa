@@ -1,0 +1,5 @@
+!(import! &self (library lib_spaces))
+!(succeedsPredicate (&self friend tim tom))
+(friend a b)
+!(succeedsPredicate (&self friend $a $b))
+!(if (succeedsPredicate (&self friend $a $b)) ($a $b) NotFound)

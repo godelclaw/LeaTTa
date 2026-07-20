@@ -16,7 +16,6 @@ import sys
 import time
 
 
-EXCHANGES = 72
 FUEL = 500_000
 REQUIRED_MODULES = {
     "lib_llm",
@@ -63,7 +62,7 @@ def sandbox_command(
     root: Path,
     mode: str,
     transcript: Path,
-    exchanges: int | None = EXCHANGES,
+    exchanges: int | None = None,
     fuel: int = FUEL,
     calls_fixture: Path | None = None,
 ) -> list[str]:
@@ -89,7 +88,12 @@ def sandbox_command(
             str(pettaclaw), str(pettaclaw / "repos" / "petta_lib_chromadb")
         ]),
         "PETTA_LIB_ROOT": str(petta / "lib"),
-        "PLEATTA_HOST_ROOT": str(root),
+        "PLEATTA_PROLOG_LIB": str(petta / "src" / "metta.pl"),
+        # Fixture state is writable; source and pinned-library roots are
+        # declared read-only inputs to imported Python/Prolog modules.
+        "PLEATTA_HOST_ROOTS": os.pathsep.join([
+            str(root), str(pettaclaw), str(petta)
+        ]),
         "PLEATTA_MAX_SLEEP_SECONDS": "1",
         "METTACLAW_PROMPT_PATH": "prompt.txt",
         "METTACLAW_HISTORY_PATH": "history.metta",
@@ -101,6 +105,9 @@ def sandbox_command(
         "METTACLAW_CHROMA_COLLECTION": "pleatta-fixture",
         "SYNTHETIC_MODEL": "fixture-model",
     }
+    prolog_allowlist = os.environ.get("PLEATTA_PROLOG_ALLOWLIST", "")
+    if prolog_allowlist:
+        environment["PLEATTA_PROLOG_ALLOWLIST"] = prolog_allowlist
     if mode in {"--host-live", "--host-live-prefix"}:
         environment.update({
             "PLEATTA_PYTHON": str(python),
@@ -147,16 +154,15 @@ def run(command: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-def require_success(name: str, result: subprocess.CompletedProcess[str]) -> None:
+def require_live_success(
+    name: str, result: subprocess.CompletedProcess[str]
+) -> None:
     if result.returncode != 0:
         raise SystemExit(
             f"{name} failed ({result.returncode})\n"
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}")
     if result.stderr:
         raise SystemExit(f"{name} wrote stderr:\n{result.stderr}")
-    marker = f"HOST_CHECKPOINT exchanges={EXCHANGES}\n"
-    if marker not in result.stdout:
-        raise SystemExit(f"{name} missed checkpoint marker")
 
 
 def request_names(transcript: list[dict]) -> tuple[set[str], list[str]]:
@@ -171,12 +177,11 @@ def request_names(transcript: list[dict]) -> tuple[set[str], list[str]]:
     return modules, calls
 
 
-def validate_transcript(transcript_path: Path, roots: list[Path]) -> None:
+def validate_transcript(transcript_path: Path, roots: list[Path]) -> list[dict]:
     raw = transcript_path.read_text(encoding="utf-8")
     transcript = json.loads(raw)
-    if len(transcript) != EXCHANGES:
-        raise SystemExit(
-            f"expected {EXCHANGES} exchanges, got {len(transcript)}")
+    if not transcript:
+        raise SystemExit("the completed turn recorded no host exchanges")
     modules, calls = request_names(transcript)
     missing = REQUIRED_MODULES - modules
     if missing:
@@ -203,6 +208,21 @@ def validate_transcript(transcript_path: Path, roots: list[Path]) -> None:
     if recycle_responses != [expected_recycle_response]:
         raise SystemExit("the staged recycle request did not return integer 1")
     requests = [exchange["request"] for exchange in transcript]
+    certified_prolog_functors = {
+        "atomic_list_concat", "first_char", "gc", "get_time", "sread",
+        "split_string", "string_concat", "string_length", "sub_string",
+        "swrite",
+    }
+    escaped_certified = sorted({
+        request["prologCall"]["functor"]
+        for request in requests
+        if request.get("prologCall", {}).get("functor")
+        in certified_prolog_functors
+    })
+    if escaped_certified:
+        raise SystemExit(
+            "certified Prolog predicates escaped to SWI: "
+            f"{escaped_certified}")
     if not any(request.get("prologCall", {}).get("functor") == "atom_codes"
                for request in requests):
         raise SystemExit("the real newline/atom_codes path was not exercised")
@@ -245,6 +265,7 @@ def validate_transcript(transcript_path: Path, roots: list[Path]) -> None:
     for root in roots:
         if str(root) in raw:
             raise SystemExit("transcript contains a machine-local path")
+    return transcript
 
 
 def main() -> int:
@@ -284,12 +305,14 @@ def main() -> int:
     transcript_path = live_root / "transcript.json"
     live = run(sandbox_command(
         repo=repo, pettaclaw=pettaclaw, petta=petta, python=python,
-        root=live_root, mode="--host-live-prefix",
-        transcript=transcript_path))
+        root=live_root, mode="--host-live", transcript=transcript_path,
+        exchanges=None))
     (live_root / "stdout.txt").write_text(live.stdout, encoding="utf-8")
     (live_root / "stderr.txt").write_text(live.stderr, encoding="utf-8")
-    require_success("live turn", live)
-    validate_transcript(transcript_path, [repo, pettaclaw, petta, work])
+    require_live_success("live turn", live)
+    transcript = validate_transcript(
+        transcript_path, [repo, pettaclaw, petta, work])
+    exchanges = len(transcript)
     history = (live_root / "history.metta").read_text(encoding="utf-8")
     if not history.startswith("(FIXTURE_HISTORY initial)\n"):
         raise SystemExit("history append did not preserve the fixture prefix")
@@ -300,24 +323,26 @@ def main() -> int:
     before = snapshot(replay_root)
     replay = run(sandbox_command(
         repo=repo, pettaclaw=pettaclaw, petta=petta, python=python,
-        root=replay_root, mode="--host-replay-prefix",
-        transcript=transcript_path))
+        root=replay_root, mode="--host-replay",
+        transcript=transcript_path, exchanges=None))
     after = snapshot(replay_root)
-    require_success("offline replay", replay)
+    (replay_root / "stdout.txt").write_text(
+        replay.stdout, encoding="utf-8")
+    (replay_root / "stderr.txt").write_text(
+        replay.stderr, encoding="utf-8")
+    require_live_success("offline replay", replay)
     if live.stdout != replay.stdout:
         raise SystemExit("live and replay observable output differs")
     if before != after:
         raise SystemExit("offline replay mutated its data directory")
-    (replay_root / "stdout.txt").write_text(replay.stdout, encoding="utf-8")
-    (replay_root / "stderr.txt").write_text(replay.stderr, encoding="utf-8")
 
     profile_started = time.monotonic()
     profile = run(sandbox_command(
         repo=repo, pettaclaw=pettaclaw, petta=petta, python=python,
-        root=profile_root, mode="--host-profile-prefix",
-        transcript=transcript_path))
+        root=profile_root, mode="--host-profile",
+        transcript=transcript_path, exchanges=None))
     profile_wall_seconds = time.monotonic() - profile_started
-    require_success("offline profile", profile)
+    require_live_success("offline profile", profile)
     (profile_root / "stdout.txt").write_text(profile.stdout, encoding="utf-8")
     (profile_root / "stderr.txt").write_text(profile.stderr, encoding="utf-8")
     match = re.search(
@@ -335,7 +360,7 @@ def main() -> int:
 
     print(json.dumps({
         "status": "PASS",
-        "host_exchanges": EXCHANGES,
+        "host_exchanges": exchanges,
         "semantic_steps": int(match.group(1)),
         "peak_active_substitution": peak_active,
         "peak_host_depth": peak_depth,

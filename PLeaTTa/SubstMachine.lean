@@ -1660,24 +1660,26 @@ theorem mapConf_binResolvedStep {Source Target : Type}
     answerKeys, answerKeys_sound, barriers⟩
   unfold binResolvedStep
   split
-  · simp_all [mapConf_pull, List.map_append, List.map_map,
-      Function.comp_def, mapAlt]
+  · simp_all [mapConf]
   · split
-    · simp_all
+    · simp_all [mapConf_pull, List.map_append, List.map_map,
+        Function.comp_def, mapAlt]
     · split
-      · split <;> simp_all [mapConf_pull, List.map_append, List.map_map,
-          Function.comp_def, mapAlt]
+      · simp_all
       · split
-        · split <;> simp_all [mapConf_pull]
+        · split <;> simp_all [mapConf_pull, List.map_append, List.map_map,
+            Function.comp_def, mapAlt]
         · split
-          · split <;> simp_all [mapConf_pull, List.map_append,
-              List.map_map, Function.comp_def, mapAlt]
+          · split <;> simp_all [mapConf_pull]
           · split
-            · cases unionAlts with
-              | none => cases rest <;> simp_all [mapConf_pull]
-              | some union =>
-                  simp_all [mapConf_pull, List.map_append]
-            · cases rest <;> simp_all [mapConf_pull]
+            · split <;> simp_all [mapConf_pull, List.map_append,
+                List.map_map, Function.comp_def, mapAlt]
+            · split
+              · cases unionAlts with
+                | none => cases rest <;> simp_all [mapConf_pull]
+                | some union =>
+                    simp_all [mapConf_pull, List.map_append]
+              · cases rest <;> simp_all [mapConf_pull]
 
 theorem binResolvedStep_valid (engine : SubstEngine) (gt : GroundingTable)
     (conf : Conf engine.State) (op : String) (args : List Atom)
@@ -1698,74 +1700,78 @@ theorem binResolvedStep_valid (engine : SubstEngine) (gt : GroundingTable)
   have oldAltsValid : AltsValid engine alts := confValid.2
   unfold binResolvedStep
   split
-  · apply pull_valid engine
-    apply confValid_none engine
-    apply altsValid_append engine
-    · apply altsValid_map_br engine
-      exact stateValid
+  · apply confValid_some engine
+    · exact stateValid
     · exact oldAltsValid
   · split
-    · apply confValid_some engine
-      · exact stateValid
+    · apply pull_valid engine
+      apply confValid_none engine
+      apply altsValid_append engine
+      · apply altsValid_map_br engine
+        exact stateValid
       · exact oldAltsValid
     · split
-      · split
-        all_goals
-          apply pull_valid engine
-          apply confValid_none engine
-          first
-          | exact oldAltsValid
-          | (apply altsValid_append engine
-             · apply altsValid_map_br engine
-               exact stateValid
-             · exact oldAltsValid)
+      · apply confValid_some engine
+        · exact stateValid
+        · exact oldAltsValid
       · split
         · split
           all_goals
+            apply pull_valid engine
+            apply confValid_none engine
             first
-            | (apply confValid_some engine
-               · exact stateValid
+            | exact oldAltsValid
+            | (apply altsValid_append engine
+               · apply altsValid_map_br engine
+                 exact stateValid
                · exact oldAltsValid)
-            | (apply pull_valid engine
-               apply confValid_none engine
-               exact oldAltsValid)
         · split
           · split
             all_goals
-              apply pull_valid engine
-              apply confValid_none engine
               first
-              | exact oldAltsValid
-              | (apply altsValid_append engine
-                 · apply altsValid_map_br engine
-                   exact stateValid
+              | (apply confValid_some engine
+                 · exact stateValid
                  · exact oldAltsValid)
+              | (apply pull_valid engine
+                 apply confValid_none engine
+                 exact oldAltsValid)
           · split
-            · cases unionChoice : unionAlts with
-              | none =>
-                  cases rest with
-                  | nil =>
-                      apply pull_valid engine
-                      apply confValid_none engine
-                      exact oldAltsValid
-                  | cons goal goals =>
-                      apply confValid_some engine
-                      · exact stateValid
-                      · exact oldAltsValid
-              | some union =>
-                  have unionMembers := unionValid union unionChoice
-                  apply pull_valid engine
-                  apply confValid_none engine
-                  exact altsValid_append engine unionMembers oldAltsValid
-            · cases rest with
-              | nil =>
-                  apply pull_valid engine
-                  apply confValid_none engine
-                  exact oldAltsValid
-              | cons goal goals =>
-                  apply confValid_some engine
-                  · exact stateValid
-                  · exact oldAltsValid
+            · split
+              all_goals
+                apply pull_valid engine
+                apply confValid_none engine
+                first
+                | exact oldAltsValid
+                | (apply altsValid_append engine
+                   · apply altsValid_map_br engine
+                     exact stateValid
+                   · exact oldAltsValid)
+            · split
+              · cases unionChoice : unionAlts with
+                | none =>
+                    cases rest with
+                    | nil =>
+                        apply pull_valid engine
+                        apply confValid_none engine
+                        exact oldAltsValid
+                    | cons goal goals =>
+                        apply confValid_some engine
+                        · exact stateValid
+                        · exact oldAltsValid
+                | some union =>
+                    have unionMembers := unionValid union unionChoice
+                    apply pull_valid engine
+                    apply confValid_none engine
+                    exact altsValid_append engine unionMembers oldAltsValid
+              · cases rest with
+                | nil =>
+                    apply pull_valid engine
+                    apply confValid_none engine
+                    exact oldAltsValid
+                | cons goal goals =>
+                    apply confValid_some engine
+                    · exact stateValid
+                    · exact oldAltsValid
 
 /-- Prepare the exact `cons-atom` result from certified arguments.  The
 structural check keeps pointer identity an optimization rather than an
@@ -2957,13 +2963,16 @@ def stepCleanWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable) :
                   (runCleanWith engine prog gt fuel nested none)
           else
             .progressed (stepWith engine prog gt fuel conf)
-      | some (Goal.bin op args _ :: _, state) =>
+      | some (Goal.bin op args res :: rest, state) =>
           let prepared := (engine.substManyCertified state args).1
           let values := prepared.map (fun atom => atom.1.atom)
           let allGround := preparedAtomsAllGround prepared
-          match caughtBinErrorResolvedWithGround? gt op values allGround with
-          | some error => .errored conf error
-          | none => .progressed (stepWith engine prog gt fuel conf)
+          match localTranslatePredicateGoals? conf.world gt op values res rest with
+          | some _ => .progressed (stepWith engine prog gt fuel conf)
+          | none =>
+              match caughtBinErrorResolvedWithGround? gt op values allGround with
+              | some error => .errored conf error
+              | none => .progressed (stepWith engine prog gt fuel conf)
       | _ => .progressed (stepWith engine prog gt fuel conf)
 
 def runCleanWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable) :
@@ -3766,6 +3775,34 @@ theorem checked_clean_run_step_simulation (engine : SubstEngine) (prog : Prog)
                         (checked engine).substManyCertified state args with
                     | mk prepared next =>
                         simp only [argsResult] at argsValue
+                        have referenceArgsValue :
+                            (referenceSubstManyCertified
+                                ((checked engine).denote state) args).1.map
+                                (fun atom => atom.1.atom) =
+                              args.map (PLeaTTa.subst
+                                ((checked engine).denote state)) := by
+                          simpa only [reference, id_eq] using
+                            reference.substManyCertified_value
+                              ((checked engine).denote state) args
+                        have localArgs :
+                            prepared.unattach.map
+                                PersistentSubst.PreparedAtom.atom =
+                              (referenceSubstManyCertified
+                                  ((checked engine).denote state) args).1.unattach.map
+                                PersistentSubst.PreparedAtom.atom := by
+                          calc
+                            _ = prepared.map (fun atom => atom.1.atom) :=
+                              certifiedAtoms_eq prepared
+                            _ = args.map (PLeaTTa.subst
+                                  ((checked engine).denote state)) := argsValue
+                            _ = (referenceSubstManyCertified
+                                  ((checked engine).denote state) args).1.map
+                                  (fun atom => atom.1.atom) :=
+                              referenceArgsValue.symm
+                            _ = _ := (certifiedAtoms_eq _).symm
+                        have localDenote := congrArg
+                          (fun values => localTranslatePredicateGoals? world gt op
+                            values res rest) localArgs
                         have errorDenote :=
                           caughtBinErrorResolvedWithGround_substManyCertified
                             (checked engine) gt state op args
@@ -3790,9 +3827,37 @@ theorem checked_clean_run_step_simulation (engine : SubstEngine) (prog : Prog)
                                       ((checked engine).denote state))) =
                                   none :=
                               errorDenote.symm.trans normalizedError
-                            simpa [stepCleanWith, source, argsResult,
-                              errorResult, referenceError,
-                              erase, mapConf] using rawProgressed source
+                            cases localResult :
+                                localTranslatePredicateGoals? world gt op
+                                  (prepared.unattach.map
+                                    PersistentSubst.PreparedAtom.atom)
+                                  res rest with
+                            | none =>
+                                have referenceLocal :
+                                    localTranslatePredicateGoals? world gt op
+                                        ((referenceSubstManyCertified
+                                          ((checked engine).denote state)
+                                          args).1.unattach.map
+                                            PersistentSubst.PreparedAtom.atom)
+                                        res rest = none := by
+                                  rw [← localDenote, localResult]
+                                simpa [stepCleanWith, source, argsResult,
+                                  localResult, referenceLocal, errorResult,
+                                  referenceError, erase, mapConf] using
+                                  rawProgressed source
+                            | some goals =>
+                                have referenceLocal :
+                                    localTranslatePredicateGoals? world gt op
+                                        ((referenceSubstManyCertified
+                                          ((checked engine).denote state)
+                                          args).1.unattach.map
+                                            PersistentSubst.PreparedAtom.atom)
+                                        res rest = some goals := by
+                                  rw [← localDenote, localResult]
+                                simpa [stepCleanWith, source, argsResult,
+                                  localResult, referenceLocal, errorResult,
+                                  referenceError, erase, mapConf] using
+                                  rawProgressed source
                         | some error =>
                             have normalizedError :
                                 caughtBinErrorResolvedWithGround? gt op
@@ -3808,9 +3873,36 @@ theorem checked_clean_run_step_simulation (engine : SubstEngine) (prog : Prog)
                                       ((checked engine).denote state))) =
                                   some error :=
                               errorDenote.symm.trans normalizedError
-                            simp [stepCleanWith, argsResult,
-                              errorResult, referenceError,
-                              mapStepOutcome, erase, mapConf]
+                            cases localResult :
+                                localTranslatePredicateGoals? world gt op
+                                  (prepared.unattach.map
+                                    PersistentSubst.PreparedAtom.atom)
+                                  res rest with
+                            | none =>
+                                have referenceLocal :
+                                    localTranslatePredicateGoals? world gt op
+                                        ((referenceSubstManyCertified
+                                          ((checked engine).denote state)
+                                          args).1.unattach.map
+                                            PersistentSubst.PreparedAtom.atom)
+                                        res rest = none := by
+                                  rw [← localDenote, localResult]
+                                simp [stepCleanWith, argsResult, localResult,
+                                  referenceLocal, errorResult, referenceError,
+                                  mapStepOutcome, erase, mapConf]
+                            | some goals =>
+                                have referenceLocal :
+                                    localTranslatePredicateGoals? world gt op
+                                        ((referenceSubstManyCertified
+                                          ((checked engine).denote state)
+                                          args).1.unattach.map
+                                            PersistentSubst.PreparedAtom.atom)
+                                        res rest = some goals := by
+                                  rw [← localDenote, localResult]
+                                simpa [stepCleanWith, source, argsResult,
+                                  localResult, referenceLocal, errorResult,
+                                  referenceError, erase, mapConf] using
+                                  rawProgressed source
                 | callDyn head args res =>
                     simpa [stepCleanWith, erase, mapConf] using
                       rawProgressed

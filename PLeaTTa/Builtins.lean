@@ -476,7 +476,7 @@ def unavailableHostOp (name : String) : List Atom → ReduceResult := fun _ =>
     host-backed automatically; certified builtins such as `first_char` and
     `gc` remain in the pure executor. -/
 def importedPrologHostBacked : String → Bool
-  | "shell" | "safe_append_open" | "safe_write_open"
+  | "read_line_to_string" | "shell" | "safe_append_open" | "safe_write_open"
   | "call_with_inference_limit" | "consult" | "use_module"
   | "static-import!" | "git-import!" | "use-module!" => true
   | _ => false

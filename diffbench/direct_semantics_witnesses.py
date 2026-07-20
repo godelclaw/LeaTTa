@@ -149,6 +149,31 @@ CASES = [
         ["true", "(hooked-if false left right)"],
     ),
     (
+        "translator-rule-local-space-predicate",
+        """(= (succeedsPredicate $pattern)
+  (quote (case
+    (translatePredicate (catch (Predicate $pattern) $_ fail))
+    (($item True) (Empty False)))))
+!(add-translator-rule! succeedsPredicate)
+!(succeedsPredicate (&self friend tim tom))
+(friend a b)
+!(succeedsPredicate (&self friend $a $b))
+!(if (succeedsPredicate (&self friend $a $b)) ($a $b) NotFound)
+""",
+        [],
+        ["true", "false", "true", "(a b)"],
+    ),
+    (
+        "registered-reader-writer-stay-core-owned",
+        '''!(import_prolog_function sread)
+!(import_prolog_function swrite)
+!(sread "((rest))")
+!(swrite (hello world))
+''',
+        [],
+        ["true", "true", "((rest))", '"(hello world)"'],
+    ),
+    (
         "stream-rewrite-precedes-translator-hook",
         """(= (trace! $message $value)
       (quote (hooked-trace $message $value)))

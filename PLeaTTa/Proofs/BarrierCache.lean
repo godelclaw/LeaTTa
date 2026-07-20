@@ -352,9 +352,12 @@ theorem Step.preserves_barrierCacheCoherent {prog : Prog}
       (barrierDepth c + 1) c.counter
     rw [hresolve] at branchesZero
     exact branchesZero
+  case bin_local_translate =>
+    intro c op args res rest binding goals hcur hpartial hlocal coherent
+    exact coherent
   case bin_union_reverse =>
-    intro c args res rest binding alts hcur hpartial hspecial hmode hground
-      hreverse coherent
+    intro c args res rest binding alts hcur hpartial hlocal hspecial hmode
+      hground hreverse coherent
     apply BarrierCacheCoherent.pull
     exact BarrierCacheCoherent.prepend_zero c alts coherent
       (unionReverseAlts_barrierCount_zero args res rest binding alts hreverse)
