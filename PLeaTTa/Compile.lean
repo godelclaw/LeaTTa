@@ -134,18 +134,20 @@ def compileTypeCheck (value expected : Atom) (counter : Nat) :
     ([], counter)
 
 /-- PeTTa's `build_branch/4` aliases a variable-valued branch result to the
-enclosing result while translating a nonempty branch conjunction.  Native
-Prolog sharing makes that alias visible outside the selected branch.  The
-first component therefore hoists the corresponding logical equality before
-condition execution; the branch-local substitution preserves the exact body
-shape and last-call position. [SPEC translator.pl:394-397] -/
-private def compileBranch (out : Atom) :
+enclosing result while translating a nonempty branch conjunction. Native
+Prolog sharing makes that alias visible outside the selected branch. The
+first component therefore reifies the translation-time alias as a logical
+equality before condition execution. Keeping the original branch goals makes
+the normalization explicit: the equality, rather than an implementation-side
+rewrite, carries the alias into every surrounding occurrence.
+[SPEC translator.pl:394-397] -/
+def compileBranch (out : Atom) :
     Atom × List Goal → List Goal × (Atom × List Goal)
   | (Atom.var name, goals) =>
       if goals.isEmpty then ([], (Atom.var name, goals))
       else
         ([Goal.eq (Atom.var name) out],
-          (out, instantiateGoals [(name, out)] goals))
+          (out, goals))
   | branch => ([], branch)
 
 /-- [SPEC translator.pl:384-386] A pinned `let*` contains one or more
@@ -1403,6 +1405,163 @@ theorem compileExprFuel_once_eq (bodyFuel : Nat) (env : CEnv)
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_27, body]
   rfl
+
+set_option maxHeartbeats 2000000 in
+/-- The two-argument conditional compiles its children in source order,
+reifies any branch alias before the condition, and uses an explicit failing
+else branch. [SPEC translator.pl:151-155,394-397] -/
+theorem compileAppCoreFuel_ifThen_eq (childFuel : Nat) (env : CEnv)
+    (counter : Nat) (conditionSource thenSource : Atom)
+    (conditionTerm thenTerm : Atom)
+    (conditionGoals thenGoals branchAliases : List Goal)
+    (conditionCounter thenCounter : Nat) (thenBranch : Atom × List Goal)
+    (conditionCompiled :
+      compileExprFuel childFuel env counter conditionSource =
+        .ok (conditionTerm, conditionGoals, conditionCounter))
+    (thenCompiled :
+      compileExprFuel childFuel env conditionCounter thenSource =
+        .ok (thenTerm, thenGoals, thenCounter))
+    (branchCompiled :
+      compileBranch (.var s!"_q{thenCounter}") (thenTerm, thenGoals) =
+        (branchAliases, thenBranch)) :
+    compileAppCoreFuel (childFuel + 1) env counter "if"
+        [conditionSource, thenSource] =
+      .ok (.var s!"_q{thenCounter}",
+        branchAliases ++ conditionGoals ++
+          [Goal.ite conditionTerm thenBranch
+            (.var s!"_q{thenCounter}", [Goal.eq trueA falseA])
+            (.var s!"_q{thenCounter}")],
+        thenCounter + 1) := by
+  simp only [compileAppCoreFuel]
+  rw [conditionCompiled]
+  dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+  rw [thenCompiled]
+  dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+  simp only [fresh]
+  rw [branchCompiled]
+
+set_option maxHeartbeats 2000000 in
+/-- The three-argument conditional compiles all children left-to-right and
+schedules both explicit alias equalities before the condition.
+[SPEC translator.pl:156-162,394-397] -/
+theorem compileAppCoreFuel_ifThenElse_eq (childFuel : Nat) (env : CEnv)
+    (counter : Nat) (conditionSource thenSource elseSource : Atom)
+    (conditionTerm thenTerm elseTerm : Atom)
+    (conditionGoals thenGoals elseGoals : List Goal)
+    (thenAliases elseAliases : List Goal)
+    (conditionCounter thenCounter elseCounter : Nat)
+    (thenBranch elseBranch : Atom × List Goal)
+    (conditionCompiled :
+      compileExprFuel childFuel env counter conditionSource =
+        .ok (conditionTerm, conditionGoals, conditionCounter))
+    (thenCompiled :
+      compileExprFuel childFuel env conditionCounter thenSource =
+        .ok (thenTerm, thenGoals, thenCounter))
+    (elseCompiled :
+      compileExprFuel childFuel env thenCounter elseSource =
+        .ok (elseTerm, elseGoals, elseCounter))
+    (thenBranchCompiled :
+      compileBranch (.var s!"_q{elseCounter}") (thenTerm, thenGoals) =
+        (thenAliases, thenBranch))
+    (elseBranchCompiled :
+      compileBranch (.var s!"_q{elseCounter}") (elseTerm, elseGoals) =
+        (elseAliases, elseBranch)) :
+    compileAppCoreFuel (childFuel + 1) env counter "if"
+        [conditionSource, thenSource, elseSource] =
+      .ok (.var s!"_q{elseCounter}",
+        thenAliases ++ elseAliases ++ conditionGoals ++
+          [Goal.ite conditionTerm thenBranch elseBranch
+            (.var s!"_q{elseCounter}")],
+        elseCounter + 1) := by
+  simp only [compileAppCoreFuel]
+  rw [conditionCompiled]
+  dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+  rw [thenCompiled]
+  dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+  rw [elseCompiled]
+  dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+  simp only [fresh]
+  rw [thenBranchCompiled, elseBranchCompiled]
+
+set_option maxHeartbeats 2000000 in
+/-- Public expression equation for unshadowed two-argument `if`. -/
+theorem compileExprFuel_ifThen_eq (childFuel : Nat) (env : CEnv)
+    (counter : Nat) (conditionSource thenSource : Atom)
+    (conditionTerm thenTerm : Atom)
+    (conditionGoals thenGoals branchAliases : List Goal)
+    (conditionCounter thenCounter : Nat) (thenBranch : Atom × List Goal)
+    (noHook : env.translatorRules.contains "if" = false)
+    (conditionCompiled :
+      compileExprFuel childFuel env counter conditionSource =
+        .ok (conditionTerm, conditionGoals, conditionCounter))
+    (thenCompiled :
+      compileExprFuel childFuel env conditionCounter thenSource =
+        .ok (thenTerm, thenGoals, thenCounter))
+    (branchCompiled :
+      compileBranch (.var s!"_q{thenCounter}") (thenTerm, thenGoals) =
+        (branchAliases, thenBranch)) :
+    compileExprFuel (childFuel + 3) env counter
+        (.expr [.sym "if", conditionSource, thenSource]) =
+      .ok (.var s!"_q{thenCounter}",
+        branchAliases ++ conditionGoals ++
+          [Goal.ite conditionTerm thenBranch
+            (.var s!"_q{thenCounter}", [Goal.eq trueA falseA])
+            (.var s!"_q{thenCounter}")],
+        thenCounter + 1) := by
+  rw [show childFuel + 3 = (childFuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [show childFuel + 2 = (childFuel + 1) + 1 by omega]
+  rw [compileAppFuel.eq_2]
+  simp only [rewriteStreamOp?, rewriteStreamOpForHead]
+  simp only [noHook, Bool.false_eq_true, ↓reduceIte]
+  exact compileAppCoreFuel_ifThen_eq childFuel env counter conditionSource
+    thenSource conditionTerm thenTerm conditionGoals thenGoals branchAliases
+    conditionCounter thenCounter thenBranch conditionCompiled thenCompiled
+    branchCompiled
+
+set_option maxHeartbeats 2000000 in
+/-- Public expression equation for unshadowed three-argument `if`. -/
+theorem compileExprFuel_ifThenElse_eq (childFuel : Nat) (env : CEnv)
+    (counter : Nat) (conditionSource thenSource elseSource : Atom)
+    (conditionTerm thenTerm elseTerm : Atom)
+    (conditionGoals thenGoals elseGoals : List Goal)
+    (thenAliases elseAliases : List Goal)
+    (conditionCounter thenCounter elseCounter : Nat)
+    (thenBranch elseBranch : Atom × List Goal)
+    (noHook : env.translatorRules.contains "if" = false)
+    (conditionCompiled :
+      compileExprFuel childFuel env counter conditionSource =
+        .ok (conditionTerm, conditionGoals, conditionCounter))
+    (thenCompiled :
+      compileExprFuel childFuel env conditionCounter thenSource =
+        .ok (thenTerm, thenGoals, thenCounter))
+    (elseCompiled :
+      compileExprFuel childFuel env thenCounter elseSource =
+        .ok (elseTerm, elseGoals, elseCounter))
+    (thenBranchCompiled :
+      compileBranch (.var s!"_q{elseCounter}") (thenTerm, thenGoals) =
+        (thenAliases, thenBranch))
+    (elseBranchCompiled :
+      compileBranch (.var s!"_q{elseCounter}") (elseTerm, elseGoals) =
+        (elseAliases, elseBranch)) :
+    compileExprFuel (childFuel + 3) env counter
+        (.expr [.sym "if", conditionSource, thenSource, elseSource]) =
+      .ok (.var s!"_q{elseCounter}",
+        thenAliases ++ elseAliases ++ conditionGoals ++
+          [Goal.ite conditionTerm thenBranch elseBranch
+            (.var s!"_q{elseCounter}")],
+        elseCounter + 1) := by
+  rw [show childFuel + 3 = (childFuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [show childFuel + 2 = (childFuel + 1) + 1 by omega]
+  rw [compileAppFuel.eq_2]
+  simp only [rewriteStreamOp?, rewriteStreamOpForHead]
+  simp only [noHook, Bool.false_eq_true, ↓reduceIte]
+  exact compileAppCoreFuel_ifThenElse_eq childFuel env counter conditionSource
+    thenSource elseSource conditionTerm thenTerm elseTerm conditionGoals
+    thenGoals elseGoals thenAliases elseAliases conditionCounter thenCounter
+    elseCounter thenBranch elseBranch conditionCompiled thenCompiled
+    elseCompiled thenBranchCompiled elseBranchCompiled
 
 set_option maxHeartbeats 2000000 in
 /-- The built-in `and-then` core compiles both operands left-to-right, keeps

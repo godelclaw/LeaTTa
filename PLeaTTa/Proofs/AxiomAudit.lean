@@ -55,6 +55,9 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerAdequacy.compileSeqFuel_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_complete
+#print axioms PLeaTTa.CompilerAdequacy.GoalsAgree.flatWidth
+#print axioms PLeaTTa.CompilerAdequacy.compileBranch_normalized_sound
+#print axioms PLeaTTa.CompilerAdequacy.GoalsAgree.conditionThen
 #print axioms PLeaTTa.CompilerAdequacy.letStarExpands_bindings_nonempty
 #print axioms PLeaTTa.CompilerAdequacy.letStarExpands_desugar
 #print axioms PLeaTTa.CompilerAdequacy.letStarExpands_nested_size_le_twice_source
@@ -108,8 +111,12 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerAdequacy.compileTypedArgs_refined_integer_sound
 #print axioms PLeaTTa.compileAppCoreFuel_andThen_eq
 #print axioms PLeaTTa.compileAppCoreFuel_orElse_eq
+#print axioms PLeaTTa.compileAppCoreFuel_ifThen_eq
+#print axioms PLeaTTa.compileAppCoreFuel_ifThenElse_eq
 #print axioms PLeaTTa.compileExprFuel_andThen_eq
 #print axioms PLeaTTa.compileExprFuel_orElse_eq
+#print axioms PLeaTTa.compileExprFuel_ifThen_eq
+#print axioms PLeaTTa.compileExprFuel_ifThenElse_eq
 #print axioms PLeaTTa.compileAppFuel_hashPlus_eq
 #print axioms PLeaTTa.compileAppFuel_hashMinus_eq
 #print axioms PLeaTTa.compileAppFuel_trace_eq
@@ -126,9 +133,12 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_once_shape_sound
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.LogicVar.source_ne_generated
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.LogicVar.anonymous_ne_generated
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.BuildsBranchNormalized.zero_width_no_alias
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_collapse
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_let
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_chain
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_ifThenElse
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_ifThen_variable_alias
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_chain_with_let_shadowed
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_withMutex
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.withMutex_hook_blocks_builtin

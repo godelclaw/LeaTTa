@@ -83,6 +83,21 @@ inductive Goal where
   | forall (generator test : Goal)
 deriving Repr, Inhabited
 
+mutual
+
+/-- Number of executable top-level goals after eliminating the conjunction
+wrappers introduced by `translate_expr_to_conj/3`. -/
+def Goal.flatWidth : Goal → Nat
+  | .conjunction goals => Goals.flatWidth goals
+  | _ => 1
+
+/-- Flattened width of an ordered independent goal sequence. -/
+def Goals.flatWidth : List Goal → Nat
+  | [] => 0
+  | goal :: goals => goal.flatWidth + Goals.flatWidth goals
+
+end
+
 /-- Source atoms which PeTTa's first `translate_expr/3` clause returns without
 emitting a goal.  Unsupported host grounds intentionally have no constructor. -/
 inductive Literal : Atom → Term → Prop where
@@ -201,6 +216,53 @@ def orElseGoal (condition body output : Term)
        (.unify output (.atom "true"))
        (.conjunction [.conjunction bodyGoals, .unify output body])]
 
+/-- Independent explicit-alias normalization of pinned `build_branch/4`.
+
+Native Prolog represents the second case below by making `value` and `output`
+the same logical variable at translation time.  The normalized relation
+reifies that sharing as an equality which is scheduled before the condition.
+This preserves the alias outside the selected branch without defining the
+reference in terms of PLeaTTa's executable compiler.
+
+The final two fields are the branch template and the independent branch goal.
+They expose the equality-before-conjunction order used by `build_branch/4`.
+[SPEC translator.pl:394-397] -/
+inductive BuildsBranchNormalized (output : Term) :
+    Term → List Goal → List Goal → Term → Goal → Prop where
+  | empty (value : Term) (goals : List Goal)
+      (empty : Goals.flatWidth goals = 0) :
+      BuildsBranchNormalized output value goals [] value (.unify value output)
+  | aliasVariable (identity : LogicVar) (goals : List Goal)
+      (nonempty : 0 < Goals.flatWidth goals) :
+      BuildsBranchNormalized output (.variable identity) goals
+        [.unify (.variable identity) output] output (.conjunction goals)
+  | nonVariable (value : Term) (goals : List Goal)
+      (nonempty : 0 < Goals.flatWidth goals)
+      (notVariable : ∀ identity, value ≠ .variable identity) :
+      BuildsBranchNormalized output value goals [] value
+        (.conjunction (.unify value output :: goals))
+
+/-- Pinned `translate_expr_to_conj/3` uses the atom `true` for an empty goal
+sequence.  The `if` clauses omit that empty conjunction and otherwise schedule
+the condition conjunction before the identity test.
+[SPEC translator.pl:151-162; translator.pl:45-47] -/
+def conditionThen (conditionGoals : List Goal) (decision : Goal) : List Goal :=
+  if Goals.flatWidth conditionGoals = 0 then [decision]
+  else [.conjunction conditionGoals, decision]
+
+/-- Negative priority witness for `build_branch/4`: a flattened-empty branch
+uses the first clause and therefore cannot manufacture a translation-time
+alias, even when its result is a variable. -/
+theorem BuildsBranchNormalized.zero_width_no_alias {output value : Term}
+    {goals aliases : List Goal} {template : Term} {branch : Goal}
+    (translation :
+      BuildsBranchNormalized output value goals aliases template branch)
+    (empty : Goals.flatWidth goals = 0) : aliases = [] := by
+  cases translation with
+  | empty => rfl
+  | aliasVariable _ _ nonempty => omega
+  | nonVariable _ _ nonempty _ => omega
+
 mutual
 
 /-- Independently specified fragment of pinned `translate_expr/3`.  Its rules
@@ -312,6 +374,68 @@ inductive TranslatesExpr : TranslatorState → Nat → Atom → Term → List Go
         [orElseGoal conditionTerm bodyTerm
           (.variable (.generated bodyCounter)) conditionGoals bodyGoals]
         (bodyCounter + 1)
+  -- The equality prefix is an explicit normalization of native Prolog's
+  -- translation-time variable sharing.  Its adequacy to that sharing is a
+  -- separate semantic obligation; this constructor does not identify the two
+  -- definitions by fiat. [SPEC translator.pl:151-155, 394-397]
+  | ifThen {state : TranslatorState}
+      {counter conditionCounter thenCounter : Nat}
+      {conditionSource thenSource : Atom}
+      {conditionTerm thenTerm branchTemplate : Term}
+      {conditionGoals thenGoals aliasGoals : List Goal}
+      {thenBranch : Goal}
+      (notShadowed : ¬ state.hasRule "if")
+      (conditionTranslation :
+        TranslatesExpr state counter conditionSource conditionTerm
+          conditionGoals conditionCounter)
+      (thenTranslation :
+        TranslatesExpr state conditionCounter thenSource thenTerm thenGoals
+          thenCounter)
+      (branch :
+        BuildsBranchNormalized (.variable (.generated thenCounter))
+          thenTerm thenGoals aliasGoals branchTemplate thenBranch) :
+      TranslatesExpr state counter
+        (.expr [.sym "if", conditionSource, thenSource])
+        (.variable (.generated thenCounter))
+        (aliasGoals ++ conditionThen conditionGoals
+          (.ifThenElse (.identical conditionTerm (.atom "true"))
+            thenBranch .fail))
+        (thenCounter + 1)
+  -- Both branch aliases are scheduled before the condition, matching the
+  -- scope of the shared variables created by the two native build_branch/4
+  -- calls. [SPEC translator.pl:156-162, 394-397]
+  | ifThenElse {state : TranslatorState}
+      {counter conditionCounter thenCounter elseCounter : Nat}
+      {conditionSource thenSource elseSource : Atom}
+      {conditionTerm thenTerm elseTerm : Term}
+      {thenTemplate elseTemplate : Term}
+      {conditionGoals thenGoals elseGoals : List Goal}
+      {thenAliasGoals elseAliasGoals : List Goal}
+      {thenBranch elseBranch : Goal}
+      (notShadowed : ¬ state.hasRule "if")
+      (conditionTranslation :
+        TranslatesExpr state counter conditionSource conditionTerm
+          conditionGoals conditionCounter)
+      (thenTranslation :
+        TranslatesExpr state conditionCounter thenSource thenTerm thenGoals
+          thenCounter)
+      (elseTranslation :
+        TranslatesExpr state thenCounter elseSource elseTerm elseGoals
+          elseCounter)
+      (thenBuild :
+        BuildsBranchNormalized (.variable (.generated elseCounter))
+          thenTerm thenGoals thenAliasGoals thenTemplate thenBranch)
+      (elseBuild :
+        BuildsBranchNormalized (.variable (.generated elseCounter))
+          elseTerm elseGoals elseAliasGoals elseTemplate elseBranch) :
+      TranslatesExpr state counter
+        (.expr [.sym "if", conditionSource, thenSource, elseSource])
+        (.variable (.generated elseCounter))
+        (thenAliasGoals ++ elseAliasGoals ++
+          conditionThen conditionGoals
+            (.ifThenElse (.identical conditionTerm (.atom "true"))
+              thenBranch elseBranch))
+        (elseCounter + 1)
   | progn {state : TranslatorState} {counter nextCounter : Nat}
       {sources : List Atom} {first last : Term} {goals : List Goal}
       (notShadowed : ¬ state.hasRule "progn")
@@ -593,6 +717,51 @@ theorem translates_literal_orElse (state : TranslatorState) (counter : Nat)
         (.variable (.generated counter)) [] []]
       (counter + 1) :=
   .orElse notShadowed (.literal .falseGround) (.literal (.integer value))
+
+/-- Positive three-argument conditional example with two empty branch
+conjunctions. Each branch retains the pinned value/output equality. -/
+theorem translates_literal_ifThenElse (state : TranslatorState)
+    (counter : Nat) (thenValue elseValue : Int)
+    (notShadowed : ¬ state.hasRule "if") :
+    TranslatesExpr state counter
+      (.expr [.sym "if", .gnd (.bool true), .gnd (.int thenValue),
+        .gnd (.int elseValue)])
+      (.variable (.generated counter))
+      [.ifThenElse (.identical (.atom "true") (.atom "true"))
+        (.unify (.integer thenValue) (.variable (.generated counter)))
+        (.unify (.integer elseValue) (.variable (.generated counter)))]
+      (counter + 1) := by
+  exact .ifThenElse notShadowed (.literal .trueGround)
+    (.literal (.integer thenValue)) (.literal (.integer elseValue))
+    (.empty _ [] rfl) (.empty _ [] rfl)
+
+/-- Positive alias example: a variable-valued nonempty branch reifies native
+translation-time sharing before the condition, while retaining the branch's
+ordered body goal. -/
+theorem translates_ifThen_variable_alias (state : TranslatorState)
+    (counter : Nat) (name : String) (value : Int)
+    (notShadowedIf : ¬ state.hasRule "if")
+    (notShadowedLet : ¬ state.hasRule "let") :
+    TranslatesExpr state counter
+      (.expr [.sym "if", .gnd (.bool true),
+        .expr [.sym "let", .var name, .gnd (.int value), .var name]])
+      (.variable (.generated counter))
+      [.unify (.variable (.source name))
+          (.variable (.generated counter)),
+        .ifThenElse (.identical (.atom "true") (.atom "true"))
+          (.conjunction
+            [.unify (.variable (.source name)) (.integer value)])
+          .fail]
+      (counter + 1) := by
+  exact .ifThen notShadowedIf (.literal .trueGround)
+    (.letBind notShadowedLet
+      (.literal (.variable name))
+      (.literal (.integer value))
+      (.literal (.variable name)))
+    (.aliasVariable (.source name)
+      [.unify (.variable (.source name)) (.integer value)] (by
+        change 0 < 1
+        omega))
 
 /-- Negative-priority example: registering a translator rule for `let` does
 not shadow native `chain`; only a rule for the source head may do so. -/

@@ -198,6 +198,57 @@ inductive GoalAgrees : PeTTaSpec.PrologCore.Goal → PLeaTTa.Goal → Prop where
         (.findall referenceTemplate (.conjunction referenceGoals)
           referenceOutput)
         (.findall executableTemplate executableGoals executableOutput)
+  | conditional {referenceCondition referenceOutput : Term}
+      {referenceThen referenceElse : PeTTaSpec.PrologCore.Goal}
+      {executableCondition executableOutput : Atom}
+      {executableThen executableElse : Atom × List PLeaTTa.Goal}
+      (condition : TermAgrees referenceCondition executableCondition)
+      (output : TermAgrees referenceOutput executableOutput)
+      (thenBranch : IfBranchAgrees referenceOutput executableOutput
+        referenceThen executableThen)
+      (elseBranch : IfBranchAgrees referenceOutput executableOutput
+        referenceElse executableElse) :
+      GoalAgrees
+        (.ifThenElse (.identical referenceCondition (.atom "true"))
+          referenceThen referenceElse)
+        (.ite executableCondition executableThen executableElse
+          executableOutput)
+
+/-- Agreement for the three normalized `build_branch/4` shapes and the
+implicit failing branch of two-argument `if`. PLeaTTa's `ite` stores a branch
+as a value template plus goals; `iteBranchGoals` schedules the value/output
+equality before those goals exactly when the template is not the output. -/
+inductive IfBranchAgrees : Term → Atom → PeTTaSpec.PrologCore.Goal →
+    Atom × List PLeaTTa.Goal → Prop where
+  | empty {referenceOutput referenceValue : Term}
+      {executableOutput executableValue : Atom}
+      (value : TermAgrees referenceValue executableValue)
+      (output : TermAgrees referenceOutput executableOutput) :
+      IfBranchAgrees referenceOutput executableOutput
+        (.unify referenceValue referenceOutput) (executableValue, [])
+  | aliased {referenceOutput : Term} {executableOutput : Atom}
+      {referenceGoals : List PeTTaSpec.PrologCore.Goal}
+      {executableGoals : List PLeaTTa.Goal}
+      (output : TermAgrees referenceOutput executableOutput)
+      (goals : GoalsAgree referenceGoals executableGoals) :
+      IfBranchAgrees referenceOutput executableOutput
+        (.conjunction referenceGoals) (executableOutput, executableGoals)
+  | nonvariable {referenceOutput referenceValue : Term}
+      {executableOutput executableValue : Atom}
+      {referenceGoals : List PeTTaSpec.PrologCore.Goal}
+      {executableGoals : List PLeaTTa.Goal}
+      (value : TermAgrees referenceValue executableValue)
+      (output : TermAgrees referenceOutput executableOutput)
+      (goals : GoalsAgree referenceGoals executableGoals) :
+      IfBranchAgrees referenceOutput executableOutput
+        (.conjunction (.unify referenceValue referenceOutput ::
+          referenceGoals))
+        (executableValue, executableGoals)
+  | failed {referenceOutput : Term} {executableOutput : Atom}
+      (output : TermAgrees referenceOutput executableOutput) :
+      IfBranchAgrees referenceOutput executableOutput .fail
+        (executableOutput,
+          [PLeaTTa.Goal.eq (.sym "True") (.sym "False")])
 
 /-- Ordered pointwise goal-list agreement. -/
 inductive GoalsAgree : List PeTTaSpec.PrologCore.Goal → List PLeaTTa.Goal →
@@ -218,6 +269,133 @@ inductive GoalsAgree : List PeTTaSpec.PrologCore.Goal → List PLeaTTa.Goal →
         (executableBlock ++ executableTail)
 
 end
+
+/-- Every single related independent goal contributes one executable
+top-level goal. Conjunction wrappers are handled by `GoalsAgree` below. -/
+theorem GoalAgrees.flatWidth {reference : PeTTaSpec.PrologCore.Goal}
+    {executable : PLeaTTa.Goal} (agreement : GoalAgrees reference executable) :
+    reference.flatWidth = 1 := by
+  cases agreement <;> rfl
+
+/-- Ordered agreement preserves the number of top-level goals after removing
+the independent conjunction wrappers. This is the exact branch-emptiness
+fact used by pinned `build_branch/4`. -/
+theorem GoalsAgree.flatWidth {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (agreement : GoalsAgree references executables) :
+    PeTTaSpec.PrologCore.Goals.flatWidth references = executables.length := by
+  cases agreement with
+  | nil => rfl
+  | cons head tail =>
+      simp only [PeTTaSpec.PrologCore.Goals.flatWidth, List.length_cons,
+        head.flatWidth, GoalsAgree.flatWidth tail]
+      omega
+  | conjunction block tail =>
+      simp only [PeTTaSpec.PrologCore.Goals.flatWidth,
+        PeTTaSpec.PrologCore.Goal.flatWidth, List.length_append,
+        GoalsAgree.flatWidth block, GoalsAgree.flatWidth tail]
+
+/-- A reference term known not to be a logical variable cannot agree with an
+executable variable. -/
+theorem TermAgrees.executable_not_variable {reference : Term}
+    {executable : Atom} (agreement : TermAgrees reference executable)
+    (notVariable : ∀ identity, reference ≠ .variable identity) :
+    ∀ name, executable ≠ .var name := by
+  intro name equality
+  cases agreement with
+  | sourceVariable source => exact notVariable (.source source) rfl
+  | generatedVariable index => exact notVariable (.generated index) rfl
+  | atom _ _ => cases equality
+  | trueAtom => cases equality
+  | falseAtom => cases equality
+  | integer _ => cases equality
+  | float _ => cases equality
+  | string _ => cases equality
+  | properList elements =>
+      cases elements <;> cases equality
+
+/-- The executable branch helper agrees with the independent explicit-alias
+normalization in all three pinned `build_branch/4` priority cases. -/
+theorem compileBranch_normalized_sound {referenceOutput referenceValue : Term}
+    {referenceGoals referenceAliases : List PeTTaSpec.PrologCore.Goal}
+    {referenceTemplate : Term} {referenceBranch : PeTTaSpec.PrologCore.Goal}
+    {executableOutput executableValue : Atom}
+    {executableGoals : List PLeaTTa.Goal}
+    (outputAgreement : TermAgrees referenceOutput executableOutput)
+    (valueAgreement : TermAgrees referenceValue executableValue)
+    (goalsAgreement : GoalsAgree referenceGoals executableGoals)
+    (native : BuildsBranchNormalized referenceOutput referenceValue
+      referenceGoals referenceAliases referenceTemplate referenceBranch) :
+    ∃ executableAliases executableBranch,
+      compileBranch executableOutput (executableValue, executableGoals) =
+          (executableAliases, executableBranch) ∧
+        GoalsAgree referenceAliases executableAliases ∧
+        IfBranchAgrees referenceOutput executableOutput referenceBranch
+          executableBranch := by
+  cases native with
+  | empty _ _ empty =>
+      have width := goalsAgreement.flatWidth
+      have lengthZero : executableGoals.length = 0 := by omega
+      have executableEmpty : executableGoals = [] :=
+        List.eq_nil_of_length_eq_zero lengthZero
+      subst executableGoals
+      refine ⟨[], (executableValue, []), ?_, .nil,
+        .empty valueAgreement outputAgreement⟩
+      cases executableValue <;> simp [compileBranch]
+  | aliasVariable identity goals nonempty =>
+      have width := goalsAgreement.flatWidth
+      have executableNonempty : executableGoals ≠ [] := by
+        intro empty
+        subst executableGoals
+        simp at width
+        omega
+      obtain ⟨goal, goals, rfl⟩ := List.exists_cons_of_ne_nil executableNonempty
+      cases valueAgreement with
+      | sourceVariable name =>
+          refine ⟨[PLeaTTa.Goal.eq (.var name) executableOutput],
+            (executableOutput, goal :: goals), ?_,
+            .cons (.unify (.sourceVariable name) outputAgreement) .nil,
+            .aliased outputAgreement goalsAgreement⟩
+          simp [compileBranch]
+      | generatedVariable index =>
+          refine ⟨[PLeaTTa.Goal.eq (.var s!"_q{index}") executableOutput],
+            (executableOutput, goal :: goals), ?_,
+            .cons (.unify (.generatedVariable index) outputAgreement) .nil,
+            .aliased outputAgreement goalsAgreement⟩
+          simp [compileBranch]
+  | nonVariable value goals nonempty notVariable =>
+      have executableNotVariable :=
+        valueAgreement.executable_not_variable notVariable
+      refine ⟨[], (executableValue, executableGoals), ?_, .nil,
+        .nonvariable valueAgreement outputAgreement goalsAgreement⟩
+      cases executableValue with
+      | var name => exact False.elim (executableNotVariable name rfl)
+      | sym name => simp [compileBranch]
+      | gnd value => simp [compileBranch]
+      | expr values => simp [compileBranch]
+
+/-- The independent condition-conjunction normalization agrees with the
+flat executable prefix, including the pinned `true`/empty optimization. -/
+theorem GoalsAgree.conditionThen
+    {referenceGoals : List PeTTaSpec.PrologCore.Goal}
+    {executableGoals : List PLeaTTa.Goal}
+    {referenceDecision : PeTTaSpec.PrologCore.Goal}
+    {executableDecision : PLeaTTa.Goal}
+    (goals : GoalsAgree referenceGoals executableGoals)
+    (decision : GoalAgrees referenceDecision executableDecision) :
+    GoalsAgree (conditionThen referenceGoals referenceDecision)
+      (executableGoals ++ [executableDecision]) := by
+  unfold PeTTaSpec.PrologCore.conditionThen
+  by_cases empty : PeTTaSpec.PrologCore.Goals.flatWidth referenceGoals = 0
+  · simp only [empty, if_pos]
+    have width := goals.flatWidth
+    have lengthZero : executableGoals.length = 0 := by omega
+    have executableEmpty : executableGoals = [] :=
+      List.eq_nil_of_length_eq_zero lengthZero
+    subst executableGoals
+    exact .cons decision .nil
+  · simp only [empty]
+    exact .conjunction goals (.cons decision .nil)
 
 /-- Ordered agreement is preserved by concatenating two agreeing goal
 sequences. -/
@@ -1308,6 +1486,176 @@ theorem compileExprFuel_initial_sound {state : TranslatorState} (env : CEnv)
               (GoalsAgree.conjunction conditionGoalsAgreement
                 (.cons branchAgreement .nil))
               .nil
+  | @ifThen _ conditionCounter thenCounter conditionSource thenSource
+      conditionTerm thenTerm branchTemplate conditionGoals thenGoals
+      aliasGoals thenBranch notShadowed conditionTranslation thenTranslation
+      branch =>
+      obtain ⟨conditionFuel, conditionPositive, conditionBound,
+          conditionCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement conditionTranslation
+      obtain ⟨thenFuel, thenPositive, thenBound, thenCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement thenTranslation
+      let childFuel := max conditionFuel thenFuel
+      have conditionLe : conditionFuel ≤ childFuel := Nat.le_max_left _ _
+      have thenLe : thenFuel ≤ childFuel := Nat.le_max_right _ _
+      refine ⟨childFuel + 3, by omega, ?_, ?_⟩
+      · simp [Atom.size]
+        omega
+      · intro extraFuel
+        obtain ⟨conditionInternal, conditionExecutableGoals,
+            conditionCompiled, conditionAgreement,
+            conditionGoalsAgreement⟩ :=
+          conditionCompiles (childFuel + extraFuel - conditionFuel)
+        obtain ⟨thenInternal, thenExecutableGoals, thenCompiled,
+            thenAgreement, thenGoalsAgreement⟩ :=
+          thenCompiles (childFuel + extraFuel - thenFuel)
+        have conditionFuelEq :
+            conditionFuel + (childFuel + extraFuel - conditionFuel) =
+              childFuel + extraFuel := by
+          omega
+        have thenFuelEq :
+            thenFuel + (childFuel + extraFuel - thenFuel) =
+              childFuel + extraFuel := by
+          omega
+        rw [conditionFuelEq] at conditionCompiled
+        rw [thenFuelEq] at thenCompiled
+        let output := Atom.var s!"_q{thenCounter}"
+        have outputAgreement :
+            TermAgrees (.variable (.generated thenCounter)) output := by
+          exact .generatedVariable thenCounter
+        obtain ⟨executableAliases, executableBranch, branchCompiled,
+            aliasesAgreement, branchAgreement⟩ :=
+          compileBranch_normalized_sound outputAgreement thenAgreement
+            thenGoalsAgreement branch
+        have conditionalAgreement : GoalAgrees
+            (.ifThenElse (.identical conditionTerm (.atom "true"))
+              thenBranch .fail)
+            (.ite conditionInternal executableBranch
+              (output, [PLeaTTa.Goal.eq (.sym "True") (.sym "False")])
+              output) := by
+          exact .conditional conditionAgreement outputAgreement
+            branchAgreement (.failed outputAgreement)
+        have tailAgreement : GoalsAgree
+            (conditionThen conditionGoals
+              (.ifThenElse (.identical conditionTerm (.atom "true"))
+                thenBranch .fail))
+            (conditionExecutableGoals ++
+              [PLeaTTa.Goal.ite conditionInternal executableBranch
+                (output,
+                  [PLeaTTa.Goal.eq (.sym "True") (.sym "False")])
+                output]) :=
+          GoalsAgree.conditionThen conditionGoalsAgreement
+            conditionalAgreement
+        refine ⟨output,
+          executableAliases ++ conditionExecutableGoals ++
+            [PLeaTTa.Goal.ite conditionInternal executableBranch
+              (output, [PLeaTTa.Goal.eq (.sym "True") (.sym "False")])
+              output],
+          ?_, outputAgreement, ?_⟩
+        · rw [show (childFuel + 3) + extraFuel =
+            (childFuel + extraFuel) + 3 by omega]
+          exact compileExprFuel_ifThen_eq (childFuel + extraFuel) env counter
+            conditionSource thenSource conditionInternal thenInternal
+            conditionExecutableGoals thenExecutableGoals executableAliases
+            conditionCounter thenCounter executableBranch
+            (agreement.notContains notShadowed) conditionCompiled thenCompiled
+            branchCompiled
+        · simpa [List.append_assoc] using
+            GoalsAgree.append aliasesAgreement tailAgreement
+  | @ifThenElse _ conditionCounter thenCounter elseCounter conditionSource
+      thenSource elseSource conditionTerm thenTerm elseTerm thenTemplate
+      elseTemplate conditionGoals thenGoals elseGoals thenAliasGoals
+      elseAliasGoals thenBranch elseBranch notShadowed conditionTranslation
+      thenTranslation elseTranslation thenBuild elseBuild =>
+      obtain ⟨conditionFuel, conditionPositive, conditionBound,
+          conditionCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement conditionTranslation
+      obtain ⟨thenFuel, thenPositive, thenBound, thenCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement thenTranslation
+      obtain ⟨elseFuel, elsePositive, elseBound, elseCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement elseTranslation
+      let childFuel := max conditionFuel (max thenFuel elseFuel)
+      have conditionLe : conditionFuel ≤ childFuel := Nat.le_max_left _ _
+      have thenLe : thenFuel ≤ childFuel :=
+        Nat.le_trans (Nat.le_max_left _ _) (Nat.le_max_right _ _)
+      have elseLe : elseFuel ≤ childFuel :=
+        Nat.le_trans (Nat.le_max_right _ _) (Nat.le_max_right _ _)
+      refine ⟨childFuel + 3, by omega, ?_, ?_⟩
+      · simp [Atom.size]
+        omega
+      · intro extraFuel
+        obtain ⟨conditionInternal, conditionExecutableGoals,
+            conditionCompiled, conditionAgreement,
+            conditionGoalsAgreement⟩ :=
+          conditionCompiles (childFuel + extraFuel - conditionFuel)
+        obtain ⟨thenInternal, thenExecutableGoals, thenCompiled,
+            thenAgreement, thenGoalsAgreement⟩ :=
+          thenCompiles (childFuel + extraFuel - thenFuel)
+        obtain ⟨elseInternal, elseExecutableGoals, elseCompiled,
+            elseAgreement, elseGoalsAgreement⟩ :=
+          elseCompiles (childFuel + extraFuel - elseFuel)
+        have conditionFuelEq :
+            conditionFuel + (childFuel + extraFuel - conditionFuel) =
+              childFuel + extraFuel := by
+          omega
+        have thenFuelEq :
+            thenFuel + (childFuel + extraFuel - thenFuel) =
+              childFuel + extraFuel := by
+          omega
+        have elseFuelEq :
+            elseFuel + (childFuel + extraFuel - elseFuel) =
+              childFuel + extraFuel := by
+          omega
+        rw [conditionFuelEq] at conditionCompiled
+        rw [thenFuelEq] at thenCompiled
+        rw [elseFuelEq] at elseCompiled
+        let output := Atom.var s!"_q{elseCounter}"
+        have outputAgreement :
+            TermAgrees (.variable (.generated elseCounter)) output := by
+          exact .generatedVariable elseCounter
+        obtain ⟨thenExecutableAliases, thenExecutableBranch,
+            thenBranchCompiled, thenAliasesAgreement, thenBranchAgreement⟩ :=
+          compileBranch_normalized_sound outputAgreement thenAgreement
+            thenGoalsAgreement thenBuild
+        obtain ⟨elseExecutableAliases, elseExecutableBranch,
+            elseBranchCompiled, elseAliasesAgreement, elseBranchAgreement⟩ :=
+          compileBranch_normalized_sound outputAgreement elseAgreement
+            elseGoalsAgreement elseBuild
+        have conditionalAgreement : GoalAgrees
+            (.ifThenElse (.identical conditionTerm (.atom "true"))
+              thenBranch elseBranch)
+            (.ite conditionInternal thenExecutableBranch elseExecutableBranch
+              output) := by
+          exact .conditional conditionAgreement outputAgreement
+            thenBranchAgreement elseBranchAgreement
+        have tailAgreement : GoalsAgree
+            (conditionThen conditionGoals
+              (.ifThenElse (.identical conditionTerm (.atom "true"))
+                thenBranch elseBranch))
+            (conditionExecutableGoals ++
+              [PLeaTTa.Goal.ite conditionInternal thenExecutableBranch
+                elseExecutableBranch output]) :=
+          GoalsAgree.conditionThen conditionGoalsAgreement
+            conditionalAgreement
+        refine ⟨output,
+          thenExecutableAliases ++ elseExecutableAliases ++
+            conditionExecutableGoals ++
+              [PLeaTTa.Goal.ite conditionInternal thenExecutableBranch
+                elseExecutableBranch output],
+          ?_, outputAgreement, ?_⟩
+        · rw [show (childFuel + 3) + extraFuel =
+            (childFuel + extraFuel) + 3 by omega]
+          exact compileExprFuel_ifThenElse_eq (childFuel + extraFuel) env
+            counter conditionSource thenSource elseSource conditionInternal
+            thenInternal elseInternal conditionExecutableGoals
+            thenExecutableGoals elseExecutableGoals thenExecutableAliases
+            elseExecutableAliases conditionCounter thenCounter elseCounter
+            thenExecutableBranch elseExecutableBranch
+            (agreement.notContains notShadowed) conditionCompiled thenCompiled
+            elseCompiled thenBranchCompiled elseBranchCompiled
+        · simpa [List.append_assoc] using
+            GoalsAgree.append thenAliasesAgreement
+              (GoalsAgree.append elseAliasesAgreement tailAgreement)
   | progn notShadowed arguments =>
       obtain ⟨listFuel, listPositive, listBound, listCompiles⟩ :=
         compileSeqFuel_initial_sound env agreement arguments
