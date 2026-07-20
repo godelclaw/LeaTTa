@@ -90,6 +90,14 @@ CASES = [
         ["true", "second"],
     ),
     (
+        "quoted-binders-remain-data",
+        """!(quote (|-> () 42))
+!(quote (nested (|-> () 42)))
+""",
+        [],
+        ["(|-> () 42)", "(nested (|-> () 42))"],
+    ),
+    (
         "translator-add-remove",
         """(= (compile42 $arg) (quote (cons 42 $arg)))
 !(add-translator-rule! compile42)

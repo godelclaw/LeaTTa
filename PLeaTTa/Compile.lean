@@ -1266,6 +1266,11 @@ partial def surfaceVars (a : Atom) (acc : List String := []) : List String :=
 partial def desugarBinders (a : Atom) (k : Nat) :
     Atom × List Atom × Nat :=
   match a with
+  | Atom.expr [Atom.sym "quote", _] =>
+      -- [SPEC translator.pl:297-299] `quote` returns its sole argument as
+      -- syntax. Binder-looking forms below it are data, not source forms to
+      -- closure-convert or lift into synthesized rules.
+      (a, [], k)
   | Atom.expr [Atom.sym "|->", Atom.expr ps, body] =>
       -- λ closure conversion: captured outer vars become leading params;
       -- the VALUE is the bare symbol (no captures) or the partially

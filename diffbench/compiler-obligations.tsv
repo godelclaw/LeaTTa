@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=2a93852a91ff58d2e544ac00f118021ccf8bce7a9f65dc9b9e8e374d7d08afcd
+# compiler_sha256=1c19e4389d26646b9f768995135634bcf3d0929f99c92af50f3012a8e8dc9c92
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -117,14 +117,15 @@ RULE.body	T25	X	-	N	GAP	no-clause-reference
 RULE.partial_complete	T26-30	S	-	N	GAP	arity-environment-replaces-current-predicate
 RULE.partial_incomplete	T30-34	X	-	N	GAP	no-clause-reference
 RULE.normal	T30-34	X	-	N	GAP	no-clause-reference
-DESUGAR.lambda_list	T244-261	S	-	N	FAIL	prepass-before-hooks-and-quote-unsafe
-DESUGAR.lambda_var	T244-261	S	-	N	FAIL	extended-lambda-shape-and-quote-unsafe
-DESUGAR.map5	T232-237	S	-	N	FAIL	prepass-before-hooks-and-quote-unsafe
-DESUGAR.filter5	T238-243	S	-	N	FAIL	prepass-before-hooks-and-quote-unsafe
-DESUGAR.foldl5	T225-231	S	-	N	FAIL	prepass-before-hooks-and-quote-unsafe
-DESUGAR.expression_walk	-	P	-	N	FAIL	violates-quote-and-data-barriers
+DESUGAR.quote_exact	T297-299	X	-	N	GAP	runtime-differential-pass; independent-opacity-proof-open
+DESUGAR.lambda_list	T244-261	S	-	N	FAIL	prepass-before-translator-hook-priority
+DESUGAR.lambda_var	T244-261	S	-	N	FAIL	extended-lambda-shape-before-translator-hook-priority
+DESUGAR.map5	T232-237	S	-	N	FAIL	prepass-before-translator-hook-priority
+DESUGAR.filter5	T238-243	S	-	N	FAIL	prepass-before-translator-hook-priority
+DESUGAR.foldl5	T225-231	S	-	N	FAIL	prepass-before-translator-hook-priority
+DESUGAR.expression_walk	-	P	-	N	FAIL	quote-barrier-fixed; other-data-barriers-unproved
 DESUGAR.leaf	-	P	-	N	GAP	identity-helper
-PROGRAM.static_predesugar	F13-45,T225-261	S	-	N	FAIL	rewrites-before-source-processing
+PROGRAM.static_predesugar	F13-45,T225-261	S	-	N	FAIL	rewrites-before-source-processing; quote-barrier-fixed
 PROGRAM.static_split_bang	F13-24	X	-	N	GAP	loader-reference-missing
 PROGRAM.static_partition	F20-45	S	-	N	GAP	groups-rules-and-queries-not-source-order
 PROGRAM.static_compile_rules	F36-44	S	-	N	GAP	program-reference-missing
@@ -132,7 +133,7 @@ PROGRAM.static_compile_queries	F31-35	S	-	N	GAP	program-reference-missing
 SEQ.normalize_host_import	-	H	-	N	BOUNDARY	typed-loader-protocol
 SEQ.normalize_prolog_register	M274	H	-	N	BOUNDARY	typed-registration-protocol
 SEQ.normalize_import_markers	-	P	-	N	GAP	typed-loader-protocol
-SEQ.normalize_atom	T225-261	S	-	N	FAIL	quote-unsafe-predesugar
+SEQ.normalize_atom	T225-261	S	-	N	FAIL	quote-barrier-fixed; other-data-and-hook-order-open
 SEQ.pass1_rule_heads	F20-24	X	-	N	GAP	pre-registers-heads-and-arities
 SEQ.import_begin_end	-	H	-	N	BOUNDARY	explicit-boundary
 SEQ.host_import	M286-298	H	-	N	BOUNDARY	explicit-boundary
