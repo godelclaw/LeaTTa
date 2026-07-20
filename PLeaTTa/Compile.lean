@@ -276,11 +276,26 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         compileAppFuel fuel env n "progn"
           [Atom.expr [Atom.sym "println!", message], value]
     | "and-then", [a, b] =>
-        -- [SPEC translator.pl:177-180] evaluate `b` only when `a` is True.
-        compileAppFuel fuel env n "if" [a, b, Atom.sym "False"]
+        -- [SPEC translator.pl:177-180] evaluate `b` only when `a` is True,
+        -- then unify the enclosing result with `b`'s value. The equality is
+        -- deliberately after `gb`: unlike `if`'s `build_branch/4`, this
+        -- direct pinned clause does not move it ahead of branch effects.
+        let (ta, ga, n1) ← compileExprFuel fuel env n a
+        let (tb, gb, n2) ← compileExprFuel fuel env n1 b
+        let (r, n3) := fresh n2
+        .ok (r, ga ++ [Goal.ite ta
+          (r, gb ++ [Goal.eq r tb])
+          (r, [Goal.eq r falseA]) r], n3)
     | "or-else", [a, b] =>
-        -- [SPEC translator.pl:181-184] skip `b` when `a` is already True.
-        compileAppFuel fuel env n "if" [a, Atom.sym "True", b]
+        -- [SPEC translator.pl:181-184] skip `b` when `a` is already True;
+        -- on the false path execute `b` before unifying its value with the
+        -- enclosing result.
+        let (ta, ga, n1) ← compileExprFuel fuel env n a
+        let (tb, gb, n2) ← compileExprFuel fuel env n1 b
+        let (r, n3) := fresh n2
+        .ok (r, ga ++ [Goal.ite ta
+          (r, [Goal.eq r trueA])
+          (r, gb ++ [Goal.eq r tb]) r], n3)
     | "#+", [a, b] => compileAppFuel fuel env n "+" [a, b]   -- petta's flexible +
     | "#-", [a, b] => compileAppFuel fuel env n "-" [a, b]
     | "cons", [h, t] => do

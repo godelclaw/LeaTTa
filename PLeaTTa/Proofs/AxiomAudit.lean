@@ -54,8 +54,6 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_complete
 #print axioms PLeaTTa.compileAppFuel_hashPlus_eq
 #print axioms PLeaTTa.compileAppFuel_hashMinus_eq
-#print axioms PLeaTTa.compileAppFuel_andThen_eq
-#print axioms PLeaTTa.compileAppFuel_orElse_eq
 #print axioms PLeaTTa.compileAppFuel_trace_eq
 #print axioms PLeaTTa.compileAppFuel_unquoteQuote_eq
 #print axioms PLeaTTa.compileAppCoreFuel_let_eq

@@ -58,36 +58,6 @@ theorem compileAppFuel_hashMinus_eq (fuel counter : Nat) (env : CEnv)
   simp only [compileAppCoreFuel]
 
 set_option maxHeartbeats 4000000 in
-/-- PLeaTTa implements `and-then` by re-dispatching to `if`.
-
-Pinned PeTTa translates `and-then` directly
-([SPEC translator.pl:177-180]); connecting this equation to that clause must
-prove the short-circuit behavior and account for any translator hook on `if`. -/
-theorem compileAppFuel_andThen_eq (fuel counter : Nat) (env : CEnv)
-    (a b : Atom)
-    (noHook : env.translatorRules.contains "and-then" = false) :
-    compileAppFuel (fuel + 2) env counter "and-then" [a, b]
-      = compileAppFuel fuel env counter "if" [a, b, Atom.sym "False"] := by
-  rw [compileAppFuel.eq_2]
-  simp only [noHook, Bool.false_eq_true, ↓reduceIte]
-  simp only [compileAppCoreFuel]
-
-set_option maxHeartbeats 4000000 in
-/-- PLeaTTa implements `or-else` by re-dispatching to `if`.
-
-Pinned PeTTa translates `or-else` directly
-([SPEC translator.pl:181-183]); semantic adequacy, including target-hook
-priority, is not established by this equation. -/
-theorem compileAppFuel_orElse_eq (fuel counter : Nat) (env : CEnv)
-    (a b : Atom)
-    (noHook : env.translatorRules.contains "or-else" = false) :
-    compileAppFuel (fuel + 2) env counter "or-else" [a, b]
-      = compileAppFuel fuel env counter "if" [a, Atom.sym "True", b] := by
-  rw [compileAppFuel.eq_2]
-  simp only [noHook, Bool.false_eq_true, ↓reduceIte]
-  simp only [compileAppCoreFuel]
-
-set_option maxHeartbeats 4000000 in
 /-- [SPEC translator.pl:74-75] `trace!` is a pinned stream rewrite to
 `(progn (println! message) value)`.
 

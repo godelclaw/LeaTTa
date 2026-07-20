@@ -79,6 +79,24 @@ CASES = [
         ["false", "true", "42", "43"],
     ),
     (
+        "short-circuit-branch-effect-order",
+        """!(bind! and-order-state initial)
+!(let expected
+    (and-then True
+      (progn (change-state! and-order-state changed) actual))
+    unreachable)
+!(get-state and-order-state)
+!(bind! or-order-state initial)
+!(let expected
+    (or-else False
+      (progn (change-state! or-order-state changed) actual))
+    unreachable)
+!(get-state or-order-state)
+""",
+        [],
+        ["changed", "changed"],
+    ),
+    (
         "chain-source-effect-order",
         """!(bind! chain-order-state (new-state initial))
 !(chain
