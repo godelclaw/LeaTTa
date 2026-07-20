@@ -17,6 +17,16 @@ object_handles = {}
 next_handle = 1
 resources = {}
 next_resource = 1
+HOST_FAILED = object()
+
+
+class PrologHostError(Exception):
+    """A typed Prolog exception raised while implementing a host effect."""
+
+    def __init__(self, kind, culprit):
+        super().__init__(culprit)
+        self.kind = kind
+        self.culprit = str(culprit)
 
 
 def load_call_fixture():
@@ -291,20 +301,39 @@ def _host_number(encoded):
     raise TypeError("invalid HostNumber")
 
 
+def _configured_host_roots():
+    """Return optional filesystem-confinement roots.
+
+    An unset policy preserves native PeTTa's process-CWD/absolute-path
+    behaviour. ``PLEATTA_HOST_ROOT`` remains the single-root compatibility
+    setting; ``PLEATTA_HOST_ROOTS`` accepts an ``os.pathsep``-separated list.
+    """
+    roots = os.environ.get("PLEATTA_HOST_ROOTS", "")
+    if roots:
+        values = [value for value in roots.split(os.pathsep) if value]
+    else:
+        root = os.environ.get("PLEATTA_HOST_ROOT", "")
+        values = [root] if root else []
+    return [os.path.realpath(value) for value in values]
+
+
 def _rooted_path(logical):
-    root = os.environ.get("PLEATTA_HOST_ROOT", "")
-    if not root:
-        raise PermissionError("file host effects require PLEATTA_HOST_ROOT")
-    root = os.path.realpath(root)
+    roots = _configured_host_roots()
     raw = str(logical)
-    candidate = raw if os.path.isabs(raw) else os.path.join(root, raw)
+    if not roots:
+        return os.path.realpath(raw)
+    candidate = raw if os.path.isabs(raw) else os.path.join(roots[0], raw)
     resolved = os.path.realpath(candidate)
-    try:
-        inside = os.path.commonpath([root, resolved]) == root
-    except ValueError:
-        inside = False
+    inside = False
+    for root in roots:
+        try:
+            if os.path.commonpath([root, resolved]) == root:
+                inside = True
+                break
+        except ValueError:
+            continue
     if not inside:
-        raise PermissionError("file host path escapes the configured root")
+        raise PermissionError("file host path escapes the configured roots")
     return resolved
 
 
@@ -346,12 +375,16 @@ def host_effect(operation):
         time.sleep(duration)
         return _mapping()
     if tag == "fileExists":
-        if not os.path.exists(_rooted_path(payload["path"])):
-            raise FileNotFoundError("logical host path does not exist")
+        if not os.path.isfile(_rooted_path(payload["path"])):
+            return HOST_FAILED
         return _mapping()
     if tag == "fileRead":
-        with open(_rooted_path(payload["path"]), encoding="utf-8") as handle:
-            value = handle.read()
+        try:
+            with open(_rooted_path(payload["path"]), encoding="utf-8") as handle:
+                value = handle.read()
+        except FileNotFoundError:
+            raise PrologHostError(
+                "existence_error:source_sink", payload["path"]) from None
         return _mapping([[payload["resultVar"], encode_value(value)]])
     if tag == "fileOpen":
         modes = {"read": "r", "write": "w", "append": "a"}
@@ -359,9 +392,11 @@ def host_effect(operation):
         if mode not in modes:
             raise ValueError("unsupported file mode")
         path = _rooted_path(payload["path"])
-        if mode in {"write", "append"}:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-        handle = open(path, modes[mode], encoding="utf-8")
+        try:
+            handle = open(path, modes[mode], encoding="utf-8")
+        except FileNotFoundError:
+            raise PrologHostError(
+                "existence_error:source_sink", payload["path"]) from None
         resource_id = _allocate_resource("file", handle)
         return _mapping([[payload["resultVar"], _resource("file", resource_id)]])
     if tag == "fileWrite":
@@ -425,6 +460,8 @@ def dispatch(command):
         payload = request["effect"]
         operation = payload.get("operation", payload)
         value = host_effect(operation)
+        if value is HOST_FAILED:
+            return "failed"
         if operation == "clock" or (
                 isinstance(operation, dict) and "printLine" in operation):
             return {"returned": {"value": value}}
@@ -437,6 +474,15 @@ def dispatch(command):
 def reply(command):
     try:
         response = dispatch(command)
+    except PrologHostError as error:
+        response = {
+            "raised": {
+                "error": {
+                    "kind": error.kind,
+                    "message": error.culprit,
+                }
+            }
+        }
     except BaseException as error:
         response = {
             "raised": {
@@ -468,9 +514,9 @@ def reserve_protocol_stdout():
 
 def main():
     protocol = reserve_protocol_stdout()
-    host_root = os.environ.get("PLEATTA_HOST_ROOT", "")
-    if host_root:
-        os.chdir(os.path.realpath(host_root))
+    host_roots = _configured_host_roots()
+    if host_roots:
+        os.chdir(host_roots[0])
     try:
         for line in sys.stdin:
             try:

@@ -81,8 +81,18 @@ def protocolErrorAtom (error : HostProtocolError) : Atom :=
 def marshallingErrorAtom (message : String) : Atom :=
   errorAtom "type_error" message
 
+/-- Reify typed Prolog exceptions produced by host-effect implementations.
+    The free context variable matches the implementation-supplied context in
+    pinned SWI modulo alpha-renaming. Other worker exceptions retain the
+    explicit Python-boundary wrapper. -/
 def pythonErrorAtom (error : HostError) : Atom :=
-  errorAtom error.kind error.message
+  if error.kind == "existence_error:source_sink" then
+    chainOf [Atom.sym "Error",
+      chainOf [Atom.sym "existence_error", Atom.sym "source_sink",
+        Atom.gnd (.str error.message)],
+      Atom.var "_hostErrorContext"]
+  else
+    errorAtom error.kind error.message
 
 def finishFrame {Binding : Type} (done : Conf Binding) :
     Frame Binding → Conf Binding

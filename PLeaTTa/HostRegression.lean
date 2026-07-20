@@ -9,6 +9,16 @@ open PLeaTTa.SubstEngine
 
 private def emptyProg : Prog := { clauses := [], facts := [], typeDecls := [] }
 
+private def missingSourceSink : Atom :=
+  chainOf [Atom.sym "Error",
+    chainOf [Atom.sym "existence_error", Atom.sym "source_sink",
+      Atom.gnd (.str "missing.txt")],
+    Atom.var "_hostErrorContext"]
+
+#guard pythonErrorAtom {
+    kind := "existence_error:source_sink", message := "missing.txt" } ==
+  missingSourceSink
+
 #guard match splitStringC
     [Atom.sym "left--right", Atom.gnd (.str "-"), Atom.gnd (.str "")] with
   | .ok [parts] => chainListM parts == some [Atom.gnd (.str "left"),
