@@ -79,6 +79,17 @@ CASES = [
         ["false", "true", "42", "43"],
     ),
     (
+        "chain-source-effect-order",
+        """!(bind! chain-order-state (new-state initial))
+!(chain
+    (progn (change-state! chain-order-state first) Same)
+    (progn (change-state! chain-order-state second) $x)
+    (get-state chain-order-state))
+""",
+        [],
+        ["true", "second"],
+    ),
+    (
         "translator-add-remove",
         """(= (compile42 $arg) (quote (cons 42 $arg)))
 !(add-translator-rule! compile42)

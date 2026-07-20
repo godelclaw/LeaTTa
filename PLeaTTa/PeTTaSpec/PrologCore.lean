@@ -165,26 +165,27 @@ inductive TranslatesExpr : TranslatorState → Nat → Atom → Term → List Go
           bodyGoals)
         nextCounter
   -- [SPEC translator.pl:185-188] `chain` is the second head admitted by the
-  -- same pinned clause as `let`; only the source argument order differs.
+  -- same pinned clause as `let`.  The clause traverses the argument list as
+  -- written; conventional names such as value/pattern do not justify swapping
+  -- the first two translations.
   | chainBind {state : TranslatorState}
-      {counter patternCounter valueCounter nextCounter : Nat}
-      {value pattern bodySource : Atom}
-      {valueTerm patternTerm bodyTerm : Term}
-      {valueGoals patternGoals bodyGoals : List Goal}
+      {counter firstCounter secondCounter nextCounter : Nat}
+      {first second bodySource : Atom}
+      {firstTerm secondTerm bodyTerm : Term}
+      {firstGoals secondGoals bodyGoals : List Goal}
       (notShadowed : ¬ state.hasRule "chain")
-      (patternTranslation :
-        TranslatesExpr state counter pattern patternTerm patternGoals
-          patternCounter)
-      (valueTranslation :
-        TranslatesExpr state patternCounter value valueTerm valueGoals
-          valueCounter)
+      (firstTranslation :
+        TranslatesExpr state counter first firstTerm firstGoals firstCounter)
+      (secondTranslation :
+        TranslatesExpr state firstCounter second secondTerm secondGoals
+          secondCounter)
       (bodyTranslation :
-        TranslatesExpr state valueCounter bodySource bodyTerm bodyGoals
+        TranslatesExpr state secondCounter bodySource bodyTerm bodyGoals
           nextCounter) :
       TranslatesExpr state counter
-        (.expr [.sym "chain", value, pattern, bodySource])
+        (.expr [.sym "chain", first, second, bodySource])
         bodyTerm
-        ([.unify patternTerm valueTerm] ++ patternGoals ++ valueGoals ++
+        ([.unify firstTerm secondTerm] ++ firstGoals ++ secondGoals ++
           bodyGoals)
         nextCounter
   | progn {state : TranslatorState} {counter nextCounter : Nat}
@@ -312,19 +313,19 @@ theorem translates_literal_let (state : TranslatorState) (counter : Nat)
     (.literal (.integer value))
     (.literal (.variable name))
 
-/-- Positive binding example: `chain` has source order value, pattern, body,
-but the pinned translator traverses pattern, value, body and emits the same
-ordered binding goals as `let`. -/
+/-- Positive binding example: the pinned `chain` clause translates the source
+value expression before the conventional binding variable and preserves that
+orientation in its leading unification goal. -/
 theorem translates_literal_chain (state : TranslatorState) (counter : Nat)
     (name : String) (value : Int) (notShadowed : ¬ state.hasRule "chain") :
     TranslatesExpr state counter
       (.expr [.sym "chain", .gnd (.int value), .var name, .var name])
       (.variable (.source name))
-      [.unify (.variable (.source name)) (.integer value)]
+      [.unify (.integer value) (.variable (.source name))]
       counter :=
   .chainBind notShadowed
-    (.literal (.variable name))
     (.literal (.integer value))
+    (.literal (.variable name))
     (.literal (.variable name))
 
 /-- Negative-priority example: registering a translator rule for `let` does
@@ -336,14 +337,14 @@ theorem translates_chain_with_let_shadowed (counter : Nat) (name : String)
       TranslatesExpr state counter
         (.expr [.sym "chain", .gnd (.int value), .var name, .var name])
         (.variable (.source name))
-        [.unify (.variable (.source name)) (.integer value)]
+        [.unify (.integer value) (.variable (.source name))]
         counter := by
   dsimp
   constructor
   · rfl
   · exact .chainBind (by simp)
-      (.literal (.variable name))
       (.literal (.integer value))
+      (.literal (.variable name))
       (.literal (.variable name))
 
 /-- Positive behavioral-translation example for a literal mutex body. -/

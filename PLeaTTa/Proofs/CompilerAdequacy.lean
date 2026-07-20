@@ -428,71 +428,71 @@ theorem compileExprFuel_initial_sound {state : TranslatorState} (env : CEnv)
                 patternGoalsAgreement)
               valueGoalsAgreement)
             bodyGoalsAgreement
-  | chainBind notShadowed patternTranslation valueTranslation
+  | chainBind notShadowed firstTranslation secondTranslation
       bodyTranslation =>
-      obtain ⟨patternFuel, patternPositive, patternBound, patternCompiles⟩ :=
-        compileExprFuel_initial_sound env agreement patternTranslation
-      obtain ⟨valueFuel, valuePositive, valueBound, valueCompiles⟩ :=
-        compileExprFuel_initial_sound env agreement valueTranslation
+      obtain ⟨firstFuel, firstPositive, firstBound, firstCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement firstTranslation
+      obtain ⟨secondFuel, secondPositive, secondBound, secondCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement secondTranslation
       obtain ⟨bodyFuel, bodyPositive, bodyBound, bodyCompiles⟩ :=
         compileExprFuel_initial_sound env agreement bodyTranslation
-      let childFuel := max patternFuel (max valueFuel bodyFuel)
-      have patternLe : patternFuel ≤ childFuel := by
+      let childFuel := max firstFuel (max secondFuel bodyFuel)
+      have firstLe : firstFuel ≤ childFuel := by
         exact Nat.le_max_left _ _
-      have valueLe : valueFuel ≤ childFuel := by
+      have secondLe : secondFuel ≤ childFuel := by
         exact Nat.le_trans (Nat.le_max_left _ _) (Nat.le_max_right _ _)
       have bodyLe : bodyFuel ≤ childFuel := by
         exact Nat.le_trans (Nat.le_max_right _ _) (Nat.le_max_right _ _)
-      have childFuelBound : childFuel ≤ patternFuel + valueFuel + bodyFuel := by
+      have childFuelBound : childFuel ≤ firstFuel + secondFuel + bodyFuel := by
         omega
-      refine ⟨childFuel + 4, by omega, ?_, ?_⟩
+      refine ⟨childFuel + 3, by omega, ?_, ?_⟩
       · simp [Atom.size]
         omega
       · intro extraFuel
-        have patternAt : patternFuel ≤ childFuel + extraFuel := by omega
-        have valueAt : valueFuel ≤ childFuel + extraFuel := by omega
+        have firstAt : firstFuel ≤ childFuel + extraFuel := by omega
+        have secondAt : secondFuel ≤ childFuel + extraFuel := by omega
         have bodyAt : bodyFuel ≤ childFuel + extraFuel := by omega
-        obtain ⟨patternInternal, patternExecutableGoals, patternCompiled,
-            patternAgreement, patternGoalsAgreement⟩ :=
-          patternCompiles (childFuel + extraFuel - patternFuel)
-        obtain ⟨valueInternal, valueExecutableGoals, valueCompiled,
-            valueAgreement, valueGoalsAgreement⟩ :=
-          valueCompiles (childFuel + extraFuel - valueFuel)
+        obtain ⟨firstInternal, firstExecutableGoals, firstCompiled,
+            firstAgreement, firstGoalsAgreement⟩ :=
+          firstCompiles (childFuel + extraFuel - firstFuel)
+        obtain ⟨secondInternal, secondExecutableGoals, secondCompiled,
+            secondAgreement, secondGoalsAgreement⟩ :=
+          secondCompiles (childFuel + extraFuel - secondFuel)
         obtain ⟨bodyInternal, bodyExecutableGoals, bodyCompiled,
             bodyAgreement, bodyGoalsAgreement⟩ :=
           bodyCompiles (childFuel + extraFuel - bodyFuel)
-        have patternFuelEq :
-            patternFuel + (childFuel + extraFuel - patternFuel) =
+        have firstFuelEq :
+            firstFuel + (childFuel + extraFuel - firstFuel) =
               childFuel + extraFuel := by
           omega
-        have valueFuelEq :
-            valueFuel + (childFuel + extraFuel - valueFuel) =
+        have secondFuelEq :
+            secondFuel + (childFuel + extraFuel - secondFuel) =
               childFuel + extraFuel := by
           omega
         have bodyFuelEq :
             bodyFuel + (childFuel + extraFuel - bodyFuel) =
               childFuel + extraFuel := by
           omega
-        rw [patternFuelEq] at patternCompiled
-        rw [valueFuelEq] at valueCompiled
+        rw [firstFuelEq] at firstCompiled
+        rw [secondFuelEq] at secondCompiled
         rw [bodyFuelEq] at bodyCompiled
         refine ⟨bodyInternal,
-          [PLeaTTa.Goal.eq patternInternal valueInternal] ++
-            patternExecutableGoals ++ valueExecutableGoals ++
+          [PLeaTTa.Goal.eq firstInternal secondInternal] ++
+            firstExecutableGoals ++ secondExecutableGoals ++
             bodyExecutableGoals,
           ?_, bodyAgreement, ?_⟩
-        · rw [show (childFuel + 4) + extraFuel =
-            (childFuel + extraFuel) + 4 by omega]
+        · rw [show (childFuel + 3) + extraFuel =
+            (childFuel + extraFuel) + 3 by omega]
           exact compileExprFuel_chain_eq (childFuel + extraFuel) env counter
-            _ _ _ patternInternal valueInternal bodyInternal
-            patternExecutableGoals valueExecutableGoals bodyExecutableGoals
+            _ _ _ firstInternal secondInternal bodyInternal
+            firstExecutableGoals secondExecutableGoals bodyExecutableGoals
             _ _ _ (agreement.notContains notShadowed)
-            patternCompiled valueCompiled bodyCompiled
+            firstCompiled secondCompiled bodyCompiled
         · exact GoalsAgree.append
             (GoalsAgree.append
-              (.cons (.unify patternAgreement valueAgreement)
-                patternGoalsAgreement)
-              valueGoalsAgreement)
+              (.cons (.unify firstAgreement secondAgreement)
+                firstGoalsAgreement)
+              secondGoalsAgreement)
             bodyGoalsAgreement
   | progn notShadowed arguments =>
       obtain ⟨listFuel, listPositive, listBound, listCompiles⟩ :=

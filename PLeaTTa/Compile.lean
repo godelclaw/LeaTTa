@@ -396,13 +396,16 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         -- [SPEC lib_patrick.metta:14-18] translator-rule macro:
         -- `(for $x xs body)` compiles as `(let $x (superpose xs) body)`.
         compileAppFuel fuel env n "let" [v, Atom.expr [Atom.sym "superpose", collection], body]
-    | "chain", [e, v, body] =>
-        -- [SPEC translator.pl:185-188] `chain` shares the native `let`
-        -- clause after translator-rule dispatch has already selected the
-        -- `chain` head.  Enter the built-in `let` core directly: re-entering
-        -- `compileAppFuel` would incorrectly let an unrelated `let` hook
-        -- capture a source `chain`.
-        compileAppCoreFuel fuel env n "let" [v, e, body]
+    | "chain", [first, second, body] => do
+        -- [SPEC translator.pl:185-188] `chain` and `let` share one native
+        -- clause, which traverses their three source arguments literally from
+        -- left to right.  Do not swap the first two arguments merely because
+        -- conventional MeTTa uses `(chain value $pattern body)`.
+        let (tFirst, gFirst, n1) ← compileExprFuel fuel env n first
+        let (tSecond, gSecond, n2) ← compileExprFuel fuel env n1 second
+        let (tBody, gBody, n3) ← compileExprFuel fuel env n2 body
+        .ok (tBody,
+          [Goal.eq tFirst tSecond] ++ gFirst ++ gSecond ++ gBody, n3)
     | "foldall", [f, gen, init] => do
         let (tg, gg, n1) ← compileExprFuel fuel env n gen
         let (lst, n2) := fresh n1
@@ -1065,38 +1068,38 @@ theorem compileExprFuel_let_eq (childFuel : Nat) (env : CEnv)
     valueCompiled bodyCompiled
 
 set_option maxHeartbeats 2000000 in
-/-- `chain` follows the same pinned translation clause as `let`: source order
-is value, pattern, body, while translation traverses pattern, value, body.  Its
+/-- `chain` follows the same pinned translation clause as `let`, traversing
+its first argument, second argument, and body literally in source order.  Its
 own hook check is the only dispatch guard; a `let` hook cannot capture it. -/
 theorem compileExprFuel_chain_eq (childFuel : Nat) (env : CEnv)
-    (counter : Nat) (value pattern bodySource : Atom)
-    (patternTerm valueTerm bodyTerm : Atom)
-    (patternGoals valueGoals bodyGoals : List Goal)
-    (patternCounter valueCounter nextCounter : Nat)
+    (counter : Nat) (first second bodySource : Atom)
+    (firstTerm secondTerm bodyTerm : Atom)
+    (firstGoals secondGoals bodyGoals : List Goal)
+    (firstCounter secondCounter nextCounter : Nat)
     (noHook : env.translatorRules.contains "chain" = false)
-    (patternCompiled : compileExprFuel childFuel env counter pattern =
-      .ok (patternTerm, patternGoals, patternCounter))
-    (valueCompiled : compileExprFuel childFuel env patternCounter value =
-      .ok (valueTerm, valueGoals, valueCounter))
-    (bodyCompiled : compileExprFuel childFuel env valueCounter bodySource =
+    (firstCompiled : compileExprFuel childFuel env counter first =
+      .ok (firstTerm, firstGoals, firstCounter))
+    (secondCompiled : compileExprFuel childFuel env firstCounter second =
+      .ok (secondTerm, secondGoals, secondCounter))
+    (bodyCompiled : compileExprFuel childFuel env secondCounter bodySource =
       .ok (bodyTerm, bodyGoals, nextCounter)) :
-    compileExprFuel (childFuel + 4) env counter
-        (.expr [.sym "chain", value, pattern, bodySource]) =
+    compileExprFuel (childFuel + 3) env counter
+        (.expr [.sym "chain", first, second, bodySource]) =
       .ok (bodyTerm,
-        [Goal.eq patternTerm valueTerm] ++ patternGoals ++ valueGoals ++
+        [Goal.eq firstTerm secondTerm] ++ firstGoals ++ secondGoals ++
           bodyGoals,
         nextCounter) := by
-  rw [show childFuel + 4 = (childFuel + 3) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
   rw [show childFuel + 3 = (childFuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [show childFuel + 2 = (childFuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
-  rw [show childFuel + 2 = (childFuel + 1) + 1 by omega]
   rw [compileAppCoreFuel.eq_33]
-  exact compileAppCoreFuel_let_eq childFuel env counter pattern value
-    bodySource patternTerm valueTerm bodyTerm patternGoals valueGoals
-    bodyGoals patternCounter valueCounter nextCounter patternCompiled
-    valueCompiled bodyCompiled
+  rw [firstCompiled]
+  dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+  rw [secondCompiled]
+  dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+  rw [bodyCompiled]
 
 set_option maxHeartbeats 2000000 in
 /-- In the sequential executable target, `with_mutex` compiles to its body.
