@@ -178,6 +178,29 @@ inductive QuotesList : List Atom → List Term → Prop where
 
 end
 
+/-- The pinned target goal for `(and-then A B)`.  `translate_expr_to_conj/3`
+retains each translated subexpression as an explicit conjunction, and the
+outer conjunction preserves the source order before the identity test.
+[SPEC translator.pl:177-180; translator.pl:45-47] -/
+def andThenGoal (condition body output : Term)
+    (conditionGoals bodyGoals : List Goal) : Goal :=
+  .conjunction
+    [.conjunction conditionGoals,
+     .ifThenElse (.identical condition (.atom "true"))
+       (.conjunction [.conjunction bodyGoals, .unify output body])
+       (.unify output (.atom "false"))]
+
+/-- The pinned target goal for `(or-else A B)`.  The body conjunction remains
+inside only the false branch; the true branch binds the enclosing result
+directly. [SPEC translator.pl:181-184; translator.pl:45-47] -/
+def orElseGoal (condition body output : Term)
+    (conditionGoals bodyGoals : List Goal) : Goal :=
+  .conjunction
+    [.conjunction conditionGoals,
+     .ifThenElse (.identical condition (.atom "true"))
+       (.unify output (.atom "true"))
+       (.conjunction [.conjunction bodyGoals, .unify output body])]
+
 mutual
 
 /-- Independently specified fragment of pinned `translate_expr/3`.  Its rules
@@ -255,6 +278,40 @@ inductive TranslatesExpr : TranslatorState → Nat → Atom → Term → List Go
         ([.unify firstTerm secondTerm] ++ firstGoals ++ secondGoals ++
           bodyGoals)
         nextCounter
+  | andThen {state : TranslatorState}
+      {counter conditionCounter bodyCounter : Nat}
+      {conditionSource bodySource : Atom} {conditionTerm bodyTerm : Term}
+      {conditionGoals bodyGoals : List Goal}
+      (notShadowed : ¬ state.hasRule "and-then")
+      (conditionTranslation :
+        TranslatesExpr state counter conditionSource conditionTerm
+          conditionGoals conditionCounter)
+      (bodyTranslation :
+        TranslatesExpr state conditionCounter bodySource bodyTerm bodyGoals
+          bodyCounter) :
+      TranslatesExpr state counter
+        (.expr [.sym "and-then", conditionSource, bodySource])
+        (.variable (.generated bodyCounter))
+        [andThenGoal conditionTerm bodyTerm
+          (.variable (.generated bodyCounter)) conditionGoals bodyGoals]
+        (bodyCounter + 1)
+  | orElse {state : TranslatorState}
+      {counter conditionCounter bodyCounter : Nat}
+      {conditionSource bodySource : Atom} {conditionTerm bodyTerm : Term}
+      {conditionGoals bodyGoals : List Goal}
+      (notShadowed : ¬ state.hasRule "or-else")
+      (conditionTranslation :
+        TranslatesExpr state counter conditionSource conditionTerm
+          conditionGoals conditionCounter)
+      (bodyTranslation :
+        TranslatesExpr state conditionCounter bodySource bodyTerm bodyGoals
+          bodyCounter) :
+      TranslatesExpr state counter
+        (.expr [.sym "or-else", conditionSource, bodySource])
+        (.variable (.generated bodyCounter))
+        [orElseGoal conditionTerm bodyTerm
+          (.variable (.generated bodyCounter)) conditionGoals bodyGoals]
+        (bodyCounter + 1)
   | progn {state : TranslatorState} {counter nextCounter : Nat}
       {sources : List Atom} {first last : Term} {goals : List Goal}
       (notShadowed : ¬ state.hasRule "progn")
@@ -512,6 +569,30 @@ theorem translates_literal_chain (state : TranslatorState) (counter : Nat)
     (.literal (.integer value))
     (.literal (.variable name))
     (.literal (.variable name))
+
+/-- Positive short-circuit example: both operands are translated before the
+runtime branch is formed, while the body goals remain inside only the true
+branch. -/
+theorem translates_literal_andThen (state : TranslatorState) (counter : Nat)
+    (value : Int) (notShadowed : ¬ state.hasRule "and-then") :
+    TranslatesExpr state counter
+      (.expr [.sym "and-then", .gnd (.bool true), .gnd (.int value)])
+      (.variable (.generated counter))
+      [andThenGoal (.atom "true") (.integer value)
+        (.variable (.generated counter)) [] []]
+      (counter + 1) :=
+  .andThen notShadowed (.literal .trueGround) (.literal (.integer value))
+
+/-- Positive short-circuit example for the false-path body of `or-else`. -/
+theorem translates_literal_orElse (state : TranslatorState) (counter : Nat)
+    (value : Int) (notShadowed : ¬ state.hasRule "or-else") :
+    TranslatesExpr state counter
+      (.expr [.sym "or-else", .gnd (.bool false), .gnd (.int value)])
+      (.variable (.generated counter))
+      [orElseGoal (.atom "false") (.integer value)
+        (.variable (.generated counter)) [] []]
+      (counter + 1) :=
+  .orElse notShadowed (.literal .falseGround) (.literal (.integer value))
 
 /-- Negative-priority example: registering a translator rule for `let` does
 not shadow native `chain`; only a rule for the source head may do so. -/

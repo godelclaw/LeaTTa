@@ -1397,6 +1397,140 @@ theorem compileExprFuel_once_eq (bodyFuel : Nat) (env : CEnv)
   rfl
 
 set_option maxHeartbeats 2000000 in
+/-- The built-in `and-then` core compiles both operands left-to-right, keeps
+the body's goals inside only the true branch, and allocates one enclosing
+result. [SPEC translator.pl:177-180] -/
+theorem compileAppCoreFuel_andThen_eq (childFuel : Nat) (env : CEnv)
+    (counter : Nat) (conditionSource bodySource : Atom)
+    (conditionTerm bodyTerm : Atom)
+    (conditionGoals bodyGoals : List Goal)
+    (conditionCounter bodyCounter : Nat)
+    (conditionCompiled :
+      compileExprFuel childFuel env counter conditionSource =
+        .ok (conditionTerm, conditionGoals, conditionCounter))
+    (bodyCompiled :
+      compileExprFuel childFuel env conditionCounter bodySource =
+        .ok (bodyTerm, bodyGoals, bodyCounter)) :
+    compileAppCoreFuel (childFuel + 1) env counter "and-then"
+        [conditionSource, bodySource] =
+      .ok (.var s!"_q{bodyCounter}",
+        conditionGoals ++
+          [Goal.ite conditionTerm
+            (.var s!"_q{bodyCounter}",
+              bodyGoals ++ [Goal.eq (.var s!"_q{bodyCounter}") bodyTerm])
+            (.var s!"_q{bodyCounter}",
+              [Goal.eq (.var s!"_q{bodyCounter}") falseA])
+            (.var s!"_q{bodyCounter}")],
+        bodyCounter + 1) := by
+  simp only [compileAppCoreFuel]
+  rw [conditionCompiled]
+  dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+  rw [bodyCompiled]
+  rfl
+
+set_option maxHeartbeats 2000000 in
+/-- The built-in `or-else` core keeps the translated body inside only the
+false branch and returns `True` immediately on the true branch.
+[SPEC translator.pl:181-184] -/
+theorem compileAppCoreFuel_orElse_eq (childFuel : Nat) (env : CEnv)
+    (counter : Nat) (conditionSource bodySource : Atom)
+    (conditionTerm bodyTerm : Atom)
+    (conditionGoals bodyGoals : List Goal)
+    (conditionCounter bodyCounter : Nat)
+    (conditionCompiled :
+      compileExprFuel childFuel env counter conditionSource =
+        .ok (conditionTerm, conditionGoals, conditionCounter))
+    (bodyCompiled :
+      compileExprFuel childFuel env conditionCounter bodySource =
+        .ok (bodyTerm, bodyGoals, bodyCounter)) :
+    compileAppCoreFuel (childFuel + 1) env counter "or-else"
+        [conditionSource, bodySource] =
+      .ok (.var s!"_q{bodyCounter}",
+        conditionGoals ++
+          [Goal.ite conditionTerm
+            (.var s!"_q{bodyCounter}",
+              [Goal.eq (.var s!"_q{bodyCounter}") trueA])
+            (.var s!"_q{bodyCounter}",
+              bodyGoals ++ [Goal.eq (.var s!"_q{bodyCounter}") bodyTerm])
+            (.var s!"_q{bodyCounter}")],
+        bodyCounter + 1) := by
+  simp only [compileAppCoreFuel]
+  rw [conditionCompiled]
+  dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+  rw [bodyCompiled]
+  rfl
+
+set_option maxHeartbeats 2000000 in
+/-- Public expression equation for unshadowed `and-then`. -/
+theorem compileExprFuel_andThen_eq (childFuel : Nat) (env : CEnv)
+    (counter : Nat) (conditionSource bodySource : Atom)
+    (conditionTerm bodyTerm : Atom)
+    (conditionGoals bodyGoals : List Goal)
+    (conditionCounter bodyCounter : Nat)
+    (noHook : env.translatorRules.contains "and-then" = false)
+    (conditionCompiled :
+      compileExprFuel childFuel env counter conditionSource =
+        .ok (conditionTerm, conditionGoals, conditionCounter))
+    (bodyCompiled :
+      compileExprFuel childFuel env conditionCounter bodySource =
+        .ok (bodyTerm, bodyGoals, bodyCounter)) :
+    compileExprFuel (childFuel + 3) env counter
+        (.expr [.sym "and-then", conditionSource, bodySource]) =
+      .ok (.var s!"_q{bodyCounter}",
+        conditionGoals ++
+          [Goal.ite conditionTerm
+            (.var s!"_q{bodyCounter}",
+              bodyGoals ++ [Goal.eq (.var s!"_q{bodyCounter}") bodyTerm])
+            (.var s!"_q{bodyCounter}",
+              [Goal.eq (.var s!"_q{bodyCounter}") falseA])
+            (.var s!"_q{bodyCounter}")],
+        bodyCounter + 1) := by
+  rw [show childFuel + 3 = (childFuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [show childFuel + 2 = (childFuel + 1) + 1 by omega]
+  rw [compileAppFuel.eq_2]
+  simp only [rewriteStreamOp?, rewriteStreamOpForHead]
+  simp only [noHook, Bool.false_eq_true, ↓reduceIte]
+  exact compileAppCoreFuel_andThen_eq childFuel env counter conditionSource
+    bodySource conditionTerm bodyTerm conditionGoals bodyGoals
+    conditionCounter bodyCounter conditionCompiled bodyCompiled
+
+set_option maxHeartbeats 2000000 in
+/-- Public expression equation for unshadowed `or-else`. -/
+theorem compileExprFuel_orElse_eq (childFuel : Nat) (env : CEnv)
+    (counter : Nat) (conditionSource bodySource : Atom)
+    (conditionTerm bodyTerm : Atom)
+    (conditionGoals bodyGoals : List Goal)
+    (conditionCounter bodyCounter : Nat)
+    (noHook : env.translatorRules.contains "or-else" = false)
+    (conditionCompiled :
+      compileExprFuel childFuel env counter conditionSource =
+        .ok (conditionTerm, conditionGoals, conditionCounter))
+    (bodyCompiled :
+      compileExprFuel childFuel env conditionCounter bodySource =
+        .ok (bodyTerm, bodyGoals, bodyCounter)) :
+    compileExprFuel (childFuel + 3) env counter
+        (.expr [.sym "or-else", conditionSource, bodySource]) =
+      .ok (.var s!"_q{bodyCounter}",
+        conditionGoals ++
+          [Goal.ite conditionTerm
+            (.var s!"_q{bodyCounter}",
+              [Goal.eq (.var s!"_q{bodyCounter}") trueA])
+            (.var s!"_q{bodyCounter}",
+              bodyGoals ++ [Goal.eq (.var s!"_q{bodyCounter}") bodyTerm])
+            (.var s!"_q{bodyCounter}")],
+        bodyCounter + 1) := by
+  rw [show childFuel + 3 = (childFuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [show childFuel + 2 = (childFuel + 1) + 1 by omega]
+  rw [compileAppFuel.eq_2]
+  simp only [rewriteStreamOp?, rewriteStreamOpForHead]
+  simp only [noHook, Bool.false_eq_true, ↓reduceIte]
+  exact compileAppCoreFuel_orElse_eq childFuel env counter conditionSource
+    bodySource conditionTerm bodyTerm conditionGoals bodyGoals
+    conditionCounter bodyCounter conditionCompiled bodyCompiled
+
+set_option maxHeartbeats 2000000 in
 /-- The built-in `let` core compiles pattern, value, and body in pinned order.
 Unlike the public application dispatcher, this equation deliberately has no
 translator-hook premise; it is also the target of native `chain` after that

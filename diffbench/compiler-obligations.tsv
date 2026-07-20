@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=700d7618724b9b348c63053c86df4e4ec4e8230549032e87b8fcd3bbd67f71d4
+# compiler_sha256=e070d27b1593e0e604fed061075b80a26b3fca04ab2722d3dcf6eeb3dde12e5b
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -49,8 +49,8 @@ APP.empty	M105-106	S	-	EQ	GAP	behavioral-failure-shortcut-not-composed
 APP.cut	T117-118	X	TranslatesExpr.cut	SC	PASS	covered
 APP.test	T119-126,M205-209	S	-	N	GAP	internal-test-results-helper
 APP.trace	T73-75	X	-	EQ	GAP	pre-hook-rewrite-and-runtime-differential-pass; independent-rule-open
-APP.and_then	T177-180	X	-	N	GAP	direct-order-runtime-differential-pass; independent-rule-open
-APP.or_else	T181-183	X	-	N	GAP	direct-order-runtime-differential-pass; independent-rule-open
+APP.and_then	T177-180	X	TranslatesExpr.andThen	SC	PASS	nested-conjunction flattening; identity-test; branch-goal-order; exact-counter; runtime-positive-and-shadowing-witnesses
+APP.or_else	T181-183	X	TranslatesExpr.orElse	SC	PASS	nested-conjunction flattening; identity-test; branch-goal-order; exact-counter; runtime-positive-and-shadowing-witnesses
 APP.hash_plus	M53,M316	S	-	EQ	FAIL	ordinary-plus-not-CLPFD
 APP.hash_minus	M54,M316	S	-	EQ	FAIL	ordinary-minus-not-CLPFD
 APP.cons	M145,T3-8	S	-	N	GAP	direct-structural-constructor

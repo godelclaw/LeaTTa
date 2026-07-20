@@ -149,6 +149,44 @@ inductive GoalAgrees : PeTTaSpec.PrologCore.Goal → PLeaTTa.Goal → Prop where
         (.softCut (.conjunction referenceCondition) .truth
           (.conjunction referenceElse))
         (.softcut (.sym "#u") executableCondition [] executableElse)
+  | shortCircuitAnd {referenceCondition referenceBody referenceOutput : Term}
+      {executableCondition executableBody executableOutput : Atom}
+      {referenceBodyGoals : List PeTTaSpec.PrologCore.Goal}
+      {executableBodyGoals : List PLeaTTa.Goal}
+      (condition : TermAgrees referenceCondition executableCondition)
+      (body : TermAgrees referenceBody executableBody)
+      (output : TermAgrees referenceOutput executableOutput)
+      (bodyGoals : GoalsAgree referenceBodyGoals executableBodyGoals) :
+      GoalAgrees
+        (.ifThenElse (.identical referenceCondition (.atom "true"))
+          (.conjunction
+            [.conjunction referenceBodyGoals,
+             .unify referenceOutput referenceBody])
+          (.unify referenceOutput (.atom "false")))
+        (.ite executableCondition
+          (executableOutput,
+            executableBodyGoals ++ [.eq executableOutput executableBody])
+          (executableOutput, [.eq executableOutput (.sym "False")])
+          executableOutput)
+  | shortCircuitOr {referenceCondition referenceBody referenceOutput : Term}
+      {executableCondition executableBody executableOutput : Atom}
+      {referenceBodyGoals : List PeTTaSpec.PrologCore.Goal}
+      {executableBodyGoals : List PLeaTTa.Goal}
+      (condition : TermAgrees referenceCondition executableCondition)
+      (body : TermAgrees referenceBody executableBody)
+      (output : TermAgrees referenceOutput executableOutput)
+      (bodyGoals : GoalsAgree referenceBodyGoals executableBodyGoals) :
+      GoalAgrees
+        (.ifThenElse (.identical referenceCondition (.atom "true"))
+          (.unify referenceOutput (.atom "true"))
+          (.conjunction
+            [.conjunction referenceBodyGoals,
+             .unify referenceOutput referenceBody]))
+        (.ite executableCondition
+          (executableOutput, [.eq executableOutput (.sym "True")])
+          (executableOutput,
+            executableBodyGoals ++ [.eq executableOutput executableBody])
+          executableOutput)
   | findall {referenceTemplate referenceOutput : Term}
       {executableTemplate executableOutput : Atom}
       {referenceGoals : List PeTTaSpec.PrologCore.Goal}
@@ -171,6 +209,13 @@ inductive GoalsAgree : List PeTTaSpec.PrologCore.Goal → List PLeaTTa.Goal →
       (head : GoalAgrees reference executable)
       (tail : GoalsAgree references executables) :
       GoalsAgree (reference :: references) (executable :: executables)
+  | conjunction {referenceBlock referenceTail :
+        List PeTTaSpec.PrologCore.Goal}
+      {executableBlock executableTail : List PLeaTTa.Goal}
+      (block : GoalsAgree referenceBlock executableBlock)
+      (tail : GoalsAgree referenceTail executableTail) :
+      GoalsAgree (.conjunction referenceBlock :: referenceTail)
+        (executableBlock ++ executableTail)
 
 end
 
@@ -187,6 +232,9 @@ theorem GoalsAgree.append {leftReference rightReference :
   | nil => simpa using right
   | cons head tail =>
       exact .cons head (GoalsAgree.append tail right)
+  | conjunction block tail =>
+      simpa [List.append_assoc] using
+        GoalsAgree.conjunction block (GoalsAgree.append tail right)
 
 /-- The executable refined-symbol check agrees with the exact pinned
 `get-type` soft-cut `get-metatype` fallback and consumes the same two fresh
@@ -1124,6 +1172,142 @@ theorem compileExprFuel_initial_sound {state : TranslatorState} (env : CEnv)
                 firstGoalsAgreement)
               secondGoalsAgreement)
             bodyGoalsAgreement
+  | @andThen _ conditionCounter bodyCounter conditionSource bodySource
+      conditionTerm bodyTerm conditionGoals bodyGoals notShadowed
+      conditionTranslation bodyTranslation =>
+      obtain ⟨conditionFuel, conditionPositive, conditionBound,
+          conditionCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement conditionTranslation
+      obtain ⟨bodyFuel, bodyPositive, bodyBound, bodyCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement bodyTranslation
+      let childFuel := max conditionFuel bodyFuel
+      have conditionLe : conditionFuel ≤ childFuel := Nat.le_max_left _ _
+      have bodyLe : bodyFuel ≤ childFuel := Nat.le_max_right _ _
+      refine ⟨childFuel + 3, by omega, ?_, ?_⟩
+      · simp [Atom.size]
+        omega
+      · intro extraFuel
+        obtain ⟨conditionInternal, conditionExecutableGoals,
+            conditionCompiled, conditionAgreement,
+            conditionGoalsAgreement⟩ :=
+          conditionCompiles (childFuel + extraFuel - conditionFuel)
+        obtain ⟨bodyInternal, bodyExecutableGoals, bodyCompiled,
+            bodyAgreement, bodyGoalsAgreement⟩ :=
+          bodyCompiles (childFuel + extraFuel - bodyFuel)
+        have conditionFuelEq :
+            conditionFuel + (childFuel + extraFuel - conditionFuel) =
+              childFuel + extraFuel := by
+          omega
+        have bodyFuelEq :
+            bodyFuel + (childFuel + extraFuel - bodyFuel) =
+              childFuel + extraFuel := by
+          omega
+        rw [conditionFuelEq] at conditionCompiled
+        rw [bodyFuelEq] at bodyCompiled
+        let output := Atom.var s!"_q{bodyCounter}"
+        have outputAgreement :
+            TermAgrees (.variable (.generated bodyCounter)) output := by
+          exact .generatedVariable bodyCounter
+        have branchAgreement : GoalAgrees
+            (.ifThenElse (.identical conditionTerm (.atom "true"))
+              (.conjunction
+                [.conjunction bodyGoals,
+                 .unify (.variable (.generated bodyCounter)) bodyTerm])
+              (.unify (.variable (.generated bodyCounter)) (.atom "false")))
+            (.ite conditionInternal
+              (output,
+                bodyExecutableGoals ++ [PLeaTTa.Goal.eq output bodyInternal])
+              (output, [PLeaTTa.Goal.eq output (.sym "False")]) output) := by
+          exact .shortCircuitAnd conditionAgreement bodyAgreement
+            outputAgreement bodyGoalsAgreement
+        refine ⟨output,
+          conditionExecutableGoals ++
+            [PLeaTTa.Goal.ite conditionInternal
+              (output,
+                bodyExecutableGoals ++ [PLeaTTa.Goal.eq output bodyInternal])
+              (output, [PLeaTTa.Goal.eq output (.sym "False")]) output],
+          ?_, outputAgreement, ?_⟩
+        · rw [show (childFuel + 3) + extraFuel =
+            (childFuel + extraFuel) + 3 by omega]
+          exact compileExprFuel_andThen_eq (childFuel + extraFuel) env counter
+            conditionSource bodySource conditionInternal bodyInternal
+            conditionExecutableGoals bodyExecutableGoals conditionCounter
+            bodyCounter (agreement.notContains notShadowed)
+            conditionCompiled bodyCompiled
+        · simpa [andThenGoal, output] using
+            GoalsAgree.conjunction
+              (GoalsAgree.conjunction conditionGoalsAgreement
+                (.cons branchAgreement .nil))
+              .nil
+  | @orElse _ conditionCounter bodyCounter conditionSource bodySource
+      conditionTerm bodyTerm conditionGoals bodyGoals notShadowed
+      conditionTranslation bodyTranslation =>
+      obtain ⟨conditionFuel, conditionPositive, conditionBound,
+          conditionCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement conditionTranslation
+      obtain ⟨bodyFuel, bodyPositive, bodyBound, bodyCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement bodyTranslation
+      let childFuel := max conditionFuel bodyFuel
+      have conditionLe : conditionFuel ≤ childFuel := Nat.le_max_left _ _
+      have bodyLe : bodyFuel ≤ childFuel := Nat.le_max_right _ _
+      refine ⟨childFuel + 3, by omega, ?_, ?_⟩
+      · simp [Atom.size]
+        omega
+      · intro extraFuel
+        obtain ⟨conditionInternal, conditionExecutableGoals,
+            conditionCompiled, conditionAgreement,
+            conditionGoalsAgreement⟩ :=
+          conditionCompiles (childFuel + extraFuel - conditionFuel)
+        obtain ⟨bodyInternal, bodyExecutableGoals, bodyCompiled,
+            bodyAgreement, bodyGoalsAgreement⟩ :=
+          bodyCompiles (childFuel + extraFuel - bodyFuel)
+        have conditionFuelEq :
+            conditionFuel + (childFuel + extraFuel - conditionFuel) =
+              childFuel + extraFuel := by
+          omega
+        have bodyFuelEq :
+            bodyFuel + (childFuel + extraFuel - bodyFuel) =
+              childFuel + extraFuel := by
+          omega
+        rw [conditionFuelEq] at conditionCompiled
+        rw [bodyFuelEq] at bodyCompiled
+        let output := Atom.var s!"_q{bodyCounter}"
+        have outputAgreement :
+            TermAgrees (.variable (.generated bodyCounter)) output := by
+          exact .generatedVariable bodyCounter
+        have branchAgreement : GoalAgrees
+            (.ifThenElse (.identical conditionTerm (.atom "true"))
+              (.unify (.variable (.generated bodyCounter)) (.atom "true"))
+              (.conjunction
+                [.conjunction bodyGoals,
+                 .unify (.variable (.generated bodyCounter)) bodyTerm]))
+            (.ite conditionInternal
+              (output, [PLeaTTa.Goal.eq output (.sym "True")])
+              (output,
+                bodyExecutableGoals ++ [PLeaTTa.Goal.eq output bodyInternal])
+              output) := by
+          exact .shortCircuitOr conditionAgreement bodyAgreement
+            outputAgreement bodyGoalsAgreement
+        refine ⟨output,
+          conditionExecutableGoals ++
+            [PLeaTTa.Goal.ite conditionInternal
+              (output, [PLeaTTa.Goal.eq output (.sym "True")])
+              (output,
+                bodyExecutableGoals ++ [PLeaTTa.Goal.eq output bodyInternal])
+              output],
+          ?_, outputAgreement, ?_⟩
+        · rw [show (childFuel + 3) + extraFuel =
+            (childFuel + extraFuel) + 3 by omega]
+          exact compileExprFuel_orElse_eq (childFuel + extraFuel) env counter
+            conditionSource bodySource conditionInternal bodyInternal
+            conditionExecutableGoals bodyExecutableGoals conditionCounter
+            bodyCounter (agreement.notContains notShadowed)
+            conditionCompiled bodyCompiled
+        · simpa [orElseGoal, output] using
+            GoalsAgree.conjunction
+              (GoalsAgree.conjunction conditionGoalsAgreement
+                (.cons branchAgreement .nil))
+              .nil
   | progn notShadowed arguments =>
       obtain ⟨listFuel, listPositive, listBound, listCompiles⟩ :=
         compileSeqFuel_initial_sound env agreement arguments

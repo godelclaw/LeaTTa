@@ -149,6 +149,25 @@ CASES = [
         ["true", "(hooked-if false left right)"],
     ),
     (
+        "translator-rule-shadows-short-circuit-builtins",
+        """(= (and-then $condition $body)
+      (quote (hooked-and-then $condition $body)))
+(= (or-else $condition $body)
+      (quote (hooked-or-else $condition $body)))
+!(add-translator-rule! and-then)
+!(add-translator-rule! or-else)
+!(and-then False right)
+!(or-else True right)
+""",
+        [],
+        [
+            "true",
+            "true",
+            "(hooked-and-then false right)",
+            "(hooked-or-else true right)",
+        ],
+    ),
+    (
         "translator-rule-local-space-predicate",
         """(= (succeedsPredicate $pattern)
   (quote (case

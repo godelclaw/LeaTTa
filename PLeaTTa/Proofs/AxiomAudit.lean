@@ -106,6 +106,10 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerAdequacy.compileTypedArgs_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileTypedArgs_complete
 #print axioms PLeaTTa.CompilerAdequacy.compileTypedArgs_refined_integer_sound
+#print axioms PLeaTTa.compileAppCoreFuel_andThen_eq
+#print axioms PLeaTTa.compileAppCoreFuel_orElse_eq
+#print axioms PLeaTTa.compileExprFuel_andThen_eq
+#print axioms PLeaTTa.compileExprFuel_orElse_eq
 #print axioms PLeaTTa.compileAppFuel_hashPlus_eq
 #print axioms PLeaTTa.compileAppFuel_hashMinus_eq
 #print axioms PLeaTTa.compileAppFuel_trace_eq
@@ -141,6 +145,8 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_two_literal_args
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_staged_value_args
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_refined_integer_arg
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_andThen
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_orElse
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_atomic_pattern
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_supported_atomic_pattern
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_supported_pattern
