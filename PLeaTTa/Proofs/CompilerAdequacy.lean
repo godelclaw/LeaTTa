@@ -139,6 +139,45 @@ theorem chainify_expr (atoms : List Atom) :
     chainify (.expr atoms) = chainOf (atoms.map chainify) := by
   simp [chainify]
 
+/-- Every pinned `let*` expansion contains at least one well-formed binding. -/
+theorem letStarExpands_bindings_nonempty {bindings : List Atom}
+    {body nested : Atom} (expansion : LetStarExpands bindings body nested) :
+    bindings ≠ [] := by
+  cases expansion <;> simp
+
+/-- The independent pinned `let*` expansion is accepted by the executable
+expander and produces exactly the independently related nested source. -/
+theorem letStarExpands_desugar {bindings : List Atom} {body nested : Atom}
+    (expansion : LetStarExpands bindings body nested) :
+    desugarLetStar? bindings body = some nested := by
+  induction expansion with
+  | single => rfl
+  | @cons pattern value bindings body nested tail inductionHypothesis =>
+      have bindingsNonempty : bindings ≠ [] :=
+        letStarExpands_bindings_nonempty tail
+      obtain ⟨binding, remaining, rfl⟩ :=
+        List.exists_cons_of_ne_nil bindingsNonempty
+      simp only [desugarLetStar?]
+      rw [inductionHypothesis]
+      rfl
+
+/-- Expanding a well-formed `let*` grows syntax by less than a factor of two.
+This source-side bound is independent of compiler fuel and is enough to show
+that the public source-sized budget covers compilation of the nested form. -/
+theorem letStarExpands_nested_size_le_twice_source
+    {bindings : List Atom} {body nested : Atom}
+    (expansion : LetStarExpands bindings body nested) :
+    nested.size ≤
+      2 * (Atom.expr [.sym "let*", .expr bindings, body]).size := by
+  induction expansion with
+  | single =>
+      simp only [Atom.size, List.map, List.sum_cons, List.sum_nil, Nat.add_zero]
+      omega
+  | @cons pattern value bindings body nested tail inductionHypothesis =>
+      simp only [Atom.size, List.map, List.sum_cons, List.sum_nil,
+        Nat.add_zero] at inductionHypothesis ⊢
+      omega
+
 /-- Independent native quotation agrees with PLeaTTa's deep chain encoding. -/
 theorem quotes_term_agrees {source : Atom} {term : Term}
     (quotation : Quotes source term) : TermAgrees term (chainify source) := by
@@ -628,6 +667,71 @@ theorem compileSeqFuel_initial_sound {state : TranslatorState} (env : CEnv)
           simpa [List.getLast!] using tailLastAgreement
 
 end
+
+/-- Soundness of the executable compiler for independently specified,
+well-formed pinned `let*` forms.  The nested expansion may be syntactically
+larger than the source form, so the proof uses the independent expansion-size
+bound to show that the public source-derived fuel still covers it. -/
+theorem compileExpr_letStar_sound {state : TranslatorState} (env : CEnv)
+    (agreement : EnvAgrees state env) {counter : Nat} {source : Atom}
+    {term : Term} {goals : List PeTTaSpec.PrologCore.Goal}
+    {nextCounter : Nat}
+    (native :
+      TranslatesLetStar state counter source term goals nextCounter) :
+    ∃ internal executableGoals,
+      compileExpr env counter source =
+        .ok (internal, executableGoals, nextCounter) ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  cases native with
+  | expand notShadowed expansion nested =>
+      rename_i bindings bodySource nestedSource
+      obtain ⟨baseFuel, _basePositive, baseBound, compiles⟩ :=
+        compileExprFuel_initial_sound env agreement nested
+      have nestedSizeBound :=
+        letStarExpands_nested_size_le_twice_source expansion
+      let source := Atom.expr [.sym "let*", .expr bindings, bodySource]
+      have baseLe : baseFuel ≤ compilerFuel source + 61 := by
+        simp only [source, compilerFuel]
+        omega
+      obtain ⟨extraFuel, childFuelEq⟩ :
+          ∃ extraFuel, compilerFuel source + 61 = baseFuel + extraFuel := by
+        exact ⟨compilerFuel source + 61 - baseFuel, by omega⟩
+      obtain ⟨internal, executableGoals, nestedCompiled, termAgreement,
+          goalsAgreement⟩ := compiles extraFuel
+      rw [← childFuelEq] at nestedCompiled
+      refine ⟨internal, executableGoals, ?_, termAgreement, goalsAgreement⟩
+      rw [compileExpr]
+      change compileExprFuel (compilerFuel source + 64) env counter source =
+        .ok (internal, executableGoals, nextCounter)
+      rw [show compilerFuel source + 64 =
+        (compilerFuel source + 61) + 3 by omega]
+      exact compileExprFuel_letStar_eq (compilerFuel source + 61) env counter
+        bindings bodySource nestedSource internal executableGoals nextCounter
+        (agreement.notContains notShadowed)
+        (letStarExpands_desugar expansion) nestedCompiled
+
+/-- Completeness on the independently supported `let*` fragment: every
+successful executable result is represented by the pinned expansion and
+translation relation, with the same ordered goals and fresh counter. -/
+theorem compileExpr_letStar_complete {state : TranslatorState} (env : CEnv)
+    (agreement : EnvAgrees state env) {counter : Nat} {source internal : Atom}
+    {executableGoals : List PLeaTTa.Goal} {nextCounter : Nat}
+    (supported : SupportedLetStar state counter source)
+    (compiled : compileExpr env counter source =
+      .ok (internal, executableGoals, nextCounter)) :
+    ∃ term goals,
+      TranslatesLetStar state counter source term goals nextCounter ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨term, goals, referenceCounter, native⟩ := supported
+  obtain ⟨referenceInternal, referenceGoals, referenceCompiled,
+      termAgreement, goalsAgreement⟩ :=
+    compileExpr_letStar_sound env agreement native
+  have resultEquality :
+      (internal, executableGoals, nextCounter) =
+        (referenceInternal, referenceGoals, referenceCounter) :=
+    Except.ok.inj (compiled.symm.trans referenceCompiled)
+  cases resultEquality
+  exact ⟨term, goals, native, termAgreement, goalsAgreement⟩
 
 /-- Soundness for native `with_mutex` translation. The executable erases the
 wrapper only in the explicitly sequential observation model; body goals retain

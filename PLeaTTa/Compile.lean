@@ -1254,6 +1254,28 @@ theorem compileExprFuel_chain_eq (childFuel : Nat) (env : CEnv)
   rw [bodyCompiled]
 
 set_option maxHeartbeats 2000000 in
+/-- A well-formed `let*` compiles by expanding its nonempty binding list to the
+source-ordered nested `let` selected by pinned `letstar_to_rec_let/3`, then
+compiling that expansion. -/
+theorem compileExprFuel_letStar_eq (nestedFuel : Nat) (env : CEnv)
+    (counter : Nat) (bindings : List Atom) (bodySource nestedSource : Atom)
+    (internal : Atom) (goals : List Goal) (nextCounter : Nat)
+    (noHook : env.translatorRules.contains "let*" = false)
+    (expanded : desugarLetStar? bindings bodySource = some nestedSource)
+    (nestedCompiled : compileExprFuel nestedFuel env counter nestedSource =
+      .ok (internal, goals, nextCounter)) :
+    compileExprFuel (nestedFuel + 3) env counter
+        (.expr [.sym "let*", .expr bindings, bodySource]) =
+      .ok (internal, goals, nextCounter) := by
+  rw [show nestedFuel + 3 = (nestedFuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [show nestedFuel + 2 = (nestedFuel + 1) + 1 by omega]
+  rw [compileAppFuel.eq_2]
+  simp only [noHook, Bool.false_eq_true, ↓reduceIte]
+  rw [compileAppCoreFuel.eq_24, expanded]
+  exact nestedCompiled
+
+set_option maxHeartbeats 2000000 in
 /-- In the sequential executable target, `with_mutex` compiles to its body.
 The independent operational semantics proves separately that this preserves
 the complete ordered observation when no competing thread can interleave. -/

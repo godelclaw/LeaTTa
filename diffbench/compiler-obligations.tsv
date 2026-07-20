@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=f6f186254719a77bee7e17248eb2274a52c7dca9339d6570b50439e67bd52fb0
+# compiler_sha256=152a2ba6f44d3476240ae6e0bd4bff6ae9a945568e43ede43656fe7d792eb7c5
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -55,7 +55,7 @@ APP.cons	M145,T3-8	S	-	N	GAP	direct-structural-constructor
 APP.if2	T151-155	X	-	N	GAP	identity-runtime-differential-pass; independent-rule-open
 APP.if3	T156-162,T394-397	X	-	N	GAP	conditional-and-branch-agreement-missing
 APP.let	T185-188	X	TranslatesExpr.letBind	SC	PASS	covered
-APP.let_star	T189-190,T384-386	X	-	N	GAP	positive-and-rejection-differentials-pass; independent-rule-open
+APP.let_star	T189-190,T384-386	X	TranslatesLetStar	SC	PASS	well-formed-nonempty-over-supported-nested-fragment; empty-and-malformed-rejected
 APP.case	T163-176,T399-406	S	-	N	GAP	order-failure-binding-proof-missing
 APP.collapse	T115-116	X	TranslatesExpr.collapse	SC	PASS	covered
 APP.once	T127-128	S	TranslatesOnce.wrap	SH	GAP	fresh-capture-equivalence-unproved

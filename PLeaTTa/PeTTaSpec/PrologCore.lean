@@ -257,6 +257,36 @@ inductive TranslatesOnce : TranslatorState → Nat → Atom → Term → List Go
       TranslatesOnce state counter (.expr [.sym "once", bodySource]) bodyTerm
         [.once (.conjunction bodyGoals)] nextCounter
 
+/-- Independent source-to-source expansion performed by pinned
+`letstar_to_rec_let/3`.  This relation deliberately does not mention the
+executable `desugarLetStar?` function. -/
+inductive LetStarExpands : List Atom → Atom → Atom → Prop where
+  -- [SPEC translator.pl:384-385]
+  | single {pattern value body : Atom} :
+      LetStarExpands [.expr [pattern, value]] body
+        (.expr [.sym "let", pattern, value, body])
+  -- [SPEC translator.pl:384,386]
+  | cons {pattern value : Atom} {bindings : List Atom} {body nested : Atom}
+      (tail : LetStarExpands bindings body nested) :
+      LetStarExpands (.expr [pattern, value] :: bindings) body
+        (.expr [.sym "let", pattern, value, nested])
+
+/-- Independent pinned translation of a well-formed `let*`.  Pinned PeTTa
+first expands a nonempty binding list into source-ordered nested `let` forms,
+then translates that expanded source. -/
+inductive TranslatesLetStar : TranslatorState → Nat → Atom → Term → List Goal →
+    Nat → Prop where
+  -- [SPEC translator.pl:189-190,384-386]
+  | expand {state : TranslatorState} {counter nextCounter : Nat}
+      {bindings : List Atom} {bodySource nestedSource : Atom}
+      {term : Term} {goals : List Goal}
+      (notShadowed : ¬ state.hasRule "let*")
+      (expansion : LetStarExpands bindings bodySource nestedSource)
+      (nested :
+        TranslatesExpr state counter nestedSource term goals nextCounter) :
+      TranslatesLetStar state counter
+        (.expr [.sym "let*", .expr bindings, bodySource]) term goals nextCounter
+
 /-- A translated sequence always contains at least one source expression. -/
 theorem TranslatesSeq.sources_nonempty {state : TranslatorState} {counter : Nat}
     {sources : List Atom} {first last : Term} {goals : List Goal}
@@ -392,6 +422,58 @@ theorem once_hook_blocks_builtin (counter : Nat) (value : Int) :
   cases translation with
   | wrap notShadowed _ => exact notShadowed trivial
 
+/-- Positive two-binding example: pinned `let*` expands left-to-right into two
+nested `let` forms, then translates those forms in the same order. -/
+theorem translates_two_literal_letStar (state : TranslatorState) (counter : Nat)
+    (firstName secondName : String) (firstValue secondValue : Int)
+    (letStarNotShadowed : ¬ state.hasRule "let*")
+    (letNotShadowed : ¬ state.hasRule "let") :
+    TranslatesLetStar state counter
+      (.expr [.sym "let*",
+        .expr [
+          .expr [.var firstName, .gnd (.int firstValue)],
+          .expr [.var secondName, .gnd (.int secondValue)]],
+        .var secondName])
+      (.variable (.source secondName))
+      [.unify (.variable (.source firstName)) (.integer firstValue),
+        .unify (.variable (.source secondName)) (.integer secondValue)]
+      counter := by
+  refine .expand letStarNotShadowed (.cons .single) ?_
+  simpa using TranslatesExpr.letBind letNotShadowed
+    (.literal (.variable firstName))
+    (.literal (.integer firstValue))
+    (TranslatesExpr.letBind letNotShadowed
+      (.literal (.variable secondName))
+      (.literal (.integer secondValue))
+      (.literal (.variable secondName)))
+
+/-- An empty binding list has no pinned `let*` expansion. -/
+theorem letStar_empty_bindings_rejected (body nested : Atom) :
+    ¬ LetStarExpands [] body nested := by
+  intro expansion
+  cases expansion
+
+/-- A binding entry must be a two-element expression. -/
+theorem letStar_malformed_binding_rejected (malformed : String)
+    (body nested : Atom) :
+    ¬ LetStarExpands [.sym malformed] body nested := by
+  intro expansion
+  cases expansion
+
+/-- A registered `let*` translator hook has priority over the pinned builtin
+expansion rule. -/
+theorem letStar_hook_blocks_builtin (counter : Nat)
+    (pattern value body : Atom) :
+    let state : TranslatorState := ⟨fun _ => True⟩
+    ∀ term goals nextCounter,
+      ¬ TranslatesLetStar state counter
+        (.expr [.sym "let*", .expr [.expr [pattern, value]], body])
+        term goals nextCounter := by
+  dsimp
+  intro term goals nextCounter translation
+  cases translation with
+  | expand notShadowed _ _ => exact notShadowed trivial
+
 /-- The current independently specified compiler fragment.  Membership is a
 native translation derivation, never an executable-compiler success test. -/
 def SupportedExpr (state : TranslatorState) (counter : Nat) (source : Atom) :
@@ -411,6 +493,12 @@ def SupportedOnce (state : TranslatorState) (counter : Nat)
     (source : Atom) : Prop :=
   ∃ term goals nextCounter,
     TranslatesOnce state counter source term goals nextCounter
+
+/-- Independently supported, well-formed native `let*` forms. -/
+def SupportedLetStar (state : TranslatorState) (counter : Nat)
+    (source : Atom) : Prop :=
+  ∃ term goals nextCounter,
+    TranslatesLetStar state counter source term goals nextCounter
 
 /-- Imported host payloads are not literals in the certified compiler fragment. -/
 theorem external_not_literal (tag payload : String) (term : Term) :
