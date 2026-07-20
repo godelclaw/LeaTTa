@@ -291,6 +291,24 @@ inductive TranslatesSeq : TranslatorState → Nat → List Atom → Term → Ter
 
 end
 
+/-- Independent ordered `translate_args/3` traversal from pinned
+`translator.pl:409-412`.  Unlike `TranslatesSeq`, this relation includes the
+empty case and preserves every translated argument term, not merely the first
+and last. -/
+inductive TranslatesArgs : TranslatorState → Nat → List Atom → List Term →
+    List Goal → Nat → Prop where
+  | nil {state : TranslatorState} {counter : Nat} :
+      TranslatesArgs state counter [] [] [] counter
+  | cons {state : TranslatorState} {counter middleCounter nextCounter : Nat}
+      {source : Atom} {sources : List Atom} {term : Term} {terms : List Term}
+      {headGoals tailGoals : List Goal}
+      (head :
+        TranslatesExpr state counter source term headGoals middleCounter)
+      (tail :
+        TranslatesArgs state middleCounter sources terms tailGoals nextCounter) :
+      TranslatesArgs state counter (source :: sources) (term :: terms)
+        (headGoals ++ tailGoals) nextCounter
+
 /-- Independent pinned translation for the first behaviorally normalized
 construct. Native emits a mutex wrapper, while PLeaTTa's sequential target
 may erase that wrapper only after an ordered-observation theorem. Keeping this
@@ -549,6 +567,21 @@ theorem translates_atomic_pattern_pair (name : String) (value : Int) :
   .cons (.literal (.variable name))
     (.cons (.literal (.integer value)) .nil)
 
+/-- Empty native argument traversal emits no terms or goals and preserves the
+fresh-variable counter. -/
+theorem translates_empty_args (state : TranslatorState) (counter : Nat) :
+    TranslatesArgs state counter [] [] [] counter :=
+  .nil
+
+/-- Positive ordered argument-traversal example over two source literals. -/
+theorem translates_two_literal_args (state : TranslatorState) (counter : Nat)
+    (first second : Int) :
+    TranslatesArgs state counter
+      [.gnd (.int first), .gnd (.int second)]
+      [.integer first, .integer second] [] counter :=
+  .cons (.literal (.integer first))
+    (.cons (.literal (.integer second)) .nil)
+
 /-- Positive recursive-pattern example: pinned `cons` traversal preserves a
 proper two-element list and leaves both the ordered goal sequence and fresh
 counter unchanged. -/
@@ -586,6 +619,12 @@ def SupportedExpr (state : TranslatorState) (counter : Nat) (source : Atom) :
     Prop :=
   ∃ term goals nextCounter,
     TranslatesExpr state counter source term goals nextCounter
+
+/-- Independently supported ordered argument lists. -/
+def SupportedArgs (state : TranslatorState) (counter : Nat)
+    (sources : List Atom) : Prop :=
+  ∃ terms goals nextCounter,
+    TranslatesArgs state counter sources terms goals nextCounter
 
 /-- Supported source forms whose native target requires a proved sequential
 behavioral normalization rather than structural goal identity. -/
@@ -654,6 +693,18 @@ theorem malformed_cons_not_supported_pattern (state : TranslatorState)
   cases translation with
   | atomic value =>
       cases value with
+      | literal literal => cases literal
+
+/-- Runtime-only host payloads cannot enter the certified source argument
+fragment through a singleton list. -/
+theorem external_singleton_not_supported_args (state : TranslatorState)
+    (counter : Nat) (tag payload : String) :
+    ¬ SupportedArgs state counter [.gnd (.external tag payload)] := by
+  intro supported
+  obtain ⟨terms, goals, nextCounter, translation⟩ := supported
+  cases translation with
+  | cons head tail =>
+      cases head with
       | literal literal => cases literal
 
 /-- Imported host payloads are not literals in the certified compiler fragment. -/

@@ -29,8 +29,8 @@ CASE.malformed	T399-406	X	-	N	GAP	explicit-error-vs-native-failure
 ARGS.nil	T362	X	-	N	GAP	no-reference
 ARGS.expression_typed	T363-370	X	-	N	GAP	syntactic-staging-unproved
 ARGS.evaluated	T363-370	X	-	N	GAP	ordered-translation-unproved
-LIST.nil	T409	X	-	EQ	GAP	implementation-equation-only
-LIST.cons	T410-412	X	TranslatesSeq-partial	EQ	GAP	first-last-only
+LIST.nil	T409	X	TranslatesArgs	SC	PASS	empty-ordered-traversal
+LIST.cons	T410-412	X	TranslatesArgs	SC	PASS	supported-expressions-left-to-right; exact-terms-goals-counter
 PATLIST.nil	T20-22	X	ConstrainsPatternSeq	SC	PASS	recursive-fragment-empty-traversal
 PATLIST.cons	T20-22	X	ConstrainsPatternSeq	SC	PASS	atomic-and-cons-members-left-to-right; function-and-data-patterns-open
 APP.quote	T297-299	X	TranslatesExpr.quote	SC	PASS	covered

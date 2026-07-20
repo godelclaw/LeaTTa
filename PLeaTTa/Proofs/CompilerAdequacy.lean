@@ -1152,6 +1152,136 @@ theorem compileSeqFuel_initial_sound {state : TranslatorState} (env : CEnv)
 
 end
 
+/-- Every independent pinned `translate_args/3` derivation has a positive,
+syntax-bounded shared compiler budget.  All source terms, generated goals,
+and counter changes are preserved in left-to-right order. -/
+theorem compileListFuel_initial_sound {state : TranslatorState} (env : CEnv)
+    (agreement : EnvAgrees state env) {counter : Nat}
+    {sources : List Atom} {terms : List Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (native : TranslatesArgs state counter sources terms goals nextCounter) :
+    ∃ baseFuel,
+      0 < baseFuel ∧
+      baseFuel < 16 * ((sources.map Atom.size).sum + 1) ∧
+      ∀ extraFuel, ∃ internals executableGoals,
+        compileListFuel (baseFuel + extraFuel) env counter sources =
+          .ok (internals, executableGoals, nextCounter) ∧
+        TermsAgree terms internals ∧ GoalsAgree goals executableGoals := by
+  induction native with
+  | @nil nilCounter =>
+      refine ⟨1, by omega, by simp, ?_⟩
+      intro extraFuel
+      exact ⟨[], [], by
+          simpa [Nat.add_comm] using
+            compileListFuel_nil_eq extraFuel env nilCounter,
+        .nil, .nil⟩
+  | @cons listCounter middleCounter listNextCounter source sources term terms
+      headGoals tailGoals head tail tailInduction =>
+      obtain ⟨headFuel, headPositive, headBound, headCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement head
+      obtain ⟨tailFuel, tailPositive, tailBound, tailCompiles⟩ :=
+        tailInduction
+      let childFuel := max headFuel tailFuel
+      have headLe : headFuel ≤ childFuel := Nat.le_max_left _ _
+      have tailLe : tailFuel ≤ childFuel := Nat.le_max_right _ _
+      refine ⟨childFuel + 1, by omega, ?_, ?_⟩
+      · have sourcePositive := atom_size_positive_for_compiler source
+        simp only [List.map, List.sum_cons]
+        omega
+      · intro extraFuel
+        obtain ⟨headInternal, headExecutableGoals, headCompiled,
+            headAgreement, headGoalsAgreement⟩ :=
+          headCompiles (childFuel + extraFuel - headFuel)
+        obtain ⟨tailInternals, tailExecutableGoals, tailCompiled,
+            tailAgreement, tailGoalsAgreement⟩ :=
+          tailCompiles (childFuel + extraFuel - tailFuel)
+        have headFuelEq :
+            headFuel + (childFuel + extraFuel - headFuel) =
+              childFuel + extraFuel := by
+          omega
+        have tailFuelEq :
+            tailFuel + (childFuel + extraFuel - tailFuel) =
+              childFuel + extraFuel := by
+          omega
+        rw [headFuelEq] at headCompiled
+        rw [tailFuelEq] at tailCompiled
+        refine ⟨headInternal :: tailInternals,
+          headExecutableGoals ++ tailExecutableGoals, ?_,
+          .cons headAgreement tailAgreement,
+          GoalsAgree.append headGoalsAgreement tailGoalsAgreement⟩
+        rw [show (childFuel + 1) + extraFuel =
+            (childFuel + extraFuel) + 1 by omega]
+        rw [compileListFuel_cons_eq, headCompiled]
+        dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+        rw [tailCompiled]
+        rfl
+
+/-- Public soundness of executable argument-list traversal at the
+source-derived shared budget. -/
+theorem compileList_sound {state : TranslatorState} (env : CEnv)
+    (agreement : EnvAgrees state env) {counter : Nat}
+    {sources : List Atom} {terms : List Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (native : TranslatesArgs state counter sources terms goals nextCounter) :
+    ∃ internals executableGoals,
+      compileList env counter sources =
+        .ok (internals, executableGoals, nextCounter) ∧
+      TermsAgree terms internals ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨baseFuel, basePositive, baseBound, compiles⟩ :=
+    compileListFuel_initial_sound env agreement native
+  have baseLe : baseFuel ≤ compilerListFuel sources + 64 := by
+    simp only [compilerListFuel]
+    omega
+  obtain ⟨extraFuel, fuelEquality⟩ :
+      ∃ extraFuel,
+        compilerListFuel sources + 64 = baseFuel + extraFuel :=
+    ⟨compilerListFuel sources + 64 - baseFuel, by omega⟩
+  obtain ⟨internals, executableGoals, compiled, termsAgreement,
+      goalsAgreement⟩ := compiles extraFuel
+  exact ⟨internals, executableGoals,
+    by simpa [compileList, fuelEquality] using compiled,
+    termsAgreement, goalsAgreement⟩
+
+/-- Completeness on independently supported ordered argument lists. -/
+theorem compileList_complete {state : TranslatorState} (env : CEnv)
+    (agreement : EnvAgrees state env) {counter : Nat}
+    {sources internals : List Atom} {executableGoals : List PLeaTTa.Goal}
+    {nextCounter : Nat} (supported : SupportedArgs state counter sources)
+    (compiled : compileList env counter sources =
+      .ok (internals, executableGoals, nextCounter)) :
+    ∃ terms goals,
+      TranslatesArgs state counter sources terms goals nextCounter ∧
+      TermsAgree terms internals ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨terms, goals, referenceCounter, native⟩ := supported
+  obtain ⟨referenceInternals, referenceGoals, referenceCompiled,
+      termsAgreement, goalsAgreement⟩ :=
+    compileList_sound env agreement native
+  have resultEquality :
+      (internals, executableGoals, nextCounter) =
+        (referenceInternals, referenceGoals, referenceCounter) :=
+    Except.ok.inj (compiled.symm.trans referenceCompiled)
+  cases resultEquality
+  exact ⟨terms, goals, native, termsAgreement, goalsAgreement⟩
+
+/-- Executable witness for the independent empty argument traversal. -/
+theorem compileList_empty_sound (state : TranslatorState) (env : CEnv)
+    (agreement : EnvAgrees state env) (counter : Nat) :
+    ∃ internals executableGoals,
+      compileList env counter [] = .ok (internals, executableGoals, counter) ∧
+      TermsAgree [] internals ∧ GoalsAgree [] executableGoals := by
+  exact compileList_sound env agreement (translates_empty_args state counter)
+
+/-- Executable witness for ordered translation of two literal arguments. -/
+theorem compileList_two_literal_sound (state : TranslatorState) (env : CEnv)
+    (agreement : EnvAgrees state env) (counter : Nat) (first second : Int) :
+    ∃ internals executableGoals,
+      compileList env counter [.gnd (.int first), .gnd (.int second)] =
+        .ok (internals, executableGoals, counter) ∧
+      TermsAgree [.integer first, .integer second] internals ∧
+      GoalsAgree [] executableGoals := by
+  exact compileList_sound env agreement
+    (translates_two_literal_args state counter first second)
+
 /-- Soundness of the executable compiler for independently specified,
 well-formed pinned `let*` forms.  The nested expansion may be syntactically
 larger than the source form, so the proof uses the independent expansion-size

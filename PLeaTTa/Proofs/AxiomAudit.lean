@@ -77,6 +77,13 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerAdequacy.compilePatternList_complete
 #print axioms PLeaTTa.CompilerAdequacy.compilePattern_cons_pair_sound
 #print axioms PLeaTTa.CompilerAdequacy.compilePattern_dotted_cons_sound
+#print axioms PLeaTTa.compileListFuel_nil_eq
+#print axioms PLeaTTa.compileListFuel_cons_eq
+#print axioms PLeaTTa.CompilerAdequacy.compileListFuel_initial_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileList_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileList_complete
+#print axioms PLeaTTa.CompilerAdequacy.compileList_empty_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileList_two_literal_sound
 #print axioms PLeaTTa.compileAppFuel_hashPlus_eq
 #print axioms PLeaTTa.compileAppFuel_hashMinus_eq
 #print axioms PLeaTTa.compileAppFuel_trace_eq
@@ -108,10 +115,13 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_atomic_pattern_pair
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.constrains_cons_pair
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.constrains_dotted_cons
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_empty_args
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_two_literal_args
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_atomic_pattern
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_supported_atomic_pattern
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_supported_pattern
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.malformed_cons_not_supported_pattern
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.external_singleton_not_supported_args
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.withMutex_equivalent
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.withMutex_conjunction_all_equivalent
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.once_answers_length_le_one
