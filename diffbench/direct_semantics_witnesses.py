@@ -139,6 +139,16 @@ CASES = [
         ["true", "(42 43)", "true", "(cons 42 (43))"],
     ),
     (
+        "translator-rule-shadows-builtin",
+        """(= (if $condition $then $else)
+      (quote (hooked-if $condition $then $else)))
+!(add-translator-rule! if)
+!(if False left right)
+""",
+        [],
+        ["true", "(hooked-if false left right)"],
+    ),
+    (
         "transaction-commit-rollback",
         """!(add-atom &tx (value 1))
 !(transaction (progn (remove-atom &tx (value 1))

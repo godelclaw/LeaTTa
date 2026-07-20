@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=8ba39a7373488e75515a5ea0214dc6cd8137d5378d666e11fb763dfe6c0fcb9c
+# compiler_sha256=e1b18c73c631bba11e92a1fdb9e1d15c9a5ff7d572625fe2c44385471133a0a3
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -21,7 +21,7 @@ PAT.cons	T3-8	X	-	N	GAP	no-pattern-reference
 PAT.known_head	T9-12	X	-	N	GAP	native-fun-premise-unproved
 PAT.special_only	T2-14	S	-	N	FAIL	unregistered-special-heads-compiled
 PAT.data_tree	T13-14	X	-	N	GAP	no-pattern-reference
-HOOK.registered	T101-110	S	-	N	FAIL	does-not-call-registered-hook-predicate
+HOOK.registered	T101-110	X	-	N	GAP	builtin-shadowing-differential-pass; typed-staging-proof-open
 CASE.nil	T399-406	S	-	N	GAP	explicit-failure-goal
 CASE.empty_arm	T163-176,T399-406	S	-	N	GAP	default-handling-unproved
 CASE.normal_arm	T399-406	S	-	N	GAP	softcut-IR-unproved

@@ -221,11 +221,13 @@ def compileAppFuel : Nat → CEnv → Nat → String → List Atom →
   | 0, _, _, _, _ => .error "compiler fuel exhausted"
   | fuel + 1, env, n, h, args => do
     if env.translatorRules.contains h then
-      let ordinaryEnv :=
-        { env with translatorRules := env.translatorRules.erase h }
-      let (code, goals, n1) ← compileAppCoreFuel fuel ordinaryEnv n h args
-      let (r, n2) := fresh n1
-      .ok (r, goals ++ [Goal.evalg code r], n2)
+      -- [SPEC translator.pl:99-110] a translator rule calls the registered
+      -- user predicate to obtain source code, then translates that returned
+      -- code. It does not compile the ordinary builtin of the same name.
+      let (terms, goals, n1) ← compileArgsAtFuel fuel env n h 0 args
+      let (code, n2) := fresh n1
+      let (r, n3) := fresh n2
+      .ok (r, goals ++ [Goal.call h terms code, Goal.evalg code r], n3)
     else
       compileAppCoreFuel fuel env n h args
 termination_by structural fuel _ _ _ _ => fuel
