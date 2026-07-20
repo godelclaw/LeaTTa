@@ -59,6 +59,12 @@ CASES = [
         ["true", "false", "false"],
     ),
     (
+        "if2-open-condition-is-identity",
+        "!(collapse (if $condition 42))\n",
+        [],
+        ["()"],
+    ),
+    (
         "current-list-fallbacks",
         """!(car-atom ())
 !(cdr-atom ())

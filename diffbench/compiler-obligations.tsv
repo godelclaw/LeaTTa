@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=f9a5dd936953ec3142a8355cb66dd5b859f88017781fd2ecdfaf7132ee4527cd
+# compiler_sha256=11b98a6b0c7d6148f3759396f8336d04216492a3fbe3a7f494b9687a8dbbb9b4
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -52,7 +52,7 @@ APP.or_else	T181-183	X	-	N	GAP	direct-order-runtime-differential-pass; independe
 APP.hash_plus	M53,M316	S	-	EQ	FAIL	ordinary-plus-not-CLPFD
 APP.hash_minus	M54,M316	S	-	EQ	FAIL	ordinary-minus-not-CLPFD
 APP.cons	M145,T3-8	S	-	N	GAP	direct-structural-constructor
-APP.if2	T151-155	S	-	N	FAIL	unification-instead-of-identity
+APP.if2	T151-155	X	-	N	GAP	identity-runtime-differential-pass; independent-rule-open
 APP.if3	T156-162,T394-397	X	-	N	GAP	conditional-and-branch-agreement-missing
 APP.let	T185-188	X	TranslatesExpr.letBind	SC	PASS	covered
 APP.let_star	T189-190,T384-386	S	-	N	FAIL	empty-and-malformed-bindings-accepted

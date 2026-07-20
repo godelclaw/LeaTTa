@@ -306,7 +306,12 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
     | "if", [c, t] => do
         let (tc, gc, n1) ← compileExprFuel fuel env n c
         let (tt, gt, n2) ← compileExprFuel fuel env n1 t
-        .ok (tt, gc ++ [Goal.eq tc trueA] ++ gt, n2)
+        let (r, n3) := fresh n2
+        -- [SPEC translator.pl:151-155] the condition is tested by Prolog
+        -- identity (`Cv == true`), not unification. An open condition must
+        -- therefore take the failing path without becoming bound to True.
+        .ok (r, gc ++ [Goal.ite tc (compileBranch r (tt, gt))
+          (r, [Goal.eq trueA falseA]) r], n3)
     | "if", [c, t, e] => do
         let (tc, gc, n1) ← compileExprFuel fuel env n c
         let (tt, gt, n2) ← compileExprFuel fuel env n1 t
