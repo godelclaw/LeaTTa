@@ -134,14 +134,19 @@ def compileTypeCheck (value expected : Atom) (counter : Nat) :
     ([], counter)
 
 /-- PeTTa's `build_branch/4` aliases a variable-valued branch result to the
-enclosing result while translating a nonempty branch conjunction. This is a
-translation-time alias, so recursive calls remain in last-call position
-instead of leaving a runtime equality frame. [SPEC translator.pl:387-390] -/
-private def compileBranch (out : Atom) : Atom × List Goal → Atom × List Goal
+enclosing result while translating a nonempty branch conjunction.  Native
+Prolog sharing makes that alias visible outside the selected branch.  The
+first component therefore hoists the corresponding logical equality before
+condition execution; the branch-local substitution preserves the exact body
+shape and last-call position. [SPEC translator.pl:394-397] -/
+private def compileBranch (out : Atom) :
+    Atom × List Goal → List Goal × (Atom × List Goal)
   | (Atom.var name, goals) =>
-      if goals.isEmpty then (Atom.var name, goals)
-      else (out, instantiateGoals [(name, out)] goals)
-  | branch => branch
+      if goals.isEmpty then ([], (Atom.var name, goals))
+      else
+        ([Goal.eq (Atom.var name) out],
+          (out, instantiateGoals [(name, out)] goals))
+  | branch => ([], branch)
 
 /-- [SPEC translator.pl:384-386] A pinned `let*` contains one or more
 well-formed `(pattern value)` pairs and becomes source-ordered nested `let`s.
@@ -457,18 +462,21 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (tc, gc, n1) ← compileExprFuel fuel env n c
         let (tt, gt, n2) ← compileExprFuel fuel env n1 t
         let (r, n3) := fresh n2
+        let (branchAliases, thenBranch) := compileBranch r (tt, gt)
         -- [SPEC translator.pl:151-155] the condition is tested by Prolog
         -- identity (`Cv == true`), not unification. An open condition must
         -- therefore take the failing path without becoming bound to True.
-        .ok (r, gc ++ [Goal.ite tc (compileBranch r (tt, gt))
+        .ok (r, branchAliases ++ gc ++ [Goal.ite tc thenBranch
           (r, [Goal.eq trueA falseA]) r], n3)
     | "if", [c, t, e] => do
         let (tc, gc, n1) ← compileExprFuel fuel env n c
         let (tt, gt, n2) ← compileExprFuel fuel env n1 t
         let (te, ge, n3) ← compileExprFuel fuel env n2 e
         let (r, n4) := fresh n3
-        .ok (r, gc ++ [Goal.ite tc (compileBranch r (tt, gt))
-          (compileBranch r (te, ge)) r], n4)
+        let (thenAliases, thenBranch) := compileBranch r (tt, gt)
+        let (elseAliases, elseBranch) := compileBranch r (te, ge)
+        .ok (r, thenAliases ++ elseAliases ++ gc ++
+          [Goal.ite tc thenBranch elseBranch r], n4)
     | "let", [p, v, b] => do
         -- [SPEC translator.pl:185-188] translate pattern, value, and body in
         -- that order; emit (Pv=V), Gp, Gv, Gi. The result terms unify first,
