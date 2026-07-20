@@ -55,6 +55,61 @@ structure PrimitiveBisimulation (calls : CallSemantics)
         calls predicate arguments carried carriedAnswers ∧
         AnswerBagsAgree initial carriedAnswers instantiatedAnswers
 
+/-- The remaining primitive seam after open unification is discharged: a
+predicate-call relation must itself respect moving the initial substitution
+into its argument syntax. -/
+structure CallBisimulation (calls : CallSemantics)
+    (initial : Substitution) : Prop where
+  forward {carried instantiated : Substitution} {predicate : String}
+      {arguments : List Term} {carriedAnswers : List Substitution} :
+    StateAgrees initial carried instantiated →
+      calls predicate arguments carried carriedAnswers →
+      ∃ instantiatedAnswers,
+        calls predicate (initial.applyTerms arguments) instantiated
+          instantiatedAnswers ∧
+        AnswerBagsAgree initial carriedAnswers instantiatedAnswers
+  backward {carried instantiated : Substitution} {predicate : String}
+      {arguments : List Term} {instantiatedAnswers : List Substitution} :
+    StateAgrees initial carried instantiated →
+      calls predicate (initial.applyTerms arguments) instantiated
+        instantiatedAnswers →
+      ∃ carriedAnswers,
+        calls predicate arguments carried carriedAnswers ∧
+        AnswerBagsAgree initial carriedAnswers instantiatedAnswers
+
+/-- The independent open unifier satisfies both primitive substitution
+contracts; only the separately stated predicate-call contract is assumed. -/
+theorem PrimitiveBisimulation.ofCalls {calls : CallSemantics}
+    {initial : Substitution} (callAgreement : CallBisimulation calls initial) :
+    PrimitiveBisimulation calls initial where
+  unifyForward := fun states unification =>
+    Unifies.moveInitialForward states unification
+  unifyBackward := fun states unification =>
+    Unifies.moveInitialBackward states unification
+  callForward := fun states invoked => callAgreement.forward states invoked
+  callBackward := fun states invoked => callAgreement.backward states invoked
+
+/-- Call semantics with no available predicates, useful for the call-free
+normalized control fragment. -/
+def NoCalls : CallSemantics := fun _predicate _arguments _bindings _answers =>
+  False
+
+/-- Empty call semantics is substitution invariant vacuously. -/
+theorem noCallsBisimulation (initial : Substitution) :
+    CallBisimulation NoCalls initial where
+  forward := by
+    intro carried instantiated predicate arguments carriedAnswers states call
+    exact False.elim call
+  backward := by
+    intro carried instantiated predicate arguments instantiatedAnswers states
+      call
+    exact False.elim call
+
+/-- Concrete primitive bisimulation for the call-free fragment. -/
+theorem PrimitiveBisimulation.noCalls (initial : Substitution) :
+    PrimitiveBisimulation NoCalls initial :=
+  .ofCalls (noCallsBisimulation initial)
+
 mutual
 
 /-- Ordered observations for the first open Prolog control fragment.
@@ -643,6 +698,680 @@ theorem RunsBranches.forward {calls : CallSemantics}
           instantiatedAnswers ∧
         AnswerBagsAgree initial answers instantiatedAnswers :=
   runsBranchesForwardRec primitives execution
+
+/-! ### Structural backward substitution congruence
+
+The reverse direction retains the original syntax as an explicit preimage.
+This is necessary because substitution is intentionally not injective: two
+different variables may instantiate to the same term.
+-/
+
+private abbrev RunsBackward (calls : CallSemantics) (initial : Substitution)
+    (instantiated : Substitution) (instantiatedGoal : Goal)
+    (instantiatedAnswers : List Substitution)
+    (_execution :
+      Runs calls instantiated instantiatedGoal instantiatedAnswers) : Prop :=
+  ∀ {carried originalGoal}, StateAgrees initial carried instantiated →
+    initial.applyGoal originalGoal = instantiatedGoal →
+    ∃ carriedAnswers,
+      Runs calls carried originalGoal carriedAnswers ∧
+      AnswerBagsAgree initial carriedAnswers instantiatedAnswers
+
+private abbrev RunsAllBackward (calls : CallSemantics)
+    (initial : Substitution) (instantiated : Substitution)
+    (instantiatedGoals : List Goal)
+    (instantiatedAnswers : List Substitution)
+    (_execution :
+      RunsAll calls instantiated instantiatedGoals instantiatedAnswers) :
+    Prop :=
+  ∀ {carried originalGoals}, StateAgrees initial carried instantiated →
+    initial.applyGoals originalGoals = instantiatedGoals →
+    ∃ carriedAnswers,
+      RunsAll calls carried originalGoals carriedAnswers ∧
+      AnswerBagsAgree initial carriedAnswers instantiatedAnswers
+
+private abbrev RunsManyBackward (calls : CallSemantics)
+    (initial : Substitution) (instantiatedInputs : List Substitution)
+    (instantiatedGoals : List Goal)
+    (instantiatedAnswers : List Substitution)
+    (_execution :
+      RunsMany calls instantiatedInputs instantiatedGoals
+        instantiatedAnswers) : Prop :=
+  ∀ {carriedInputs originalGoals},
+    AnswerBagsAgree initial carriedInputs instantiatedInputs →
+    initial.applyGoals originalGoals = instantiatedGoals →
+    ∃ carriedAnswers,
+      RunsMany calls carriedInputs originalGoals carriedAnswers ∧
+      AnswerBagsAgree initial carriedAnswers instantiatedAnswers
+
+private abbrev RunsBranchesBackward (calls : CallSemantics)
+    (initial : Substitution) (instantiated : Substitution)
+    (instantiatedBranches : List Goal)
+    (instantiatedAnswers : List Substitution)
+    (_execution :
+      RunsBranches calls instantiated instantiatedBranches
+        instantiatedAnswers) : Prop :=
+  ∀ {carried originalBranches}, StateAgrees initial carried instantiated →
+    initial.applyGoals originalBranches = instantiatedBranches →
+    ∃ carriedAnswers,
+      RunsBranches calls carried originalBranches carriedAnswers ∧
+      AnswerBagsAgree initial carriedAnswers instantiatedAnswers
+
+section BackwardHandlers
+
+variable {calls : CallSemantics} {initial : Substitution}
+
+private theorem backwardTruth
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) :
+    RunsBackward calls initial instantiated .truth [instantiated]
+      (.truth instantiated) := by
+  intro carried originalGoal states goalEq
+  cases originalGoal <;> simp_all
+  exact ⟨[carried], .truth carried, .cons states .nil⟩
+
+private theorem backwardFail
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) :
+    RunsBackward calls initial instantiated .fail [] (.fail instantiated) := by
+  intro carried originalGoal states goalEq
+  cases originalGoal <;> simp_all
+  exact ⟨[], .fail carried, .nil⟩
+
+private theorem backwardUnifySuccess
+    (primitives : PrimitiveBisimulation calls initial)
+    (instantiated instantiatedResult : Substitution) (left right : Term)
+    (unification : Unifies instantiated left right instantiatedResult) :
+    RunsBackward calls initial instantiated (.unify left right)
+      [instantiatedResult]
+      (.unifySuccess instantiated instantiatedResult left right unification) := by
+  intro carried originalGoal states goalEq
+  cases originalGoal <;> simp_all
+  case unify originalLeft originalRight =>
+    rw [← goalEq.1, ← goalEq.2] at unification
+    obtain ⟨carriedResult, leftUnification, resultAgreement⟩ :=
+      primitives.unifyBackward states unification
+    exact ⟨[carriedResult],
+      .unifySuccess carried carriedResult originalLeft originalRight
+        leftUnification,
+      .cons resultAgreement .nil⟩
+
+private theorem backwardUnifyFailure
+    (primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) (left right : Term)
+    (failure : ∀ result, ¬ Unifies instantiated left right result) :
+    RunsBackward calls initial instantiated (.unify left right) []
+      (.unifyFailure instantiated left right failure) := by
+  intro carried originalGoal states goalEq
+  cases originalGoal <;> simp_all
+  case unify originalLeft originalRight =>
+    rw [← goalEq.1, ← goalEq.2] at failure
+    have carriedFailure : ∀ result,
+        ¬ Unifies carried originalLeft originalRight result := by
+      intro result leftUnification
+      obtain ⟨instantiatedResult, rightUnification, _⟩ :=
+        primitives.unifyForward states leftUnification
+      exact failure instantiatedResult rightUnification
+    exact ⟨[],
+      .unifyFailure carried originalLeft originalRight carriedFailure,
+      .nil⟩
+
+private theorem backwardIdenticalSuccess
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) (left right : Term)
+    (identity : Identical instantiated left right) :
+    RunsBackward calls initial instantiated (.identical left right)
+      [instantiated]
+      (.identicalSuccess instantiated left right identity) := by
+  intro carried originalGoal states goalEq
+  cases originalGoal <;> simp_all
+  case identical originalLeft originalRight =>
+    rw [← goalEq.1, ← goalEq.2] at identity
+    have carriedIdentity :=
+      (states.identical_iff originalLeft originalRight).mpr identity
+    exact ⟨[carried],
+      .identicalSuccess carried originalLeft originalRight carriedIdentity,
+      .cons states .nil⟩
+
+private theorem backwardIdenticalFailure
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) (left right : Term)
+    (different : ¬ Identical instantiated left right) :
+    RunsBackward calls initial instantiated (.identical left right) []
+      (.identicalFailure instantiated left right different) := by
+  intro carried originalGoal states goalEq
+  cases originalGoal <;> simp_all
+  case identical originalLeft originalRight =>
+    rw [← goalEq.1, ← goalEq.2] at different
+    have carriedDifferent : ¬ Identical carried originalLeft originalRight :=
+      fun carriedIdentity =>
+        different
+          ((states.identical_iff originalLeft originalRight).mp
+            carriedIdentity)
+    exact ⟨[],
+      .identicalFailure carried originalLeft originalRight carriedDifferent,
+      .nil⟩
+
+private theorem backwardCall
+    (primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) (predicate : String)
+    (arguments : List Term) (instantiatedAnswers : List Substitution)
+    (invoked :
+      calls predicate arguments instantiated instantiatedAnswers) :
+    RunsBackward calls initial instantiated (.call predicate arguments)
+      instantiatedAnswers
+      (.call instantiated predicate arguments instantiatedAnswers invoked) := by
+  intro carried originalGoal states goalEq
+  cases originalGoal <;> simp_all
+  case call originalPredicate originalArguments =>
+    rw [← goalEq.2] at invoked
+    obtain ⟨carriedAnswers, leftCall, answerAgreement⟩ :=
+      primitives.callBackward states invoked
+    exact ⟨carriedAnswers,
+      .call carried predicate originalArguments carriedAnswers leftCall,
+      answerAgreement⟩
+
+private theorem backwardConjunction
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) (goals : List Goal)
+    (instantiatedAnswers : List Substitution)
+    (body : RunsAll calls instantiated goals instantiatedAnswers)
+    (bodyBackward :
+      RunsAllBackward calls initial instantiated goals instantiatedAnswers
+        body) :
+    RunsBackward calls initial instantiated (.conjunction goals)
+      instantiatedAnswers
+      (.conjunction instantiated goals instantiatedAnswers body) := by
+  intro carried originalGoal states goalEq
+  cases originalGoal <;> simp_all
+  case conjunction originalGoals =>
+    obtain ⟨carriedAnswers, leftBody, answerAgreement⟩ :=
+      bodyBackward states goalEq
+    exact ⟨carriedAnswers,
+      .conjunction carried originalGoals carriedAnswers leftBody,
+      answerAgreement⟩
+
+private theorem backwardDisjunction
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) (branches : List Goal)
+    (instantiatedAnswers : List Substitution)
+    (body : RunsBranches calls instantiated branches instantiatedAnswers)
+    (bodyBackward :
+      RunsBranchesBackward calls initial instantiated branches
+        instantiatedAnswers body) :
+    RunsBackward calls initial instantiated (.disjunction branches)
+      instantiatedAnswers
+      (.disjunction instantiated branches instantiatedAnswers body) := by
+  intro carried originalGoal states goalEq
+  cases originalGoal <;> simp_all
+  case disjunction originalBranches =>
+    obtain ⟨carriedAnswers, leftBody, answerAgreement⟩ :=
+      bodyBackward states goalEq
+    exact ⟨carriedAnswers,
+      .disjunction carried originalBranches carriedAnswers leftBody,
+      answerAgreement⟩
+
+private theorem backwardIfSuccess
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated first : Substitution) (remaining : List Substitution)
+    (condition thenBranch elseBranch : Goal)
+    (instantiatedAnswers : List Substitution)
+    (conditionRun :
+      Runs calls instantiated condition (first :: remaining))
+    (thenRun : Runs calls first thenBranch instantiatedAnswers)
+    (conditionBackward :
+      RunsBackward calls initial instantiated condition (first :: remaining)
+        conditionRun)
+    (thenBackward :
+      RunsBackward calls initial first thenBranch instantiatedAnswers
+        thenRun) :
+    RunsBackward calls initial instantiated
+      (.ifThenElse condition thenBranch elseBranch) instantiatedAnswers
+      (.ifThenElseSuccess instantiated first remaining condition thenBranch
+        elseBranch instantiatedAnswers conditionRun thenRun) := by
+  intro carried originalGoal states goalEq
+  cases originalGoal <;> simp_all
+  case ifThenElse originalCondition originalThen originalElse =>
+    obtain ⟨carriedConditionAnswers, leftCondition, conditionAgreement⟩ :=
+      conditionBackward states goalEq.1
+    cases conditionAgreement with
+    | cons firstAgreement remainingAgreement =>
+        obtain ⟨carriedAnswers, leftThen, answerAgreement⟩ :=
+          thenBackward firstAgreement goalEq.2.1
+        exact ⟨carriedAnswers,
+          .ifThenElseSuccess carried _ _ originalCondition originalThen
+            originalElse carriedAnswers leftCondition leftThen,
+          answerAgreement⟩
+
+private theorem backwardIfFailure
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) (condition thenBranch elseBranch : Goal)
+    (instantiatedAnswers : List Substitution)
+    (conditionRun : Runs calls instantiated condition [])
+    (elseRun : Runs calls instantiated elseBranch instantiatedAnswers)
+    (conditionBackward :
+      RunsBackward calls initial instantiated condition [] conditionRun)
+    (elseBackward :
+      RunsBackward calls initial instantiated elseBranch instantiatedAnswers
+        elseRun) :
+    RunsBackward calls initial instantiated
+      (.ifThenElse condition thenBranch elseBranch) instantiatedAnswers
+      (.ifThenElseFailure instantiated condition thenBranch elseBranch
+        instantiatedAnswers conditionRun elseRun) := by
+  intro carried originalGoal states goalEq
+  cases originalGoal <;> simp_all
+  case ifThenElse originalCondition originalThen originalElse =>
+    obtain ⟨carriedConditionAnswers, leftCondition, conditionAgreement⟩ :=
+      conditionBackward states goalEq.1
+    cases conditionAgreement
+    obtain ⟨carriedAnswers, leftElse, answerAgreement⟩ :=
+      elseBackward states goalEq.2.2
+    exact ⟨carriedAnswers,
+      .ifThenElseFailure carried originalCondition originalThen originalElse
+        carriedAnswers leftCondition leftElse,
+      answerAgreement⟩
+
+private theorem backwardOnce
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) (goal : Goal)
+    (instantiatedBodyAnswers : List Substitution)
+    (body : Runs calls instantiated goal instantiatedBodyAnswers)
+    (bodyBackward :
+      RunsBackward calls initial instantiated goal instantiatedBodyAnswers
+        body) :
+    RunsBackward calls initial instantiated (.once goal)
+      (instantiatedBodyAnswers.take 1)
+      (.once instantiated goal instantiatedBodyAnswers body) := by
+  intro carried originalGoal states goalEq
+  cases originalGoal <;> simp_all
+  case once originalBody =>
+    obtain ⟨carriedBodyAnswers, leftBody, bodyAgreement⟩ :=
+      bodyBackward states goalEq
+    exact ⟨carriedBodyAnswers.take 1,
+      .once carried originalBody carriedBodyAnswers leftBody,
+      bodyAgreement.take_one⟩
+
+private theorem backwardWithMutex
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) (mutex : Term) (goal : Goal)
+    (instantiatedAnswers : List Substitution)
+    (body : Runs calls instantiated goal instantiatedAnswers)
+    (bodyBackward :
+      RunsBackward calls initial instantiated goal instantiatedAnswers body) :
+    RunsBackward calls initial instantiated (.withMutex mutex goal)
+      instantiatedAnswers
+      (.withMutex instantiated mutex goal instantiatedAnswers body) := by
+  intro carried originalGoal states goalEq
+  cases originalGoal <;> simp_all
+  case withMutex originalMutex originalBody =>
+    obtain ⟨carriedAnswers, leftBody, answerAgreement⟩ :=
+      bodyBackward states goalEq.2
+    exact ⟨carriedAnswers,
+      .withMutex carried originalMutex originalBody carriedAnswers leftBody,
+      answerAgreement⟩
+
+private theorem backwardAllNil
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) :
+    RunsAllBackward calls initial instantiated [] [instantiated]
+      (.nil instantiated) := by
+  intro carried originalGoals states goalsEq
+  cases originalGoals <;> simp_all
+  exact ⟨[carried], .nil carried, .cons states .nil⟩
+
+private theorem backwardAllCons
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) (goal : Goal) (goals : List Goal)
+    (instantiatedHeadAnswers instantiatedAnswers : List Substitution)
+    (head : Runs calls instantiated goal instantiatedHeadAnswers)
+    (tail :
+      RunsMany calls instantiatedHeadAnswers goals instantiatedAnswers)
+    (headBackward :
+      RunsBackward calls initial instantiated goal instantiatedHeadAnswers
+        head)
+    (tailBackward :
+      RunsManyBackward calls initial instantiatedHeadAnswers goals
+        instantiatedAnswers tail) :
+    RunsAllBackward calls initial instantiated (goal :: goals)
+      instantiatedAnswers
+      (.cons instantiated goal goals instantiatedHeadAnswers
+        instantiatedAnswers head tail) := by
+  intro carried originalGoals states goalsEq
+  cases originalGoals with
+  | nil => simp at goalsEq
+  | cons originalGoal originalGoals =>
+      simp at goalsEq
+      obtain ⟨carriedHeadAnswers, leftHead, headAgreement⟩ :=
+        headBackward states goalsEq.1
+      obtain ⟨carriedAnswers, leftTail, answerAgreement⟩ :=
+        tailBackward headAgreement goalsEq.2
+      exact ⟨carriedAnswers,
+        .cons carried originalGoal originalGoals carriedHeadAnswers
+          carriedAnswers leftHead leftTail,
+        answerAgreement⟩
+
+private theorem backwardManyNil
+    (_primitives : PrimitiveBisimulation calls initial)
+    (goals : List Goal) :
+    RunsManyBackward calls initial [] goals [] (.nil goals) := by
+  intro carriedInputs originalGoals inputAgreement goalsEq
+  cases inputAgreement
+  exact ⟨[], .nil originalGoals, .nil⟩
+
+private theorem backwardManyCons
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) (remaining : List Substitution)
+    (goals : List Goal)
+    (instantiatedHeadAnswers instantiatedTailAnswers : List Substitution)
+    (head :
+      RunsAll calls instantiated goals instantiatedHeadAnswers)
+    (tail :
+      RunsMany calls remaining goals instantiatedTailAnswers)
+    (headBackward :
+      RunsAllBackward calls initial instantiated goals
+        instantiatedHeadAnswers head)
+    (tailBackward :
+      RunsManyBackward calls initial remaining goals instantiatedTailAnswers
+        tail) :
+    RunsManyBackward calls initial (instantiated :: remaining) goals
+      (instantiatedHeadAnswers ++ instantiatedTailAnswers)
+      (.cons instantiated remaining goals instantiatedHeadAnswers
+        instantiatedTailAnswers head tail) := by
+  intro carriedInputs originalGoals inputAgreement goalsEq
+  cases inputAgreement with
+  | cons stateAgreement remainingAgreement =>
+      obtain ⟨carriedHeadAnswers, leftHead, headAgreement⟩ :=
+        headBackward stateAgreement goalsEq
+      obtain ⟨carriedTailAnswers, leftTail, tailAgreement⟩ :=
+        tailBackward remainingAgreement goalsEq
+      exact ⟨carriedHeadAnswers ++ carriedTailAnswers,
+        .cons _ _ originalGoals carriedHeadAnswers carriedTailAnswers
+          leftHead leftTail,
+        headAgreement.append tailAgreement⟩
+
+private theorem backwardBranchesNil
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) :
+    RunsBranchesBackward calls initial instantiated [] []
+      (.nil instantiated) := by
+  intro carried originalBranches states branchesEq
+  cases originalBranches <;> simp_all
+  exact ⟨[], .nil carried, .nil⟩
+
+private theorem backwardBranchesCons
+    (_primitives : PrimitiveBisimulation calls initial)
+    (instantiated : Substitution) (branch : Goal) (branches : List Goal)
+    (instantiatedHeadAnswers instantiatedTailAnswers : List Substitution)
+    (head : Runs calls instantiated branch instantiatedHeadAnswers)
+    (tail :
+      RunsBranches calls instantiated branches instantiatedTailAnswers)
+    (headBackward :
+      RunsBackward calls initial instantiated branch instantiatedHeadAnswers
+        head)
+    (tailBackward :
+      RunsBranchesBackward calls initial instantiated branches
+        instantiatedTailAnswers tail) :
+    RunsBranchesBackward calls initial instantiated (branch :: branches)
+      (instantiatedHeadAnswers ++ instantiatedTailAnswers)
+      (.cons instantiated branch branches instantiatedHeadAnswers
+        instantiatedTailAnswers head tail) := by
+  intro carried originalBranches states branchesEq
+  cases originalBranches with
+  | nil => simp at branchesEq
+  | cons originalBranch originalBranches =>
+      simp at branchesEq
+      obtain ⟨carriedHeadAnswers, leftHead, headAgreement⟩ :=
+        headBackward states branchesEq.1
+      obtain ⟨carriedTailAnswers, leftTail, tailAgreement⟩ :=
+        tailBackward states branchesEq.2
+      exact ⟨carriedHeadAnswers ++ carriedTailAnswers,
+        .cons carried originalBranch originalBranches carriedHeadAnswers
+          carriedTailAnswers leftHead leftTail,
+        headAgreement.append tailAgreement⟩
+
+end BackwardHandlers
+
+private theorem runsBackwardRec {calls : CallSemantics}
+    {initial instantiated : Substitution} {instantiatedGoal : Goal}
+    {instantiatedAnswers : List Substitution}
+    (primitives : PrimitiveBisimulation calls initial)
+    (execution :
+      Runs calls instantiated instantiatedGoal instantiatedAnswers) :
+    RunsBackward calls initial instantiated instantiatedGoal
+      instantiatedAnswers execution :=
+  Runs.rec (motive_1 := RunsBackward calls initial)
+    (motive_2 := RunsAllBackward calls initial)
+    (motive_3 := RunsManyBackward calls initial)
+    (motive_4 := RunsBranchesBackward calls initial)
+    (backwardTruth primitives) (backwardFail primitives)
+    (backwardUnifySuccess primitives) (backwardUnifyFailure primitives)
+    (backwardIdenticalSuccess primitives)
+    (backwardIdenticalFailure primitives) (backwardCall primitives)
+    (backwardConjunction primitives) (backwardDisjunction primitives)
+    (backwardIfSuccess primitives) (backwardIfFailure primitives)
+    (backwardOnce primitives) (backwardWithMutex primitives)
+    (backwardAllNil primitives) (backwardAllCons primitives)
+    (backwardManyNil primitives) (backwardManyCons primitives)
+    (backwardBranchesNil primitives) (backwardBranchesCons primitives)
+    execution
+
+private theorem runsAllBackwardRec {calls : CallSemantics}
+    {initial instantiated : Substitution} {instantiatedGoals : List Goal}
+    {instantiatedAnswers : List Substitution}
+    (primitives : PrimitiveBisimulation calls initial)
+    (execution :
+      RunsAll calls instantiated instantiatedGoals instantiatedAnswers) :
+    RunsAllBackward calls initial instantiated instantiatedGoals
+      instantiatedAnswers execution :=
+  RunsAll.rec (motive_1 := RunsBackward calls initial)
+    (motive_2 := RunsAllBackward calls initial)
+    (motive_3 := RunsManyBackward calls initial)
+    (motive_4 := RunsBranchesBackward calls initial)
+    (backwardTruth primitives) (backwardFail primitives)
+    (backwardUnifySuccess primitives) (backwardUnifyFailure primitives)
+    (backwardIdenticalSuccess primitives)
+    (backwardIdenticalFailure primitives) (backwardCall primitives)
+    (backwardConjunction primitives) (backwardDisjunction primitives)
+    (backwardIfSuccess primitives) (backwardIfFailure primitives)
+    (backwardOnce primitives) (backwardWithMutex primitives)
+    (backwardAllNil primitives) (backwardAllCons primitives)
+    (backwardManyNil primitives) (backwardManyCons primitives)
+    (backwardBranchesNil primitives) (backwardBranchesCons primitives)
+    execution
+
+private theorem runsManyBackwardRec {calls : CallSemantics}
+    {initial : Substitution}
+    {instantiatedInputs : List Substitution}
+    {instantiatedGoals : List Goal}
+    {instantiatedAnswers : List Substitution}
+    (primitives : PrimitiveBisimulation calls initial)
+    (execution :
+      RunsMany calls instantiatedInputs instantiatedGoals
+        instantiatedAnswers) :
+    RunsManyBackward calls initial instantiatedInputs instantiatedGoals
+      instantiatedAnswers execution :=
+  RunsMany.rec (motive_1 := RunsBackward calls initial)
+    (motive_2 := RunsAllBackward calls initial)
+    (motive_3 := RunsManyBackward calls initial)
+    (motive_4 := RunsBranchesBackward calls initial)
+    (backwardTruth primitives) (backwardFail primitives)
+    (backwardUnifySuccess primitives) (backwardUnifyFailure primitives)
+    (backwardIdenticalSuccess primitives)
+    (backwardIdenticalFailure primitives) (backwardCall primitives)
+    (backwardConjunction primitives) (backwardDisjunction primitives)
+    (backwardIfSuccess primitives) (backwardIfFailure primitives)
+    (backwardOnce primitives) (backwardWithMutex primitives)
+    (backwardAllNil primitives) (backwardAllCons primitives)
+    (backwardManyNil primitives) (backwardManyCons primitives)
+    (backwardBranchesNil primitives) (backwardBranchesCons primitives)
+    execution
+
+private theorem runsBranchesBackwardRec {calls : CallSemantics}
+    {initial instantiated : Substitution}
+    {instantiatedBranches : List Goal}
+    {instantiatedAnswers : List Substitution}
+    (primitives : PrimitiveBisimulation calls initial)
+    (execution :
+      RunsBranches calls instantiated instantiatedBranches
+        instantiatedAnswers) :
+    RunsBranchesBackward calls initial instantiated instantiatedBranches
+      instantiatedAnswers execution :=
+  RunsBranches.rec (motive_1 := RunsBackward calls initial)
+    (motive_2 := RunsAllBackward calls initial)
+    (motive_3 := RunsManyBackward calls initial)
+    (motive_4 := RunsBranchesBackward calls initial)
+    (backwardTruth primitives) (backwardFail primitives)
+    (backwardUnifySuccess primitives) (backwardUnifyFailure primitives)
+    (backwardIdenticalSuccess primitives)
+    (backwardIdenticalFailure primitives) (backwardCall primitives)
+    (backwardConjunction primitives) (backwardDisjunction primitives)
+    (backwardIfSuccess primitives) (backwardIfFailure primitives)
+    (backwardOnce primitives) (backwardWithMutex primitives)
+    (backwardAllNil primitives) (backwardAllCons primitives)
+    (backwardManyNil primitives) (backwardManyCons primitives)
+    (backwardBranchesNil primitives) (backwardBranchesCons primitives)
+    execution
+
+/-- Reverse half of substitution congruence for one open goal. The original
+goal is retained explicitly because substitution need not be injective. -/
+theorem Runs.backward {calls : CallSemantics}
+    {initial carried instantiated : Substitution} {originalGoal : Goal}
+    {instantiatedAnswers : List Substitution}
+    (primitives : PrimitiveBisimulation calls initial)
+    (states : StateAgrees initial carried instantiated)
+    (execution :
+      Runs calls instantiated (initial.applyGoal originalGoal)
+        instantiatedAnswers) :
+    ∃ carriedAnswers,
+      Runs calls carried originalGoal carriedAnswers ∧
+      AnswerBagsAgree initial carriedAnswers instantiatedAnswers :=
+  runsBackwardRec primitives execution states rfl
+
+/-- Reverse substitution congruence for left-to-right conjunction. -/
+theorem RunsAll.backward {calls : CallSemantics}
+    {initial carried instantiated : Substitution}
+    {originalGoals : List Goal} {instantiatedAnswers : List Substitution}
+    (primitives : PrimitiveBisimulation calls initial)
+    (states : StateAgrees initial carried instantiated)
+    (execution :
+      RunsAll calls instantiated (initial.applyGoals originalGoals)
+        instantiatedAnswers) :
+    ∃ carriedAnswers,
+      RunsAll calls carried originalGoals carriedAnswers ∧
+      AnswerBagsAgree initial carriedAnswers instantiatedAnswers :=
+  runsAllBackwardRec primitives execution states rfl
+
+/-- Reverse substitution congruence for ordered monadic answer binding. -/
+theorem RunsMany.backward {calls : CallSemantics}
+    {initial : Substitution}
+    {carriedInputs instantiatedInputs : List Substitution}
+    {originalGoals : List Goal} {instantiatedAnswers : List Substitution}
+    (primitives : PrimitiveBisimulation calls initial)
+    (inputs : AnswerBagsAgree initial carriedInputs instantiatedInputs)
+    (execution :
+      RunsMany calls instantiatedInputs (initial.applyGoals originalGoals)
+        instantiatedAnswers) :
+    ∃ carriedAnswers,
+      RunsMany calls carriedInputs originalGoals carriedAnswers ∧
+      AnswerBagsAgree initial carriedAnswers instantiatedAnswers :=
+  runsManyBackwardRec primitives execution inputs rfl
+
+/-- Reverse substitution congruence for source-ordered disjunction. -/
+theorem RunsBranches.backward {calls : CallSemantics}
+    {initial carried instantiated : Substitution}
+    {originalBranches : List Goal}
+    {instantiatedAnswers : List Substitution}
+    (primitives : PrimitiveBisimulation calls initial)
+    (states : StateAgrees initial carried instantiated)
+    (execution :
+      RunsBranches calls instantiated (initial.applyGoals originalBranches)
+        instantiatedAnswers) :
+    ∃ carriedAnswers,
+      RunsBranches calls carried originalBranches carriedAnswers ∧
+      AnswerBagsAgree initial carriedAnswers instantiatedAnswers :=
+  runsBranchesBackwardRec primitives execution states rfl
+
+/-- Big-step substitution bisimulation for one goal, with ordered answer bags
+related pointwise rather than identified as raw substitution lists. -/
+structure InstantiationBisimulation (calls : CallSemantics)
+    (initial carried instantiated : Substitution) (goal : Goal) : Prop where
+  forward : ∀ {carriedAnswers},
+    Runs calls carried goal carriedAnswers →
+      ∃ instantiatedAnswers,
+        Runs calls instantiated (initial.applyGoal goal)
+          instantiatedAnswers ∧
+        AnswerBagsAgree initial carriedAnswers instantiatedAnswers
+  backward : ∀ {instantiatedAnswers},
+    Runs calls instantiated (initial.applyGoal goal) instantiatedAnswers →
+      ∃ carriedAnswers,
+        Runs calls carried goal carriedAnswers ∧
+        AnswerBagsAgree initial carriedAnswers instantiatedAnswers
+
+/-- The structural forward and backward proofs form a big-step bisimulation
+whenever the primitive call contract is available. -/
+theorem instantiationBisimulation {calls : CallSemantics}
+    {initial carried instantiated : Substitution} {goal : Goal}
+    (primitives : PrimitiveBisimulation calls initial)
+    (states : StateAgrees initial carried instantiated) :
+    InstantiationBisimulation calls initial carried instantiated goal where
+  forward := fun execution => execution.forward primitives states
+  backward := fun execution => execution.backward primitives states
+
+/-- Concrete call-free substitution bisimulation. Open unification is proved
+internally, and there is no predicate-call premise left. -/
+theorem noCallsInstantiationBisimulation
+    (initial carried instantiated : Substitution) (goal : Goal)
+    (states : StateAgrees initial carried instantiated) :
+    InstantiationBisimulation NoCalls initial carried instantiated goal :=
+  instantiationBisimulation (.noCalls initial) states
+
+/-- Big-step substitution bisimulation for a left-to-right goal sequence. -/
+structure GoalsInstantiationBisimulation (calls : CallSemantics)
+    (initial carried instantiated : Substitution) (goals : List Goal) : Prop where
+  forward : ∀ {carriedAnswers},
+    RunsAll calls carried goals carriedAnswers →
+      ∃ instantiatedAnswers,
+        RunsAll calls instantiated (initial.applyGoals goals)
+          instantiatedAnswers ∧
+        AnswerBagsAgree initial carriedAnswers instantiatedAnswers
+  backward : ∀ {instantiatedAnswers},
+    RunsAll calls instantiated (initial.applyGoals goals)
+      instantiatedAnswers →
+      ∃ carriedAnswers,
+        RunsAll calls carried goals carriedAnswers ∧
+        AnswerBagsAgree initial carriedAnswers instantiatedAnswers
+
+/-- The sequence-level structural proofs form a big-step bisimulation under
+the same primitive contract. -/
+theorem goalsInstantiationBisimulation {calls : CallSemantics}
+    {initial carried instantiated : Substitution} {goals : List Goal}
+    (primitives : PrimitiveBisimulation calls initial)
+    (states : StateAgrees initial carried instantiated) :
+    GoalsInstantiationBisimulation calls initial carried instantiated goals
+    where
+  forward := fun execution => execution.forward primitives states
+  backward := fun execution => execution.backward primitives states
+
+/-- Concrete call-free substitution bisimulation for a goal sequence. -/
+theorem noCallsGoalsInstantiationBisimulation
+    (initial carried instantiated : Substitution) (goals : List Goal)
+    (states : StateAgrees initial carried instantiated) :
+    GoalsInstantiationBisimulation NoCalls initial carried instantiated goals :=
+  goalsInstantiationBisimulation (.noCalls initial) states
+
+/-- Executing the explicit alias equality yields a state whose call-free
+continuation is bisimilar to applying the alias throughout the continuation
+syntax. This is the ordered semantic instance required by normalized variable
+branches, still separate from the executable `Step` bridge. -/
+theorem explicitAliasPrefix_noCalls_bisimulation (source target : LogicVar)
+    (distinct : source ≠ target) (goals : List Goal) :
+    ∃ alias,
+      Unifies [] (.variable source) (.variable target) alias ∧
+      GoalsInstantiationBisimulation NoCalls alias alias [] goals := by
+  let alias : Substitution := [(source, .variable target)]
+  refine ⟨alias, unifies_empty_distinct_alias source target distinct, ?_⟩
+  exact noCallsGoalsInstantiationBisimulation alias alias [] goals
+    (StateAgrees.initial alias)
 
 /-- Running an empty conjunction tail preserves every open answer, including
 duplicates and their order. -/

@@ -174,6 +174,17 @@ def applyGoals : Substitution → List Goal → List Goal
     applyTerm [(source, replacement)] term =
       Term.instantiateOne source replacement term := rfl
 
+/-- Prepending a finite extension applies the older state first and then the
+new extension. -/
+theorem applyTerm_append (extension bindings : Substitution) (term : Term) :
+    applyTerm (extension ++ bindings) term =
+      applyTerm extension (applyTerm bindings term) := by
+  induction extension with
+  | nil => rfl
+  | cons binding extension induction =>
+      cases binding
+      simp only [List.cons_append, applyTerm, induction]
+
 @[simp] theorem applyTerms_singleton (source : LogicVar) (replacement : Term)
     (terms : List Term) :
     applyTerms [(source, replacement)] terms =
@@ -302,6 +313,75 @@ def applyGoals : Substitution → List Goal → List Goal
   | cons binding bindings induction =>
       cases binding
       simp only [applyGoal, applyTerm, induction, Goal.instantiateOne]
+
+@[simp] theorem applyGoal_cut (bindings : Substitution) :
+    applyGoal bindings .cut = .cut := by
+  induction bindings with
+  | nil => rfl
+  | cons binding bindings induction =>
+      cases binding
+      simp only [applyGoal, induction, Goal.instantiateOne]
+
+@[simp] theorem applyGoal_softCut (bindings : Substitution)
+    (condition thenBranch elseBranch : Goal) :
+    applyGoal bindings (.softCut condition thenBranch elseBranch) =
+      .softCut (applyGoal bindings condition)
+        (applyGoal bindings thenBranch) (applyGoal bindings elseBranch) := by
+  induction bindings with
+  | nil => rfl
+  | cons binding bindings induction =>
+      cases binding
+      simp only [applyGoal, induction, Goal.instantiateOne]
+
+@[simp] theorem applyGoal_negation (bindings : Substitution) (goal : Goal) :
+    applyGoal bindings (.negation goal) =
+      .negation (applyGoal bindings goal) := by
+  induction bindings with
+  | nil => rfl
+  | cons binding bindings induction =>
+      cases binding
+      simp only [applyGoal, induction, Goal.instantiateOne]
+
+@[simp] theorem applyGoal_findall (bindings : Substitution) (template : Term)
+    (goal : Goal) (output : Term) :
+    applyGoal bindings (.findall template goal output) =
+      .findall (applyTerm bindings template) (applyGoal bindings goal)
+        (applyTerm bindings output) := by
+  induction bindings with
+  | nil => rfl
+  | cons binding bindings induction =>
+      cases binding
+      simp only [applyGoal, applyTerm, induction, Goal.instantiateOne]
+
+@[simp] theorem applyGoal_catch (bindings : Substitution) (goal : Goal)
+    (exception : Term) (handler : Goal) :
+    applyGoal bindings (.catch goal exception handler) =
+      .catch (applyGoal bindings goal) (applyTerm bindings exception)
+        (applyGoal bindings handler) := by
+  induction bindings with
+  | nil => rfl
+  | cons binding bindings induction =>
+      cases binding
+      simp only [applyGoal, applyTerm, induction, Goal.instantiateOne]
+
+@[simp] theorem applyGoal_transaction (bindings : Substitution) (goal : Goal) :
+    applyGoal bindings (.transaction goal) =
+      .transaction (applyGoal bindings goal) := by
+  induction bindings with
+  | nil => rfl
+  | cons binding bindings induction =>
+      cases binding
+      simp only [applyGoal, induction, Goal.instantiateOne]
+
+@[simp] theorem applyGoal_forall (bindings : Substitution)
+    (generator test : Goal) :
+    applyGoal bindings (.forall generator test) =
+      .forall (applyGoal bindings generator) (applyGoal bindings test) := by
+  induction bindings with
+  | nil => rfl
+  | cons binding bindings induction =>
+      cases binding
+      simp only [applyGoal, induction, Goal.instantiateOne]
 
 end Substitution
 
@@ -452,6 +532,53 @@ theorem StateAgrees.reflexive (bindings : Substitution) :
     StateAgrees [] bindings bindings := by
   intro term
   rfl
+
+/-- Applying the same new substitution extension on both sides preserves
+state agreement. -/
+theorem StateAgrees.prepend {initial carried instantiated : Substitution}
+    (agreement : StateAgrees initial carried instantiated)
+    (extension : Substitution) :
+    StateAgrees initial (extension ++ carried) (extension ++ instantiated) := by
+  intro term
+  rw [Substitution.applyTerm_append, Substitution.applyTerm_append,
+    agreement term]
+
+/-- Open unification is preserved when an initial substitution moves from the
+runtime state into both operand terms. -/
+theorem Unifies.moveInitialForward
+    {initial carried instantiated : Substitution} {left right : Term}
+    {carriedResult : Substitution}
+    (states : StateAgrees initial carried instantiated)
+    (unification : Unifies carried left right carriedResult) :
+    ∃ instantiatedResult,
+      Unifies instantiated (initial.applyTerm left)
+        (initial.applyTerm right) instantiatedResult ∧
+      StateAgrees initial carriedResult instantiatedResult := by
+  cases unification with
+  | normalize extension left right root =>
+      refine ⟨extension ++ instantiated, ?_, states.prepend extension⟩
+      apply Unifies.normalize instantiated extension
+        (initial.applyTerm left) (initial.applyTerm right)
+      rw [← states left, ← states right]
+      exact root
+
+/-- Open unification can be reflected back from syntax-instantiated operands
+to the corresponding carried runtime state. -/
+theorem Unifies.moveInitialBackward
+    {initial carried instantiated : Substitution} {left right : Term}
+    {instantiatedResult : Substitution}
+    (states : StateAgrees initial carried instantiated)
+    (unification : Unifies instantiated (initial.applyTerm left)
+      (initial.applyTerm right) instantiatedResult) :
+    ∃ carriedResult,
+      Unifies carried left right carriedResult ∧
+      StateAgrees initial carriedResult instantiatedResult := by
+  cases unification with
+  | normalize extension instantiatedLeft instantiatedRight root =>
+      refine ⟨extension ++ carried, ?_, states.prepend extension⟩
+      apply Unifies.normalize carried extension left right
+      rw [states left, states right]
+      exact root
 
 /-- Ordered bag agreement preserves answer count, hence multiplicity. -/
 theorem AnswerBagsAgree.length_eq {initial : Substitution}
