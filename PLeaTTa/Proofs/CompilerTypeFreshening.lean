@@ -49,6 +49,46 @@ theorem compilerTypeFresheningSubst_domain
   simp [compilerTypeFresheningSubst, List.mapIdx_eq_zipIdx_map,
     Function.comp_def]
 
+/-- Looking up a key in the indexed generated-variable table returns the
+entry at that key's first list occurrence.  This is the reusable bridge from
+the independent `idxOf` specification to the executable association list. -/
+theorem subst_lookup_mapIdx_generated :
+    ∀ (names : List String) (counter : Nat) (source : String),
+      source ∈ names →
+      Metta.Subst.lookup
+          (names.mapIdx (fun index name =>
+            (name, Atom.var (compilerGeneratedName (counter + index)))))
+          source =
+        some (Atom.var
+          (compilerGeneratedName (counter + List.idxOf source names)))
+  | [], counter, source, member => by simp at member
+  | first :: rest, counter, source, member => by
+      by_cases equal : source = first
+      · subst source
+        simp [List.mapIdx_cons, Metta.Subst.lookup]
+      · have firstNe : first ≠ source := Ne.symm equal
+        have firstBeq : (first == source) = false :=
+          beq_eq_false_iff_ne.mpr firstNe
+        have restMember : source ∈ rest := by simpa [equal] using member
+        rw [List.mapIdx_cons]
+        simp only [Metta.Subst.lookup, equal, beq_iff_eq, if_false,
+          List.idxOf_cons, firstBeq, cond_false]
+        have induction := subst_lookup_mapIdx_generated rest (counter + 1)
+          source restMember
+        simpa only [Nat.add_assoc, Nat.add_left_comm, Nat.add_comm] using
+          induction
+
+/-- Exact executable lookup law, stated at the source variable's independent
+first-occurrence index. -/
+theorem compilerTypeFresheningSubst_lookup_idxOf
+    {counter : Nat} {chain : List Atom} {source : String}
+    (member : source ∈ compilerTypeVarNames chain) :
+    Metta.Subst.lookup (compilerTypeFresheningSubst counter chain) source =
+      some (Atom.var (compilerGeneratedName
+        (counter + List.idxOf source (compilerTypeVarNames chain)))) := by
+  exact subst_lookup_mapIdx_generated (compilerTypeVarNames chain) counter
+    source member
+
 /-- A finite association-list lookup succeeds for every key in its domain.
 This small generic law avoids re-proving lookup plumbing in every compiler
 freshening consumer. -/

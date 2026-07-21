@@ -628,6 +628,203 @@ def refinedTypeCheckGoals (value : Term) (expected : String) (counter : Nat) :
       [.call "get-metatype" [value, metaType],
        .unify metaType (.atom expected)])]
 
+/-- Source-variable order used when native `findall/3` copies one declared
+arrow chain into a branch-local fresh variant.  First occurrence determines
+the independent generated-variable index; repeated occurrences share it.
+This definition is over source syntax only and does not call PLeaTTa's
+compiler or substitution implementation. [SPEC translator.pl:317-321] -/
+def typeChainVariables (chain : List Atom) : List String :=
+  (chain.flatMap Atom.vars).eraseDups
+
+/-- Independent freshening of one atomic type expression.  The supported
+exact bridge begins with symbols and variables; compound type expressions
+can add constructors without changing branch assembly. -/
+inductive FreshensTypeAtom (sourceChain : List Atom) (counter : Nat) :
+    Atom → Term → Prop where
+  | symbol (name : String) (notTrue : name ≠ "true")
+      (notFalse : name ≠ "false") :
+      FreshensTypeAtom sourceChain counter (.sym name) (.atom name)
+  | variable (name : String)
+      (member : name ∈ typeChainVariables sourceChain) :
+      FreshensTypeAtom sourceChain counter (.var name)
+        (.variable
+          (.generated (counter + List.idxOf name
+            (typeChainVariables sourceChain))))
+
+/-- Ordered pointwise freshening for an atomic arrow chain. -/
+inductive FreshensTypeAtoms (sourceChain : List Atom) (counter : Nat) :
+    List Atom → List Term → Prop where
+  | nil : FreshensTypeAtoms sourceChain counter [] []
+  | cons {source : Atom} {reference : Term} {sources : List Atom}
+      {references : List Term}
+      (head : FreshensTypeAtom sourceChain counter source reference)
+      (tail : FreshensTypeAtoms sourceChain counter sources references) :
+      FreshensTypeAtoms sourceChain counter (source :: sources)
+        (reference :: references)
+
+/-- One branch-local fresh variant of a complete declared arrow chain.  Its
+counter cost is the number of distinct source type variables, irrespective of
+how often each variable occurs. [SPEC translator.pl:317-321,349-351] -/
+inductive FreshensTypeChain (counter : Nat) (sourceChain : List Atom) :
+    List Term → Nat → Prop where
+  | freshened {referenceChain : List Term}
+      (atoms : FreshensTypeAtoms sourceChain counter sourceChain
+        referenceChain) :
+      FreshensTypeChain counter sourceChain referenceChain
+        (counter + (typeChainVariables sourceChain).length)
+
+/-- General independent type/meta-type soft-cut.  Unlike
+`refinedTypeCheckGoals`, the expected type may itself be an open branch-local
+variable. [SPEC translator.pl:349-370] -/
+def typedTypeCheckGoals (value expected : Term) (counter : Nat) : List Goal :=
+  let directType := Term.variable (.generated counter)
+  let metaType := Term.variable (.generated (counter + 1))
+  [.softCut
+    (.conjunction
+      [.call "get-type" [value, directType],
+       .unify directType expected])
+    .truth
+    (.conjunction
+      [.call "get-metatype" [value, metaType],
+       .unify metaType expected])]
+
+/-- Types which take the checked input branch of
+`translate_args_by_type/4`. -/
+def CheckedInputType (expected : Term) : Prop :=
+  expected ≠ .atom "%Undefined%" ∧ expected ≠ .atom "Atom" ∧
+    expected ≠ .atom "Expression"
+
+/-- Types which take the checked output branch of
+`typed_functioncall_branch/8`. `Expression` is intentionally checked here. -/
+def CheckedResultType (expected : Term) : Prop :=
+  expected ≠ .atom "%Undefined%" ∧ expected ≠ .atom "Atom"
+
+/-- Independent ordered translation of supplied arguments against one
+already-fresh arrow-chain prefix.  The empty-source rule intentionally ignores
+surplus declared types, while a nonempty source with no type has no
+derivation. [SPEC translator.pl:362-370] -/
+inductive TranslatesFreshTypedArgs : TranslatorState → Nat → List Atom →
+    List Term → List Term → List Goal → Nat → Prop where
+  | nil {state : TranslatorState} {counter : Nat} {types : List Term} :
+      TranslatesFreshTypedArgs state counter [] types [] [] counter
+  | expression {state : TranslatorState} {counter nextCounter : Nat}
+      {source : Atom} {sources : List Atom} {term : Term} {terms : List Term}
+      {types : List Term} {tailGoals : List Goal}
+      (quoted : Quotes source term)
+      (tail : TranslatesFreshTypedArgs state counter sources types terms
+        tailGoals nextCounter) :
+      TranslatesFreshTypedArgs state counter (source :: sources)
+        (.atom "Expression" :: types) (term :: terms) tailGoals nextCounter
+  | undefined {state : TranslatorState} {counter middleCounter nextCounter : Nat}
+      {source : Atom} {sources : List Atom} {term : Term} {terms : List Term}
+      {types : List Term} {headGoals tailGoals : List Goal}
+      (head : TranslatesExpr state counter source term headGoals middleCounter)
+      (tail : TranslatesFreshTypedArgs state middleCounter sources types terms
+        tailGoals nextCounter) :
+      TranslatesFreshTypedArgs state counter (source :: sources)
+        (.atom "%Undefined%" :: types) (term :: terms)
+        (headGoals ++ tailGoals) nextCounter
+  | atom {state : TranslatorState} {counter middleCounter nextCounter : Nat}
+      {source : Atom} {sources : List Atom} {term : Term} {terms : List Term}
+      {types : List Term} {headGoals tailGoals : List Goal}
+      (head : TranslatesExpr state counter source term headGoals middleCounter)
+      (tail : TranslatesFreshTypedArgs state middleCounter sources types terms
+        tailGoals nextCounter) :
+      TranslatesFreshTypedArgs state counter (source :: sources)
+        (.atom "Atom" :: types) (term :: terms)
+        (headGoals ++ tailGoals) nextCounter
+  | checked {state : TranslatorState}
+      {counter middleCounter nextCounter : Nat}
+      {source : Atom} {sources : List Atom} {term expected : Term}
+      {terms types : List Term} {headGoals tailGoals : List Goal}
+      (checkedType : CheckedInputType expected)
+      (head : TranslatesExpr state counter source term headGoals middleCounter)
+      (tail : TranslatesFreshTypedArgs state (middleCounter + 2) sources types
+        terms tailGoals nextCounter) :
+      TranslatesFreshTypedArgs state counter (source :: sources)
+        (expected :: types) (term :: terms)
+        (headGoals ++ typedTypeCheckGoals term expected middleCounter ++
+          tailGoals) nextCounter
+
+/-- Independent result-type suffix generated after one typed call or partial
+value has been constructed. -/
+inductive TranslatesResultTypeCheck : Nat → Term → Term → List Goal → Nat →
+    Prop where
+  | undefined {counter : Nat} {value : Term} :
+      TranslatesResultTypeCheck counter value (.atom "%Undefined%") [] counter
+  | atom {counter : Nat} {value : Term} :
+      TranslatesResultTypeCheck counter value (.atom "Atom") [] counter
+  | checked {counter : Nat} {value expected : Term}
+      (checkedType : CheckedResultType expected) :
+      TranslatesResultTypeCheck counter value expected
+        (typedTypeCheckGoals value expected counter) (counter + 2)
+
+/-- Independent `build_call_or_partial/6` decision after typed arguments have
+been translated. [SPEC translator.pl:335-346] -/
+inductive BuildsCallOrPartial (registry : FunctionRegistry) : String →
+    List Term → Term → Term → List Goal → Prop where
+  | complete {head : String} {terms : List Term} {result : Term}
+      (accepted : registry.acceptsArity head terms.length) :
+      BuildsCallOrPartial registry head terms result result
+        [.call head (terms ++ [result])]
+  | incomplete {head : String} {terms : List Term} {result : Term}
+      (rejected : ¬ registry.acceptsArity head terms.length) :
+      BuildsCallOrPartial registry head terms result
+        (.compound "partial" [.atom head, .list terms none]) []
+
+/-- Independent assembly of one atom-headed, empty-prefix branch of pinned
+typed function dispatch.  Freshening, argument checks, fresh incomplete-call
+partial construction, and result checks are separate premises so their
+adequacy lemmas can be reused independently.  Pre-bound partial heads and
+their prefix goals are deliberately outside this relation.
+[SPEC translator.pl:335-370] -/
+inductive TranslatesTypedBranch (registry : FunctionRegistry) :
+    TranslatorState → Nat → String → List Atom → List Atom → Term → Term →
+      List Goal → Nat → Prop where
+  | branch {state : TranslatorState} {counter freshCounter argumentCounter
+      nextCounter : Nat} {head : String} {sources sourceChain : List Atom}
+      {freshChain parameterTypes : List Term} {resultType sharedResult
+      branchResult : Term} {terms : List Term}
+      {argumentGoals callGoals resultGoals : List Goal}
+      (freshened : FreshensTypeChain counter sourceChain freshChain
+        freshCounter)
+      (split : freshChain = parameterTypes ++ [resultType])
+      (arguments : TranslatesFreshTypedArgs state freshCounter sources
+        parameterTypes terms argumentGoals argumentCounter)
+      (callOrPartial : BuildsCallOrPartial registry head terms sharedResult
+        branchResult callGoals)
+      (resultCheck : TranslatesResultTypeCheck argumentCounter branchResult
+        resultType resultGoals nextCounter) :
+      TranslatesTypedBranch registry state counter head sources sourceChain
+        sharedResult branchResult
+        (argumentGoals ++ callGoals ++ resultGoals) nextCounter
+
+/-- Independent ordered `maplist(typed_functioncall_branch, ...)` judgment for
+the atom-headed, empty-prefix fragment.  Every source type chain contributes
+exactly one branch in source order; duplicates therefore remain duplicates
+unless the separately specified `list_to_set/2` preprocessing relation has
+removed them.  Chain extraction, nonempty guards, prefix-goal insertion,
+pre-bound partial heads, and final disjunction construction are separate
+outer obligations. [SPEC translator.pl:320-321,349-358] -/
+inductive TranslatesTypedBranches (registry : FunctionRegistry)
+    (state : TranslatorState) (head : String) (sources : List Atom)
+    (sharedResult : Term) : Nat → List (List Atom) →
+      List (Term × List Goal) → Nat → Prop where
+  | nil {counter : Nat} :
+      TranslatesTypedBranches registry state head sources sharedResult
+        counter [] [] counter
+  | cons {counter middleCounter nextCounter : Nat}
+      {sourceChain : List Atom} {sourceChains : List (List Atom)}
+      {branchResult : Term} {branchGoals : List Goal}
+      {branches : List (Term × List Goal)}
+      (branch : TranslatesTypedBranch registry state counter head sources
+        sourceChain sharedResult branchResult branchGoals middleCounter)
+      (tail : TranslatesTypedBranches registry state head sources sharedResult
+        middleCounter sourceChains branches nextCounter) :
+      TranslatesTypedBranches registry state head sources sharedResult counter
+        (sourceChain :: sourceChains)
+        ((branchResult, branchGoals) :: branches) nextCounter
+
 /-- Independent ordered fragment of pinned `translate_args_by_type/4`
 (`translator.pl:362-370`). `Expression` inputs remain quoted source data;
 value inputs use ordinary expression translation. The mode list is consumed

@@ -403,6 +403,30 @@ theorem EnvAgrees.notContains {state : TranslatorState} {env : CEnv}
       exact False.elim
         (absent ((agreement.translatorRules name).mpr executableRule))
 
+/-- Exact cross-representation contract for the expected type and the value
+carried out of its soft-cut check.  Native Prolog preserves the binding of an
+open type variable automatically; PLeaTTa must name that variable in the
+soft-cut query template.  This relation states the two supported atomic cases
+without calling `typeCheckBindingTemplate` or any compiler function. -/
+inductive TypeCheckExpectedAgrees : Term → Atom → Atom → Prop where
+  | atom {name : String} (notTrue : name ≠ "true")
+      (notFalse : name ≠ "false") :
+      TypeCheckExpectedAgrees (.atom name) (.sym name) (.sym "#u")
+  | generated (index : Nat) :
+      TypeCheckExpectedAgrees (.variable (.generated index))
+        (.var s!"_q{index}")
+        (chainOf [.sym "#u", .var s!"_q{index}"])
+
+/-- The expected value named by the type-check carry contract has the ordinary
+compiler representation agreement. -/
+theorem TypeCheckExpectedAgrees.term {reference : Term}
+    {executable template : Atom}
+    (agreement : TypeCheckExpectedAgrees reference executable template) :
+    TermAgrees reference executable := by
+  cases agreement with
+  | atom notTrue notFalse => exact .atom notTrue notFalse
+  | generated index => exact .generatedVariable index
+
 mutual
 
 /-- Cross-representation agreement for the independent and executable goal
@@ -439,6 +463,30 @@ inductive GoalAgrees : PeTTaSpec.PrologCore.Goal → PLeaTTa.Goal → Prop where
         (.softCut (.conjunction referenceCondition) .truth
           (.conjunction referenceElse))
         (.softcut (.sym "#u") executableCondition [] executableElse)
+  | typeCheckSoftCut {referenceValue referenceExpected referenceDirect
+        referenceMeta : Term}
+      {executableValue executableExpected executableDirect executableMeta
+        executableTemplate : Atom}
+      (value : TermAgrees referenceValue executableValue)
+      (expected : TypeCheckExpectedAgrees referenceExpected executableExpected
+        executableTemplate)
+      (direct : TermAgrees referenceDirect executableDirect)
+      (metaTerm : TermAgrees referenceMeta executableMeta) :
+      GoalAgrees
+        (.softCut
+          (.conjunction
+            [.call "get-type" [referenceValue, referenceDirect],
+             .unify referenceDirect referenceExpected])
+          .truth
+          (.conjunction
+            [.call "get-metatype" [referenceValue, referenceMeta],
+             .unify referenceMeta referenceExpected]))
+        (.softcut executableTemplate
+          [.bin "get-type" [executableValue] executableDirect,
+           .eq executableDirect (chainify executableExpected)]
+          []
+          [.bin "get-metatype" [executableValue] executableMeta,
+           .eq executableMeta executableExpected])
   | shortCircuitAnd {referenceCondition referenceBody referenceOutput : Term}
       {executableCondition executableBody executableOutput : Atom}
       {referenceBodyGoals : List PeTTaSpec.PrologCore.Goal}

@@ -1007,6 +1007,37 @@ theorem compileExprFuel_mono (fuel extra : Nat) (env : CEnv) (start : Nat)
       exact (compilerFuelStepAt (fuel + extra)).expr
         env start source term goals next ih
 
+/-- Once exact typed-argument traversal succeeds, any additional fuel
+preserves its exact ordered terms, goals, and fresh-name counter.  The mutual
+stability invariant already proves this fact; exporting it lets adequacy
+proofs choose one canonical successful result instead of realigning an
+existential result at every recursive consumer. -/
+theorem compileTypedArgsFuel_mono (fuel extra : Nat) (env : CEnv)
+    (start : Nat) (sources types terms : List Metta.Atom)
+    (goals : List Goal) (next : Nat)
+    (compiled : compileTypedArgsFuel fuel env start sources types =
+      .ok (terms, goals, next)) :
+    compileTypedArgsFuel (fuel + extra) env start sources types =
+      .ok (terms, goals, next) := by
+  induction extra with
+  | zero => simpa using compiled
+  | succ extra ih =>
+      rw [Nat.add_succ]
+      exact (compilerFuelStepAt (fuel + extra)).typedArgs
+        env start sources types terms goals next ih
+
+/-- Order-theoretic typed-traversal monotonicity. -/
+theorem compileTypedArgsFuel_mono_of_le {fuel more : Nat} (env : CEnv)
+    (start : Nat) (sources types terms : List Metta.Atom)
+    (goals : List Goal) (next : Nat) (fuelLe : fuel ≤ more)
+    (compiled : compileTypedArgsFuel fuel env start sources types =
+      .ok (terms, goals, next)) :
+    compileTypedArgsFuel more env start sources types =
+      .ok (terms, goals, next) := by
+  rw [show more = fuel + (more - fuel) by omega]
+  exact compileTypedArgsFuel_mono fuel (more - fuel) env start sources types
+    terms goals next compiled
+
 /-- Order-theoretic form of `compileExprFuel_mono`: any larger budget
 preserves a successful expression compilation exactly. -/
 theorem compileExprFuel_mono_of_le {fuel more : Nat} (env : CEnv)
