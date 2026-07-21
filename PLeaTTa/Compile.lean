@@ -1787,6 +1787,68 @@ theorem compilePatternListFuel_cons_eq (fuel : Nat) (env : CEnv)
   rfl
 
 set_option maxHeartbeats 2000000 in
+/-- A head classified outside every pinned special-form clause reaches the
+generic application dispatcher.  This small equation hides the generated
+negative premises of the large special-form match without changing the
+executable compiler. -/
+theorem compileAppCoreFuel_other_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (head : String) (arguments : List Atom)
+    (other : classifyAppCoreHead head = .other) :
+    compileAppCoreFuel (fuel + 1) env counter head arguments =
+      compileAppDefaultWith
+        (fun next => compileArgsAtFuel fuel env next head 0 arguments)
+        (fun next types =>
+          compileTypedArgsFuel fuel env next arguments types)
+        (fun next => compileListFuel fuel env next arguments)
+        env counter head arguments := by
+  rw [compileAppCoreFuel.eq_69] <;> simp_all only <;> simp
+
+set_option maxHeartbeats 2000000 in
+/-- Exact executable equation for an ordinary unary builtin application.
+
+Every dispatch premise is explicit: stream rewriting and translator-rule,
+imported-Prolog, and locally-defined ownership all take priority over the
+builtin catalog.  The arity premise excludes partial application. -/
+theorem compileExprFuel_unary_builtin_eq (argumentFuel : Nat) (env : CEnv)
+    (counter : Nat) (head : String) (argument term : Atom)
+    (goals : List Goal) (nextCounter : Nat)
+    (noRewrite : rewriteStreamOp? head [argument] = none)
+    (noHook : env.translatorRules.contains head = false)
+    (other : classifyAppCoreHead head = .other)
+    (notProlog : env.prologFunctions.contains head = false)
+    (notDefined : env.defined.contains head = false)
+    (isBuiltin : env.isBin head = true)
+    (unary : compileBinArity head = some 1)
+    (argumentCompiled :
+      compileArgsAtFuel argumentFuel env counter head 0 [argument] =
+        .ok ([term], goals, nextCounter)) :
+    compileExprFuel (argumentFuel + 3) env counter
+        (.expr [.sym head, argument]) =
+      .ok (.var s!"_q{nextCounter}",
+        goals ++ [Goal.bin head [term] (.var s!"_q{nextCounter}")],
+        nextCounter + 1) := by
+  rw [show argumentFuel + 3 = (argumentFuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [show argumentFuel + 2 = (argumentFuel + 1) + 1 by omega]
+  rw [compileAppFuel.eq_2]
+  rw [noRewrite]
+  simp only
+  rw [noHook]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [compileAppCoreFuel_other_eq argumentFuel env counter head [argument]
+    other]
+  simp only [compileAppDefaultWith]
+  rw [notProlog]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [notDefined]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [isBuiltin]
+  simp only [↓reduceIte]
+  rw [argumentCompiled]
+  rw [unary]
+  rfl
+
+set_option maxHeartbeats 2000000 in
 /-- Negative sequencing example: native `progn` requires at least one
 expression, so the empty form is rejected explicitly. -/
 theorem compileExprFuel_progn_empty_eq (fuel counter : Nat) (env : CEnv)

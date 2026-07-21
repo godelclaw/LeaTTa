@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=86f2a1f2e886105f7090b766ddf339a179cb2529c875bd18440a73255bb202f2
+# compiler_sha256=91f176424ecbd6088862d4e490bfb1a98e797676de64116e34eb252ac4066e25
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -48,7 +48,7 @@ APP.unquote_other	HE64-67	L	-	N	FAIL	library-presence-not-modeled
 APP.empty	M105-106,T310-346	S	TranslatesEmpty.call	BC	PASS	independent dispatch rule; arbitrary unobservable native result; ordered empty-answer equivalence; compiler soundness/completeness; sealed terminal failure step
 APP.cut	T117-118	X	TranslatesExpr.cut	SC	PASS	covered
 APP.test	T119-126,M205-209	S	-	N	GAP	internal-test-results-helper
-APP.trace	T73-75	X	-	EQ	GAP	pre-hook-rewrite-and-runtime-differential-pass; independent-rule-open
+APP.trace	T73-75,T91-110	X	TranslatesTrace.rewrite	SC	PASS	pre-hook stream rewrite; rewritten progn and println priorities explicit; left-to-right result-goal-counter soundness/completeness
 APP.and_then	T177-180	X	TranslatesExpr.andThen	SC	PASS	nested-conjunction flattening; identity-test; branch-goal-order; exact-counter; runtime-positive-and-shadowing-witnesses
 APP.or_else	T181-183	X	TranslatesExpr.orElse	SC	PASS	nested-conjunction flattening; identity-test; branch-goal-order; exact-counter; runtime-positive-and-shadowing-witnesses
 APP.hash_plus	M53,M316	S	-	EQ	FAIL	ordinary-plus-not-CLPFD
@@ -109,6 +109,7 @@ FALLBACK.typed_empty_partial	T335-346	X	-	N	GAP	partial-representation-unproved
 FALLBACK.defined_direct	T312-346	X	-	N	GAP	direct-call-unproved
 FALLBACK.defined_partial	T335-346	X	-	N	GAP	partial-representation-unproved
 FALLBACK.bin_fixed_direct	T312-346,M309-323	S	-	N	GAP	internal-builtin-not-Prolog-call
+FALLBACK.bin_fixed_println	T310-346,M198-200,M306-312	S	TranslatesUnaryBuiltin.call	SC	PASS	unary value-mode println fragment; ownership-priority and fixed arity explicit; typed host execution remains a declared boundary
 FALLBACK.bin_fixed_partial	T335-346	S	-	N	GAP	internal-partial
 FALLBACK.bin_variadic	T312-346	S	-	N	GAP	internal-builtin
 FALLBACK.unknown_dynamic	T332-333,M50-64	S	-	N	GAP	deferred-runtime-classification

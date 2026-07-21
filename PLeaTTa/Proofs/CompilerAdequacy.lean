@@ -6,6 +6,7 @@ Trusted boundary: none
 -/
 import PLeaTTa.Compile
 import PLeaTTa.PeTTaSpec.PrologSemantics
+import PLeaTTa.Proofs.CompilerDesugaring
 
 namespace PLeaTTa.CompilerAdequacy
 
@@ -2073,6 +2074,298 @@ theorem compileArgs_complete {state : TranslatorState} (env : CEnv)
     Except.ok.inj (compiled.symm.trans referenceCompiled)
   cases resultEquality
   exact ⟨terms, goals, native, termsAgreement, goalsAgreement⟩
+
+/-- Fuel-indexed soundness for the independently specified pinned unary
+builtin fragment.  The executable ownership and argument-mode premises are
+kept explicit: a translator hook, imported Prolog predicate, local function,
+or staged `Expression` argument would select a different pinned branch. -/
+theorem compileExprFuel_unary_builtin_sound {state : TranslatorState}
+    (env : CEnv) (agreement : EnvAgrees state env) {counter : Nat}
+    {head : String} {source : Atom} {term : Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains head = false)
+    (notDefined : env.defined.contains head = false)
+    (isBuiltin : env.isBin head = true)
+    (modeAgreement : ArgModesAgree env head 0 [.value])
+    (native :
+      TranslatesUnaryBuiltin state counter head source term goals nextCounter) :
+    ∃ baseFuel,
+      0 < baseFuel ∧
+      baseFuel < 16 * source.size ∧
+      ∀ extraFuel, ∃ internal executableGoals,
+        compileExprFuel (baseFuel + extraFuel) env counter source =
+          .ok (internal, executableGoals, nextCounter) ∧
+        TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  cases native with
+  | call builtin notShadowed argument =>
+      rename_i argumentCounter argumentSource argumentTerm argumentGoals
+      have typed :
+          TranslatesTypedArgs state counter [.value] [argumentSource]
+            [argumentTerm] argumentGoals argumentCounter := by
+        simpa using TranslatesTypedArgs.value argument
+          (TranslatesTypedArgs.nil (state := state)
+            (counter := argumentCounter))
+      obtain ⟨argumentFuel, argumentPositive, argumentBound,
+          argumentCompiles⟩ :=
+        compileArgsAtFuel_initial_sound env agreement head typed modeAgreement
+      refine ⟨argumentFuel + 3, by omega, ?_, ?_⟩
+      · simp only [Atom.size, List.map, List.sum_cons, List.sum_nil,
+          Nat.add_zero] at argumentBound ⊢
+        omega
+      · intro extraFuel
+        obtain ⟨internals, executableArgumentGoals, compiled,
+            termsAgreement, goalsAgreement⟩ := argumentCompiles extraFuel
+        cases termsAgreement with
+        | cons argumentAgreement tailAgreement =>
+          rename_i executableArgument executableTail
+          cases tailAgreement
+          let result := Term.variable (.generated argumentCounter)
+          let executableResult := Atom.var s!"_q{argumentCounter}"
+          have resultAgreement : TermAgrees result executableResult := by
+            exact .generatedVariable argumentCounter
+          have callAgreement :
+              GoalAgrees (.call head [argumentTerm, result])
+                (.bin head [executableArgument] executableResult) := by
+            simpa [result] using GoalAgrees.builtin
+              (TermsAgree.cons argumentAgreement TermsAgree.nil)
+              resultAgreement
+          refine ⟨executableResult,
+            executableArgumentGoals ++
+              [.bin head [executableArgument] executableResult], ?_,
+            resultAgreement, GoalsAgree.append goalsAgreement
+              (.cons callAgreement .nil)⟩
+          rw [show (argumentFuel + 3) + extraFuel =
+            (argumentFuel + extraFuel) + 3 by omega]
+          cases builtin
+          exact compileExprFuel_unary_builtin_eq
+            (argumentFuel + extraFuel) env counter "println!" argumentSource
+            executableArgument executableArgumentGoals argumentCounter
+            (by simp [rewriteStreamOp?, rewriteStreamOpForHead])
+            (agreement.notContains notShadowed)
+            (by decide) notProlog notDefined isBuiltin (by decide) compiled
+
+/-- Public soundness of ordinary unary-builtin translation at the actual
+source-derived compiler budget. -/
+theorem compileExpr_unary_builtin_sound {state : TranslatorState} (env : CEnv)
+    (agreement : EnvAgrees state env) {counter : Nat} {head : String}
+    {source : Atom} {term : Term} {goals : List PeTTaSpec.PrologCore.Goal}
+    {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains head = false)
+    (notDefined : env.defined.contains head = false)
+    (isBuiltin : env.isBin head = true)
+    (modeAgreement : ArgModesAgree env head 0 [.value])
+    (native :
+      TranslatesUnaryBuiltin state counter head source term goals nextCounter) :
+    ∃ internal executableGoals,
+      compileExpr env counter source =
+        .ok (internal, executableGoals, nextCounter) ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨baseFuel, _basePositive, baseBound, compiles⟩ :=
+    compileExprFuel_unary_builtin_sound env agreement notProlog notDefined
+      isBuiltin modeAgreement native
+  have publicBound : baseFuel ≤ compilerFuel source + 64 := by
+    simp [compilerFuel]
+    omega
+  obtain ⟨extraFuel, publicFuelEq⟩ :
+      ∃ extraFuel, compilerFuel source + 64 = baseFuel + extraFuel := by
+    exact ⟨compilerFuel source + 64 - baseFuel, by omega⟩
+  obtain ⟨internal, executableGoals, compiled, termAgreement,
+      goalsAgreement⟩ := compiles extraFuel
+  refine ⟨internal, executableGoals, ?_, termAgreement, goalsAgreement⟩
+  rw [compileExpr, publicFuelEq]
+  exact compiled
+
+/-- Completeness on independently supported ordinary unary-builtin forms. -/
+theorem compileExpr_unary_builtin_complete {state : TranslatorState}
+    (env : CEnv) (agreement : EnvAgrees state env) {counter : Nat}
+    {head : String} {source internal : Atom}
+    {executableGoals : List PLeaTTa.Goal} {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains head = false)
+    (notDefined : env.defined.contains head = false)
+    (isBuiltin : env.isBin head = true)
+    (modeAgreement : ArgModesAgree env head 0 [.value])
+    (supported : SupportedUnaryBuiltin state counter head source)
+    (compiled : compileExpr env counter source =
+      .ok (internal, executableGoals, nextCounter)) :
+    ∃ term goals,
+      TranslatesUnaryBuiltin state counter head source term goals nextCounter ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨term, goals, referenceCounter, native⟩ := supported
+  obtain ⟨referenceInternal, referenceGoals, referenceCompiled,
+      termAgreement, goalsAgreement⟩ :=
+    compileExpr_unary_builtin_sound env agreement notProlog notDefined
+      isBuiltin modeAgreement native
+  have resultEquality :
+      (internal, executableGoals, nextCounter) =
+        (referenceInternal, referenceGoals, referenceCounter) :=
+    Except.ok.inj (compiled.symm.trans referenceCompiled)
+  cases resultEquality
+  exact ⟨term, goals, native, termAgreement, goalsAgreement⟩
+
+/-- Fuel-indexed soundness of the pinned `trace!` stream rewrite.  This
+composes the independently specified `println!` call and value translation,
+then proves that the executable rewrite preserves their result, ordered goals,
+and counter. -/
+theorem compileExprFuel_trace_sound {state : TranslatorState} (env : CEnv)
+    (agreement : EnvAgrees state env) {counter : Nat} {source : Atom}
+    {term : Term} {goals : List PeTTaSpec.PrologCore.Goal}
+    {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains "println!" = false)
+    (notDefined : env.defined.contains "println!" = false)
+    (isBuiltin : env.isBin "println!" = true)
+    (modeAgreement : ArgModesAgree env "println!" 0 [.value])
+    (native : TranslatesTrace state counter source term goals nextCounter) :
+    ∃ baseFuel,
+      0 < baseFuel ∧
+      baseFuel < 32 * source.size ∧
+      ∀ extraFuel, ∃ internal executableGoals,
+        compileExprFuel (baseFuel + extraFuel) env counter source =
+          .ok (internal, executableGoals, nextCounter) ∧
+        TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  cases native with
+  | rewrite notShadowedProgn printed value =>
+      rename_i printCounter messageSource valueSource printTerm printGoals
+        valueGoals
+      obtain ⟨printFuel, printPositive, printBound, printCompiles⟩ :=
+        compileExprFuel_unary_builtin_sound env agreement notProlog notDefined
+          isBuiltin modeAgreement printed
+      obtain ⟨valueFuel, valuePositive, valueBound, valueCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement value
+      let sharedFuel := max printFuel valueFuel
+      have printLe : printFuel ≤ sharedFuel := Nat.le_max_left _ _
+      have valueLe : valueFuel ≤ sharedFuel := Nat.le_max_right _ _
+      refine ⟨sharedFuel + 7, by omega, ?_, ?_⟩
+      · simp only [Atom.size, List.map, List.sum_cons, List.sum_nil,
+          Nat.add_zero] at printBound valueBound ⊢
+        by_cases order : printFuel ≤ valueFuel
+        · have sharedEq : sharedFuel = valueFuel := by
+            simp [sharedFuel, Nat.max_eq_right order]
+          rw [sharedEq]
+          omega
+        · have reverseOrder : valueFuel ≤ printFuel :=
+            Nat.le_of_lt (Nat.lt_of_not_ge order)
+          have sharedEq : sharedFuel = printFuel := by
+            simp [sharedFuel, Nat.max_eq_left reverseOrder]
+          rw [sharedEq]
+          omega
+      · intro extraFuel
+        let activeFuel := sharedFuel + extraFuel
+        obtain ⟨printExtra, printFuelEq⟩ :
+            ∃ printExtra, activeFuel + 1 = printFuel + printExtra := by
+          exact ⟨activeFuel + 1 - printFuel, by
+            dsimp only [activeFuel]
+            omega⟩
+        obtain ⟨valueExtra, valueFuelEq⟩ :
+            ∃ valueExtra, activeFuel = valueFuel + valueExtra := by
+          exact ⟨activeFuel - valueFuel, by
+            dsimp only [activeFuel]
+            omega⟩
+        obtain ⟨printInternal, executablePrintGoals, printCompiled,
+            _printAgreement, printGoalsAgreement⟩ := printCompiles printExtra
+        obtain ⟨valueInternal, executableValueGoals, valueCompiled,
+            valueAgreement, valueGoalsAgreement⟩ := valueCompiles valueExtra
+        rw [← printFuelEq] at printCompiled
+        rw [← valueFuelEq] at valueCompiled
+        have activePositive : 0 < activeFuel := by
+          dsimp only [activeFuel, sharedFuel]
+          omega
+        have listCompiled :
+            compileListFuel (activeFuel + 2) env counter
+                [.expr [.sym "println!", messageSource], valueSource] =
+              .ok ([printInternal, valueInternal],
+                executablePrintGoals ++ executableValueGoals,
+                nextCounter) := by
+          rw [show activeFuel + 2 = (activeFuel + 1) + 1 by omega]
+          rw [compileListFuel_cons_eq, printCompiled]
+          dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+          rw [compileListFuel_cons_eq, valueCompiled]
+          dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+          obtain ⟨nilFuel, nilFuelEq⟩ :
+              ∃ nilFuel, activeFuel = nilFuel + 1 :=
+            ⟨activeFuel - 1, by omega⟩
+          rw [nilFuelEq, compileListFuel_nil_eq]
+          dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind,
+            Pure.pure, Applicative.toPure, Monad.toApplicative, Except.pure]
+          simp
+        have expandedCompiled :
+            compileExprFuel ((activeFuel + 2) + 3) env counter
+                (.expr [.sym "progn",
+                  .expr [.sym "println!", messageSource], valueSource]) =
+              .ok (valueInternal,
+                executablePrintGoals ++ executableValueGoals,
+                nextCounter) := by
+          simpa [List.getLast!] using
+            compileExprFuel_progn_eq (activeFuel + 2) env counter
+              (.expr [.sym "println!", messageSource]) [valueSource]
+              [printInternal, valueInternal]
+              (executablePrintGoals ++ executableValueGoals) nextCounter
+              (agreement.notContains notShadowedProgn) listCompiled
+        refine ⟨valueInternal,
+          executablePrintGoals ++ executableValueGoals, ?_, valueAgreement,
+          GoalsAgree.append printGoalsAgreement valueGoalsAgreement⟩
+        rw [show (sharedFuel + 7) + extraFuel =
+          (activeFuel + 2) + 5 by
+            dsimp only [activeFuel]
+            omega]
+        rw [PLeaTTa.compileExprFuel_trace_rewrite_eq
+          (activeFuel + 2) counter env messageSource valueSource]
+        exact expandedCompiled
+
+/-- Public compiler soundness for pinned `trace!`. -/
+theorem compileExpr_trace_sound {state : TranslatorState} (env : CEnv)
+    (agreement : EnvAgrees state env) {counter : Nat} {source : Atom}
+    {term : Term} {goals : List PeTTaSpec.PrologCore.Goal}
+    {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains "println!" = false)
+    (notDefined : env.defined.contains "println!" = false)
+    (isBuiltin : env.isBin "println!" = true)
+    (modeAgreement : ArgModesAgree env "println!" 0 [.value])
+    (native : TranslatesTrace state counter source term goals nextCounter) :
+    ∃ internal executableGoals,
+      compileExpr env counter source =
+        .ok (internal, executableGoals, nextCounter) ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨baseFuel, _basePositive, baseBound, compiles⟩ :=
+    compileExprFuel_trace_sound env agreement notProlog notDefined isBuiltin
+      modeAgreement native
+  have publicBound : baseFuel ≤ compilerFuel source + 64 := by
+    simp [compilerFuel]
+    omega
+  obtain ⟨extraFuel, publicFuelEq⟩ :
+      ∃ extraFuel, compilerFuel source + 64 = baseFuel + extraFuel := by
+    exact ⟨compilerFuel source + 64 - baseFuel, by omega⟩
+  obtain ⟨internal, executableGoals, compiled, termAgreement,
+      goalsAgreement⟩ := compiles extraFuel
+  refine ⟨internal, executableGoals, ?_, termAgreement, goalsAgreement⟩
+  rw [compileExpr, publicFuelEq]
+  exact compiled
+
+/-- Completeness on independently supported pinned `trace!` forms. -/
+theorem compileExpr_trace_complete {state : TranslatorState} (env : CEnv)
+    (agreement : EnvAgrees state env) {counter : Nat}
+    {source internal : Atom} {executableGoals : List PLeaTTa.Goal}
+    {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains "println!" = false)
+    (notDefined : env.defined.contains "println!" = false)
+    (isBuiltin : env.isBin "println!" = true)
+    (modeAgreement : ArgModesAgree env "println!" 0 [.value])
+    (supported : SupportedTrace state counter source)
+    (compiled : compileExpr env counter source =
+      .ok (internal, executableGoals, nextCounter)) :
+    ∃ term goals,
+      TranslatesTrace state counter source term goals nextCounter ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨term, goals, referenceCounter, native⟩ := supported
+  obtain ⟨referenceInternal, referenceGoals, referenceCompiled,
+      termAgreement, goalsAgreement⟩ :=
+    compileExpr_trace_sound env agreement notProlog notDefined isBuiltin
+      modeAgreement native
+  have resultEquality :
+      (internal, executableGoals, nextCounter) =
+        (referenceInternal, referenceGoals, referenceCounter) :=
+    Except.ok.inj (compiled.symm.trans referenceCompiled)
+  cases resultEquality
+  exact ⟨term, goals, native, termAgreement, goalsAgreement⟩
 
 /-- Executable mixed-mode witness: source data is staged at argument zero and
 the value at argument one is translated normally. -/

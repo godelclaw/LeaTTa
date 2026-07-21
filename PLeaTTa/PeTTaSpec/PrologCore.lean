@@ -578,6 +578,133 @@ inductive TranslatesTypedArgs : TranslatorState → Nat → List ArgumentMode �
         (headGoals ++ refinedTypeCheckGoals term expected middleCounter ++
           tailGoals) nextCounter
 
+/-- Pinned one-input functions admitted by the first ordinary-builtin
+adequacy tranche.  This is a source-derived classification, deliberately
+separate from the executable compiler's builtin table.
+
+`println!` is registered by `metta.pl:306-312`, implemented at
+`metta.pl:198-200`, and reaches the ordinary known-function branch at
+`translator.pl:310-346`. -/
+inductive PinnedUnaryBuiltin : String → Prop where
+  | println : PinnedUnaryBuiltin "println!"
+
+/-- Independent translation of a pinned unary builtin.  The argument is
+evaluated before the call is appended, preserving native left-to-right goal
+order.  The generated identity is a canonical representative of native's
+fresh logical output variable, not an executable variable name.
+[SPEC translator.pl:310-346] -/
+inductive TranslatesUnaryBuiltin : TranslatorState → Nat → String → Atom →
+    Term → List Goal → Nat → Prop where
+  | call {state : TranslatorState} {counter argumentCounter : Nat}
+      {head : String} {argumentSource : Atom} {argumentTerm : Term}
+      {argumentGoals : List Goal}
+      (builtin : PinnedUnaryBuiltin head)
+      (notShadowed : ¬ state.hasRule head)
+      (argument :
+        TranslatesExpr state counter argumentSource argumentTerm argumentGoals
+          argumentCounter) :
+      TranslatesUnaryBuiltin state counter head
+        (.expr [.sym head, argumentSource])
+        (.variable (.generated argumentCounter))
+        (argumentGoals ++
+          [.call head
+            [argumentTerm, .variable (.generated argumentCounter)]])
+        (argumentCounter + 1)
+
+/-- Every ordinary unary-builtin derivation records that the higher-priority
+translator hook was absent. -/
+theorem TranslatesUnaryBuiltin.notShadowed
+    {state : TranslatorState} {counter : Nat} {head : String} {source : Atom}
+    {term : Term} {goals : List Goal} {nextCounter : Nat}
+    (translation :
+      TranslatesUnaryBuiltin state counter head source term goals nextCounter) :
+    ¬ state.hasRule head := by
+  cases translation
+  assumption
+
+/-- Positive source-level witness for the first pinned unary builtin. -/
+theorem translates_literal_println (state : TranslatorState) (counter : Nat)
+    (message : String) (notShadowed : ¬ state.hasRule "println!") :
+    TranslatesUnaryBuiltin state counter "println!"
+      (.expr [.sym "println!", .gnd (.str message)])
+      (.variable (.generated counter))
+      [.call "println!"
+        [.string message, .variable (.generated counter)]]
+      (counter + 1) := by
+  simpa using TranslatesUnaryBuiltin.call PinnedUnaryBuiltin.println
+    notShadowed (TranslatesExpr.literal (Literal.string message))
+
+/-- Translator-rule priority excludes the ordinary builtin derivation. -/
+theorem println_hook_blocks_unary_builtin (state : TranslatorState)
+    (counter : Nat) (message : String) (hook : state.hasRule "println!") :
+    ¬ TranslatesUnaryBuiltin state counter "println!"
+      (.expr [.sym "println!", .gnd (.str message)])
+      (.variable (.generated counter))
+      [.call "println!"
+        [.string message, .variable (.generated counter)]]
+      (counter + 1) := by
+  intro translation
+  exact translation.notShadowed hook
+
+/-- Independent translation after pinned `trace!` stream rewriting.  Rewriting
+precedes lookup of a hook named `trace!`; the rewritten `progn` and its
+`println!` child still obey their own ordinary translator-rule priorities.
+[SPEC translator.pl:73-75,91-110] -/
+inductive TranslatesTrace : TranslatorState → Nat → Atom → Term → List Goal →
+    Nat → Prop where
+  | rewrite {state : TranslatorState}
+      {counter printCounter nextCounter : Nat}
+      {messageSource valueSource : Atom} {printTerm valueTerm : Term}
+      {printGoals valueGoals : List Goal}
+      (notShadowedProgn : ¬ state.hasRule "progn")
+      (printed :
+        TranslatesUnaryBuiltin state counter "println!"
+          (.expr [.sym "println!", messageSource]) printTerm printGoals
+          printCounter)
+      (value :
+        TranslatesExpr state printCounter valueSource valueTerm valueGoals
+          nextCounter) :
+      TranslatesTrace state counter
+        (.expr [.sym "trace!", messageSource, valueSource]) valueTerm
+        (printGoals ++ valueGoals) nextCounter
+
+/-- Every translated trace records that the rewritten `progn` target was not
+captured by a higher-priority translator rule. -/
+theorem TranslatesTrace.notShadowedProgn
+    {state : TranslatorState} {counter : Nat} {source : Atom} {term : Term}
+    {goals : List Goal} {nextCounter : Nat}
+    (translation :
+      TranslatesTrace state counter source term goals nextCounter) :
+    ¬ state.hasRule "progn" := by
+  cases translation
+  assumption
+
+/-- Positive trace witness.  A hook named `trace!` is intentionally
+irrelevant because pinned stream rewriting happens first. -/
+theorem translates_literal_trace (state : TranslatorState) (counter : Nat)
+    (message : String) (value : Int)
+    (notShadowedPrintln : ¬ state.hasRule "println!")
+    (notShadowedProgn : ¬ state.hasRule "progn")
+    (_traceHook : state.hasRule "trace!") :
+    TranslatesTrace state counter
+      (.expr [.sym "trace!", .gnd (.str message), .gnd (.int value)])
+      (.integer value)
+      [.call "println!"
+        [.string message, .variable (.generated counter)]]
+      (counter + 1) := by
+  exact .rewrite notShadowedProgn
+    (translates_literal_println state counter message notShadowedPrintln)
+    (.literal (.integer value))
+
+/-- A hook on the rewritten `progn` target prevents the ordinary trace
+derivation, even though a hook named `trace!` itself cannot. -/
+theorem progn_hook_blocks_trace {state : TranslatorState} {counter : Nat}
+    {source : Atom} {term : Term} {goals : List Goal} {nextCounter : Nat}
+    (hook : state.hasRule "progn") :
+    ¬ TranslatesTrace state counter source term goals nextCounter := by
+  intro translation
+  exact translation.notShadowedProgn hook
+
 /-- Independent pinned translation for the first behaviorally normalized
 construct. Native emits a mutex wrapper, while PLeaTTa's sequential target
 may erase that wrapper only after an ordered-observation theorem. Keeping this
@@ -1030,6 +1157,18 @@ def SupportedTypedArgs (state : TranslatorState) (counter : Nat)
     (modes : List ArgumentMode) (sources : List Atom) : Prop :=
   ∃ terms goals nextCounter,
     TranslatesTypedArgs state counter modes sources terms goals nextCounter
+
+/-- Independently supported application of one pinned unary builtin. -/
+def SupportedUnaryBuiltin (state : TranslatorState) (counter : Nat)
+    (head : String) (source : Atom) : Prop :=
+  ∃ term goals nextCounter,
+    TranslatesUnaryBuiltin state counter head source term goals nextCounter
+
+/-- Independently supported pinned `trace!` stream-rewrite forms. -/
+def SupportedTrace (state : TranslatorState) (counter : Nat)
+    (source : Atom) : Prop :=
+  ∃ term goals nextCounter,
+    TranslatesTrace state counter source term goals nextCounter
 
 /-- Supported source forms whose native target requires a proved sequential
 behavioral normalization rather than structural goal identity. -/
