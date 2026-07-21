@@ -27,7 +27,6 @@ namespace PLeaTTa
 
 open Metta (Atom)
 
-set_option maxHeartbeats 4000000 in
 /-- PLeaTTa aliases `(#+ a b)` to `(+ a b)`.
 
 Pinned PeTTa instead defines `#+/3` as a CLPFD predicate
@@ -41,9 +40,9 @@ theorem compileAppFuel_hashPlus_eq (fuel counter : Nat) (env : CEnv)
   rw [compileAppFuel.eq_2]
   rw [rewriteStreamOp_hashPlus_none]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
-  simp only [compileAppCoreFuel]
+  rw [compileAppCoreFuel.eq_def]
+  rfl
 
-set_option maxHeartbeats 4000000 in
 /-- PLeaTTa aliases `(#- a b)` to `(- a b)`.
 
 Pinned PeTTa instead defines the arity-three `#-` relation as a CLPFD predicate
@@ -56,9 +55,9 @@ theorem compileAppFuel_hashMinus_eq (fuel counter : Nat) (env : CEnv)
   rw [compileAppFuel.eq_2]
   rw [rewriteStreamOp_hashMinus_none]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
-  simp only [compileAppCoreFuel]
+  rw [compileAppCoreFuel.eq_def]
+  rfl
 
-set_option maxHeartbeats 4000000 in
 /-- [SPEC translator.pl:74-75] `trace!` is a pinned stream rewrite to
 `(progn (println! message) value)`.
 
@@ -74,7 +73,6 @@ theorem compileAppFuel_trace_eq (fuel counter : Nat) (env : CEnv)
   simp only
   rw [compileExprFuel.eq_7 (x_4 := by simp)]
 
-set_option maxHeartbeats 4000000 in
 /-- PLeaTTa compiles an immediately quoted `unquote` as `eval`.
 
 When `lib_he.metta` is imported, pinned PeTTa defines this as an ordinary
@@ -90,6 +88,7 @@ theorem compileAppFuel_unquoteQuote_eq (fuel counter : Nat) (env : CEnv)
   rw [compileAppFuel.eq_2]
   rw [rewriteStreamOp_unquote_none]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
-  simp only [compileAppCoreFuel]
+  rw [compileAppCoreFuel.eq_def]
+  rfl
 
 end PLeaTTa

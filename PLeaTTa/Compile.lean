@@ -336,6 +336,256 @@ private theorem rewriteStreamOp_quote_none (args : List Atom) :
     show ("quote" == "subtraction") = false by decide,
     Bool.false_eq_true, ↓reduceIte]
 
+/-- Whether the pinned function declarations require refined typed dispatch. -/
+def shouldUseTypedDispatch (chains : List (List Atom)) : Bool :=
+  let hasCompoundParam : List Atom → Bool := fun chain =>
+    chain.dropLast.any (fun ty =>
+      match ty with
+      | Atom.expr _ => true
+      | _ => false)
+  let isSimpleType : Atom → Bool
+    | Atom.sym _ => true
+    | _ => false
+  let isSimpleRefinedType : Atom → Bool
+    | Atom.sym name =>
+        name != "%Undefined%" && name != "Atom" &&
+          name != "Expression" && name != "true" && name != "false"
+    | _ => false
+  let hasSupportedSimpleRefinement : List Atom → Bool := fun chain =>
+    chain.all isSimpleType && chain.any isSimpleRefinedType
+  match chains with
+  | [] => false
+  | [chain] => hasCompoundParam chain || hasSupportedSimpleRefinement chain
+  | _ :: _ :: _ => true
+
+/-- One arrow-chain branch of typed dispatch.  Naming this executable step
+makes its counter threading and ordered fold independently checkable. -/
+def compileTypedDispatchStepWith
+    (compileTypedArgs : Nat → List Atom →
+      CompileM (List Atom × List Goal × Nat))
+    (result : Atom) (head : String) (arguments : List Atom)
+    (accumulator : List (Atom × List Goal) × Nat) (chain : List Atom) :
+    CompileM (List (Atom × List Goal) × Nat) :=
+  match chain.dropLast, chain.getLast? with
+  | parameterTypes, some resultType =>
+      if parameterTypes.length != arguments.length then .ok accumulator
+      else do
+        let (terms, goals, checkedArgumentsCounter) ←
+          compileTypedArgs accumulator.2 parameterTypes
+        let (resultChecks, nextCounter) :=
+          compileTypeCheck result resultType checkedArgumentsCounter
+        .ok (accumulator.1 ++ [(result,
+          goals ++ [Goal.call head terms result] ++ resultChecks)], nextCounter)
+  | _, none => .ok accumulator
+
+/-- Compile an ordered collection of nondeterministic branches.  The callback
+is the executable expression compiler; naming the fold makes its left-to-right
+counter threading independently checkable. -/
+def compileAmbBranchesWith
+    (compileExpr : Nat → Atom → CompileM (Atom × List Goal × Nat))
+    (counter : Nat) (expressions : List Atom) :
+    CompileM (List (Atom × List Goal) × Nat) :=
+  expressions.foldlM
+    (fun (acc : List (Atom × List Goal) × Nat) expression => do
+      let (term, goals, nextCounter) ← compileExpr acc.2 expression
+      .ok (acc.1 ++ [(term, goals)], nextCounter))
+    ([], counter)
+
+/-- Pinned special-form heads understood by `compileAppCoreFuel`.  Classifying
+the head once keeps the executable dispatch finite and gives proofs a small
+inductive discriminator instead of a large nest of string comparisons. -/
+inductive AppCoreHead where
+  | hQuote
+  | hPredicate
+  | hTranslatePredicate
+  | hCallPredicate
+  | hAssertaPredicate
+  | hAssertzPredicate
+  | hRetractPredicate
+  | hProcessMettaString
+  | hUnquote
+  | hEmpty
+  | hCut
+  | hTest
+  | hTrace
+  | hAndThen
+  | hOrElse
+  | hHashPlus
+  | hHashMinus
+  | hCons
+  | hIf
+  | hLet
+  | hLetStar
+  | hCase
+  | hCollapse
+  | hOnce
+  | hSuperpose
+  | hUnify
+  | hSucceedsPredicate
+  | hFor
+  | hChain
+  | hFoldall
+  | hForall
+  | hProgn
+  | hProg1
+  | hWithMutex
+  | hTransaction
+  | hHyperpose
+  | hUnique
+  | hUnion
+  | hIntersection
+  | hSubtraction
+  | hEval
+  | hCatch
+  | hCall
+  | hReduce
+  | hGetTypeSpace
+  | hGetAtoms
+  | hGetType
+  | hGetMetatype
+  | hMatch
+  | hFind
+  | hDoubleEqual
+  | hEqual
+  | hAddAtom
+  | hRemoveAtom
+  | hBind
+  | hGetState
+  | hChangeState
+  | other
+  deriving DecidableEq, Repr
+
+/-- Classify exactly the pinned special-form spellings.  A recognized head
+with an unsupported arity still falls through to ordinary application using
+the original source spelling. -/
+@[simp] def classifyAppCoreHead : String → AppCoreHead
+  | "quote" => .hQuote
+  | "Predicate" => .hPredicate
+  | "translatePredicate" => .hTranslatePredicate
+  | "callPredicate" => .hCallPredicate
+  | "assertaPredicate" => .hAssertaPredicate
+  | "assertzPredicate" => .hAssertzPredicate
+  | "retractPredicate" => .hRetractPredicate
+  | "process_metta_string" => .hProcessMettaString
+  | "unquote" => .hUnquote
+  | "empty" => .hEmpty
+  | "cut" => .hCut
+  | "test" => .hTest
+  | "trace!" => .hTrace
+  | "and-then" => .hAndThen
+  | "or-else" => .hOrElse
+  | "#+" => .hHashPlus
+  | "#-" => .hHashMinus
+  | "cons" => .hCons
+  | "if" => .hIf
+  | "let" => .hLet
+  | "let*" => .hLetStar
+  | "case" => .hCase
+  | "collapse" => .hCollapse
+  | "once" => .hOnce
+  | "superpose" => .hSuperpose
+  | "unify" => .hUnify
+  | "succeedsPredicate" => .hSucceedsPredicate
+  | "for" => .hFor
+  | "chain" => .hChain
+  | "foldall" => .hFoldall
+  | "forall" => .hForall
+  | "progn" => .hProgn
+  | "prog1" => .hProg1
+  | "with_mutex" => .hWithMutex
+  | "transaction" => .hTransaction
+  | "hyperpose" => .hHyperpose
+  | "unique" => .hUnique
+  | "union" => .hUnion
+  | "intersection" => .hIntersection
+  | "subtraction" => .hSubtraction
+  | "eval" => .hEval
+  | "catch" => .hCatch
+  | "call" => .hCall
+  | "reduce" => .hReduce
+  | "get-type-space" => .hGetTypeSpace
+  | "get-atoms" => .hGetAtoms
+  | "get-type" => .hGetType
+  | "get-metatype" => .hGetMetatype
+  | "match" => .hMatch
+  | "find" => .hFind
+  | "==" => .hDoubleEqual
+  | "=" => .hEqual
+  | "add-atom" => .hAddAtom
+  | "remove-atom" => .hRemoveAtom
+  | "bind!" => .hBind
+  | "get-state" => .hGetState
+  | "change-state!" => .hChangeState
+  | _ => .other
+
+/-- Generic application dispatch after every pinned special form has declined.
+The recursive compiler traversals are explicit parameters: this is the actual
+executable fallback, while its small interface keeps counter and adequacy
+proofs independent of the large special-form matcher. -/
+def compileAppDefaultWith
+    (compileArgs : Nat → CompileM (List Atom × List Goal × Nat))
+    (compileTypedArgs : Nat → List Atom →
+      CompileM (List Atom × List Goal × Nat))
+    (compileList : Nat → CompileM (List Atom × List Goal × Nat))
+    (env : CEnv) (counter : Nat) (head : String) (arguments : List Atom) :
+    CompileM (Atom × List Goal × Nat) := do
+  if env.prologFunctions.contains head then do
+    let (terms, goals, nextCounter) ← compileArgs counter
+    let (result, resultCounter) := fresh nextCounter
+    let (ok, finalCounter) := fresh resultCounter
+    let predicate :=
+      chainify (Atom.expr (Atom.sym head :: terms ++ [result]))
+    .ok (result,
+      goals ++ [Goal.bin "translatePredicate" [predicate] ok], finalCounter)
+  else if env.defined.contains head then do
+    let chains0 := env.typeChains head
+    if shouldUseTypedDispatch chains0 then do
+      let (result, firstCounter) := fresh counter
+      let (branches, branchCounter) ← chains0.foldlM
+        (compileTypedDispatchStepWith compileTypedArgs result head arguments)
+        ([], firstCounter)
+      if branches.isEmpty then do
+        let (terms, goals, nextCounter) ← compileArgs counter
+        if (env.arities head).contains terms.length then
+          let (fallbackResult, finalCounter) := fresh nextCounter
+          .ok (fallbackResult,
+            goals ++ [Goal.call head terms fallbackResult], finalCounter)
+        else
+          .ok (partialValue head terms, goals, nextCounter)
+      else
+        .ok (result, [Goal.amb branches result], branchCounter)
+    else do
+      let (terms, goals, nextCounter) ← compileArgs counter
+      if (env.arities head).contains terms.length then
+        let (result, finalCounter) := fresh nextCounter
+        .ok (result, goals ++ [Goal.call head terms result], finalCounter)
+      else
+        .ok (partialValue head terms, goals, nextCounter)
+  else if env.isBin head then do
+    let (terms, goals, nextCounter) ← compileArgs counter
+    match compileBinArity head with
+    | some arity =>
+        if arity == terms.length then
+          let (result, finalCounter) := fresh nextCounter
+          .ok (result, goals ++ [Goal.bin head terms result], finalCounter)
+        else
+          .ok (partialValue head terms, goals, nextCounter)
+    | none =>
+        let (result, finalCounter) := fresh nextCounter
+        .ok (result, goals ++ [Goal.bin head terms result], finalCounter)
+  else do
+    let (terms, goals, nextCounter) ← compileList counter
+    if env.dynamicUnknown && dynamicUnknownHead head then
+      -- Unknown lowercase heads in a bang may be functions introduced by
+      -- earlier top-level `add-atom` effects; resolve them at run time.
+      let (result, finalCounter) := fresh nextCounter
+      .ok (result,
+        goals ++ [Goal.callDyn (Atom.sym head) terms result], finalCounter)
+    else
+      -- Unknown non-function heads are data at this translation point
+      -- [SPEC translator.pl:318-326].
+      .ok (chainOf (Atom.sym head :: terms), goals, nextCounter)
+
 set_option maxHeartbeats 2000000 in
 mutual
 
@@ -381,18 +631,23 @@ def compilePatternFuel : Nat → CEnv → Nat → Atom →
   | _ + 1, _, n, Atom.sym s => .ok (canonBool (Atom.sym s), [], n)
   | _ + 1, _, n, Atom.gnd g => .ok (canonBool (Atom.gnd g), [], n)
   | _ + 1, _, n, Atom.expr [] => .ok (nilA, [], n)
-  | _ + 1, _, n, Atom.expr [Atom.sym "#c", h, t] =>
-      .ok (Atom.expr [Atom.sym "#c", h, t], [], n)
-  | fuel + 1, env, n, Atom.expr [Atom.sym "cons", h, t] => do
-      let (ph, gh, n1) ← compilePatternFuel fuel env n h
-      let (pt, gt, n2) ← compilePatternFuel fuel env n1 t
-      .ok (consC ph pt, gh ++ gt, n2)
   | fuel + 1, env, n, Atom.expr (Atom.sym f :: args) =>
-      if env.defined.contains f || env.isBin f || specialHead f then
-        compileExprFuel fuel env n (Atom.expr (Atom.sym f :: args))
-      else do
-        let (ts, gs, n1) ← compilePatternListFuel fuel env n args
-        .ok (chainOf (Atom.sym f :: ts), gs, n1)
+      let fallback :=
+        if env.defined.contains f || env.isBin f || specialHead f then
+          compileExprFuel fuel env n (Atom.expr (Atom.sym f :: args))
+        else do
+          let (ts, gs, n1) ← compilePatternListFuel fuel env n args
+          .ok (chainOf (Atom.sym f :: ts), gs, n1)
+      match args with
+      | [h, t] =>
+          if f == "#c" then
+            .ok (Atom.expr [Atom.sym "#c", h, t], [], n)
+          else if f == "cons" then do
+            let (ph, gh, n1) ← compilePatternFuel fuel env n h
+            let (pt, gt, n2) ← compilePatternFuel fuel env n1 t
+            .ok (consC ph pt, gh ++ gt, n2)
+          else fallback
+      | _ => fallback
   | fuel + 1, env, n, Atom.expr es => do
       let (ts, gs, n1) ← compilePatternListFuel fuel env n es
       .ok (chainOf ts, gs, n1)
@@ -421,45 +676,45 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
     CompileM (Atom × List Goal × Nat)
   | 0, _, _, _, _ => .error "compiler fuel exhausted"
   | fuel + 1, env, n, h, args => do
-    match h, args with
-    | "quote", [e] => .ok (chainify e, [], n)              -- syntactic value
-    | "Predicate", [goal] =>
+    match classifyAppCoreHead h, args with
+    | .hQuote, [e] => .ok (chainify e, [], n)              -- syntactic value
+    | .hPredicate, [goal] =>
         -- [SPEC metta.pl:275] `Predicate` converts a MeTTa expression to a
         -- Prolog term without evaluating the expression's members.
         .ok (chainify (Atom.expr [Atom.sym "Predicate", goal]), [], n)
-    | "translatePredicate", [goal] => do
+    | .hTranslatePredicate, [goal] => do
         -- The argument is Prolog syntax, not a MeTTa subexpression.  Preserve it
         -- as data and make the trusted-host boundary explicit at execution.
         let (r, n1) := fresh n
         .ok (r, [Goal.bin "translatePredicate" [chainify goal] r], n1)
-    | "callPredicate", [predicate] => do
+    | .hCallPredicate, [predicate] => do
         let (term, goals, n1) ← compileExprFuel fuel env n predicate
         let (r, n2) := fresh n1
         -- Both source forms share one typed ownership-dispatch point: local
         -- predicates stay in the core, imported predicates cross the host
         -- boundary.  The executor accepts the quoted `Predicate` wrapper.
         .ok (r, goals ++ [Goal.bin "translatePredicate" [term] r], n2)
-    | "assertaPredicate", [predicate] => do
+    | .hAssertaPredicate, [predicate] => do
         let (term, goals, n1) ← compileExprFuel fuel env n predicate
         let (r, n2) := fresh n1
         .ok (r, goals ++ [Goal.wact "assertaPredicate" [term] r], n2)
-    | "assertzPredicate", [predicate] => do
+    | .hAssertzPredicate, [predicate] => do
         let (term, goals, n1) ← compileExprFuel fuel env n predicate
         let (r, n2) := fresh n1
         .ok (r, goals ++ [Goal.wact "assertzPredicate" [term] r], n2)
-    | "retractPredicate", [predicate] => do
+    | .hRetractPredicate, [predicate] => do
         let (term, goals, n1) ← compileExprFuel fuel env n predicate
         let (r, n2) := fresh n1
         .ok (r, goals ++ [Goal.wact "retractPredicate" [term] r], n2)
-    | "process_metta_string", [source] => do
+    | .hProcessMettaString, [source] => do
         let (term, goals, n1) ← compileExprFuel fuel env n source
         let (r, n2) := fresh n1
         .ok (r, goals ++ [Goal.wact "process_metta_string" [term] r], n2)
-    | "unquote", [Atom.expr [Atom.sym "quote", e]] => compileAppFuel fuel env n "eval" [e]
-    | "unquote", [e] => .ok (chainify (Atom.expr [Atom.sym "unquote", e]), [], n)
-    | "empty", [] => .ok (trueA, [Goal.eq trueA falseA], n) -- branch failure
-    | "cut", [] => .ok (trueA, [Goal.cut], n)
-    | "test", [e, expected] => do
+    | .hUnquote, [Atom.expr [Atom.sym "quote", e]] => compileAppFuel fuel env n "eval" [e]
+    | .hUnquote, [e] => .ok (chainify (Atom.expr [Atom.sym "unquote", e]), [], n)
+    | .hEmpty, [] => .ok (trueA, [Goal.eq trueA falseA], n) -- branch failure
+    | .hCut, [] => .ok (trueA, [Goal.cut], n)
+    | .hTest, [e, expected] => do
         -- Native collects every answer of `e`, unwraps a singleton, evaluates
         -- the expected expression, then performs variant comparison.
         -- [SPEC translator.pl:118-126, metta.pl:203-207]
@@ -469,12 +724,12 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (r, n4) := fresh n3
         .ok (r, [Goal.findall te ge answers] ++ gx ++
           [Goal.bin "#test-results" [answers, tx] r], n4)
-    | "trace!", [message, value] =>
+    | .hTrace, [message, value] =>
         -- [SPEC translator.pl:74-75] trace! is a stream rewrite to
         -- `(progn (println! message) value)`; println!'s pure value is True.
         compileAppFuel fuel env n "progn"
           [Atom.expr [Atom.sym "println!", message], value]
-    | "and-then", [a, b] =>
+    | .hAndThen, [a, b] =>
         -- [SPEC translator.pl:177-180] evaluate `b` only when `a` is True,
         -- then unify the enclosing result with `b`'s value. The equality is
         -- deliberately after `gb`: unlike `if`'s `build_branch/4`, this
@@ -485,7 +740,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         .ok (r, ga ++ [Goal.ite ta
           (r, gb ++ [Goal.eq r tb])
           (r, [Goal.eq r falseA]) r], n3)
-    | "or-else", [a, b] =>
+    | .hOrElse, [a, b] =>
         -- [SPEC translator.pl:181-184] skip `b` when `a` is already True;
         -- on the false path execute `b` before unifying its value with the
         -- enclosing result.
@@ -495,14 +750,14 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         .ok (r, ga ++ [Goal.ite ta
           (r, [Goal.eq r trueA])
           (r, gb ++ [Goal.eq r tb]) r], n3)
-    | "#+", [a, b] => compileAppFuel fuel env n "+" [a, b]   -- petta's flexible +
-    | "#-", [a, b] => compileAppFuel fuel env n "-" [a, b]
-    | "cons", [h, t] => do
+    | .hHashPlus, [a, b] => compileAppFuel fuel env n "+" [a, b]   -- petta's flexible +
+    | .hHashMinus, [a, b] => compileAppFuel fuel env n "-" [a, b]
+    | .hCons, [h, t] => do
         -- the list constructor IS structure: narrows via unification
         let (th, gh, n1) ← compileExprFuel fuel env n h
         let (tt, gt, n2) ← compileExprFuel fuel env n1 t
         .ok (consC th tt, gh ++ gt, n2)
-    | "if", [c, t] => do
+    | .hIf, [c, t] => do
         let (tc, gc, n1) ← compileExprFuel fuel env n c
         let (tt, gt, n2) ← compileExprFuel fuel env n1 t
         let (r, n3) := fresh n2
@@ -512,7 +767,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         -- therefore take the failing path without becoming bound to True.
         .ok (r, branchAliases ++ gc ++ [Goal.ite tc thenBranch
           (r, [Goal.eq trueA falseA]) r], n3)
-    | "if", [c, t, e] => do
+    | .hIf, [c, t, e] => do
         let (tc, gc, n1) ← compileExprFuel fuel env n c
         let (tt, gt, n2) ← compileExprFuel fuel env n1 t
         let (te, ge, n3) ← compileExprFuel fuel env n2 e
@@ -521,7 +776,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (elseAliases, elseBranch) := compileBranch r (te, ge)
         .ok (r, thenAliases ++ elseAliases ++ gc ++
           [Goal.ite tc thenBranch elseBranch r], n4)
-    | "let", [p, v, b] => do
+    | .hLet, [p, v, b] => do
         -- [SPEC translator.pl:185-188] translate pattern, value, and body in
         -- that order; emit (Pv=V), Gp, Gv, Gi. The result terms unify first,
         -- then pattern goals (narrowing), value goals, and the body.
@@ -529,11 +784,11 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (tv, gv, n2) ← compileExprFuel fuel env n1 v
         let (tb, gb, n3) ← compileExprFuel fuel env n2 b
         .ok (tb, [Goal.eq tp tv] ++ gp ++ gv ++ gb, n3)
-    | "let*", [Atom.expr binds, b] => do
+    | .hLetStar, [Atom.expr binds, b] => do
         match desugarLetStar? binds b with
         | some nested => compileExprFuel fuel env n nested
         | none => .error "malformed let* bindings"
-    | "case", [scrut, Atom.expr arms] => do
+    | .hCase, [scrut, Atom.expr arms] => do
         -- first-match commits (variable patterns are catch-alls in order);
         -- an `Empty` arm fires when the SCRUTINEE produces no value
         let (ts, gs, n1) ← compileExprFuel fuel env n scrut
@@ -558,22 +813,22 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
               -- scrutinee goals in ordinary Prolog flow (`Gk, KeyGoal, IfGoal`);
               -- do not eagerly collect every scrutinee answer before branches.
               .ok (r, gs ++ [Goal.eq sv ts] ++ armGs, n4)
-    | "collapse", [e] => do
+    | .hCollapse, [e] => do
         let (te, ge, n1) ← compileExprFuel fuel env n e
         let (r, n2) := fresh n1
         .ok (r, [Goal.findall te ge r], n2)
-    | "once", [e] => do
+    | .hOnce, [e] => do
         let (te, ge, n1) ← compileExprFuel fuel env n e
         let (r, n2) := fresh n1
         .ok (r, [Goal.onceg te ge r], n2)
-    | "superpose", [Atom.expr es] => do
+    | .hSuperpose, [Atom.expr es] => do
         -- each SYNTACTIC element evaluated in its own branch (NONDET-1)
-        let (branches, n1) ← es.foldlM (fun (acc : List (Atom × List Goal) × Nat) e => do
-          let (te, ge, m) ← compileExprFuel fuel env acc.2 e
-          .ok (acc.1 ++ [(te, ge)], m)) (([], n))
+        let (branches, n1) ← compileAmbBranchesWith
+          (fun counter expression =>
+            compileExprFuel fuel env counter expression) n es
         let (r, n2) := fresh n1
         .ok (r, [Goal.amb branches r], n2)
-    | "unify", [Atom.sym "&self", pat, thn, els] => do
+    | .hUnify, [Atom.sym "&self", pat, thn, els] => do
         if !env.defined.contains "unify" then do
           let (ts, gs, n1) ← compileListFuel fuel env n [Atom.sym "&self", pat, thn, els]
           .ok (chainOf (Atom.sym "unify" :: ts), gs, n1)
@@ -586,7 +841,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
           let p := chainify pat
           .ok (r, [Goal.softcut p [Goal.smatch p]
                     (gt ++ [Goal.eq r tt]) (ge ++ [Goal.eq r te])], n3)
-    | "unify", [a, bb, thn, els] => do
+    | .hUnify, [a, bb, thn, els] => do
         if !env.defined.contains "unify" then do
           let (ts, gs, n1) ← compileListFuel fuel env n [a, bb, thn, els]
           .ok (chainOf (Atom.sym "unify" :: ts), gs, n1)
@@ -600,7 +855,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
           let carry := bindingTemplate (chainOf [ta, tb2]) [a, bb]
           .ok (r, [Goal.softcut carry (ga ++ gb2 ++ [Goal.eq ta tb2])
                     (gt ++ [Goal.eq r tt]) (ge ++ [Goal.eq r te])], n5)
-    | "succeedsPredicate", [Atom.expr (sp :: Atom.sym rel :: args)] => do
+    | .hSucceedsPredicate, [Atom.expr (sp :: Atom.sym rel :: args)] => do
         -- [SPEC lib_spaces.metta + translator.pl:101-105,264-267]:
         -- the translator hook turns a space predicate expression into the
         -- corresponding Prolog predicate call. In PLeaTTa's space model this
@@ -611,11 +866,11 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let pat := chainify (Atom.expr (Atom.sym rel :: args))
         .ok (r, gs ++ [Goal.softcut pat [Goal.smatch (spacePat ts pat)]
           [Goal.eq r trueA] [Goal.eq r falseA]], n2)
-    | "for", [v, collection, body] =>
+    | .hFor, [v, collection, body] =>
         -- [SPEC lib_patrick.metta:14-18] translator-rule macro:
         -- `(for $x xs body)` compiles as `(let $x (superpose xs) body)`.
         compileAppFuel fuel env n "let" [v, Atom.expr [Atom.sym "superpose", collection], body]
-    | "chain", [first, second, body] => do
+    | .hChain, [first, second, body] => do
         -- [SPEC translator.pl:185-188] `chain` and `let` share one native
         -- clause, which traverses their three source arguments literally from
         -- left to right.  Do not swap the first two arguments merely because
@@ -625,7 +880,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (tBody, gBody, n3) ← compileExprFuel fuel env n2 body
         .ok (tBody,
           [Goal.eq tFirst tSecond] ++ gFirst ++ gSecond ++ gBody, n3)
-    | "foldall", [f, gen, init] => do
+    | .hFoldall, [f, gen, init] => do
         let (tg, gg, n1) ← compileExprFuel fuel env n gen
         let (lst, n2) := fresh n1
         let (tf, gf, n3) ← compileExprFuel fuel env n2 f
@@ -633,54 +888,54 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (r, n5) := fresh n4
         .ok (r, [Goal.findall tg gg lst] ++ gf ++ gi ++
                 [Goal.call "#foldacc" [tf, lst, ti] r], n5)
-    | "forall", [gen, f] => do
+    | .hForall, [gen, f] => do
         let (tg, gg, n1) ← compileExprFuel fuel env n gen
         let (lst, n2) := fresh n1
         let (tf, gf, n3) ← compileExprFuel fuel env n2 f
         let (r, n4) := fresh n3
         .ok (r, [Goal.findall tg gg lst] ++ gf ++
                 [Goal.call "#allacc" [tf, lst] r], n4)
-    | "progn", args => do
+    | .hProgn, args => do
         if args.isEmpty then .error "progn: empty" else do
         let (ts, gs, n1) ← compileListFuel fuel env n args
         .ok (ts.getLast!, gs, n1)
-    | "prog1", args => do
+    | .hProg1, args => do
         if args.isEmpty then .error "prog1: empty" else do
         let (ts, gs, n1) ← compileListFuel fuel env n args
         .ok (ts.head!, gs, n1)
-    | "with_mutex", [_mutex, body] =>
+    | .hWithMutex, [_mutex, body] =>
         -- [SPEC translator.pl:137-138] the mutex serializes the translated
         -- body. PLeaTTa's machine is already sequential, so its answer
         -- relation is exactly the body's answer relation.
         compileExprFuel fuel env n body
-    | "transaction", [body] => do
+    | .hTransaction, [body] => do
         -- [SPEC translator.pl:139-140] SWI transaction/1 commits its first
         -- successful branch and rolls dynamic updates back on failure.
         let (tb, gb, n1) ← compileExprFuel fuel env n body
         let carry := bindingTemplate tb [body]
         .ok (tb, [Goal.transactiong carry gb], n1)
-    | "superpose", [e] => do
+    | .hSuperpose, [e] => do
         -- computed tuple: spread its members at run time
         let (te, ge, n1) ← compileExprFuel fuel env n e
         let (r, n2) := fresh n1
         .ok (r, ge ++ [Goal.spread te r], n2)
-    | "hyperpose", [Atom.expr es] => do
+    | .hHyperpose, [Atom.expr es] => do
         -- [SPEC translator.pl:129-135,417-424] `hyperpose` has the same
         -- result semantics as one evaluated branch per element. Native runs
         -- those branches concurrently; PLeaTTa preserves the answer relation.
-        let (branches, n1) ← es.foldlM (fun (acc : List (Atom × List Goal) × Nat) e => do
-          let (te, ge, m) ← compileExprFuel fuel env acc.2 e
-          .ok (acc.1 ++ [(te, ge)], m)) (([], n))
+        let (branches, n1) ← compileAmbBranchesWith
+          (fun counter expression =>
+            compileExprFuel fuel env counter expression) n es
         let (r, n2) := fresh n1
         .ok (r, [Goal.amb branches r], n2)
-    | "hyperpose", [e] => do
+    | .hHyperpose, [e] => do
         -- Runtime/computed list path: enumerate the computed tuple, then eval
         -- each element as code (`hyperpose_runtime(Exprs, Out) :- ... eval`).
         let (te, ge, n1) ← compileExprFuel fuel env n e
         let (elem, n2) := fresh n1
         let (r, n3) := fresh n2
         .ok (r, ge ++ [Goal.spread te elem, Goal.evalg elem r], n3)
-    | "unique", [e] => do
+    | .hUnique, [e] => do
         -- stream dedup: distinct solutions, order preserved
         let (te, ge, n1) ← compileExprFuel fuel env n e
         let (lst, n2) := fresh n1
@@ -688,7 +943,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (r, n4) := fresh n3
         .ok (r, [Goal.findall te ge lst,
                  Goal.bin "unique-atom" [lst] ded, Goal.spread ded r], n4)
-    | "union", [e1, e2] => do
+    | .hUnion, [e1, e2] => do
         -- stream union: concatenated enumerations
         let (t1, g1, n1) ← compileExprFuel fuel env n e1
         let (t2, g2, n2) ← compileExprFuel fuel env n1 e2
@@ -698,7 +953,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (r, n6) := fresh n5
         .ok (r, [Goal.findall t1 g1 l1, Goal.findall t2 g2 l2,
                  Goal.bin "union-atom" [l1, l2] cc, Goal.spread cc r], n6)
-    | "intersection", [e1, e2] => do
+    | .hIntersection, [e1, e2] => do
         let (t1, g1, n1) ← compileExprFuel fuel env n e1
         let (t2, g2, n2) ← compileExprFuel fuel env n1 e2
         let (l1, n3) := fresh n2
@@ -707,7 +962,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (r, n6) := fresh n5
         .ok (r, [Goal.findall t1 g1 l1, Goal.findall t2 g2 l2,
                  Goal.bin "intersection-atom" [l1, l2] cc, Goal.spread cc r], n6)
-    | "subtraction", [e1, e2] => do
+    | .hSubtraction, [e1, e2] => do
         let (t1, g1, n1) ← compileExprFuel fuel env n e1
         let (t2, g2, n2) ← compileExprFuel fuel env n1 e2
         let (l1, n3) := fresh n2
@@ -716,48 +971,48 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (r, n6) := fresh n5
         .ok (r, [Goal.findall t1 g1 l1, Goal.findall t2 g2 l2,
                  Goal.bin "subtraction-atom" [l1, l2] cc, Goal.spread cc r], n6)
-    | "eval", [e] => do
+    | .hEval, [e] => do
         let (te, ge, n1) ← compileExprFuel fuel env n e
         let (r, n2) := fresh n1
         .ok (r, ge ++ [Goal.evalg te r], n2)
-    | "catch", [e] => do
+    | .hCatch, [e] => do
         -- [SPEC translator.pl:293-300] catch wraps the translated goals for
         -- the expression, returning normal answers, failing on ordinary no
         -- answer, and reifying runtime/type exceptions as `(Error ...)`.
         let (te, ge, n1) ← compileExprFuel fuel env n e
         let (r, n2) := fresh n1
         .ok (r, [Goal.catchg te ge r], n2)
-    | "call", [Atom.expr [Atom.sym "superpose", source]] => do
+    | .hCall, [Atom.expr [Atom.sym "superpose", source]] => do
         -- [SPEC metta.pl:105, translator.pl:278-283] manual dispatch to the
         -- registered `superpose/2` predicate enumerates an already-computed
         -- list. Stream rewrites deliberately pass through this exact path.
         let (term, goals, n1) ← compileExprFuel fuel env n source
         let (r, n2) := fresh n1
         .ok (r, goals ++ [Goal.spread term r], n2)
-    | "call", [Atom.expr (Atom.sym f :: xs)] => do
+    | .hCall, [Atom.expr (Atom.sym f :: xs)] => do
         -- [SPEC translator.pl:271-276] manual compile-time dispatch:
         -- translate the embedded expression's arguments, then emit a direct
         -- predicate call `f(args..., Out)`.
         let (ts, gs, n1) ← compileArgsAtFuel fuel env n f 0 xs
         let (r, n2) := fresh n1
         .ok (r, gs ++ [Goal.call f ts r], n2)
-    | "reduce", [e] => compileAppFuel fuel env n "eval" [e]
-    | "get-type-space", [_sp, e] => compileAppFuel fuel env n "get-type" [e]
-    | "get-atoms", [sp] => do
+    | .hReduce, [e] => compileAppFuel fuel env n "eval" [e]
+    | .hGetTypeSpace, [_sp, e] => compileAppFuel fuel env n "get-type" [e]
+    | .hGetAtoms, [sp] => do
         let (ts, gs, n1) ← compileExprFuel fuel env n sp
         let (r, n2) := fresh n1
         .ok (r, gs ++ [Goal.smatch (spacePat ts r)], n2)
-    | "get-type", [e] => do
+    | .hGetType, [e] => do
         -- PeTTa's automatic function dispatch translates the argument before
         -- asking for its type [SPEC translator.pl:301-310,410].
         let (te, ge, n1) ← compileExprFuel fuel env n e
         let (r, n2) := fresh n1
         .ok (r, ge ++ [Goal.bin "get-type" [te] r], n2)
-    | "get-metatype", [e] => do
+    | .hGetMetatype, [e] => do
         let (te, ge, n1) ← compileExprFuel fuel env n e
         let (r, n2) := fresh n1
         .ok (r, ge ++ [Goal.bin "get-metatype" [te] r], n2)
-    | "match", [sp, p, tmpl] => do
+    | .hMatch, [sp, p, tmpl] => do
         let (ts, gs, n0) ← compileExprFuel fuel env n sp
         -- A `,`-headed pattern is a CONJUNCTIVE query: one smatch per conjunct,
         -- shared bindings joining them (the relational join).
@@ -766,7 +1021,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
           | Atom.expr (Atom.sym "," :: ps) => ps
           | _ => [p]
         .ok (tt, gs ++ pats.map (fun q => Goal.smatch (spacePat ts (chainify q))) ++ gt, n1)
-    | "find", [sp, p] => do
+    | .hFind, [sp, p] => do
         -- [SPEC lib_spaces.metta:8-11] `find` is match-as-Boolean, but its
         -- successful True answers must carry pattern bindings into the caller.
         let (ts, gs, n0) ← compileExprFuel fuel env n sp
@@ -774,11 +1029,11 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let pat := chainify p
         .ok (r, gs ++ [Goal.softcut pat [Goal.smatch (spacePat ts pat)]
           [Goal.eq r trueA] [Goal.eq r falseA]], n1)
-    | "match", [sp, p] => do
+    | .hMatch, [sp, p] => do
         -- under-applied registered fun => partial value [SPEC translator.pl:58]
         .ok (chainOf [Atom.sym "partial", Atom.sym "match",
                       chainOf [chainify sp, chainify p]], [], n)
-    | "==", [Atom.expr [Atom.sym "size-atom", e], kA] => do
+    | .hDoubleEqual, [Atom.expr [Atom.sym "size-atom", e], kA] => do
         -- shape constraint: `(== (size-atom e) k)` with literal k constrains
         -- e's STRUCTURE (a k-slot chain) — structural, so enumeration
         -- terminates exactly as in native PeTTa/swipl
@@ -790,7 +1045,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
                 let (v, m) := fresh acc.2; (acc.1 ++ [v], m)) ([], n1)
             .ok (trueA, ge ++ [Goal.eq te (chainOf slots)], n2)
         | _ => .error "==: size-atom vs non-literal"
-    | "=", [a, b] => do
+    | .hEqual, [a, b] => do
         -- Boolean unification predicate [SPEC metta.pl registers `=/3`]:
         -- success returns True with bindings, failure returns False.
         let (ta, ga, n1) ← compileExprFuel fuel env n a
@@ -799,7 +1054,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let carry := bindingTemplate (chainOf [ta, tb]) [a, b]
         .ok (r, [Goal.softcut carry (ga ++ gb ++ [Goal.eq ta tb])
                   [Goal.eq r trueA] [Goal.eq r falseA]], n3)
-    | "add-atom", [sp, a] => do
+    | .hAddAtom, [sp, a] => do
         -- [SPEC spaces.pl:5-7 plus native probes] `add-atom` asserts the atom
         -- argument as data; surrounding bindings instantiate its variables at
         -- run time, but known/builtin subexpressions inside the atom are not
@@ -813,7 +1068,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         | _ =>
             let (r, n1) := fresh n0
             .ok (r, gsp ++ [Goal.wact "add-atom" [tsp, chainify a] r], n1)
-    | "remove-atom", [sp, a] => do
+    | .hRemoveAtom, [sp, a] => do
         let (tsp, gsp, n0) ← compileExprFuel fuel env n sp
         match a with
         | Atom.expr (Atom.sym "=" :: _) =>
@@ -822,111 +1077,29 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         | _ =>
             let (r, n1) := fresh n0
             .ok (r, gsp ++ [Goal.wact "remove-atom" [tsp, chainify a] r], n1)
-    | "bind!", [name, Atom.expr [Atom.sym "new-state", e]] => do
+    | .hBind, [name, Atom.expr [Atom.sym "new-state", e]] => do
         -- [SPEC metta.pl:240] bind!(A, [new-state,B], C) :- change-state!(A,B,C)
         compileAppFuel fuel env n "change-state!" [name, e]
-    | "bind!", [_name, _value] =>
+    | .hBind, [_name, _value] =>
         -- [SPEC metta.pl:240,303] `bind!` is registered, but native PeTTa only
         -- defines the `(new-state ...)` clause; other values fail as calls.
         .ok (trueA, [Goal.eq trueA falseA], n)
-    | "get-state", [name] => do
+    | .hGetState, [name] => do
         let (tn, gn, n1) ← compileExprFuel fuel env n name
         let (r, n2) := fresh n1
         .ok (r, gn ++ [Goal.wact "get-state" [tn] r], n2)
-    | "change-state!", [name, e] => do
+    | .hChangeState, [name, e] => do
         let (tn, gn, n1) ← compileExprFuel fuel env n name
         let (te, ge, n2) ← compileExprFuel fuel env n1 e
         let (r, n3) := fresh n2
         .ok (r, gn ++ ge ++ [Goal.wact "change-state!" [tn, te] r], n3)
     | _, _ =>
-        if env.prologFunctions.contains h then do
-          let (ts, gs, n1) ← compileArgsAtFuel fuel env n h 0 args
-          let (r, n2) := fresh n1
-          let (ok, n3) := fresh n2
-          let predicate := chainify (Atom.expr (Atom.sym h :: ts ++ [r]))
-          .ok (r, gs ++ [Goal.bin "translatePredicate" [predicate] ok], n3)
-        else if env.defined.contains h then do
-          let chains0 := env.typeChains h
-          let hasCompoundParam : List Atom → Bool := fun chain =>
-            chain.dropLast.any (fun ty =>
-              match ty with
-              | Atom.expr _ => true
-              | _ => false)
-          let isSimpleType : Atom → Bool
-            | Atom.sym _ => true
-            | _ => false
-          let isSimpleRefinedType : Atom → Bool
-            | Atom.sym name =>
-                name != "%Undefined%" && name != "Atom" &&
-                  name != "Expression" && name != "true" && name != "false"
-            | _ => false
-          let hasSupportedSimpleRefinement : List Atom → Bool := fun chain =>
-            chain.all isSimpleType && chain.any isSimpleRefinedType
-          let useTypedDispatch :=
-            match chains0 with
-            | [] => false
-            | [chain] =>
-                hasCompoundParam chain || hasSupportedSimpleRefinement chain
-            | _ :: _ :: _ => true
-          if useTypedDispatch then do
-            let chains := chains0
-            -- typed dispatch [SPEC translator.pl:310-317, 341-363]: one branch
-            -- per declared arrow chain; each argument type-checks via
-            -- `get-type(V,T) *-> true ; get-metatype(V,T)` (softcut), so does
-            -- the OUTPUT unless the type is %Undefined%/Atom;
-            -- Expression-typed args pass syntactically.
-            let (r, n0) := fresh n
-            let (branches, n3) ← chains.foldlM
-              (fun (acc : List (Atom × List Goal) × Nat) chain => do
-                match chain.dropLast, chain.getLast? with
-                | ptys, some rty => do
-                  if ptys.length != args.length then pure acc else do
-                  let (ts, gs, m1) ←
-                    compileTypedArgsFuel fuel env acc.2 args ptys
-                  let (outChk, m2) := compileTypeCheck r rty m1
-                  pure (acc.1 ++ [(r, gs ++ [Goal.call h ts r] ++ outChk)], m2)
-                | _, none => pure acc)
-              (([], n0))
-            if branches.isEmpty then do
-              let (ts, gs, n1) ← compileArgsAtFuel fuel env n h 0 args
-              if (env.arities h).contains ts.length then
-                let (r2, n2) := fresh n1
-                .ok (r2, gs ++ [Goal.call h ts r2], n2)
-              else
-                .ok (partialValue h ts, gs, n1)
-            else
-              .ok (r, [Goal.amb branches r], n3)
-          else do
-            let (ts, gs, n1) ← compileArgsAtFuel fuel env n h 0 args
-            if (env.arities h).contains ts.length then
-              let (r, n2) := fresh n1
-              .ok (r, gs ++ [Goal.call h ts r], n2)
-            else
-              .ok (partialValue h ts, gs, n1)
-        else if env.isBin h then do
-          let (ts, gs, n1) ← compileArgsAtFuel fuel env n h 0 args
-          match compileBinArity h with
-          | some ar =>
-              if ar == ts.length then
-                let (r, n2) := fresh n1
-                .ok (r, gs ++ [Goal.bin h ts r], n2)
-              else
-                .ok (partialValue h ts, gs, n1)
-          | none =>
-              let (r, n2) := fresh n1
-              .ok (r, gs ++ [Goal.bin h ts r], n2)
-        else do
-          let (ts, gs, n1) ← compileListFuel fuel env n args
-          if env.dynamicUnknown && dynamicUnknownHead h then
-            -- Unknown lowercase heads in a bang may be functions introduced by
-            -- earlier top-level `add-atom` effects; resolve them at run time.
-            -- Unregistered constructor-like heads stay data, matching native.
-            let (r, n2) := fresh n1
-            .ok (r, gs ++ [Goal.callDyn (Atom.sym h) ts r], n2)
-          else
-            -- Unknown non-function heads are data at this translation point
-            -- [SPEC translator.pl:318-326].
-            .ok (chainOf (Atom.sym h :: ts), gs, n1)
+        compileAppDefaultWith
+          (fun counter => compileArgsAtFuel fuel env counter h 0 args)
+          (fun counter parameterTypes =>
+            compileTypedArgsFuel fuel env counter args parameterTypes)
+          (fun counter => compileListFuel fuel env counter args)
+          env n h args
 termination_by structural fuel _ _ _ _ => fuel
 
 /-- Compile the ordered arms of `case`.  Giving this traversal its own fuelled
@@ -938,8 +1111,20 @@ def compileCaseArmsFuel : Nat → CEnv → Atom → Atom → Nat → List Atom �
   | _ + 1, _, _, _, m, [] =>
       .ok ([Goal.eq trueA falseA], m)
   | fuel + 1, env, scrutinee, result, m,
-      Atom.expr [Atom.sym "Empty", _] :: more =>
-      compileCaseArmsFuel fuel env scrutinee result m more
+      Atom.expr [Atom.sym name, body] :: more =>
+      if name == "Empty" then
+        compileCaseArmsFuel fuel env scrutinee result m more
+      else do
+        let (compiledPattern, patternGoals, m1) ←
+          compilePatternFuel fuel env m (Atom.sym name)
+        let (compiledBody, bodyGoals, m2) ←
+          compileExprFuel fuel env m1 body
+        let (elseGoals, m3) ←
+          compileCaseArmsFuel fuel env scrutinee result m2 more
+        let carry := bindingTemplate compiledPattern [Atom.sym name]
+        .ok ([Goal.softcut carry
+          (patternGoals ++ [Goal.eq compiledPattern scrutinee])
+          (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], m3)
   | fuel + 1, env, scrutinee, result, m,
       Atom.expr [pattern, body] :: more => do
       let (compiledPattern, patternGoals, m1) ←
@@ -1028,6 +1213,211 @@ def compileArgsFuel (fuel : Nat) (env : CEnv) (counter : Nat)
     (head : String) (arguments : List Atom) :
     CompileM (List Atom × List Goal × Nat) :=
   compileArgsAtFuel fuel env counter head 0 arguments
+
+/-- Exhausted argument-traversal fuel is an explicit compiler error.  This
+equation is exported manually because Lean does not generate a usable
+standalone equation theorem for this member of the mutual compiler. -/
+theorem compileArgsAtFuel_zero_eq (env : CEnv) (counter : Nat)
+    (head : String) (index : Nat) (arguments : List Atom) :
+    compileArgsAtFuel 0 env counter head index arguments =
+      .error "compiler fuel exhausted" := by
+  rfl
+
+/-- Exhausted case-arm fuel is an explicit compiler error. -/
+theorem compileCaseArmsFuel_zero_eq (env : CEnv) (scrutinee result : Atom)
+    (counter : Nat) (arms : List Atom) :
+    compileCaseArmsFuel 0 env scrutinee result counter arms =
+      .error "compiler fuel exhausted" := by
+  rfl
+
+/-- Empty case-arm traversal emits the explicit failing fallback and preserves
+the counter. -/
+theorem compileCaseArmsFuel_nil_eq (fuel : Nat) (env : CEnv)
+    (scrutinee result : Atom) (counter : Nat) :
+    compileCaseArmsFuel (fuel + 1) env scrutinee result counter [] =
+      .ok ([Goal.eq trueA falseA], counter) := by
+  rfl
+
+/-- An `Empty` arm is handled by the enclosing case compiler and therefore is
+skipped by the ordinary ordered-arm traversal. -/
+theorem compileCaseArmsFuel_empty_eq (fuel : Nat) (env : CEnv)
+    (scrutinee result : Atom) (counter : Nat) (body : Atom)
+    (more : List Atom) :
+    compileCaseArmsFuel (fuel + 1) env scrutinee result counter
+        (Atom.expr [Atom.sym "Empty", body] :: more) =
+      compileCaseArmsFuel fuel env scrutinee result counter more := by
+  rfl
+
+/-- A variable-pattern arm exposes its three ordered recursive compiler
+calls. -/
+theorem compileCaseArmsFuel_var_pair_eq (fuel : Nat) (env : CEnv)
+    (scrutinee result : Atom) (counter : Nat) (name : String) (body : Atom)
+    (more : List Atom) :
+    compileCaseArmsFuel (fuel + 1) env scrutinee result counter
+        (Atom.expr [Atom.var name, body] :: more) = (do
+      let (compiledPattern, patternGoals, patternCounter) ←
+        compilePatternFuel fuel env counter (Atom.var name)
+      let (compiledBody, bodyGoals, bodyCounter) ←
+        compileExprFuel fuel env patternCounter body
+      let (elseGoals, nextCounter) ←
+        compileCaseArmsFuel fuel env scrutinee result bodyCounter more
+      let carry := bindingTemplate compiledPattern [Atom.var name]
+      .ok ([Goal.softcut carry
+        (patternGoals ++ [Goal.eq compiledPattern scrutinee])
+        (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) := by
+  change (do
+    let (compiledPattern, patternGoals, patternCounter) ←
+      compilePatternFuel fuel env counter (Atom.var name)
+    let (compiledBody, bodyGoals, bodyCounter) ←
+      compileExprFuel fuel env patternCounter body
+    let (elseGoals, nextCounter) ←
+      compileCaseArmsFuel fuel env scrutinee result bodyCounter more
+    let carry := bindingTemplate compiledPattern [Atom.var name]
+    .ok ([Goal.softcut carry
+      (patternGoals ++ [Goal.eq compiledPattern scrutinee])
+      (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) = _
+  rfl
+
+/-- A grounded-pattern arm exposes the same ordered recursive calls. -/
+theorem compileCaseArmsFuel_gnd_pair_eq (fuel : Nat) (env : CEnv)
+    (scrutinee result : Atom) (counter : Nat) (ground : Metta.Ground)
+    (body : Atom) (more : List Atom) :
+    compileCaseArmsFuel (fuel + 1) env scrutinee result counter
+        (Atom.expr [Atom.gnd ground, body] :: more) = (do
+      let (compiledPattern, patternGoals, patternCounter) ←
+        compilePatternFuel fuel env counter (Atom.gnd ground)
+      let (compiledBody, bodyGoals, bodyCounter) ←
+        compileExprFuel fuel env patternCounter body
+      let (elseGoals, nextCounter) ←
+        compileCaseArmsFuel fuel env scrutinee result bodyCounter more
+      let carry := bindingTemplate compiledPattern [Atom.gnd ground]
+      .ok ([Goal.softcut carry
+        (patternGoals ++ [Goal.eq compiledPattern scrutinee])
+        (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) := by
+  change (do
+    let (compiledPattern, patternGoals, patternCounter) ←
+      compilePatternFuel fuel env counter (Atom.gnd ground)
+    let (compiledBody, bodyGoals, bodyCounter) ←
+      compileExprFuel fuel env patternCounter body
+    let (elseGoals, nextCounter) ←
+      compileCaseArmsFuel fuel env scrutinee result bodyCounter more
+    let carry := bindingTemplate compiledPattern [Atom.gnd ground]
+    .ok ([Goal.softcut carry
+      (patternGoals ++ [Goal.eq compiledPattern scrutinee])
+      (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) = _
+  rfl
+
+/-- A compound-pattern arm exposes the same ordered recursive calls. -/
+theorem compileCaseArmsFuel_expr_pair_eq (fuel : Nat) (env : CEnv)
+    (scrutinee result : Atom) (counter : Nat) (items : List Atom)
+    (body : Atom) (more : List Atom) :
+    compileCaseArmsFuel (fuel + 1) env scrutinee result counter
+        (Atom.expr [Atom.expr items, body] :: more) = (do
+      let (compiledPattern, patternGoals, patternCounter) ←
+        compilePatternFuel fuel env counter (Atom.expr items)
+      let (compiledBody, bodyGoals, bodyCounter) ←
+        compileExprFuel fuel env patternCounter body
+      let (elseGoals, nextCounter) ←
+        compileCaseArmsFuel fuel env scrutinee result bodyCounter more
+      let carry := bindingTemplate compiledPattern [Atom.expr items]
+      .ok ([Goal.softcut carry
+        (patternGoals ++ [Goal.eq compiledPattern scrutinee])
+        (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) := by
+  change (do
+    let (compiledPattern, patternGoals, patternCounter) ←
+      compilePatternFuel fuel env counter (Atom.expr items)
+    let (compiledBody, bodyGoals, bodyCounter) ←
+      compileExprFuel fuel env patternCounter body
+    let (elseGoals, nextCounter) ←
+      compileCaseArmsFuel fuel env scrutinee result bodyCounter more
+    let carry := bindingTemplate compiledPattern [Atom.expr items]
+    .ok ([Goal.softcut carry
+      (patternGoals ++ [Goal.eq compiledPattern scrutinee])
+      (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) = _
+  rfl
+
+/-- A non-`Empty` symbol-pattern arm exposes the same ordered recursive
+calls. -/
+theorem compileCaseArmsFuel_sym_pair_eq (fuel : Nat) (env : CEnv)
+    (scrutinee result : Atom) (counter : Nat) (name : String)
+    (notEmpty : name ≠ "Empty") (body : Atom) (more : List Atom) :
+    compileCaseArmsFuel (fuel + 1) env scrutinee result counter
+        (Atom.expr [Atom.sym name, body] :: more) = (do
+      let (compiledPattern, patternGoals, patternCounter) ←
+        compilePatternFuel fuel env counter (Atom.sym name)
+      let (compiledBody, bodyGoals, bodyCounter) ←
+        compileExprFuel fuel env patternCounter body
+      let (elseGoals, nextCounter) ←
+        compileCaseArmsFuel fuel env scrutinee result bodyCounter more
+      let carry := bindingTemplate compiledPattern [Atom.sym name]
+      .ok ([Goal.softcut carry
+        (patternGoals ++ [Goal.eq compiledPattern scrutinee])
+        (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) := by
+  change (if name == "Empty" then
+      compileCaseArmsFuel fuel env scrutinee result counter more
+    else do
+      let (compiledPattern, patternGoals, patternCounter) ←
+        compilePatternFuel fuel env counter (Atom.sym name)
+      let (compiledBody, bodyGoals, bodyCounter) ←
+        compileExprFuel fuel env patternCounter body
+      let (elseGoals, nextCounter) ←
+        compileCaseArmsFuel fuel env scrutinee result bodyCounter more
+      let carry := bindingTemplate compiledPattern [Atom.sym name]
+      .ok ([Goal.softcut carry
+        (patternGoals ++ [Goal.eq compiledPattern scrutinee])
+        (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) = _
+  simp [notEmpty]
+
+/-- Non-expression case arms are malformed. -/
+theorem compileCaseArmsFuel_var_malformed_eq (fuel : Nat) (env : CEnv)
+    (scrutinee result : Atom) (counter : Nat) (name : String)
+    (more : List Atom) :
+    compileCaseArmsFuel (fuel + 1) env scrutinee result counter
+        (Atom.var name :: more) = .error "case: malformed arm" := by
+  rfl
+
+theorem compileCaseArmsFuel_sym_malformed_eq (fuel : Nat) (env : CEnv)
+    (scrutinee result : Atom) (counter : Nat) (name : String)
+    (more : List Atom) :
+    compileCaseArmsFuel (fuel + 1) env scrutinee result counter
+        (Atom.sym name :: more) = .error "case: malformed arm" := by
+  rfl
+
+theorem compileCaseArmsFuel_gnd_malformed_eq (fuel : Nat) (env : CEnv)
+    (scrutinee result : Atom) (counter : Nat) (ground : Metta.Ground)
+    (more : List Atom) :
+    compileCaseArmsFuel (fuel + 1) env scrutinee result counter
+        (Atom.gnd ground :: more) = .error "case: malformed arm" := by
+  rfl
+
+/-- Expression arms with zero, one, or at least three members are malformed. -/
+theorem compileCaseArmsFuel_expr_nil_malformed_eq (fuel : Nat) (env : CEnv)
+    (scrutinee result : Atom) (counter : Nat) (more : List Atom) :
+    compileCaseArmsFuel (fuel + 1) env scrutinee result counter
+        (Atom.expr [] :: more) = .error "case: malformed arm" := by
+  rfl
+
+theorem compileCaseArmsFuel_expr_singleton_malformed_eq (fuel : Nat)
+    (env : CEnv) (scrutinee result : Atom) (counter : Nat) (item : Atom)
+    (more : List Atom) :
+    compileCaseArmsFuel (fuel + 1) env scrutinee result counter
+        (Atom.expr [item] :: more) = .error "case: malformed arm" := by
+  cases item <;> rfl
+
+theorem compileCaseArmsFuel_expr_many_malformed_eq (fuel : Nat) (env : CEnv)
+    (scrutinee result : Atom) (counter : Nat) (first second third : Atom)
+    (rest more : List Atom) :
+    compileCaseArmsFuel (fuel + 1) env scrutinee result counter
+        (Atom.expr (first :: second :: third :: rest) :: more) =
+      .error "case: malformed arm" := by
+  cases first <;> rfl
+
+/-- Exhausted pattern-compilation fuel is an explicit compiler error. -/
+theorem compilePatternFuel_zero_eq (env : CEnv) (counter : Nat)
+    (pattern : Atom) :
+    compilePatternFuel 0 env counter pattern =
+      .error "compiler fuel exhausted" := by
+  rfl
 
 set_option maxHeartbeats 2000000 in
 /-- Empty typed-argument traversal preserves the counter and emits no terms or
@@ -1246,6 +1636,135 @@ theorem compilePatternFuel_cons_eq (fuel : Nat) (env : CEnv) (counter : Nat)
       pure (consC headTerm tailTerm, headGoals ++ tailGoals, nextCounter)) := by
   rfl
 
+/-- Internal compiler chains remain data in pattern position. -/
+theorem compilePatternFuel_chain_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (head tail : Atom) :
+    compilePatternFuel (fuel + 1) env counter
+        (.expr [.sym "#c", head, tail]) =
+      .ok (.expr [.sym "#c", head, tail], [], counter) := by
+  rfl
+
+/-- Non-symbol-headed pattern applications recursively compile their members
+as ordered pattern data. -/
+theorem compilePatternFuel_var_head_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (name : String) (arguments : List Atom) :
+    compilePatternFuel (fuel + 1) env counter
+        (.expr (.var name :: arguments)) = (do
+      let (terms, goals, nextCounter) ←
+        compilePatternListFuel fuel env counter (.var name :: arguments)
+      .ok (chainOf terms, goals, nextCounter)) := by
+  change (do
+    let (terms, goals, nextCounter) ←
+      compilePatternListFuel fuel env counter (.var name :: arguments)
+    .ok (chainOf terms, goals, nextCounter)) = _
+  rfl
+
+theorem compilePatternFuel_gnd_head_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (ground : Metta.Ground) (arguments : List Atom) :
+    compilePatternFuel (fuel + 1) env counter
+        (.expr (.gnd ground :: arguments)) = (do
+      let (terms, goals, nextCounter) ←
+        compilePatternListFuel fuel env counter (.gnd ground :: arguments)
+      .ok (chainOf terms, goals, nextCounter)) := by
+  change (do
+    let (terms, goals, nextCounter) ←
+      compilePatternListFuel fuel env counter (.gnd ground :: arguments)
+    .ok (chainOf terms, goals, nextCounter)) = _
+  rfl
+
+theorem compilePatternFuel_expr_head_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (items : List Atom) (arguments : List Atom) :
+    compilePatternFuel (fuel + 1) env counter
+        (.expr (.expr items :: arguments)) = (do
+      let (terms, goals, nextCounter) ←
+        compilePatternListFuel fuel env counter (.expr items :: arguments)
+      .ok (chainOf terms, goals, nextCounter)) := by
+  change (do
+    let (terms, goals, nextCounter) ←
+      compilePatternListFuel fuel env counter (.expr items :: arguments)
+    .ok (chainOf terms, goals, nextCounter)) = _
+  rfl
+
+/-- Symbol-headed patterns outside the two structural two-argument cases use
+ordinary function-pattern dispatch or ordered pattern-list construction. -/
+theorem compilePatternFuel_sym_nil_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (name : String) :
+    compilePatternFuel (fuel + 1) env counter (.expr [.sym name]) =
+      (if env.defined.contains name || env.isBin name || specialHead name then
+        compileExprFuel fuel env counter (.expr [.sym name])
+      else do
+        let (terms, goals, nextCounter) ←
+          compilePatternListFuel fuel env counter []
+        .ok (chainOf (.sym name :: terms), goals, nextCounter)) := by
+  change (if env.defined.contains name || env.isBin name || specialHead name
+    then compileExprFuel fuel env counter (.expr [.sym name])
+    else do
+      let (terms, goals, nextCounter) ←
+        compilePatternListFuel fuel env counter []
+      .ok (chainOf (.sym name :: terms), goals, nextCounter)) = _
+  rfl
+
+theorem compilePatternFuel_sym_singleton_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (name : String) (argument : Atom) :
+    compilePatternFuel (fuel + 1) env counter
+        (.expr [.sym name, argument]) =
+      (if env.defined.contains name || env.isBin name || specialHead name then
+        compileExprFuel fuel env counter (.expr [.sym name, argument])
+      else do
+        let (terms, goals, nextCounter) ←
+          compilePatternListFuel fuel env counter [argument]
+        .ok (chainOf (.sym name :: terms), goals, nextCounter)) := by
+  change (if env.defined.contains name || env.isBin name || specialHead name
+    then compileExprFuel fuel env counter (.expr [.sym name, argument])
+    else do
+      let (terms, goals, nextCounter) ←
+        compilePatternListFuel fuel env counter [argument]
+      .ok (chainOf (.sym name :: terms), goals, nextCounter)) = _
+  rfl
+
+theorem compilePatternFuel_sym_many_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (name : String) (first second third : Atom)
+    (rest : List Atom) :
+    compilePatternFuel (fuel + 1) env counter
+        (.expr (.sym name :: first :: second :: third :: rest)) =
+      (if env.defined.contains name || env.isBin name || specialHead name then
+        compileExprFuel fuel env counter
+          (.expr (.sym name :: first :: second :: third :: rest))
+      else do
+        let (terms, goals, nextCounter) ←
+          compilePatternListFuel fuel env counter
+            (first :: second :: third :: rest)
+        .ok (chainOf (.sym name :: terms), goals, nextCounter)) := by
+  change (if env.defined.contains name || env.isBin name || specialHead name
+    then compileExprFuel fuel env counter
+      (.expr (.sym name :: first :: second :: third :: rest))
+    else do
+      let (terms, goals, nextCounter) ←
+        compilePatternListFuel fuel env counter
+          (first :: second :: third :: rest)
+      .ok (chainOf (.sym name :: terms), goals, nextCounter)) = _
+  rfl
+
+theorem compilePatternFuel_sym_pair_other_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (name : String) (first second : Atom)
+    (notChain : name ≠ "#c") (notCons : name ≠ "cons") :
+    compilePatternFuel (fuel + 1) env counter
+        (.expr [.sym name, first, second]) =
+      (if env.defined.contains name || env.isBin name || specialHead name then
+        compileExprFuel fuel env counter (.expr [.sym name, first, second])
+      else do
+        let (terms, goals, nextCounter) ←
+          compilePatternListFuel fuel env counter [first, second]
+        .ok (chainOf (.sym name :: terms), goals, nextCounter)) := by
+  change (if name == "#c" then _ else if name == "cons" then _ else
+    if env.defined.contains name || env.isBin name || specialHead name then
+      compileExprFuel fuel env counter (.expr [.sym name, first, second])
+    else do
+      let (terms, goals, nextCounter) ←
+        compilePatternListFuel fuel env counter [first, second]
+      .ok (chainOf (.sym name :: terms), goals, nextCounter)) = _
+  simp [notChain, notCons]
+
 set_option maxHeartbeats 2000000 in
 /-- Empty pattern-list compilation preserves the counter and emits no goals. -/
 theorem compilePatternListFuel_nil_eq (fuel : Nat) (env : CEnv)
@@ -1280,6 +1799,7 @@ theorem compileExprFuel_progn_empty_eq (fuel counter : Nat) (env : CEnv)
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_36]
+  all_goals try simp only [classifyAppCoreHead]
   rfl
 
 set_option maxHeartbeats 2000000 in
@@ -1295,6 +1815,7 @@ theorem compileExprFuel_prog1_empty_eq (fuel counter : Nat) (env : CEnv)
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_37]
+  all_goals try simp only [classifyAppCoreHead]
   rfl
 
 set_option maxHeartbeats 2000000 in
@@ -1315,6 +1836,7 @@ theorem compileExprFuel_progn_eq (listFuel : Nat) (env : CEnv)
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_36]
+  all_goals try simp only [classifyAppCoreHead]
   simp only [List.isEmpty_cons, Bool.false_eq_true, ↓reduceIte]
   rw [compiled]
   rfl
@@ -1337,6 +1859,7 @@ theorem compileExprFuel_prog1_eq (listFuel : Nat) (env : CEnv)
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_37]
+  all_goals try simp only [classifyAppCoreHead]
   simp only [List.isEmpty_cons, Bool.false_eq_true, ↓reduceIte]
   rw [compiled]
   rfl
@@ -1362,6 +1885,7 @@ theorem compileExprFuel_progn_singleton_eq (bodyFuel : Nat)
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [show bodyFuel + 2 = (bodyFuel + 1) + 1 by omega]
   rw [compileAppCoreFuel.eq_36]
+  all_goals try simp only [classifyAppCoreHead]
   simp only [List.isEmpty_cons, Bool.false_eq_true, ↓reduceIte]
   rw [compileListFuel_cons_eq, body]
   dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
@@ -1392,6 +1916,7 @@ theorem compileExprFuel_prog1_singleton_eq (bodyFuel : Nat)
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [show bodyFuel + 2 = (bodyFuel + 1) + 1 by omega]
   rw [compileAppCoreFuel.eq_37]
+  all_goals try simp only [classifyAppCoreHead]
   simp only [List.isEmpty_cons, Bool.false_eq_true, ↓reduceIte]
   rw [compileListFuel_cons_eq, body]
   dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
@@ -1422,6 +1947,7 @@ theorem compileExprFuel_collapse_eq (bodyFuel : Nat) (env : CEnv)
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_26, body]
+  all_goals try simp only [classifyAppCoreHead]
   rfl
 
 set_option maxHeartbeats 2000000 in
@@ -1446,6 +1972,7 @@ theorem compileExprFuel_once_eq (bodyFuel : Nat) (env : CEnv)
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_27, body]
+  all_goals try simp only [classifyAppCoreHead]
   rfl
 
 set_option maxHeartbeats 2000000 in
@@ -1474,7 +2001,7 @@ theorem compileAppCoreFuel_ifThen_eq (childFuel : Nat) (env : CEnv)
             (.var s!"_q{thenCounter}", [Goal.eq trueA falseA])
             (.var s!"_q{thenCounter}")],
         thenCounter + 1) := by
-  simp only [compileAppCoreFuel]
+  simp only [compileAppCoreFuel, classifyAppCoreHead]
   rw [conditionCompiled]
   dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
   rw [thenCompiled]
@@ -1515,7 +2042,7 @@ theorem compileAppCoreFuel_ifThenElse_eq (childFuel : Nat) (env : CEnv)
           [Goal.ite conditionTerm thenBranch elseBranch
             (.var s!"_q{elseCounter}")],
         elseCounter + 1) := by
-  simp only [compileAppCoreFuel]
+  simp only [compileAppCoreFuel, classifyAppCoreHead]
   rw [conditionCompiled]
   dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
   rw [thenCompiled]
@@ -1631,7 +2158,7 @@ theorem compileAppCoreFuel_andThen_eq (childFuel : Nat) (env : CEnv)
               [Goal.eq (.var s!"_q{bodyCounter}") falseA])
             (.var s!"_q{bodyCounter}")],
         bodyCounter + 1) := by
-  simp only [compileAppCoreFuel]
+  simp only [compileAppCoreFuel, classifyAppCoreHead]
   rw [conditionCompiled]
   dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
   rw [bodyCompiled]
@@ -1663,7 +2190,7 @@ theorem compileAppCoreFuel_orElse_eq (childFuel : Nat) (env : CEnv)
               bodyGoals ++ [Goal.eq (.var s!"_q{bodyCounter}") bodyTerm])
             (.var s!"_q{bodyCounter}")],
         bodyCounter + 1) := by
-  simp only [compileAppCoreFuel]
+  simp only [compileAppCoreFuel, classifyAppCoreHead]
   rw [conditionCompiled]
   dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
   rw [bodyCompiled]
@@ -1762,6 +2289,7 @@ theorem compileAppCoreFuel_let_eq (childFuel : Nat) (env : CEnv)
           bodyGoals,
         nextCounter) := by
   rw [compileAppCoreFuel.eq_23, patternCompiled]
+  all_goals try simp only [classifyAppCoreHead]
   dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
   rw [valueCompiled]
   dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
@@ -1827,6 +2355,7 @@ theorem compileExprFuel_chain_eq (childFuel : Nat) (env : CEnv)
   rw [rewriteStreamOp_chain_none]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_33]
+  all_goals try simp only [classifyAppCoreHead]
   rw [firstCompiled]
   dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
   rw [secondCompiled]
@@ -1853,6 +2382,7 @@ theorem compileExprFuel_letStar_eq (nestedFuel : Nat) (env : CEnv)
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_24, expanded]
+  all_goals try simp only [classifyAppCoreHead]
   exact nestedCompiled
 
 set_option maxHeartbeats 2000000 in
@@ -1874,6 +2404,7 @@ theorem compileExprFuel_withMutex_eq (bodyFuel : Nat) (env : CEnv)
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_38]
+  all_goals try simp only [classifyAppCoreHead]
   exact bodyCompiled
 
 set_option maxHeartbeats 2000000 in
@@ -1888,6 +2419,7 @@ theorem compileExprFuel_cut_eq (fuel counter : Nat) (env : CEnv)
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_13]
+  all_goals try simp only [classifyAppCoreHead]
   rfl
 
 set_option maxHeartbeats 2000000 in
@@ -1903,6 +2435,7 @@ theorem compileExprFuel_quote_eq (fuel counter : Nat) (env : CEnv)
   rw [rewriteStreamOp_quote_none]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_2]
+  all_goals try simp only [classifyAppCoreHead]
 
 set_option maxHeartbeats 2000000 in
 /-- The implementation equation for zero-argument `empty` when no translator
@@ -1917,6 +2450,7 @@ theorem compileExprFuel_empty_eq (fuel counter : Nat) (env : CEnv)
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_12]
+  all_goals try simp only [classifyAppCoreHead]
   rfl
 
 -- Keep elaboration from unfolding the large compiler automatically.  The

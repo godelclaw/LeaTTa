@@ -13,6 +13,7 @@ import PLeaTTa.Proofs.PrologCoreAdequacy
 import PLeaTTa.Proofs.ObservationAgreement
 import PLeaTTa.Proofs.OpenBindingAgreement
 import PLeaTTa.Proofs.CompilerFreshness
+import PLeaTTa.Proofs.CompilerCounter
 import PLeaTTa.Proofs.OpenOrderedStep
 import PLeaTTa.Proofs.ReaderAdequacy
 import PLeaTTa.PeTTaSpec.OpenSubstitution
@@ -108,6 +109,15 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerFreshness.compilerGeneratedName_not_mem_source_vars
 #print axioms PLeaTTa.CompilerFreshness.compilerGeneratedName_not_mem_source_atoms
 #print axioms PLeaTTa.CompilerFreshness.source_generated_encoding_injective_of_seed
+#print axioms PLeaTTa.compileExprFuel_counter_mono
+#print axioms PLeaTTa.compilePatternFuel_counter_mono
+#print axioms PLeaTTa.compileAppFuel_counter_mono
+#print axioms PLeaTTa.compileAppCoreFuel_counter_mono
+#print axioms PLeaTTa.compileTypedArgsFuel_counter_mono
+#print axioms PLeaTTa.compileArgsAtFuel_counter_mono
+#print axioms PLeaTTa.compileCaseArmsFuel_counter_mono
+#print axioms PLeaTTa.compilePatternListFuel_counter_mono
+#print axioms PLeaTTa.compileListFuel_counter_mono
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_variable_encoding_injective
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_resolved_bindings_agree
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_reference_runs
