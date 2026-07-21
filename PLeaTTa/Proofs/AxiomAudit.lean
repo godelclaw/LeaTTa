@@ -68,6 +68,7 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.compileExprFuel_mono_of_le
 #print axioms PLeaTTa.compileExprFuel_fixed_builtin_eq
 #print axioms PLeaTTa.compileExprFuel_defined_direct_eq
+#print axioms PLeaTTa.compileExprFuel_defined_partial_eq
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.binary_builtin_hook_blocks
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_integer_add
 #print axioms PLeaTTa.CompilerAdequacy.TermsAgree.length_eq
@@ -77,10 +78,17 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.TranslatesTypedArgs.modes_length_eq_terms
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.defined_call_hook_blocks
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_defined_unary_literal
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.TranslatesDefinedPartial.notShadowed
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.defined_partial_hook_blocks
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_defined_unary_partial
+#print axioms PLeaTTa.CompilerAdequacy.TermsAgree.properList
 #print axioms PLeaTTa.CompilerAdequacy.unaryValueFunctionRegistry_agrees
 #print axioms PLeaTTa.CompilerAdequacy.compileExprFuel_defined_direct_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_defined_direct_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_defined_direct_complete
+#print axioms PLeaTTa.CompilerAdequacy.compileExprFuel_defined_partial_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileExpr_defined_partial_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileExpr_defined_partial_complete
 #print axioms PLeaTTa.CompilerAdequacy.compileSeqFuel_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_complete

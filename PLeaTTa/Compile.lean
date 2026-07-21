@@ -1900,6 +1900,51 @@ theorem compileExprFuel_defined_direct_eq (argumentFuel : Nat) (env : CEnv)
   simp [fresh]
 
 set_option maxHeartbeats 2000000 in
+/-- Exact executable equation for the incomplete-arity source-defined branch.
+The same ordinary dispatch premises as a direct call apply, but a failed
+arity lookup returns the partial-function value without allocating a result
+variable or appending a call goal. -/
+theorem compileExprFuel_defined_partial_eq (argumentFuel : Nat) (env : CEnv)
+    (counter : Nat) (head : String) (arguments terms : List Atom)
+    (goals : List Goal) (nextCounter : Nat)
+    (noRewrite : rewriteStreamOp? head arguments = none)
+    (notInternalCons : ∀ first second,
+      arguments = [first, second] → head ≠ "#c")
+    (noHook : env.translatorRules.contains head = false)
+    (other : classifyAppCoreHead head = .other)
+    (notProlog : env.prologFunctions.contains head = false)
+    (defined : env.defined.contains head = true)
+    (direct : shouldUseTypedDispatch (env.typeChains head) = false)
+    (argumentsCompiled :
+      compileArgsAtFuel argumentFuel env counter head 0 arguments =
+        .ok (terms, goals, nextCounter))
+    (incompleteArity : (env.arities head).contains terms.length = false) :
+    compileExprFuel (argumentFuel + 3) env counter
+        (.expr (.sym head :: arguments)) =
+      .ok (partialValue head terms, goals, nextCounter) := by
+  rw [show argumentFuel + 3 = (argumentFuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_7 (x_4 := notInternalCons)]
+  rw [show argumentFuel + 2 = (argumentFuel + 1) + 1 by omega]
+  rw [compileAppFuel.eq_2]
+  rw [noRewrite]
+  simp only
+  rw [noHook]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [compileAppCoreFuel_other_eq argumentFuel env counter head arguments
+    other]
+  simp only [compileAppDefaultWith]
+  rw [notProlog]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [defined]
+  simp only [↓reduceIte]
+  rw [direct]
+  simp only [Bool.false_eq_true, ↓reduceIte, Bind.bind, Except.bind]
+  rw [argumentsCompiled]
+  simp only
+  rw [incompleteArity]
+  rfl
+
+set_option maxHeartbeats 2000000 in
 /-- Exact executable equation for an ordinary unary builtin application.
 
 Every dispatch premise is explicit: stream rewriting and translator-rule,

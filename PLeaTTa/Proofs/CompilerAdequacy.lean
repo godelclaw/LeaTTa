@@ -30,6 +30,10 @@ inductive TermAgrees : Term → Atom → Prop where
   | integer (value : Int) : TermAgrees (.integer value) (.gnd (.int value))
   | float (value : Float) : TermAgrees (.float value) (.gnd (.float value))
   | string (value : String) : TermAgrees (.string value) (.gnd (.str value))
+  | partialValue {head : String} {terms : List Term} {encodedArguments : Atom}
+      (arguments : ProperListAgrees terms encodedArguments) :
+      TermAgrees (.compound "partial" [.atom head, .list terms none])
+        (chainOf [.sym "partial", .sym head, encodedArguments])
   | properList {items : List Term} {encoded : Atom}
       (elements : ProperListAgrees items encoded) :
       TermAgrees (.list items none) encoded
@@ -57,6 +61,16 @@ theorem TermsAgree.length_eq {reference : List Term}
   induction agreement with
   | nil => rfl
   | cons _ _ => simp_all
+
+/-- Ordered term agreement induces the executable proper-list encoding used
+inside a partial-function value. -/
+theorem TermsAgree.properList {reference : List Term}
+    {executable : List Atom} (agreement : TermsAgree reference executable) :
+    ProperListAgrees reference (chainOf executable) := by
+  induction agreement with
+  | nil => exact .nil
+  | cons head _ inductionHypothesis =>
+      exact .cons head inductionHypothesis
 
 /-- Representation agreement for recursive source patterns.  Unlike the
 observation-level `TermAgrees`, this relation includes Prolog dotted list
@@ -112,18 +126,18 @@ structure FunctionRegistryAgrees (registry : FunctionRegistry)
     registry.acceptsArity head argumentCount ↔
       (env.arities head).contains argumentCount = true
   modes {head : String} {argumentModes : List ArgumentMode} :
-    registry.directModes head argumentModes →
+    registry.argumentModes head argumentModes →
       ArgModesAgree env head 0 argumentModes
   direct {head : String} {argumentModes : List ArgumentMode} :
-    registry.directModes head argumentModes →
+    registry.argumentModes head argumentModes →
       shouldUseTypedDispatch (env.typeChains head) = false
   noRewrite {head : String} {argumentModes : List ArgumentMode} :
-    registry.directModes head argumentModes →
+    registry.argumentModes head argumentModes →
       ∀ arguments, rewriteStreamOp? head arguments = none
   notInternalCons {head : String} {argumentModes : List ArgumentMode} :
-    registry.directModes head argumentModes → head ≠ "#c"
+    registry.argumentModes head argumentModes → head ≠ "#c"
   classifyOther {head : String} {argumentModes : List ArgumentMode} :
-    registry.directModes head argumentModes →
+    registry.argumentModes head argumentModes →
       classifyAppCoreHead head = .other
 
 /-- Concrete executable environment for the independent unary `user-f`
@@ -396,6 +410,7 @@ theorem TermAgrees.executable_not_variable {reference : Term}
   | integer _ => cases equality
   | float _ => cases equality
   | string _ => cases equality
+  | partialValue arguments => cases equality
   | properList elements =>
       cases elements <;> cases equality
 
@@ -2186,7 +2201,7 @@ theorem compileExprFuel_defined_direct_sound
           .ok (internal, executableGoals, nextCounter) ∧
         TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
   cases native with
-  | call signature notShadowed arguments =>
+  | call signature acceptedArity notShadowed arguments =>
       rename_i argumentCounter modes sources terms argumentGoals
       have modeAgreement : ArgModesAgree env head 0 modes :=
         registryAgreement.modes signature
@@ -2210,11 +2225,11 @@ theorem compileExprFuel_defined_direct_sound
           exact GoalAgrees.definedCall termsAgreement resultAgreement
         have executableDefined : env.defined.contains head = true :=
           (registryAgreement.defined head).mp
-            (registry.direct_defined signature)
+            (registry.modes_defined signature)
         have executableArityAtModes :
             (env.arities head).contains modes.length = true :=
           (registryAgreement.arity head modes.length).mp
-            (registry.direct_arity signature)
+            acceptedArity
         have modesToExecutable : modes.length = executableArguments.length :=
           arguments.modes_length_eq_terms.trans termsAgreement.length_eq
         have completeArity :
@@ -2291,6 +2306,135 @@ theorem compileExpr_defined_direct_complete
   obtain ⟨referenceInternal, referenceGoals, referenceCompiled,
       termAgreement, goalsAgreement⟩ :=
     compileExpr_defined_direct_sound env stateAgreement registryAgreement
+      notProlog native
+  have resultEquality :
+      (internal, executableGoals, nextCounter) =
+        (referenceInternal, referenceGoals, referenceCounter) :=
+    Except.ok.inj (compiled.symm.trans referenceCompiled)
+  cases resultEquality
+  exact ⟨term, goals, native, termAgreement, goalsAgreement⟩
+
+/-- Fuel-indexed soundness of incomplete-arity partial construction.  The
+same registry and priority agreement as a direct call is used, but rejected
+arity is reflected as the false executable lookup and no result variable or
+call goal is manufactured. -/
+theorem compileExprFuel_defined_partial_sound
+    {registry : FunctionRegistry} {state : TranslatorState}
+    (env : CEnv) (stateAgreement : EnvAgrees state env)
+    (registryAgreement : FunctionRegistryAgrees registry env)
+    {counter : Nat} {head : String} {source : Atom} {term : Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains head = false)
+    (native :
+      TranslatesDefinedPartial registry state counter head source term goals
+        nextCounter) :
+    ∃ baseFuel,
+      0 < baseFuel ∧
+      baseFuel < 16 * source.size ∧
+      ∀ extraFuel, ∃ internal executableGoals,
+        compileExprFuel (baseFuel + extraFuel) env counter source =
+          .ok (internal, executableGoals, nextCounter) ∧
+        TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  cases native with
+  | incomplete signature rejectedArity notShadowed arguments =>
+      rename_i modes sources terms
+      have modeAgreement : ArgModesAgree env head 0 modes :=
+        registryAgreement.modes signature
+      obtain ⟨argumentFuel, argumentPositive, argumentBound,
+          argumentCompiles⟩ :=
+        compileArgsAtFuel_initial_sound env stateAgreement head arguments
+          modeAgreement
+      refine ⟨argumentFuel + 3, by omega, ?_, ?_⟩
+      · simp only [Atom.size, List.map, List.sum_cons] at argumentBound ⊢
+        omega
+      · intro extraFuel
+        obtain ⟨executableArguments, executableArgumentGoals, compiled,
+            termsAgreement, goalsAgreement⟩ := argumentCompiles extraFuel
+        have executableDefined : env.defined.contains head = true :=
+          (registryAgreement.defined head).mp
+            (registry.modes_defined signature)
+        have incompleteArityAtModes :
+            (env.arities head).contains modes.length = false := by
+          apply Bool.eq_false_iff.mpr
+          intro accepted
+          exact rejectedArity
+            ((registryAgreement.arity head modes.length).mpr accepted)
+        have modesToExecutable : modes.length = executableArguments.length :=
+          arguments.modes_length_eq_terms.trans termsAgreement.length_eq
+        have incompleteArity :
+            (env.arities head).contains executableArguments.length = false := by
+          simpa [modesToExecutable] using incompleteArityAtModes
+        have partialAgreement :
+            TermAgrees
+              (.compound "partial" [.atom head, .list terms none])
+              (partialValue head executableArguments) := by
+          simpa [partialValue] using
+            (TermAgrees.partialValue termsAgreement.properList)
+        refine ⟨partialValue head executableArguments,
+          executableArgumentGoals, ?_, partialAgreement, goalsAgreement⟩
+        rw [show (argumentFuel + 3) + extraFuel =
+          (argumentFuel + extraFuel) + 3 by omega]
+        exact compileExprFuel_defined_partial_eq
+          (argumentFuel + extraFuel) env counter head sources
+          executableArguments executableArgumentGoals nextCounter
+          (registryAgreement.noRewrite signature sources)
+          (by
+            intro _ _ _
+            exact registryAgreement.notInternalCons signature)
+          (stateAgreement.notContains notShadowed)
+          (registryAgreement.classifyOther signature) notProlog
+          executableDefined (registryAgreement.direct signature) compiled
+          incompleteArity
+
+/-- Public soundness of incomplete-arity source-defined applications. -/
+theorem compileExpr_defined_partial_sound
+    {registry : FunctionRegistry} {state : TranslatorState}
+    (env : CEnv) (stateAgreement : EnvAgrees state env)
+    (registryAgreement : FunctionRegistryAgrees registry env)
+    {counter : Nat} {head : String} {source : Atom} {term : Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains head = false)
+    (native :
+      TranslatesDefinedPartial registry state counter head source term goals
+        nextCounter) :
+    ∃ internal executableGoals,
+      compileExpr env counter source =
+        .ok (internal, executableGoals, nextCounter) ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨baseFuel, _basePositive, baseBound, compiles⟩ :=
+    compileExprFuel_defined_partial_sound env stateAgreement
+      registryAgreement notProlog native
+  have publicBound : baseFuel ≤ compilerFuel source + 64 := by
+    simp [compilerFuel]
+    omega
+  obtain ⟨extraFuel, publicFuelEq⟩ :
+      ∃ extraFuel, compilerFuel source + 64 = baseFuel + extraFuel := by
+    exact ⟨compilerFuel source + 64 - baseFuel, by omega⟩
+  obtain ⟨internal, executableGoals, compiled, termAgreement,
+      goalsAgreement⟩ := compiles extraFuel
+  refine ⟨internal, executableGoals, ?_, termAgreement, goalsAgreement⟩
+  rw [compileExpr, publicFuelEq]
+  exact compiled
+
+/-- Completeness on independently supported incomplete-arity applications. -/
+theorem compileExpr_defined_partial_complete
+    {registry : FunctionRegistry} {state : TranslatorState}
+    (env : CEnv) (stateAgreement : EnvAgrees state env)
+    (registryAgreement : FunctionRegistryAgrees registry env)
+    {counter : Nat} {head : String} {source internal : Atom}
+    {executableGoals : List PLeaTTa.Goal} {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains head = false)
+    (supported : SupportedDefinedPartial registry state counter head source)
+    (compiled : compileExpr env counter source =
+      .ok (internal, executableGoals, nextCounter)) :
+    ∃ term goals,
+      TranslatesDefinedPartial registry state counter head source term goals
+        nextCounter ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨term, goals, referenceCounter, native⟩ := supported
+  obtain ⟨referenceInternal, referenceGoals, referenceCompiled,
+      termAgreement, goalsAgreement⟩ :=
+    compileExpr_defined_partial_sound env stateAgreement registryAgreement
       notProlog native
   have resultEquality :
       (internal, executableGoals, nextCounter) =

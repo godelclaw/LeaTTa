@@ -527,19 +527,18 @@ deriving Repr
 
 /-- Independent source-derived registry used by ordinary function dispatch.
 `isDefined` and `acceptsArity` model the `fun/1` and predicate-arity facts
-established by pinned source loading. `directModes` identifies one signature
-whose type declarations require no nondeterministic branch choice. The two
-coherence fields prevent a direct signature from inventing an unregistered
-head or unsupported arity. [SPEC filereader.pl:20-44;
+established by pinned source loading. `argumentModes` describes staging for
+the arguments actually supplied to one call; accepted arity is intentionally
+separate so the same registry can specify both complete calls and partial
+applications. The coherence field prevents modes from inventing an
+unregistered head. [SPEC filereader.pl:20-44;
 translator.pl:18-34,310-370] -/
 structure FunctionRegistry where
   isDefined : String → Prop
   acceptsArity : String → Nat → Prop
-  directModes : String → List ArgumentMode → Prop
-  direct_defined {head : String} {modes : List ArgumentMode} :
-    directModes head modes → isDefined head
-  direct_arity {head : String} {modes : List ArgumentMode} :
-    directModes head modes → acceptsArity head modes.length
+  argumentModes : String → List ArgumentMode → Prop
+  modes_defined {head : String} {modes : List ArgumentMode} :
+    argumentModes head modes → isDefined head
 
 /-- Exact pinned soft-cut type/meta-type fallback for a translated value.
 Generated variables are named by the independent compiler counter.
@@ -618,7 +617,8 @@ inductive TranslatesDefinedCall (registry : FunctionRegistry) :
   | call {state : TranslatorState} {counter argumentCounter : Nat}
       {head : String} {modes : List ArgumentMode} {sources : List Atom}
       {terms : List Term} {argumentGoals : List Goal}
-      (signature : registry.directModes head modes)
+      (signature : registry.argumentModes head modes)
+      (acceptedArity : registry.acceptsArity head modes.length)
       (notShadowed : ¬ state.hasRule head)
       (arguments :
         TranslatesTypedArgs state counter modes sources terms argumentGoals
@@ -629,6 +629,27 @@ inductive TranslatesDefinedCall (registry : FunctionRegistry) :
         (argumentGoals ++
           [.call head (terms ++ [.variable (.generated argumentCounter)])])
         (argumentCounter + 1)
+
+/-- Independent incomplete-arity branch for a source-registered function.
+Arguments retain the same source-derived staging as a complete call, but no
+call goal or fresh result is emitted: native `build_call_or_partial/6`
+returns `partial(Fun, Args)` at the argument counter.
+[SPEC translator.pl:335-346] -/
+inductive TranslatesDefinedPartial (registry : FunctionRegistry) :
+    TranslatorState → Nat → String → Atom → Term → List Goal → Nat → Prop where
+  | incomplete {state : TranslatorState} {counter argumentCounter : Nat}
+      {head : String} {modes : List ArgumentMode} {sources : List Atom}
+      {terms : List Term} {argumentGoals : List Goal}
+      (signature : registry.argumentModes head modes)
+      (rejectedArity : ¬ registry.acceptsArity head modes.length)
+      (notShadowed : ¬ state.hasRule head)
+      (arguments :
+        TranslatesTypedArgs state counter modes sources terms argumentGoals
+          argumentCounter) :
+      TranslatesDefinedPartial registry state counter head
+        (.expr (.sym head :: sources))
+        (.compound "partial" [.atom head, .list terms none])
+        argumentGoals argumentCounter
 
 theorem TranslatesDefinedCall.notShadowed {registry : FunctionRegistry}
     {state : TranslatorState} {counter : Nat} {head : String} {source : Atom}
@@ -651,18 +672,34 @@ theorem defined_call_hook_blocks {registry : FunctionRegistry}
   intro translation
   exact translation.notShadowed hook
 
+theorem TranslatesDefinedPartial.notShadowed {registry : FunctionRegistry}
+    {state : TranslatorState} {counter : Nat} {head : String} {source : Atom}
+    {term : Term} {goals : List Goal} {nextCounter : Nat}
+    (translation :
+      TranslatesDefinedPartial registry state counter head source term goals
+        nextCounter) :
+    ¬ state.hasRule head := by
+  cases translation
+  assumption
+
+/-- Translator-rule priority also excludes the partial-function branch. -/
+theorem defined_partial_hook_blocks {registry : FunctionRegistry}
+    {state : TranslatorState} {counter : Nat} {head : String}
+    {source : Atom} {term : Term} {goals : List Goal}
+    {nextCounter : Nat} (hook : state.hasRule head) :
+    ¬ TranslatesDefinedPartial registry state counter head source term goals
+      nextCounter := by
+  intro translation
+  exact translation.notShadowed hook
+
 /-- A concrete non-vacuity witness: one source-defined unary value function. -/
 def unaryValueFunctionRegistry (name : String) : FunctionRegistry where
   isDefined := fun head => head = name
   acceptsArity := fun head arity => head = name ∧ arity = 1
-  directModes := fun head modes => head = name ∧ modes = [.value]
-  direct_defined := by
+  argumentModes := fun head modes => head = name ∧ modes = [.value]
+  modes_defined := by
     intro head modes signature
     exact signature.1
-  direct_arity := by
-    intro head modes signature
-    rcases signature with ⟨headEq, rfl⟩
-    exact ⟨headEq, rfl⟩
 
 theorem translates_defined_unary_literal (state : TranslatorState)
     (counter : Nat) (name : String) (value : Int)
@@ -673,7 +710,32 @@ theorem translates_defined_unary_literal (state : TranslatorState)
       [.call name [.integer value, .variable (.generated counter)]]
       (counter + 1) := by
   exact TranslatesDefinedCall.call (by simp [unaryValueFunctionRegistry])
-    notShadowed
+    (by simp [unaryValueFunctionRegistry]) notShadowed
+    (TranslatesTypedArgs.value (TranslatesExpr.literal (Literal.integer value))
+      (TranslatesTypedArgs.nil (state := state) (counter := counter)))
+
+/-- Concrete two-input registry whose one-argument mode is an incomplete
+prefix and whose two-argument mode is complete. -/
+def binaryValueFunctionRegistry (name : String) : FunctionRegistry where
+  isDefined := fun head => head = name
+  acceptsArity := fun head arity => head = name ∧ arity = 2
+  argumentModes := fun head modes =>
+    head = name ∧ (modes = [.value] ∨ modes = [.value, .value])
+  modes_defined := by
+    intro head modes signature
+    exact signature.1
+
+/-- Positive source-level witness for incomplete-arity partial construction. -/
+theorem translates_defined_unary_partial (state : TranslatorState)
+    (counter : Nat) (name : String) (value : Int)
+    (notShadowed : ¬ state.hasRule name) :
+    TranslatesDefinedPartial (binaryValueFunctionRegistry name) state counter
+      name (.expr [.sym name, .gnd (.int value)])
+      (.compound "partial" [.atom name, .list [.integer value] none]) []
+      counter := by
+  exact TranslatesDefinedPartial.incomplete
+    (by simp [binaryValueFunctionRegistry])
+    (by simp [binaryValueFunctionRegistry]) notShadowed
     (TranslatesTypedArgs.value (TranslatesExpr.literal (Literal.integer value))
       (TranslatesTypedArgs.nil (state := state) (counter := counter)))
 
@@ -1399,6 +1461,14 @@ def SupportedDefinedCall (registry : FunctionRegistry)
     (source : Atom) : Prop :=
   ∃ term goals nextCounter,
     TranslatesDefinedCall registry state counter head source term goals
+      nextCounter
+
+/-- Independently supported incomplete-arity source-defined application. -/
+def SupportedDefinedPartial (registry : FunctionRegistry)
+    (state : TranslatorState) (counter : Nat) (head : String)
+    (source : Atom) : Prop :=
+  ∃ term goals nextCounter,
+    TranslatesDefinedPartial registry state counter head source term goals
       nextCounter
 
 /-- Independently supported pinned `trace!` stream-rewrite forms. -/
