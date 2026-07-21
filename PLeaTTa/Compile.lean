@@ -142,6 +142,30 @@ def compilerFreshCounterForAtoms (counter : Nat) (atoms : List Atom) : Nat :=
 def fresh (n : Nat) : Atom × Nat :=
   (Atom.var s!"_q{n}", n + 1)
 
+/-- Distinct variables occurring in one declared arrow chain, in their first
+occurrence order.  Native PeTTa obtains a fresh copy of every chain through
+Prolog's `findall/3`; making that copy explicit prevents type variables from
+aliasing source variables or variables in another overload branch.
+[SPEC translator.pl:317-324,349-370] -/
+def compilerTypeVarNames (chain : List Atom) : List String :=
+  (chain.flatMap Atom.vars).eraseDups
+
+/-- The finite substitution used to make one declared arrow chain a fresh
+variant.  Repeated occurrences share one generated variable, while distinct
+source variables receive consecutive compiler-owned names. -/
+def compilerTypeFresheningSubst (counter : Nat)
+    (chain : List Atom) : Metta.Subst :=
+  (compilerTypeVarNames chain).mapIdx (fun index name =>
+    (name, Atom.var (compilerGeneratedName (counter + index))))
+
+/-- Produce one branch-local fresh variant of a declared arrow chain and the
+first unused compiler counter.  This is executable compiler machinery rather
+than a proof-only copy; its laws live in `CompilerTypeFreshening`. -/
+def freshenTypeChain (counter : Nat) (chain : List Atom) : List Atom × Nat :=
+  (chain.map (Metta.Subst.apply
+      (compilerTypeFresheningSubst counter chain)),
+    counter + (compilerTypeVarNames chain).length)
+
 def compilerTrueA : Atom := Atom.sym "True"
 def compilerFalseA : Atom := Atom.sym "False"
 

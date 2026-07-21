@@ -13,6 +13,7 @@ import PLeaTTa.Proofs.PrologCoreAdequacy
 import PLeaTTa.Proofs.ObservationAgreement
 import PLeaTTa.Proofs.OpenBindingAgreement
 import PLeaTTa.Proofs.CompilerFreshness
+import PLeaTTa.Proofs.CompilerTypeFreshening
 import PLeaTTa.Proofs.CompilerCounter
 import PLeaTTa.Proofs.CompilerFuel
 import PLeaTTa.Proofs.CompilerGeneratedNames
@@ -159,6 +160,13 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerFreshness.compilerGeneratedName_not_mem_source_vars
 #print axioms PLeaTTa.CompilerFreshness.compilerGeneratedName_not_mem_source_atoms
 #print axioms PLeaTTa.CompilerFreshness.source_generated_encoding_injective_of_seed
+#print axioms PLeaTTa.CompilerTypeFreshening.freshenTypeChain_counter_eq
+#print axioms PLeaTTa.CompilerTypeFreshening.compilerTypeFresheningSubst_domain
+#print axioms PLeaTTa.CompilerTypeFreshening.compilerTypeFresheningSubst_lookup
+#print axioms PLeaTTa.CompilerTypeFreshening.freshenTypeVariable
+#print axioms PLeaTTa.CompilerTypeFreshening.freshenTypeChain_names_generated
+#print axioms PLeaTTa.CompilerTypeFreshening.freshenTypeChain_closed_eq
+#print axioms PLeaTTa.CompilerTypeFreshening.freshenTypeChain_ranges_disjoint
 #print axioms PLeaTTa.compileExprFuel_counter_mono
 #print axioms PLeaTTa.compilePatternFuel_counter_mono
 #print axioms PLeaTTa.compileAppFuel_counter_mono
