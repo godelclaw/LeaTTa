@@ -101,16 +101,13 @@ theorem compileTypedDispatchStepWith_success_stable
   intro accumulator chain outcome compiled
   unfold compileTypedDispatchStepWith at compiled ⊢
   split at compiled
-  · split at compiled
-    · simp_all only [if_true]
-    · simp_all only [if_false]
-      simp only [Bind.bind, Except.bind] at compiled ⊢
-      split at compiled
-      · contradiction
-      · rename_i typedOutcome typedValue typedEq
-        rw [typedStable _ _ _ typedEq]
-        exact compiled
-  · exact compiled
+  · simp only [Bind.bind, Except.bind] at compiled ⊢
+    split at compiled
+    · contradiction
+    · rename_i typedOutcome typedValue typedEq
+      rw [typedStable _ _ _ typedEq]
+      exact compiled
+  · contradiction
 
 /-- Ordered ambiguous-branch compilation is stable when expression
 compilation is stable. -/
@@ -169,6 +166,16 @@ theorem compileAppDefaultWith_success_stable
     simp only [prologFalse, Bool.false_eq_true, if_false] at compiled ⊢
     by_cases defined : env.defined.contains head = true
     · simp only [defined, if_true] at compiled ⊢
+      have shortageFalse :
+          typedDispatchInputShortage (env.typeChains head)
+            arguments.length = false := by
+        cases shortage : typedDispatchInputShortage (env.typeChains head)
+            arguments.length with
+        | false => rfl
+        | true =>
+            simp only [shortage, if_true] at compiled
+            cases compiled
+      simp only [shortageFalse, Bool.false_eq_true, if_false] at compiled ⊢
       by_cases typed : shouldUseTypedDispatch (env.typeChains head) = true
       · simp only [typed, if_true] at compiled ⊢
         let result := (fresh start).1
@@ -409,7 +416,9 @@ theorem compileTypedArgsFuel_stable_step (fuel : Nat)
           exact compiled
       | cons ty types =>
           rw [compileTypedArgsFuel_surplus_type_eq] at compiled
-          contradiction
+          rw [show fuel + 2 = (fuel + 1) + 1 by omega,
+            compileTypedArgsFuel_surplus_type_eq]
+          exact compiled
   | cons source sources =>
       cases types with
       | nil =>

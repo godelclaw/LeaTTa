@@ -1188,7 +1188,8 @@ theorem compileTypedArgsFuel_generatedNames_step (fuel : Nat)
           simp
       | cons ty types =>
           rw [compileTypedArgsFuel_surplus_type_eq] at compiled
-          contradiction
+          rcases Except.ok.inj compiled with ⟨rfl, rfl, rfl⟩
+          simp
   | cons source sources =>
       cases types with
       | nil =>
@@ -2085,82 +2086,72 @@ theorem compileTypedDispatchStepWith_generatedNames
   unfold compileTypedDispatchStepWith at compiled
   split at compiled
   · rename_i _ _ resultType resultTypeEq
-    by_cases arityMismatch :
-        (chain.dropLast.length != arguments.length) = true
-    · simp only [arityMismatch, if_true] at compiled
-      rcases Except.ok.inj compiled with rfl
-      exact accumulatorAllowed
-    · have arityMatch :
-          (chain.dropLast.length != arguments.length) = false :=
-        Bool.eq_false_iff.mpr arityMismatch
-      simp only [arityMatch, Bool.false_eq_true, if_false, Bind.bind,
-        Except.bind] at compiled
-      cases callbackEq : compileTypedArgs accumulator.2 chain.dropLast with
-      | error message =>
-          simp only [callbackEq] at compiled
-          contradiction
-      | ok callbackResult =>
-          simp only [callbackEq] at compiled
-          rcases Except.ok.inj compiled with rfl
-          have callbackCounter := typedMono _ _ _ _ _ callbackEq
-          have parameterTypesAllowed :
-              CompilerAtomsNamesAllowed external origin accumulator.2
-                chain.dropLast := chainAllowed.dropLast
-          have callbackNames := typedNames _ _ _ _ _ originAccumulator
-            parameterTypesAllowed callbackEq
-          have resultTypeAllowed :
-              CompilerAtomNamesAllowed external origin accumulator.2
-                resultType := by
-            apply chainAllowed.getLast?_eq_some
-            exact resultTypeEq
-          have checksAllowed := compileResultTypeCheck_generatedNames external
-            origin callbackResult.2.2 result resultType
-            (Nat.le_trans originAccumulator callbackCounter)
-            (resultAllowed.mono callbackCounter)
-            (resultTypeAllowed.mono callbackCounter)
-          have checksCounter := compileResultTypeCheck_counter_le result
-            resultType callbackResult.2.2
-          apply (compilerBranchesNamesAllowed_append_iff external origin
+    simp only [Bind.bind, Except.bind] at compiled
+    cases callbackEq : compileTypedArgs accumulator.2 chain.dropLast with
+    | error message =>
+        simp only [callbackEq] at compiled
+        contradiction
+    | ok callbackResult =>
+        simp only [callbackEq] at compiled
+        rcases Except.ok.inj compiled with rfl
+        have callbackCounter := typedMono _ _ _ _ _ callbackEq
+        have parameterTypesAllowed :
+            CompilerAtomsNamesAllowed external origin accumulator.2
+              chain.dropLast := chainAllowed.dropLast
+        have callbackNames := typedNames _ _ _ _ _ originAccumulator
+          parameterTypesAllowed callbackEq
+        have resultTypeAllowed :
+            CompilerAtomNamesAllowed external origin accumulator.2
+              resultType := by
+          apply chainAllowed.getLast?_eq_some
+          exact resultTypeEq
+        have checksAllowed := compileResultTypeCheck_generatedNames external
+          origin callbackResult.2.2 result resultType
+          (Nat.le_trans originAccumulator callbackCounter)
+          (resultAllowed.mono callbackCounter)
+          (resultTypeAllowed.mono callbackCounter)
+        have checksCounter := compileResultTypeCheck_counter_le result
+          resultType callbackResult.2.2
+        apply (compilerBranchesNamesAllowed_append_iff external origin
+            (compileResultTypeCheck result resultType
+              callbackResult.2.2).2
+            accumulator.1
+            [(result, callbackResult.2.1 ++
+              [Goal.call head callbackResult.1 result] ++
               (compileResultTypeCheck result resultType
-                callbackResult.2.2).2
-              accumulator.1
-              [(result, callbackResult.2.1 ++
-                [Goal.call head callbackResult.1 result] ++
-                (compileResultTypeCheck result resultType
-                  callbackResult.2.2).1)]).2
+                callbackResult.2.2).1)]).2
+        constructor
+        · exact accumulatorAllowed.mono
+            (Nat.le_trans callbackCounter checksCounter)
+        · simp only [compilerBranchesNamesAllowed_cons_iff,
+            compilerBranchesNamesAllowed_nil, and_true]
           constructor
-          · exact accumulatorAllowed.mono
-              (Nat.le_trans callbackCounter checksCounter)
-          · simp only [compilerBranchesNamesAllowed_cons_iff,
-              compilerBranchesNamesAllowed_nil, and_true]
+          · exact (resultAllowed.mono callbackCounter).mono checksCounter
+          · rw [List.append_assoc]
+            apply (compilerGoalsNamesAllowed_append_iff external origin
+                (compileResultTypeCheck result resultType
+                  callbackResult.2.2).2
+                callbackResult.2.1
+                ([Goal.call head callbackResult.1 result] ++
+                  (compileResultTypeCheck result resultType
+                    callbackResult.2.2).1)).2
             constructor
-            · exact (resultAllowed.mono callbackCounter).mono checksCounter
-            · rw [List.append_assoc]
-              apply (compilerGoalsNamesAllowed_append_iff external origin
+            · exact callbackNames.2.mono checksCounter
+            · apply (compilerGoalsNamesAllowed_append_iff external origin
                   (compileResultTypeCheck result resultType
                     callbackResult.2.2).2
-                  callbackResult.2.1
-                  ([Goal.call head callbackResult.1 result] ++
-                    (compileResultTypeCheck result resultType
-                      callbackResult.2.2).1)).2
+                  [Goal.call head callbackResult.1 result]
+                  (compileResultTypeCheck result resultType
+                    callbackResult.2.2).1).2
               constructor
-              · exact callbackNames.2.mono checksCounter
-              · apply (compilerGoalsNamesAllowed_append_iff external origin
-                    (compileResultTypeCheck result resultType
-                      callbackResult.2.2).2
-                    [Goal.call head callbackResult.1 result]
-                    (compileResultTypeCheck result resultType
-                      callbackResult.2.2).1).2
-                constructor
-                · simp only [compilerGoalsNamesAllowed_cons_iff,
-                      compilerGoalsNamesAllowed_nil, and_true]
-                  exact compilerGoalNamesAllowed_call
-                    (callbackNames.1.mono checksCounter)
-                    ((resultAllowed.mono callbackCounter).mono checksCounter)
-                    head
-                · exact checksAllowed
-  · rcases Except.ok.inj compiled with rfl
-    exact accumulatorAllowed
+              · simp only [compilerGoalsNamesAllowed_cons_iff,
+                    compilerGoalsNamesAllowed_nil, and_true]
+                exact compilerGoalNamesAllowed_call
+                  (callbackNames.1.mono checksCounter)
+                  ((resultAllowed.mono callbackCounter).mono checksCounter)
+                  head
+              · exact checksAllowed
+  · contradiction
 
 theorem compileTypedDispatchFoldWith_generatedNames
     (compileTypedArgs : Nat → List Atom →
@@ -2339,6 +2330,16 @@ theorem compileAppDefaultWith_generatedNames
     simp only [prologFalse, Bool.false_eq_true, if_false] at compiled
     by_cases defined : env.defined.contains head = true
     · simp only [defined, if_true] at compiled
+      have shortageFalse :
+          typedDispatchInputShortage (env.typeChains head)
+            arguments.length = false := by
+        cases shortage : typedDispatchInputShortage (env.typeChains head)
+            arguments.length with
+        | false => rfl
+        | true =>
+            simp only [shortage, if_true] at compiled
+            cases compiled
+      simp only [shortageFalse, Bool.false_eq_true, if_false] at compiled
       by_cases typed : shouldUseTypedDispatch (env.typeChains head) = true
       · simp only [typed, if_true, fresh, Bind.bind, Except.bind] at compiled
         let resultAtom := Atom.var (compilerGeneratedName start)

@@ -275,6 +275,7 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.compileTypedArgsFuel_missing_type_eq
 #print axioms PLeaTTa.compileTypedArgsFuel_surplus_type_eq
 #print axioms PLeaTTa.CompilerAdequacy.compileTypeCheck_refined_symbol_sound
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.TranslatesTypedArgs.modes_length_eq_sources
 #print axioms PLeaTTa.CompilerAdequacy.compileTypedArgsFuel_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileTypedArgs_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileTypedArgs_complete

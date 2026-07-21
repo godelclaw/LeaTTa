@@ -18,6 +18,15 @@ DUPLICATE_SIGNATURE = (
 EXPRESSION_RESULT = (
     ROOT / "diffbench" / "probes" / "typed-expression-result.metta"
 )
+SURPLUS_PARAMETER_TYPE = (
+    ROOT / "diffbench" / "probes" / "typed-surplus-parameter-type.metta"
+)
+MISSING_PARAMETER_TYPE = (
+    ROOT / "diffbench" / "probes" / "typed-missing-parameter-type.metta"
+)
+VALID_PARAMETRIC_CHAIN = (
+    ROOT / "diffbench" / "probes" / "typed-parametric-chain.metta"
+)
 
 
 def normalized(run, probe: Path) -> list[str]:
@@ -25,6 +34,13 @@ def normalized(run, probe: Path) -> list[str]:
     if values is None:
         raise SystemExit(f"typed dispatch parity: malformed output for {probe.name}")
     return [diff.normalize(value) for value in values]
+
+
+def classified(run, probe: Path) -> tuple[str, list[str]]:
+    try:
+        return ("ok", normalized(run, probe))
+    except diff.RunnerError:
+        return ("error", [])
 
 
 def main() -> None:
@@ -55,9 +71,51 @@ def main() -> None:
             f"PeTTa={native_expression!r} "
             f"PLeaTTa={executable_expression!r}"
         )
+
+    native_surplus = normalized(diff.petta_results, SURPLUS_PARAMETER_TYPE)
+    executable_surplus = normalized(
+        diff.leatta_results, SURPLUS_PARAMETER_TYPE
+    )
+    if native_surplus != [] or executable_surplus != native_surplus:
+        raise SystemExit(
+            "typed dispatch parity: surplus parameter types do not retain "
+            "the pinned cut-base behavior: "
+            f"PeTTa={native_surplus!r} PLeaTTa={executable_surplus!r}"
+        )
+
+    native_missing = classified(diff.petta_results, MISSING_PARAMETER_TYPE)
+    executable_missing = classified(
+        diff.leatta_results, MISSING_PARAMETER_TYPE
+    )
+    if native_missing != ("error", []) or executable_missing != native_missing:
+        raise SystemExit(
+            "typed dispatch parity: a missing parameter type did not reject "
+            "compilation on both engines: "
+            f"PeTTa={native_missing!r} PLeaTTa={executable_missing!r}"
+        )
+
+    native_parametric = normalized(diff.petta_results, VALID_PARAMETRIC_CHAIN)
+    executable_parametric = normalized(
+        diff.leatta_results, VALID_PARAMETRIC_CHAIN
+    )
+    expected_parametric = ["(a b)", "t-parametric"]
+    if native_parametric != expected_parametric:
+        raise SystemExit(
+            "typed dispatch parity: pinned parametric-chain behavior changed: "
+            f"{native_parametric!r}"
+        )
+    if executable_parametric != native_parametric:
+        raise SystemExit(
+            "typed dispatch parity: sampled valid parametric chain changed "
+            "behavior: "
+            f"PeTTa={native_parametric!r} PLeaTTa={executable_parametric!r}"
+        )
     print(
         "typed dispatch parity: PASS; duplicate signatures retain one "
-        "first-occurrence branch and Expression results remain checked"
+        "first-occurrence branch, Expression results remain checked, and "
+        "parameter-type exhaustion follows pinned asymmetry; the sampled "
+        "valid parametric chain agrees, while rejection constraints remain "
+        "a known compiler-ledger mismatch"
     )
 
 

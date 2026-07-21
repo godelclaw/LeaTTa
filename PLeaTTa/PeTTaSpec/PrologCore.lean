@@ -679,6 +679,24 @@ theorem TranslatesTypedArgs.modes_length_eq_terms
   | value _ _ ih => simp [ih]
   | refined _ _ _ ih => simp [ih]
 
+/-- Within the independently supported exact typed-argument fragment, modes
+are consumed in lockstep with supplied source arguments. Pinned surplus-type
+tolerance is intentionally outside this exact relation and remains a separate
+behavioral obligation. -/
+theorem TranslatesTypedArgs.modes_length_eq_sources
+    {state : TranslatorState} {counter : Nat} {modes : List ArgumentMode}
+    {sources : List Atom} {terms : List Term} {goals : List Goal}
+    {nextCounter : Nat}
+    (translation :
+      TranslatesTypedArgs state counter modes sources terms goals
+        nextCounter) :
+    modes.length = sources.length := by
+  induction translation with
+  | nil => rfl
+  | expression _ _ ih => simp [ih]
+  | value _ _ ih => simp [ih]
+  | refined _ _ _ ih => simp [ih]
+
 /-- Independent ordinary direct-call branch for a source-registered function.
 The registry supplies a coherent direct signature, arguments follow pinned
 typed staging left-to-right, and the generated output is appended as the last

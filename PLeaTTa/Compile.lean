@@ -389,7 +389,12 @@ private theorem rewriteStreamOp_quote_none (args : List Atom) :
     show ("quote" == "subtraction") = false by decide,
     Bool.false_eq_true, ↓reduceIte]
 
-/-- Whether the pinned function declarations require refined typed dispatch. -/
+/-- Whether the currently supported declared-type fragment requires the
+explicit typed branch machinery. Single-chain parametric and dependent
+type-variable declarations currently retain the ordinary path because their
+required freshening is not implemented; that path is not generally equivalent
+to pinned typed dispatch. Overloaded parametric chains remain unsupported as
+well. See ledger `FALLBACK.typed_branches`. -/
 def shouldUseTypedDispatch (chains : List (List Atom)) : Bool :=
   let hasCompoundParam : List Atom → Bool := fun chain =>
     chain.dropLast.any (fun ty =>
@@ -411,25 +416,37 @@ def shouldUseTypedDispatch (chains : List (List Atom)) : Bool :=
   | [chain] => hasCompoundParam chain || hasSupportedSimpleRefinement chain
   | _ :: _ :: _ => true
 
+/-- A nonempty source call cannot traverse a type chain that runs out of
+parameter types. An empty inner chain also lacks the mandatory result type;
+an empty outer chain list means that no type declaration exists. Pinned
+`maplist(typed_functioncall_branch, ...)` fails the whole translation when
+either occurs; this guard preserves that failure before the existing selector,
+including for fragments currently lowered through the ordinary path. It does
+not close the parametric typed-dispatch mismatch.
+[SPEC translator.pl:317-324,349-370] -/
+def typedDispatchInputShortage (chains : List (List Atom))
+    (argumentCount : Nat) : Bool :=
+  chains.any (fun chain =>
+    chain.isEmpty || chain.dropLast.length < argumentCount)
+
 /-- One arrow-chain branch of typed dispatch.  Naming this executable step
 makes its counter threading and ordered fold independently checkable. -/
 def compileTypedDispatchStepWith
     (compileTypedArgs : Nat → List Atom →
       CompileM (List Atom × List Goal × Nat))
-    (result : Atom) (head : String) (arguments : List Atom)
+    (result : Atom) (head : String) (_arguments : List Atom)
     (accumulator : List (Atom × List Goal) × Nat) (chain : List Atom) :
     CompileM (List (Atom × List Goal) × Nat) :=
   match chain.dropLast, chain.getLast? with
   | parameterTypes, some resultType =>
-      if parameterTypes.length != arguments.length then .ok accumulator
-      else do
-        let (terms, goals, checkedArgumentsCounter) ←
-          compileTypedArgs accumulator.2 parameterTypes
-        let (resultChecks, nextCounter) :=
-          compileResultTypeCheck result resultType checkedArgumentsCounter
-        .ok (accumulator.1 ++ [(result,
-          goals ++ [Goal.call head terms result] ++ resultChecks)], nextCounter)
-  | _, none => .ok accumulator
+      do
+      let (terms, goals, checkedArgumentsCounter) ←
+        compileTypedArgs accumulator.2 parameterTypes
+      let (resultChecks, nextCounter) :=
+        compileResultTypeCheck result resultType checkedArgumentsCounter
+      .ok (accumulator.1 ++ [(result,
+        goals ++ [Goal.call head terms result] ++ resultChecks)], nextCounter)
+  | _, none => .error "typed dispatch: missing result type"
 
 /-- Compile an ordered collection of nondeterministic branches.  The callback
 is the executable expression compiler; naming the fold makes its left-to-right
@@ -592,7 +609,9 @@ def compileAppDefaultWith
       goals ++ [Goal.bin "translatePredicate" [predicate] ok], finalCounter)
   else if env.defined.contains head then do
     let chains0 := env.typeChains head
-    if shouldUseTypedDispatch chains0 then do
+    if typedDispatchInputShortage chains0 arguments.length then
+      .error "typed arguments: arity mismatch"
+    else if shouldUseTypedDispatch chains0 then do
       let (result, firstCounter) := fresh counter
       let (branches, branchCounter) ← chains0.foldlM
         (compileTypedDispatchStepWith compileTypedArgs result head arguments)
@@ -1222,7 +1241,9 @@ declared type and therefore emits refined type checks.
 def compileTypedArgsFuel : Nat → CEnv → Nat → List Atom → List Atom →
     CompileM (List Atom × List Goal × Nat)
   | 0, _, _, _, _ => .error "compiler fuel exhausted"
-  | _ + 1, _, counter, [], [] => .ok ([], [], counter)
+  -- [SPEC translator.pl:362] the cut base clause ignores any unconsumed
+  -- declared parameter types once all supplied source arguments are gone.
+  | _ + 1, _, counter, [], _ => .ok ([], [], counter)
   | fuel + 1, env, counter, source :: sources, ty :: types => do
       if ty == Atom.sym "Expression" then
         let (terms, goals, nextCounter) ←
@@ -1639,18 +1660,21 @@ theorem compileTypedArgsFuel_evaluated_eq (fuel : Nat) (env : CEnv)
     ↓reduceIte]
   rfl
 
-/-- Exact typed traversal rejects mismatched source/type arities. -/
+/-- Typed traversal fails when a supplied source argument has no declared
+parameter type. [SPEC translator.pl:363-370] -/
 theorem compileTypedArgsFuel_missing_type_eq (fuel : Nat) (env : CEnv)
     (counter : Nat) (source : Atom) (sources : List Atom) :
     compileTypedArgsFuel (fuel + 1) env counter (source :: sources) [] =
       .error "typed arguments: arity mismatch" := by
   rfl
 
-/-- Exact typed traversal also rejects surplus type entries. -/
+/-- Pinned `translate_args_by_type([], _, [], [])` ignores every surplus
+declared parameter type after source arguments are exhausted.
+[SPEC translator.pl:362] -/
 theorem compileTypedArgsFuel_surplus_type_eq (fuel : Nat) (env : CEnv)
     (counter : Nat) (ty : Atom) (types : List Atom) :
     compileTypedArgsFuel (fuel + 1) env counter [] (ty :: types) =
-      .error "typed arguments: arity mismatch" := by
+      .ok ([], [], counter) := by
   rfl
 
 set_option maxHeartbeats 2000000 in
@@ -1955,6 +1979,8 @@ theorem compileExprFuel_defined_direct_eq (argumentFuel : Nat) (env : CEnv)
     (other : classifyAppCoreHead head = .other)
     (notProlog : env.prologFunctions.contains head = false)
     (defined : env.defined.contains head = true)
+    (typedInputsAvailable :
+      typedDispatchInputShortage (env.typeChains head) arguments.length = false)
     (direct : shouldUseTypedDispatch (env.typeChains head) = false)
     (argumentsCompiled :
       compileArgsAtFuel argumentFuel env counter head 0 arguments =
@@ -1980,6 +2006,8 @@ theorem compileExprFuel_defined_direct_eq (argumentFuel : Nat) (env : CEnv)
   simp only [Bool.false_eq_true, ↓reduceIte]
   rw [defined]
   simp only [↓reduceIte]
+  rw [typedInputsAvailable]
+  simp only [Bool.false_eq_true, ↓reduceIte]
   rw [direct]
   simp only [Bool.false_eq_true, ↓reduceIte, Bind.bind, Except.bind]
   rw [argumentsCompiled]
@@ -2002,6 +2030,8 @@ theorem compileExprFuel_defined_partial_eq (argumentFuel : Nat) (env : CEnv)
     (other : classifyAppCoreHead head = .other)
     (notProlog : env.prologFunctions.contains head = false)
     (defined : env.defined.contains head = true)
+    (typedInputsAvailable :
+      typedDispatchInputShortage (env.typeChains head) arguments.length = false)
     (direct : shouldUseTypedDispatch (env.typeChains head) = false)
     (argumentsCompiled :
       compileArgsAtFuel argumentFuel env counter head 0 arguments =
@@ -2025,6 +2055,8 @@ theorem compileExprFuel_defined_partial_eq (argumentFuel : Nat) (env : CEnv)
   simp only [Bool.false_eq_true, ↓reduceIte]
   rw [defined]
   simp only [↓reduceIte]
+  rw [typedInputsAvailable]
+  simp only [Bool.false_eq_true, ↓reduceIte]
   rw [direct]
   simp only [Bool.false_eq_true, ↓reduceIte, Bind.bind, Except.bind]
   rw [argumentsCompiled]

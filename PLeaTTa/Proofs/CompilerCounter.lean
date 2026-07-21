@@ -193,7 +193,8 @@ theorem compileTypedArgsFuel_counter_step (fuel : Nat)
           exact Nat.le_refl _
       | cons ty types =>
           rw [compileTypedArgsFuel_surplus_type_eq] at compiled
-          contradiction
+          rcases Except.ok.inj compiled with ⟨_, _, rfl⟩
+          exact Nat.le_refl _
   | cons source sources =>
       cases types with
       | nil =>
@@ -559,18 +560,13 @@ theorem typedDispatchStep_counter
   intro accumulator chain outcome compiled
   unfold compileTypedDispatchStepWith at compiled
   split at compiled <;> try contradiction
-  · split at compiled
-    · cases Except.ok.inj compiled
-      exact Nat.le_refl _
-    · simp only [Bind.bind, Except.bind] at compiled
-      split at compiled
-      · contradiction
-      · have argumentsMono := typedMono _ _ _ _ _ (by assumption)
-        rcases Except.ok.inj compiled with rfl
-        exact Nat.le_trans argumentsMono (by
-          apply compileResultTypeCheck_counter_le)
-  · cases Except.ok.inj compiled
-    exact Nat.le_refl _
+  · simp only [Bind.bind, Except.bind] at compiled
+    split at compiled
+    · contradiction
+    · have argumentsMono := typedMono _ _ _ _ _ (by assumption)
+      rcases Except.ok.inj compiled with rfl
+      exact Nat.le_trans argumentsMono (by
+        apply compileResultTypeCheck_counter_le)
 
 theorem compileAppDefaultWith_counter
     (compileArgs : Nat →
@@ -605,6 +601,16 @@ theorem compileAppDefaultWith_counter
     simp only [prologFalse, Bool.false_eq_true, if_false] at compiled
     by_cases defined : env.defined.contains head = true
     · simp only [defined, if_true] at compiled
+      have shortageFalse :
+          typedDispatchInputShortage (env.typeChains head)
+            arguments.length = false := by
+        cases shortage : typedDispatchInputShortage (env.typeChains head)
+            arguments.length with
+        | false => rfl
+        | true =>
+            simp only [shortage, if_true] at compiled
+            cases compiled
+      simp only [shortageFalse, Bool.false_eq_true, if_false] at compiled
       by_cases typed :
           shouldUseTypedDispatch (env.typeChains head) = true
       · simp only [typed, if_true] at compiled

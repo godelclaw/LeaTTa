@@ -131,6 +131,10 @@ structure FunctionRegistryAgrees (registry : FunctionRegistry)
   direct {head : String} {argumentModes : List ArgumentMode} :
     registry.argumentModes head argumentModes →
       shouldUseTypedDispatch (env.typeChains head) = false
+  typedInputs {head : String} {argumentModes : List ArgumentMode} :
+    registry.argumentModes head argumentModes →
+      typedDispatchInputShortage (env.typeChains head)
+        argumentModes.length = false
   noRewrite {head : String} {argumentModes : List ArgumentMode} :
     registry.argumentModes head argumentModes →
       ∀ arguments, rewriteStreamOp? head arguments = none
@@ -254,7 +258,7 @@ theorem sourceFunctionRegistry_mkEnv_agrees (sources : List Atom)
     FunctionRegistryAgrees (sourceFunctionRegistry sources)
       (mkEnv isBin (collectSourceFunctionHeads sources)
         (collectSourceFunctionArities sources) []) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro head
     change (∃ arity, ProgramRegistersFunction sources head arity) ↔
       (collectSourceFunctionHeads sources).contains head = true
@@ -273,6 +277,8 @@ theorem sourceFunctionRegistry_mkEnv_agrees (sources : List Atom)
       (collectSourceFunctionArities sources) head 0
   · intro head modes signature
     simp [mkEnv, collectTypeChains, shouldUseTypedDispatch]
+  · intro head modes signature
+    simp [mkEnv, collectTypeChains, typedDispatchInputShortage]
   · intro head modes signature
     exact (ordinary head signature.1).1
   · intro head modes signature
@@ -336,7 +342,7 @@ field required by ordinary direct dispatch. -/
 theorem unaryValueFunctionRegistry_agrees :
     FunctionRegistryAgrees (unaryValueFunctionRegistry "user-f")
       unaryValueFunctionEnv := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro head
     simp [unaryValueFunctionRegistry, unaryValueFunctionEnv]
   · intro head argumentCount
@@ -345,6 +351,10 @@ theorem unaryValueFunctionRegistry_agrees :
     change head = "user-f" ∧ argumentModes = [.value] at signature
     rcases signature with ⟨rfl, rfl⟩
     exact .value rfl (.nil 1)
+  · intro head argumentModes signature
+    change head = "user-f" ∧ argumentModes = [.value] at signature
+    rcases signature with ⟨rfl, rfl⟩
+    rfl
   · intro head argumentModes signature
     change head = "user-f" ∧ argumentModes = [.value] at signature
     rcases signature with ⟨rfl, rfl⟩
@@ -2407,6 +2417,11 @@ theorem compileExprFuel_defined_direct_sound
         have executableDefined : env.defined.contains head = true :=
           (registryAgreement.defined head).mp
             (registry.modes_defined signature)
+        have typedInputsAvailable :
+            typedDispatchInputShortage (env.typeChains head)
+              sources.length = false := by
+          simpa [arguments.modes_length_eq_sources] using
+            registryAgreement.typedInputs signature
         have executableArityAtModes :
             (env.arities head).contains modes.length = true :=
           (registryAgreement.arity head modes.length).mp
@@ -2432,8 +2447,8 @@ theorem compileExprFuel_defined_direct_sound
             exact registryAgreement.notInternalCons signature)
           (stateAgreement.notContains notShadowed)
           (registryAgreement.classifyOther signature) notProlog
-          executableDefined (registryAgreement.direct signature) compiled
-          completeArity
+          executableDefined typedInputsAvailable
+          (registryAgreement.direct signature) compiled completeArity
 
 /-- Public soundness of ordinary source-defined direct calls at the
 source-derived compiler budget. -/
@@ -2534,6 +2549,11 @@ theorem compileExprFuel_defined_partial_sound
         have executableDefined : env.defined.contains head = true :=
           (registryAgreement.defined head).mp
             (registry.modes_defined signature)
+        have typedInputsAvailable :
+            typedDispatchInputShortage (env.typeChains head)
+              sources.length = false := by
+          simpa [arguments.modes_length_eq_sources] using
+            registryAgreement.typedInputs signature
         have incompleteArityAtModes :
             (env.arities head).contains modes.length = false := by
           apply Bool.eq_false_iff.mpr
@@ -2564,8 +2584,8 @@ theorem compileExprFuel_defined_partial_sound
             exact registryAgreement.notInternalCons signature)
           (stateAgreement.notContains notShadowed)
           (registryAgreement.classifyOther signature) notProlog
-          executableDefined (registryAgreement.direct signature) compiled
-          incompleteArity
+          executableDefined typedInputsAvailable
+          (registryAgreement.direct signature) compiled incompleteArity
 
 /-- Public soundness of incomplete-arity source-defined applications. -/
 theorem compileExpr_defined_partial_sound
