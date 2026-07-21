@@ -21,6 +21,7 @@ import PLeaTTa.Proofs.CompilerFuel
 import PLeaTTa.Proofs.CompilerGeneratedNames
 import PLeaTTa.Proofs.OpenOrderedStep
 import PLeaTTa.Proofs.ReaderAdequacy
+import PLeaTTa.Proofs.PettaClawHistory
 import PLeaTTa.PeTTaSpec.OpenSubstitution
 import PLeaTTa.PeTTaSpec.OpenOrdered
 import PLeaTTa.SubstEngine
@@ -493,6 +494,11 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.HostReplay.runRecordedWith_replay
 #print axioms PLeaTTa.HostReplay.runRecordedWith_replay_observation
 #print axioms PLeaTTa.HostReplay.fixedTranscript_replay_observation
+#print axioms PLeaTTa.PettaClawHistory.HostSession.supply_transcript_exact
+#print axioms PLeaTTa.PettaClawHistory.HostSession.supply_transcript_prefix
+#print axioms PLeaTTa.PettaClawHistory.HostSession.supply_preserves_historyOpenTraceUsesAppend
+#print axioms PLeaTTa.PettaClawHistory.HistoryRun.append_only
+#print axioms PLeaTTa.PettaClawHistory.pettaClaw_append_open_request
 #print axioms PLeaTTa.stepClean_error_raises
 #print axioms PLeaTTa.runClean_error_raises
 #print axioms PLeaTTa.baseCase_finite_convergence
