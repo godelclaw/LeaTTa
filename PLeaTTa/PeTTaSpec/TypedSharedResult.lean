@@ -3,8 +3,8 @@ Module: PLeaTTa.PeTTaSpec.TypedSharedResult
 Purpose: Independent semantic specification of the one Prolog output shared
   by every branch of pinned typed-function dispatch.
 Trusted boundary: none
-Main exports: TermUnifier, IsMostGeneralUnifier,
-  ResolvesTypedSharedResult, singleton_variable_is_mgu
+Main exports: TermUnifier, IsMostGeneralUnifier, OrderedMguFold,
+  ResolvesTypedSharedResult, IsMostGeneralUnifier.extend_one
 -/
 import PLeaTTa.PeTTaSpec.OpenSubstitution
 
@@ -275,6 +275,208 @@ theorem distinct_atoms_have_no_unifier (left right : String)
     at unifies
   exact different unifies
 
+/-! ## Incremental semantic MGUs
+
+Pinned typed dispatch contributes its shared-output equations from left to
+right.  The executable compiler uses a monadic fold, but the independent
+content is simpler: an MGU for a prefix can be extended by an MGU for the
+next equation after applying the prefix substitution.  This section proves
+that algebra once, without choosing the executable unifier's variable
+orientation.
+-/
+
+/-- Two ordered equation collections have exactly the same semantic
+unifiers.  This is useful for reducing same-headed compound equations to
+their genuinely varying arguments without introducing an algorithm. -/
+def SameUnifiers (left right : List (Term × Term)) : Prop :=
+  ∀ binding, UnifiesEquations binding left ↔
+    UnifiesEquations binding right
+
+/-- MGU status transports across an extensional equality of unifier sets. -/
+theorem IsMostGeneralUnifier.transport
+    {binding : Substitution} {left right : List (Term × Term)}
+    (mostGeneral : IsMostGeneralUnifier binding left)
+    (same : SameUnifiers left right) :
+    IsMostGeneralUnifier binding right := by
+  constructor
+  · exact (same binding).mp mostGeneral.1
+  · intro candidate candidateUnifies
+    exact mostGeneral.2 candidate ((same candidate).mpr candidateUnifies)
+
+/-- The empty substitution is the semantic MGU of no equations. -/
+theorem empty_is_mgu_nil : IsMostGeneralUnifier [] [] := by
+  constructor
+  · intro equation member
+    simp at member
+  · intro candidate _candidateUnifies
+    exact ⟨candidate, fun _term => rfl⟩
+
+/-- A reflexive equation contributes no binding. -/
+theorem empty_is_mgu_reflexive (term : Term) :
+    IsMostGeneralUnifier [] [(term, term)] := by
+  constructor
+  · intro equation member
+    simp only [List.mem_singleton] at member
+    subst equation
+    rfl
+  · intro candidate _candidateUnifies
+    exact ⟨candidate, fun _term => rfl⟩
+
+/-- Incremental MGU composition.  `base` handles the ordered prefix;
+`extension` handles the next equation after the prefix has been applied.
+Their append is therefore an MGU for the prefix followed by that equation.
+No idempotence or deterministic orientation assumption is needed. -/
+theorem IsMostGeneralUnifier.extend_one
+    {base extension : Substitution}
+    {equations : List (Term × Term)} {left right : Term}
+    (baseMgu : IsMostGeneralUnifier base equations)
+    (extensionMgu : IsMostGeneralUnifier extension
+      [(base.applyTerm left, base.applyTerm right)]) :
+    IsMostGeneralUnifier (extension ++ base)
+      (equations ++ [(left, right)]) := by
+  constructor
+  · intro equation member
+    rcases List.mem_append.mp member with old | next
+    · unfold TermUnifier
+      rw [Substitution.applyTerm_append, Substitution.applyTerm_append]
+      exact congrArg (extension.applyTerm) (baseMgu.1 equation old)
+    · simp only [List.mem_singleton] at next
+      subst equation
+      unfold TermUnifier
+      rw [Substitution.applyTerm_append, Substitution.applyTerm_append]
+      exact extensionMgu.1
+        (base.applyTerm left, base.applyTerm right) (by simp)
+  · intro candidate candidateUnifies
+    have candidatePrefix : UnifiesEquations candidate equations := by
+      intro equation member
+      exact candidateUnifies equation (List.mem_append_left _ member)
+    rcases baseMgu.2 candidate candidatePrefix with
+      ⟨residual, candidateFactors⟩
+    have residualNext : UnifiesEquations residual
+        [(base.applyTerm left, base.applyTerm right)] := by
+      intro equation member
+      simp only [List.mem_singleton] at member
+      subst equation
+      unfold TermUnifier
+      rw [← candidateFactors left, ← candidateFactors right]
+      exact candidateUnifies (left, right) (by simp)
+    rcases extensionMgu.2 residual residualNext with
+      ⟨final, residualFactors⟩
+    refine ⟨final, ?_⟩
+    intro term
+    rw [candidateFactors term, residualFactors (base.applyTerm term),
+      Substitution.applyTerm_append]
+
+/-- Independent left-to-right construction of a semantic MGU.  Each step
+only requires an MGU for the next already-instantiated equation; it does not
+prescribe how that MGU is computed or orient variable aliases. -/
+inductive OrderedMguFold : List (Term × Term) → Substitution → Prop where
+  | nil : OrderedMguFold [] []
+  | snoc {equations : List (Term × Term)} {base extension : Substitution}
+      {left right : Term}
+      (prior : OrderedMguFold equations base)
+      (next : IsMostGeneralUnifier extension
+        [(base.applyTerm left, base.applyTerm right)]) :
+      OrderedMguFold (equations ++ [(left, right)]) (extension ++ base)
+
+/-- Every independent incremental MGU fold denotes an MGU for the complete
+ordered equation sequence. -/
+theorem OrderedMguFold.isMostGeneral
+    {equations : List (Term × Term)} {binding : Substitution}
+    (fold : OrderedMguFold equations binding) :
+    IsMostGeneralUnifier binding equations := by
+  induction fold with
+  | nil => exact empty_is_mgu_nil
+  | snoc prior next induction => exact induction.extend_one next
+
+/-! ### A nontrivial later-branch witness
+
+The first incomplete typed branch fixes `Out` to a `partial/2` value.  A
+later branch with the same head can then contribute a variable alias inside
+the encoded proper argument list.  These lemmas show that the compound/list
+constraint has exactly the same unifiers as that alias and construct the MGU
+for the two shared-output equations incrementally.
+-/
+
+/-- Independent one-argument partial value used by the later-branch proof. -/
+def unaryPartialTerm (head : String) (argument : Term) : Term :=
+  .compound "partial" [.atom head, .list [argument] none]
+
+/-- Same-headed unary partial values are unifiable exactly when their sole
+arguments are.  Compound and proper-list structure is compared
+declaratively through substitution, not by an executable decomposition
+procedure. -/
+theorem unaryPartialTerm_same_unifiers (head : String)
+    (left right : Term) :
+    SameUnifiers [(left, right)]
+      [(unaryPartialTerm head left, unaryPartialTerm head right)] := by
+  intro binding
+  constructor <;> intro unifies equation member
+  · simp only [List.mem_singleton] at member
+    subst equation
+    have argumentEquality := unifies (left, right) (by simp)
+    change binding.applyTerm left = binding.applyTerm right at argumentEquality
+    change binding.applyTerm (unaryPartialTerm head left) =
+      binding.applyTerm (unaryPartialTerm head right)
+    simpa [unaryPartialTerm] using argumentEquality
+  · simp only [List.mem_singleton] at member
+    subst equation
+    have compoundEquality := unifies
+      (unaryPartialTerm head left, unaryPartialTerm head right) (by simp)
+    change binding.applyTerm (unaryPartialTerm head left) =
+      binding.applyTerm (unaryPartialTerm head right) at compoundEquality
+    change binding.applyTerm left = binding.applyTerm right
+    simpa [unaryPartialTerm] using compoundEquality
+
+/-- Eliminating a fresh variable alias is also an MGU when the alias is
+nested at the corresponding argument of same-headed `partial/2` values. -/
+theorem unaryPartial_alias_is_mgu (head : String)
+    (source target : LogicVar) (distinct : source ≠ target) :
+    IsMostGeneralUnifier [(source, .variable target)]
+      [(unaryPartialTerm head (.variable source),
+        unaryPartialTerm head (.variable target))] := by
+  have absent : Term.occurs source (.variable target) = false := by
+    simp [Term.occurs, Ne.symm distinct]
+  exact (singleton_variable_is_mgu source (.variable target) absent).transport
+    (unaryPartialTerm_same_unifiers head (.variable source)
+      (.variable target))
+
+/-- Two incomplete typed branches whose partial values share a head, have
+arity one, and carry distinct variable arguments have the expected
+incremental MGU: first bind `output` to the first partial value, then alias
+its differing argument to the second branch's argument. -/
+theorem two_unary_partial_branches_is_mgu (head : String)
+    (output left right : LogicVar) (outputNeLeft : output ≠ left)
+    (outputNeRight : output ≠ right) (leftNeRight : left ≠ right) :
+    IsMostGeneralUnifier
+      [(left, .variable right),
+       (output, unaryPartialTerm head (.variable left))]
+      [(.variable output, unaryPartialTerm head (.variable left)),
+       (.variable output, unaryPartialTerm head (.variable right))] := by
+  let firstValue := unaryPartialTerm head (.variable left)
+  let secondValue := unaryPartialTerm head (.variable right)
+  have firstAbsent : Term.occurs output firstValue = false := by
+    simp [firstValue, unaryPartialTerm, Term.occurs, Terms.occurs,
+      Ne.symm outputNeLeft]
+  have secondAbsent : Term.occurs output secondValue = false := by
+    simp [secondValue, unaryPartialTerm, Term.occurs, Terms.occurs,
+      Ne.symm outputNeRight]
+  have firstMgu : IsMostGeneralUnifier [(output, firstValue)]
+      [(.variable output, firstValue)] :=
+    singleton_variable_is_mgu output firstValue firstAbsent
+  have nextMgu : IsMostGeneralUnifier [(left, .variable right)]
+      [(Substitution.applyTerm [(output, firstValue)] (.variable output),
+        Substitution.applyTerm [(output, firstValue)] secondValue)] := by
+    rw [show Substitution.applyTerm [(output, firstValue)]
+          (.variable output) = firstValue by
+        simp [Substitution.applyTerm, Term.instantiateOne],
+      show Substitution.applyTerm [(output, firstValue)] secondValue =
+          secondValue by
+        exact Term.instantiateOne_eq_self_of_occurs_false output firstValue
+          secondValue secondAbsent]
+    exact unaryPartial_alias_is_mgu head left right leftNeRight
+  simpa [firstValue, secondValue] using firstMgu.extend_one nextMgu
+
 /-! ## Ordered shared-result resolution -/
 
 /-- Independent typed branch: result template paired with its ordered goals. -/
@@ -308,6 +510,19 @@ inductive ResolvesTypedSharedResult (shared : Term)
       ResolvesTypedSharedResult shared rawBranches
         (binding.applyTerm shared)
         (instantiateBranches binding rawBranches)
+
+/-- An incremental left-to-right MGU construction can be used directly as a
+shared-result resolution witness. -/
+theorem OrderedMguFold.resolvesTypedSharedResult
+    {shared result : Term} {raw resolved : List TypedBranch}
+    {binding : Substitution}
+    (fold : OrderedMguFold (sharedResultEquations shared raw) binding)
+    (resultEq : result = binding.applyTerm shared)
+    (resolvedEq : resolved = instantiateBranches binding raw) :
+    ResolvesTypedSharedResult shared raw result resolved := by
+  subst result
+  subst resolved
+  exact .byMgu binding fold.isMostGeneral
 
 /-- Resolution exposes one semantic MGU and its exact ordered map. -/
 theorem ResolvesTypedSharedResult.witness
@@ -388,5 +603,46 @@ theorem partial_value_shared_result_resolves
     Term.instantiateOne_eq_self_of_occurs_false output value value absent,
     Terms.instantiateOne_eq_self_of_occurs_false output value arguments fresh]
     using resolution
+
+/-- Nontrivial two-branch resolution witness.  The first partial binds the
+shared output, the second aliases one nested argument, and both ordered goal
+lists are instantiated in place without reordering or deduplication. -/
+theorem two_unary_partial_branches_resolve (head : String)
+    (output left right : LogicVar) (outputNeLeft : output ≠ left)
+    (outputNeRight : output ≠ right) (leftNeRight : left ≠ right)
+    (firstGoals secondGoals : List Goal) :
+    let binding : Substitution :=
+      [(left, .variable right),
+       (output, unaryPartialTerm head (.variable left))]
+    ResolvesTypedSharedResult (.variable output)
+      [(unaryPartialTerm head (.variable left), firstGoals),
+       (unaryPartialTerm head (.variable right), secondGoals)]
+      (unaryPartialTerm head (.variable right))
+      [(unaryPartialTerm head (.variable right),
+          binding.applyGoals firstGoals),
+       (unaryPartialTerm head (.variable right),
+          binding.applyGoals secondGoals)] := by
+  dsimp only
+  let binding : Substitution :=
+    [(left, .variable right),
+     (output, unaryPartialTerm head (.variable left))]
+  have mostGeneral : IsMostGeneralUnifier binding
+      [(.variable output, unaryPartialTerm head (.variable left)),
+       (.variable output, unaryPartialTerm head (.variable right))] := by
+    simpa [binding] using
+      two_unary_partial_branches_is_mgu head output left right
+        outputNeLeft outputNeRight leftNeRight
+  have sharedMostGeneral : IsMostGeneralUnifier binding
+      (sharedResultEquations (.variable output)
+        [(unaryPartialTerm head (.variable left), firstGoals),
+         (unaryPartialTerm head (.variable right), secondGoals)]) := by
+    simpa [sharedResultEquations] using mostGeneral
+  have resolution :=
+    ResolvesTypedSharedResult.byMgu binding sharedMostGeneral
+  simpa [binding, instantiateBranches, instantiateBranch,
+    Substitution.applyTerm, Term.instantiateOne, Terms.instantiateOne,
+    unaryPartialTerm, outputNeLeft, outputNeRight, leftNeRight,
+    Ne.symm outputNeLeft, Ne.symm outputNeRight, Ne.symm leftNeRight] using
+    resolution
 
 end PLeaTTa.PeTTaSpec.PrologCore.TypedSharedResult
