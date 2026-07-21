@@ -90,6 +90,11 @@ inductive AtomDenotes (valuation : ExecutableValuation) :
   | properList {items : List GroundTerm} {encoded : Atom}
       (elements : ChainDenotes valuation items encoded) :
       AtomDenotes valuation encoded (.list items none)
+  | partialValue {head : String} {items : List GroundTerm} {encoded : Atom}
+      (arguments : ChainDenotes valuation items encoded) :
+      AtomDenotes valuation
+        (chainOf [.sym "partial", .sym head, encoded])
+        (.compound "partial" [.atom head, .list items none])
 
 /-- Denotation of PLeaTTa's internal `#c`/`#nil` proper-list encoding. -/
 inductive ChainDenotes (valuation : ExecutableValuation) :
@@ -159,6 +164,7 @@ private theorem atomDenotes_variable {valuation : ExecutableValuation}
   | properList elements =>
       rw [← encodedEq] at elements
       exact False.elim (chainDenotes_variable_false elements)
+  | partialValue arguments => simp [chainOf, consC] at encodedEq
 
 private theorem atomDenotes_symbol {valuation : ExecutableValuation}
     {name : String} {value : GroundTerm}
@@ -188,6 +194,7 @@ private theorem atomDenotes_symbol {valuation : ExecutableValuation}
       obtain ⟨nameEq, itemsEq⟩ := chainDenotes_symbol elements
       exact Or.inr (Or.inr (Or.inr ⟨nameEq,
         congrArg (fun items => GroundTerm.list items none) itemsEq⟩))
+  | partialValue arguments => simp [chainOf, consC] at encodedEq
 
 private theorem atomDenotes_ground {valuation : ExecutableValuation}
     {ground : Metta.Ground} {value : GroundTerm}
@@ -213,10 +220,12 @@ private theorem atomDenotes_ground {valuation : ExecutableValuation}
   | properList elements =>
       rw [← encodedEq] at elements
       exact False.elim (chainDenotes_ground_false elements)
+  | partialValue arguments => simp [chainOf, consC] at encodedEq
 
 private theorem atomDenotes_expression {valuation : ExecutableValuation}
     {atoms : List Atom} {value : GroundTerm}
-    (denotes : AtomDenotes valuation (.expr atoms) value) :
+    (denotes : AtomDenotes valuation (.expr atoms) value)
+    (canonical : CanonicalGroundTerm value) :
     ∃ items, value = .list items none ∧
       ChainDenotes valuation items (.expr atoms) := by
   generalize encodedEq : Atom.expr atoms = encoded at denotes
@@ -229,6 +238,7 @@ private theorem atomDenotes_expression {valuation : ExecutableValuation}
   | float => simp at encodedEq
   | string => simp at encodedEq
   | properList elements => exact ⟨_, rfl, elements⟩
+  | partialValue arguments => simp [CanonicalGroundTerm] at canonical
 
 private theorem atomDenotes_canonical_functional_aux
     {valuation : ExecutableValuation} {atom : Atom} {left : GroundTerm}
@@ -242,7 +252,7 @@ private theorem atomDenotes_canonical_functional_aux
     (motive_2 := fun left encoded _ => ∀ {right},
       CanonicalGroundTerms left → CanonicalGroundTerms right →
       ChainDenotes valuation right encoded → left = right)
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ leftDenotes
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ leftDenotes
   · intro name right _ _ rightDenotes
     exact (atomDenotes_variable rightDenotes).symm
   · intro name right leftCanonical _ rightDenotes
@@ -311,11 +321,14 @@ private theorem atomDenotes_canonical_functional_aux
         · exact nilReading.2.symm
     | cons head rest =>
         obtain ⟨rightItems, rightEq, rightElements⟩ :=
-          atomDenotes_expression rightDenotes
+          atomDenotes_expression rightDenotes rightCanonical
         rw [rightEq] at rightCanonical ⊢
         simp only [CanonicalGroundTerm] at rightCanonical
         exact congrArg (fun items => GroundTerm.list items none)
           (elementsIH leftCanonical rightCanonical rightElements)
+  · intro _head _items _encoded _arguments _argumentsIH _right leftCanonical
+      _rightCanonical _rightDenotes
+    simp [CanonicalGroundTerm] at leftCanonical
   · intro right _ _ rightDenotes
     exact (chainDenotes_symbol rightDenotes).2.symm
   · intro value atom values tail head rest headIH restIH right
@@ -402,7 +415,7 @@ theorem AtomDenotes.subst {valuation : ExecutableValuation}
       AtomDenotes valuation (PLeaTTa.subst binding atom) value)
     (motive_2 := fun values encoded _ =>
       ChainDenotes valuation values (PLeaTTa.subst binding encoded))
-    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ denotes
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ denotes
   · intro name
     exact models name
   · intro name
@@ -417,6 +430,9 @@ theorem AtomDenotes.subst {valuation : ExecutableValuation}
     simpa using AtomDenotes.string (valuation := valuation) value
   · intro _items _encoded _elements elementsIH
     exact .properList elementsIH
+  · intro head _items _encoded _arguments argumentsIH
+    simpa [chainOf, consC, nilA] using
+      (AtomDenotes.partialValue (head := head) argumentsIH)
   · simpa [nilA] using ChainDenotes.nil (valuation := valuation)
   · intro _value _atom _values _tail _head _rest headIH restIH
     simpa [consC] using ChainDenotes.cons headIH restIH
@@ -444,6 +460,12 @@ theorem TermAgrees.denotes {reference : Valuation}
   | integer value => exact .integer value
   | float value => exact .float value
   | string value => exact .string value
+  | @partialValue head terms encodedArguments arguments =>
+      have argumentVariables :
+          VariablesAgreeOnTerms reference executable terms := by
+        simpa [VariablesAgreeOnTerm, VariablesAgreeOnTerms] using variables
+      exact .partialValue
+        (ProperListAgrees.denotes argumentVariables arguments)
   | properList elements =>
       exact .properList (ProperListAgrees.denotes variables elements)
 

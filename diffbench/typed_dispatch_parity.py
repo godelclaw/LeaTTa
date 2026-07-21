@@ -15,6 +15,9 @@ ROOT = Path(__file__).resolve().parent.parent
 DUPLICATE_SIGNATURE = (
     ROOT / "diffbench" / "probes" / "typed-duplicate-signature.metta"
 )
+EXPRESSION_RESULT = (
+    ROOT / "diffbench" / "probes" / "typed-expression-result.metta"
+)
 
 
 def normalized(run, probe: Path) -> list[str]:
@@ -38,9 +41,23 @@ def main() -> None:
             "typed dispatch parity: duplicate signature changed answer "
             f"multiplicity: PeTTa={native!r} PLeaTTa={executable!r}"
         )
+
+    native_expression = normalized(diff.petta_results, EXPRESSION_RESULT)
+    executable_expression = normalized(diff.leatta_results, EXPRESSION_RESULT)
+    if native_expression != []:
+        raise SystemExit(
+            "typed dispatch parity: pinned PeTTa Expression-result behavior "
+            f"changed: {native_expression!r}"
+        )
+    if executable_expression != native_expression:
+        raise SystemExit(
+            "typed dispatch parity: Expression result was not checked: "
+            f"PeTTa={native_expression!r} "
+            f"PLeaTTa={executable_expression!r}"
+        )
     print(
         "typed dispatch parity: PASS; duplicate signatures retain one "
-        "first-occurrence branch and one answer"
+        "first-occurrence branch and Expression results remain checked"
     )
 
 

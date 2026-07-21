@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=c1fb0832b7c84cab8a431e20dac643b42cf2877d5e78726b9b464465d26d3271
+# compiler_sha256=1e8eb8f1817bb3549b7c688fd0ab6d0bb805875079006c26dabe435d24f9a4fb
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -103,7 +103,7 @@ APP.bind_other	M246	S	-	N	GAP	explicit-failure-shortcut
 APP.get_state	M248	S	-	N	GAP	world-action
 APP.change_state	M247	S	-	N	GAP	world-action
 FALLBACK.prolog_function	M274,T310-346	H	-	N	BOUNDARY	typed-SWI-boundary
-FALLBACK.typed_branches	T317-370	S	TranslatesTypedArgs	N	GAP	stable first-occurrence type-chain deduplication fixed and parity-probed; branch/result assembly proof open
+FALLBACK.typed_branches	T317-370	S	TranslatesTypedArgs	N	GAP	stable first-occurrence chain deduplication and distinct Expression-result checking fixed and parity-probed; branch/result assembly proof open
 FALLBACK.typed_empty_direct	T335-346	X	-	N	GAP	arity-fallback-unproved
 FALLBACK.typed_empty_partial	T335-346	X	-	N	GAP	partial-representation-unproved
 FALLBACK.defined_direct	T312-346	X	TranslatesDefinedCall	SC	PASS	direct-call-proved and composed with independently specified untyped source registration; ordinary-head priority explicit; typed-dispatch-and-imported-ownership-excluded

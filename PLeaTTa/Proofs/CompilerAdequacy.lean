@@ -272,7 +272,7 @@ theorem sourceFunctionRegistry_mkEnv_agrees (sources : List Atom)
       (collectSourceFunctionHeads sources)
       (collectSourceFunctionArities sources) head 0
   · intro head modes signature
-    simp [mkEnv, shouldUseTypedDispatch]
+    simp [mkEnv, collectTypeChains, shouldUseTypedDispatch]
   · intro head modes signature
     exact (ordinary head signature.1).1
   · intro head modes signature

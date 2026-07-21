@@ -1093,14 +1093,15 @@ theorem compilerCaseArmGoal_namesAllowed {external : String → Prop}
         by simp⟩
   · exact elseGoalsAllowed
 
-theorem compileTypeCheck_generatedNames (external : String → Prop)
-    (origin start : Nat) (value expected : Atom) (originStart : origin ≤ start)
+theorem compileTypeCheckWhen_generatedNames (external : String → Prop)
+    (requiresCheck : Bool) (origin start : Nat) (value expected : Atom)
+    (originStart : origin ≤ start)
     (valueAllowed : CompilerAtomNamesAllowed external origin start value)
     (expectedAllowed : CompilerAtomNamesAllowed external origin start expected) :
     CompilerGoalsNamesAllowed external origin
-      (compileTypeCheck value expected start).2
-      (compileTypeCheck value expected start).1 := by
-  unfold compileTypeCheck
+      (compileTypeCheckWhen requiresCheck value expected start).2
+      (compileTypeCheckWhen requiresCheck value expected start).1 := by
+  unfold compileTypeCheckWhen
   split
   · simp only [fresh]
     apply (compilerGoalsNamesAllowed_cons_iff external origin (start + 2)
@@ -1142,6 +1143,28 @@ theorem compileTypeCheck_generatedNames (external : String → Prop)
           · exact expectedAllowed.mono (by omega)
     · simp
   · simp
+
+theorem compileTypeCheck_generatedNames (external : String → Prop)
+    (origin start : Nat) (value expected : Atom) (originStart : origin ≤ start)
+    (valueAllowed : CompilerAtomNamesAllowed external origin start value)
+    (expectedAllowed : CompilerAtomNamesAllowed external origin start expected) :
+    CompilerGoalsNamesAllowed external origin
+      (compileTypeCheck value expected start).2
+      (compileTypeCheck value expected start).1 := by
+  exact compileTypeCheckWhen_generatedNames external
+    (typeRequiresCheck expected) origin start value expected originStart
+    valueAllowed expectedAllowed
+
+theorem compileResultTypeCheck_generatedNames (external : String → Prop)
+    (origin start : Nat) (value expected : Atom) (originStart : origin ≤ start)
+    (valueAllowed : CompilerAtomNamesAllowed external origin start value)
+    (expectedAllowed : CompilerAtomNamesAllowed external origin start expected) :
+    CompilerGoalsNamesAllowed external origin
+      (compileResultTypeCheck value expected start).2
+      (compileResultTypeCheck value expected start).1 := by
+  exact compileTypeCheckWhen_generatedNames external
+    (resultTypeRequiresCheck expected) origin start value expected originStart
+    valueAllowed expectedAllowed
 
 theorem compileTypedArgsFuel_generatedNames_step (fuel : Nat)
     (ih : CompilerGeneratedNamesAt fuel) :
@@ -2090,19 +2113,20 @@ theorem compileTypedDispatchStepWith_generatedNames
                 resultType := by
             apply chainAllowed.getLast?_eq_some
             exact resultTypeEq
-          have checksAllowed := compileTypeCheck_generatedNames external
+          have checksAllowed := compileResultTypeCheck_generatedNames external
             origin callbackResult.2.2 result resultType
             (Nat.le_trans originAccumulator callbackCounter)
             (resultAllowed.mono callbackCounter)
             (resultTypeAllowed.mono callbackCounter)
-          have checksCounter := compileTypeCheck_counter_le result resultType
-            callbackResult.2.2
+          have checksCounter := compileResultTypeCheck_counter_le result
+            resultType callbackResult.2.2
           apply (compilerBranchesNamesAllowed_append_iff external origin
-              (compileTypeCheck result resultType callbackResult.2.2).2
+              (compileResultTypeCheck result resultType
+                callbackResult.2.2).2
               accumulator.1
               [(result, callbackResult.2.1 ++
                 [Goal.call head callbackResult.1 result] ++
-                (compileTypeCheck result resultType
+                (compileResultTypeCheck result resultType
                   callbackResult.2.2).1)]).2
           constructor
           · exact accumulatorAllowed.mono
@@ -2113,17 +2137,19 @@ theorem compileTypedDispatchStepWith_generatedNames
             · exact (resultAllowed.mono callbackCounter).mono checksCounter
             · rw [List.append_assoc]
               apply (compilerGoalsNamesAllowed_append_iff external origin
-                  (compileTypeCheck result resultType callbackResult.2.2).2
+                  (compileResultTypeCheck result resultType
+                    callbackResult.2.2).2
                   callbackResult.2.1
                   ([Goal.call head callbackResult.1 result] ++
-                    (compileTypeCheck result resultType
+                    (compileResultTypeCheck result resultType
                       callbackResult.2.2).1)).2
               constructor
               · exact callbackNames.2.mono checksCounter
               · apply (compilerGoalsNamesAllowed_append_iff external origin
-                    (compileTypeCheck result resultType callbackResult.2.2).2
+                    (compileResultTypeCheck result resultType
+                      callbackResult.2.2).2
                     [Goal.call head callbackResult.1 result]
-                    (compileTypeCheck result resultType
+                    (compileResultTypeCheck result resultType
                       callbackResult.2.2).1).2
                 constructor
                 · simp only [compilerGoalsNamesAllowed_cons_iff,

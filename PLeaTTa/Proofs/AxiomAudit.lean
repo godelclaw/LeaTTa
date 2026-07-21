@@ -263,6 +263,12 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerAdequacy.compileArgs_staged_value_sound
 #print axioms PLeaTTa.compileTypeCheck_unchecked_symbol_eq
 #print axioms PLeaTTa.compileTypeCheck_refined_symbol_eq
+#print axioms PLeaTTa.compileResultTypeCheck_unchecked_symbol_eq
+#print axioms PLeaTTa.compileResultTypeCheck_refined_symbol_eq
+#print axioms PLeaTTa.compileTypeCheckWhen_counter_le
+#print axioms PLeaTTa.compileResultTypeCheck_counter_le
+#print axioms PLeaTTa.compileTypeCheckWhen_generatedNames
+#print axioms PLeaTTa.compileResultTypeCheck_generatedNames
 #print axioms PLeaTTa.compileTypedArgsFuel_nil_eq
 #print axioms PLeaTTa.compileTypedArgsFuel_expression_eq
 #print axioms PLeaTTa.compileTypedArgsFuel_evaluated_eq

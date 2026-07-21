@@ -159,11 +159,23 @@ theorem compileArgsAtFuel_counter_step (fuel : Nat)
               rcases Except.ok.inj compiled with ⟨_, _, rfl⟩
               exact Nat.le_trans first rest
 
+theorem compileTypeCheckWhen_counter_le (requiresCheck : Bool)
+    (value expected : Metta.Atom) (start : Nat) :
+    start ≤ (compileTypeCheckWhen requiresCheck value expected start).2 := by
+  unfold compileTypeCheckWhen
+  split <;> simp [fresh] <;> omega
+
 theorem compileTypeCheck_counter_le (value expected : Metta.Atom)
     (start : Nat) :
     start ≤ (compileTypeCheck value expected start).2 := by
-  unfold compileTypeCheck
-  split <;> simp [fresh] <;> omega
+  exact compileTypeCheckWhen_counter_le (typeRequiresCheck expected) value
+    expected start
+
+theorem compileResultTypeCheck_counter_le (value expected : Metta.Atom)
+    (start : Nat) :
+    start ≤ (compileResultTypeCheck value expected start).2 := by
+  exact compileTypeCheckWhen_counter_le (resultTypeRequiresCheck expected)
+    value expected start
 
 theorem compileTypedArgsFuel_counter_step (fuel : Nat)
     (ih : CompilerCounterAt fuel) :
@@ -556,7 +568,7 @@ theorem typedDispatchStep_counter
       · have argumentsMono := typedMono _ _ _ _ _ (by assumption)
         rcases Except.ok.inj compiled with rfl
         exact Nat.le_trans argumentsMono (by
-          apply compileTypeCheck_counter_le)
+          apply compileResultTypeCheck_counter_le)
   · cases Except.ok.inj compiled
     exact Nat.le_refl _
 

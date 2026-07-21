@@ -187,13 +187,20 @@ def typeRequiresCheck : Atom → Bool
       name != "%Undefined%" && name != "Atom" && name != "Expression"
   | _ => true
 
-/-- Compile the ordered type/meta-type fallback used for refined argument and
-result types. This is outside application dispatch so its exact goal and
-fresh-counter behavior is kernel-visible to adequacy proofs.
-[SPEC translator.pl:356-370] -/
-def compileTypeCheck (value expected : Atom) (counter : Nat) :
-    List Goal × Nat :=
-  if typeRequiresCheck expected then
+/-- Whether pinned `typed_functioncall_branch/8` checks a declared result
+type. Unlike input staging, `Expression` is an ordinary checked result type;
+only `%Undefined%` and `Atom` suppress the result check.
+[SPEC translator.pl:349-356] -/
+def resultTypeRequiresCheck : Atom → Bool
+  | Atom.sym name => name != "%Undefined%" && name != "Atom"
+  | _ => true
+
+/-- Shared construction of the generated type/meta-type soft-cut. Argument
+and result positions choose different source-faithful policies below, while
+the emitted goal and counter behavior remain defined once. -/
+def compileTypeCheckWhen (requiresCheck : Bool) (value expected : Atom)
+    (counter : Nat) : List Goal × Nat :=
+  if requiresCheck then
     let (directType, nextCounter) := fresh counter
     let (metaType, finalCounter) := fresh nextCounter
     ([Goal.softcut (Atom.sym "#u")
@@ -204,6 +211,22 @@ def compileTypeCheck (value expected : Atom) (counter : Nat) :
         Goal.eq metaType expected]], finalCounter)
   else
     ([], counter)
+
+/-- Compile the ordered type/meta-type fallback used for refined argument and
+input types. This is outside application dispatch so its exact goal and
+fresh-counter behavior is kernel-visible to adequacy proofs.
+[SPEC translator.pl:356-370] -/
+def compileTypeCheck (value expected : Atom) (counter : Nat) :
+    List Goal × Nat :=
+  compileTypeCheckWhen (typeRequiresCheck expected) value expected counter
+
+/-- Compile the output-position type/meta-type fallback. The distinct policy
+is source-significant: `Expression` inputs remain data, but an `Expression`
+result is checked. [SPEC translator.pl:349-356] -/
+def compileResultTypeCheck (value expected : Atom) (counter : Nat) :
+    List Goal × Nat :=
+  compileTypeCheckWhen (resultTypeRequiresCheck expected) value expected
+    counter
 
 /-- PeTTa's `build_branch/4` aliases a variable-valued branch result to the
 enclosing result while translating a nonempty branch conjunction. Native
@@ -403,7 +426,7 @@ def compileTypedDispatchStepWith
         let (terms, goals, checkedArgumentsCounter) ←
           compileTypedArgs accumulator.2 parameterTypes
         let (resultChecks, nextCounter) :=
-          compileTypeCheck result resultType checkedArgumentsCounter
+          compileResultTypeCheck result resultType checkedArgumentsCounter
         .ok (accumulator.1 ++ [(result,
           goals ++ [Goal.call head terms result] ++ resultChecks)], nextCounter)
   | _, none => .ok accumulator
@@ -1518,7 +1541,19 @@ theorem compileTypeCheck_unchecked_symbol_eq (value : Atom) (counter : Nat) :
   intro expected member
   simp only [List.mem_cons, List.not_mem_nil, or_false] at member
   rcases member with rfl | rfl | rfl <;>
-    simp [compileTypeCheck, typeRequiresCheck]
+    simp [compileTypeCheck, compileTypeCheckWhen, typeRequiresCheck]
+
+/-- The two pinned no-check result types leave goals and the fresh counter
+unchanged. [SPEC translator.pl:355-356] -/
+theorem compileResultTypeCheck_unchecked_symbol_eq (value : Atom)
+    (counter : Nat) :
+    (∀ expected ∈ ["%Undefined%", "Atom"],
+      compileResultTypeCheck value (.sym expected) counter = ([], counter)) := by
+  intro expected member
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+  rcases member with rfl | rfl <;>
+    simp [compileResultTypeCheck, compileTypeCheckWhen,
+      resultTypeRequiresCheck]
 
 /-- A supported simple refined type emits the exact pinned soft-cut fallback
 and consumes two generated variables. [SPEC translator.pl:367-370] -/
@@ -1537,8 +1572,31 @@ theorem compileTypeCheck_refined_symbol_eq (value : Atom) (counter : Nat)
          [Goal.bin "get-metatype" [value] (.var s!"_q{counter + 1}"),
           Goal.eq (.var s!"_q{counter + 1}") (.sym expected)]],
        counter + 2) := by
-  simp [compileTypeCheck, typeRequiresCheck, notUndefined, notAtom,
-    notExpression, notTrue, notFalse, fresh, chainify, canonBool]
+  simp [compileTypeCheck, compileTypeCheckWhen, typeRequiresCheck,
+    notUndefined, notAtom, notExpression, notTrue, notFalse, fresh, chainify,
+    canonBool]
+
+/-- Every supported simple result type other than the two unchecked result
+types emits the exact pinned soft-cut fallback and consumes two generated
+variables. In particular, `Expression` is checked here.
+[SPEC translator.pl:349-356] -/
+theorem compileResultTypeCheck_refined_symbol_eq (value : Atom)
+    (counter : Nat) (expected : String)
+    (notUndefined : expected ≠ "%Undefined%")
+    (notAtom : expected ≠ "Atom")
+    (notTrue : expected ≠ "true")
+    (notFalse : expected ≠ "false") :
+    compileResultTypeCheck value (.sym expected) counter =
+      ([Goal.softcut (.sym "#u")
+         [Goal.bin "get-type" [value] (.var s!"_q{counter}"),
+          Goal.eq (.var s!"_q{counter}") (.sym expected)]
+         []
+         [Goal.bin "get-metatype" [value] (.var s!"_q{counter + 1}"),
+          Goal.eq (.var s!"_q{counter + 1}") (.sym expected)]],
+       counter + 2) := by
+  simp [compileResultTypeCheck, compileTypeCheckWhen,
+    resultTypeRequiresCheck, notUndefined, notAtom, notTrue, notFalse, fresh,
+    chainify, canonBool]
 
 /-- Empty exact typed traversal preserves the counter. -/
 theorem compileTypedArgsFuel_nil_eq (fuel : Nat) (env : CEnv)
