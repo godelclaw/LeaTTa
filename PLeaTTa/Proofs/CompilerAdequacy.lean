@@ -577,6 +577,25 @@ theorem TypeCheckExpectedAgrees.compilerTemplate {reference : Term}
   rw [agreement.compilerTemplate_eq]
   exact agreement
 
+/-- Ordered agreement for the exact literal `superpose` fragment.  Each
+independent branch is the single unification emitted by pinned
+`build_branch/4`; the executable `amb` stores the same value with an empty
+body and schedules its result equality when that branch is selected. -/
+inductive LiteralAmbBranchesAgree (referenceOutput : Term)
+    (executableOutput : Atom) : List PeTTaSpec.PrologCore.Goal →
+      List (Atom × List PLeaTTa.Goal) → Prop where
+  | nil : LiteralAmbBranchesAgree referenceOutput executableOutput [] []
+  | cons {referenceValue : Term} {executableValue : Atom}
+      {referenceBranches : List PeTTaSpec.PrologCore.Goal}
+      {executableBranches : List (Atom × List PLeaTTa.Goal)}
+      (value : TermAgrees referenceValue executableValue)
+      (output : TermAgrees referenceOutput executableOutput)
+      (tail : LiteralAmbBranchesAgree referenceOutput executableOutput
+        referenceBranches executableBranches) :
+      LiteralAmbBranchesAgree referenceOutput executableOutput
+        (.unify referenceValue referenceOutput :: referenceBranches)
+        ((executableValue, []) :: executableBranches)
+
 mutual
 
 /-- Cross-representation agreement for the independent and executable goal
@@ -686,6 +705,19 @@ inductive GoalAgrees : PeTTaSpec.PrologCore.Goal → PLeaTTa.Goal → Prop where
         (.findall referenceTemplate (.conjunction referenceGoals)
           referenceOutput)
         (.findall executableTemplate executableGoals executableOutput)
+  | literalAmb {referenceOutput : Term} {executableOutput : Atom}
+      {referenceBranches : List PeTTaSpec.PrologCore.Goal}
+      {executableBranches : List (Atom × List PLeaTTa.Goal)}
+      (branches : LiteralAmbBranchesAgree referenceOutput executableOutput
+        referenceBranches executableBranches) :
+      GoalAgrees (.disjunction referenceBranches)
+        (.amb executableBranches executableOutput)
+  | spread {referenceValue referenceOutput : Term}
+      {executableValue executableOutput : Atom}
+      (value : TermAgrees referenceValue executableValue)
+      (output : TermAgrees referenceOutput executableOutput) :
+      GoalAgrees (.call "superpose" [referenceValue, referenceOutput])
+        (.spread executableValue executableOutput)
   | conditional {referenceCondition referenceOutput : Term}
       {referenceThen referenceElse : PeTTaSpec.PrologCore.Goal}
       {executableCondition executableOutput : Atom}
@@ -1647,6 +1679,91 @@ theorem translatesExpr_cut_adequate {state : TranslatorState} (env : CEnv)
   exact compileExpr_cut_adequate env counter
     (agreement.notContains notShadowed)
 
+/-- Literal branch compilation is an ordered fold homomorphism: every pinned
+branch becomes one executable `(value, [])` entry, the accumulator prefix is
+preserved, and the fresh counter is unchanged. -/
+theorem foldlM_literalAmbBranches_sound (fuel : Nat) (env : CEnv)
+    (counter : Nat) {referenceOutput : Term} {sources : List Atom}
+    {referenceBranches : List PeTTaSpec.PrologCore.Goal}
+    {executableOutput : Atom}
+    (outputAgreement : TermAgrees referenceOutput executableOutput)
+    (native : TranslatesLiteralAmbBranches referenceOutput sources
+      referenceBranches) :
+    ∀ accumulator : List (Atom × List PLeaTTa.Goal),
+      ∃ executableBranches,
+        List.foldlM
+          (fun (acc : List (Atom × List PLeaTTa.Goal) × Nat)
+              expression => do
+            let (term, goals, nextCounter) ←
+              compileExprFuel (fuel + 1) env acc.2 expression
+            .ok (acc.1 ++ [(term, goals)], nextCounter))
+          (accumulator, counter) sources =
+            .ok (accumulator ++ executableBranches, counter) ∧
+        LiteralAmbBranchesAgree referenceOutput executableOutput
+          referenceBranches executableBranches := by
+  induction native with
+  | nil =>
+      intro accumulator
+      refine ⟨[], ?_, .nil⟩
+      simp only [List.foldlM_nil, List.append_nil, Pure.pure,
+        Except.pure]
+  | @cons source term sources branches value tail inductionHypothesis =>
+      intro accumulator
+      obtain ⟨internal, compiled, valueAgreement⟩ :=
+        compileExprFuel_literal_adequate fuel env counter value
+      obtain ⟨executableTail, tailCompiled, tailAgreement⟩ :=
+        inductionHypothesis (accumulator ++ [(internal, [])])
+      refine ⟨(internal, []) :: executableTail, ?_,
+        .cons valueAgreement outputAgreement tailAgreement⟩
+      rw [List.foldlM_cons]
+      simp only [compiled, Bind.bind, Except.bind]
+      simp only [Bind.bind, Except.bind] at tailCompiled
+      simpa [List.append_assoc] using tailCompiled
+
+/-- Executable ordered branch compilation agrees with the independent literal
+`build_superpose_branches/3` fragment. -/
+theorem compileAmbBranchesWith_literals_sound (fuel : Nat) (env : CEnv)
+    (counter : Nat) {referenceOutput : Term} {sources : List Atom}
+    {referenceBranches : List PeTTaSpec.PrologCore.Goal}
+    {executableOutput : Atom}
+    (outputAgreement : TermAgrees referenceOutput executableOutput)
+    (native : TranslatesLiteralAmbBranches referenceOutput sources
+      referenceBranches) :
+    ∃ executableBranches,
+      compileAmbBranchesWith
+        (fun next expression =>
+          compileExprFuel (fuel + 1) env next expression)
+        counter sources = .ok (executableBranches, counter) ∧
+      LiteralAmbBranchesAgree referenceOutput executableOutput
+        referenceBranches executableBranches := by
+  obtain ⟨executableBranches, compiled, branchesAgreement⟩ :=
+    foldlM_literalAmbBranches_sound fuel env counter outputAgreement native []
+  exact ⟨executableBranches, by
+      simpa [compileAmbBranchesWith] using compiled,
+    branchesAgreement⟩
+
+/-- Executable negative-boundary witness paired with
+`empty_superpose_not_translated`: unlike pinned `disj_list/2`, the current
+compiler accepts an empty branch collection and emits `amb []`.  Keeping both
+theorems visible prevents the supported relation from laundering this known
+translation mismatch. -/
+theorem compileExpr_empty_superpose_accepts (env : CEnv) (counter : Nat)
+    (noHook : env.translatorRules.contains "superpose" = false) :
+    compileExpr env counter (.expr [.sym "superpose", .expr []]) =
+      .ok (.var s!"_q{counter}",
+        [PLeaTTa.Goal.amb [] (.var s!"_q{counter}")], counter + 1) := by
+  have branches : compileAmbBranchesWith
+      (fun next expression =>
+        compileExprFuel
+          (compilerFuel (.expr [.sym "superpose", .expr []]) + 61)
+          env next expression)
+      counter [] = .ok ([], counter) := by
+    rfl
+  simpa only [compileExpr, Nat.add_assoc, Nat.reduceAdd] using
+    compileExprFuel_superpose_eq
+      (compilerFuel (.expr [.sym "superpose", .expr []]) + 61) env counter
+      [] [] noHook branches
+
 mutual
 
 /-- Every independent translation derivation has a positive, syntax-bounded
@@ -1711,6 +1828,25 @@ theorem compileExprFuel_initial_sound {state : TranslatorState} (env : CEnv)
             (.findall termAgreement goalsAgreement
               (.generatedVariable bodyCounter))
             .nil
+  | superposeLiterals notShadowed translated =>
+      rename_i first sources branches
+      let output := Atom.var s!"_q{counter}"
+      have outputAgreement :
+          TermAgrees (.variable (.generated counter)) output :=
+        .generatedVariable counter
+      refine ⟨4, by omega, ?_, ?_⟩
+      · simp [Atom.size]
+        omega
+      · intro extraFuel
+        obtain ⟨executableBranches, branchesCompiled, branchesAgreement⟩ :=
+          compileAmbBranchesWith_literals_sound extraFuel env
+            counter outputAgreement translated
+        refine ⟨output, [PLeaTTa.Goal.amb executableBranches output], ?_,
+          outputAgreement, .cons (.literalAmb branchesAgreement) .nil⟩
+        simpa [output, Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using
+          compileExprFuel_superpose_eq (extraFuel + 1) env counter
+            (first :: sources) executableBranches
+            (agreement.notContains notShadowed) branchesCompiled
   | letBind notShadowed patternTranslation valueTranslation bodyTranslation =>
       obtain ⟨patternFuel, patternPositive, patternBound, patternCompiles⟩ :=
         compileExprFuel_initial_sound env agreement patternTranslation
@@ -3271,6 +3407,162 @@ theorem compileExpr_binary_builtin_complete {state : TranslatorState}
   obtain ⟨referenceInternal, referenceGoals, referenceCompiled,
       termAgreement, goalsAgreement⟩ :=
     compileExpr_binary_builtin_sound env agreement notProlog notDefined
+      isBuiltin modeAgreement native
+  have resultEquality :
+      (internal, executableGoals, nextCounter) =
+        (referenceInternal, referenceGoals, referenceCounter) :=
+    Except.ok.inj (compiled.symm.trans referenceCompiled)
+  cases resultEquality
+  exact ⟨term, goals, native, termAgreement, goalsAgreement⟩
+
+/-- The executable rewrite table agrees with the independent three-row pinned
+binary-stream relation on the exact nonempty `superpose` source shape. -/
+theorem pinnedBinaryStreamOp_rewriteStreamOp_eq
+    {surfaceHead atomHead : String}
+    (operation : PinnedBinaryStreamOp surfaceHead atomHead)
+    (leftFirst rightFirst : Atom) (leftRest rightRest : List Atom) :
+    rewriteStreamOp? surfaceHead
+      [.expr [.sym "superpose", .expr (leftFirst :: leftRest)],
+       .expr [.sym "superpose", .expr (rightFirst :: rightRest)]] =
+      some (.expr [.sym "call", .expr [.sym "superpose",
+        .expr [.sym atomHead,
+          .expr [.sym "collapse",
+            .expr [.sym "superpose", .expr (leftFirst :: leftRest)]],
+          .expr [.sym "collapse",
+            .expr [.sym "superpose", .expr (rightFirst :: rightRest)]]]]]) := by
+  cases operation <;> rfl
+
+/-- Fuel-indexed soundness of pinned binary stream rewriting for nonempty
+literal branch lists.  The proof composes the ordinary binary-builtin theorem
+with the two independently related target constructs introduced here:
+Prolog disjunction versus executable `amb`, and `superpose/2` versus
+executable `spread`. -/
+theorem compileExprFuel_binary_stream_sound {state : TranslatorState}
+    (env : CEnv) (agreement : EnvAgrees state env) {counter : Nat}
+    {surfaceHead atomHead : String} {source : Atom} {term : Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains atomHead = false)
+    (notDefined : env.defined.contains atomHead = false)
+    (isBuiltin : env.isBin atomHead = true)
+    (modeAgreement : ArgModesAgree env atomHead 0 [.value, .value])
+    (native : TranslatesBinaryStream state counter surfaceHead atomHead
+      source term goals nextCounter) :
+    ∃ baseFuel,
+      0 < baseFuel ∧
+      baseFuel < 64 * source.size ∧
+      ∀ extraFuel, ∃ internal executableGoals,
+        compileExprFuel (baseFuel + extraFuel) env counter source =
+          .ok (internal, executableGoals, nextCounter) ∧
+        TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  cases native with
+  | rewrite operation notShadowedCall combined =>
+      rename_i combinedCounter leftFirst rightFirst leftRest rightRest
+        combinedTerm combinedGoals
+      obtain ⟨combinedFuel, combinedPositive, combinedBound,
+          combinedCompiles⟩ :=
+        compileExprFuel_binary_builtin_sound env agreement notProlog
+          notDefined isBuiltin modeAgreement combined
+      refine ⟨combinedFuel + 5, by omega, ?_, ?_⟩
+      · simp only [Atom.size, List.map, List.sum_cons, List.sum_nil,
+          Nat.add_zero] at combinedBound ⊢
+        omega
+      · intro extraFuel
+        obtain ⟨combinedInternal, executableCombinedGoals, combinedCompiled,
+            combinedAgreement, combinedGoalsAgreement⟩ :=
+          combinedCompiles extraFuel
+        let output := Atom.var s!"_q{combinedCounter}"
+        have outputAgreement :
+            TermAgrees (.variable (.generated combinedCounter)) output :=
+          .generatedVariable combinedCounter
+        have expandedCompiled :=
+          compileExprFuel_call_superpose_eq
+            (combinedFuel + extraFuel) env counter
+            (.expr [.sym atomHead,
+              .expr [.sym "collapse",
+                .expr [.sym "superpose", .expr (leftFirst :: leftRest)]],
+              .expr [.sym "collapse",
+                .expr [.sym "superpose", .expr (rightFirst :: rightRest)]]])
+            combinedInternal executableCombinedGoals combinedCounter
+            (agreement.notContains notShadowedCall) combinedCompiled
+        refine ⟨output,
+          executableCombinedGoals ++
+            [PLeaTTa.Goal.spread combinedInternal output], ?_,
+          outputAgreement,
+          combinedGoalsAgreement.append
+            (.cons (.spread combinedAgreement outputAgreement) .nil)⟩
+        rw [show (combinedFuel + 5) + extraFuel =
+          ((combinedFuel + extraFuel) + 3) + 2 by omega]
+        rw [compileExprFuel_stream_rewrite_eq
+          ((combinedFuel + extraFuel) + 3) env counter surfaceHead
+          [.expr [.sym "superpose", .expr (leftFirst :: leftRest)],
+           .expr [.sym "superpose", .expr (rightFirst :: rightRest)]]
+          (.expr [.sym "call", .expr [.sym "superpose",
+            .expr [.sym atomHead,
+              .expr [.sym "collapse",
+                .expr [.sym "superpose", .expr (leftFirst :: leftRest)]],
+              .expr [.sym "collapse",
+                .expr [.sym "superpose", .expr (rightFirst :: rightRest)]]]]])
+          (by
+            intro _ _ _ equality
+            cases operation <;> simp_all)
+          (pinnedBinaryStreamOp_rewriteStreamOp_eq operation leftFirst
+            rightFirst leftRest rightRest)]
+        exact expandedCompiled
+
+/-- Public compiler soundness for the exact nonempty literal binary-stream
+fragment at the source-derived compiler budget. -/
+theorem compileExpr_binary_stream_sound {state : TranslatorState}
+    (env : CEnv) (agreement : EnvAgrees state env) {counter : Nat}
+    {surfaceHead atomHead : String} {source : Atom} {term : Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains atomHead = false)
+    (notDefined : env.defined.contains atomHead = false)
+    (isBuiltin : env.isBin atomHead = true)
+    (modeAgreement : ArgModesAgree env atomHead 0 [.value, .value])
+    (native : TranslatesBinaryStream state counter surfaceHead atomHead
+      source term goals nextCounter) :
+    ∃ internal executableGoals,
+      compileExpr env counter source =
+        .ok (internal, executableGoals, nextCounter) ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨baseFuel, _basePositive, baseBound, compiles⟩ :=
+    compileExprFuel_binary_stream_sound env agreement notProlog notDefined
+      isBuiltin modeAgreement native
+  have publicBound : baseFuel ≤ compilerFuel source + 64 := by
+    simp [compilerFuel]
+    omega
+  obtain ⟨extraFuel, publicFuelEq⟩ :
+      ∃ extraFuel, compilerFuel source + 64 = baseFuel + extraFuel := by
+    exact ⟨compilerFuel source + 64 - baseFuel, by omega⟩
+  obtain ⟨internal, executableGoals, compiled, termAgreement,
+      goalsAgreement⟩ := compiles extraFuel
+  refine ⟨internal, executableGoals, ?_, termAgreement, goalsAgreement⟩
+  rw [compileExpr, publicFuelEq]
+  exact compiled
+
+/-- Completeness on independently supported nonempty literal binary streams.
+Determinism of the executable compiler identifies any successful result with
+the independently derived one, preserving terms, goals, and the counter. -/
+theorem compileExpr_binary_stream_complete {state : TranslatorState}
+    (env : CEnv) (agreement : EnvAgrees state env) {counter : Nat}
+    {surfaceHead atomHead : String} {source internal : Atom}
+    {executableGoals : List PLeaTTa.Goal} {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains atomHead = false)
+    (notDefined : env.defined.contains atomHead = false)
+    (isBuiltin : env.isBin atomHead = true)
+    (modeAgreement : ArgModesAgree env atomHead 0 [.value, .value])
+    (supported :
+      SupportedBinaryStream state counter surfaceHead atomHead source)
+    (compiled : compileExpr env counter source =
+      .ok (internal, executableGoals, nextCounter)) :
+    ∃ term goals,
+      TranslatesBinaryStream state counter surfaceHead atomHead source term
+        goals nextCounter ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨term, goals, referenceCounter, native⟩ := supported
+  obtain ⟨referenceInternal, referenceGoals, referenceCompiled,
+      termAgreement, goalsAgreement⟩ :=
+    compileExpr_binary_stream_sound env agreement notProlog notDefined
       isBuiltin modeAgreement native
   have resultEquality :
       (internal, executableGoals, nextCounter) =

@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=75515b033387cf4c18c58c8b88addec9e222d38f54400d2b2faf73bb27c624b6
+# compiler_sha256=e602fed3859b6d3ec6abc3e59f4cd2ce4f0a072ade8c4b37f3e5009a8766341c
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -62,7 +62,7 @@ APP.let_star	T189-190,T384-386	X	TranslatesLetStar	SC	PASS	well-formed-nonempty-
 APP.case	T163-176,T399-406	S	-	N	GAP	order-failure-binding-proof-missing
 APP.collapse	T115-116	X	TranslatesExpr.collapse	SC	PASS	covered
 APP.once	T127-128	S	TranslatesOnce.wrap	SH	GAP	fresh-capture-equivalence-unproved
-APP.superpose_literal	T112-114,T419-422	X	-	N	GAP	amb-agreement-missing
+APP.superpose_literal	T112-114,T419-422	X	TranslatesExpr.superposeLiterals	SC	GAP	nonempty-literal-branch-fragment-sound-complete; empty-native-rejection-and-effectful-build_branch-alias-order-open
 APP.unify_self	HE24-31	L	-	N	GAP	specialized-library-definition
 APP.unify_general	HE32-35	L	-	N	GAP	specialized-library-definition
 APP.succeedsPredicate	LS15-20	L	-	N	FAIL	incorrectly-restricted-to-space-shape
@@ -78,9 +78,9 @@ APP.superpose_computed	M105,T310-346	S	-	N	GAP	spread-shortcut
 APP.hyperpose_literal	T129-135,T424-427	S	-	N	GAP	concurrency-erased-and-order-fixed
 APP.hyperpose_computed	T129-135,T429-431	S	-	N	GAP	spread-plus-evalg
 APP.unique	T76-77	X	-	N	GAP	exact-rewrite-value-differential-pass; independent-rule-open
-APP.union	T80-82	X	-	N	GAP	exact-shaped-rewrite-and-unshaped-parity-fixed; regressions-pass; independent-rule-open
-APP.intersection	T83-85	X	-	N	GAP	exact-shaped-rewrite-and-unshaped-parity-fixed; regressions-pass; independent-rule-open
-APP.subtraction	T86-88	X	-	N	GAP	exact-shaped-rewrite-and-unshaped-parity-fixed; regressions-pass; independent-rule-open
+APP.union	T80-82	X	TranslatesBinaryStream	SC	GAP	nonempty-literal-branch-fragment-sound-complete; empty-and-effectful-branches-open
+APP.intersection	T83-85	X	TranslatesBinaryStream	SC	GAP	nonempty-literal-branch-fragment-sound-complete; empty-and-effectful-branches-open
+APP.subtraction	T86-88	X	TranslatesBinaryStream	SC	GAP	nonempty-literal-branch-fragment-sound-complete; empty-and-effectful-branches-open
 APP.eval	T293-295	S	-	N	FAIL	precompiles-code-argument
 APP.catch	T300-308	X	-	N	GAP	catch-goal-agreement-missing
 APP.call	T278-283	S	-	N	GAP	superpose-dispatch-runtime-pass; general-typed-argument-staging-unproved

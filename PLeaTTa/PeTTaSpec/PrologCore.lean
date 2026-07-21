@@ -285,6 +285,25 @@ theorem BuildsBranchNormalized.variable_nonempty_shape
   | nonVariable _ _ _ notVariable =>
       exact False.elim (notVariable source rfl)
 
+/-- Independent branch construction for the first exact `superpose` fragment.
+Every source element is an atomic/literal PeTTa value, so
+`translate_expr_to_conj/3` contributes no body goals and pinned
+`build_branch/4` emits the single unification `Output = Value`.  The reference
+stores the symmetric orientation because `Goal.unify` denotes equality.  The
+empty list is represented here so list induction remains structural; the
+enclosing translation rule requires a nonempty source because pinned
+`disj_list/2` has no empty clause.
+[SPEC translator.pl:112-114,414-416,419-422] -/
+inductive TranslatesLiteralAmbBranches (output : Term) :
+    List Atom → List Goal → Prop where
+  | nil : TranslatesLiteralAmbBranches output [] []
+  | cons {source : Atom} {term : Term} {sources : List Atom}
+      {branches : List Goal}
+      (value : Literal source term)
+      (tail : TranslatesLiteralAmbBranches output sources branches) :
+      TranslatesLiteralAmbBranches output (source :: sources)
+        (.unify term output :: branches)
+
 mutual
 
 /-- Independently specified fragment of pinned `translate_expr/3`.  Its rules
@@ -315,6 +334,20 @@ inductive TranslatesExpr : TranslatorState → Nat → Atom → Term → List Go
         [.findall template (.conjunction bodyGoals)
           (.variable (.generated bodyCounter))]
         (bodyCounter + 1)
+  /-- Exact nonempty literal-list fragment of pinned `superpose`.  General
+  effectful branches remain outside this constructor because native
+  `build_branch/4` may alias a variable result before its goals, whereas the
+  executable `amb` currently schedules its result equality afterwards. -/
+  | superposeLiterals {state : TranslatorState} {counter : Nat}
+      {first : Atom} {sources : List Atom} {branches : List Goal}
+      (notShadowed : ¬ state.hasRule "superpose")
+      (translated :
+        TranslatesLiteralAmbBranches (.variable (.generated counter))
+          (first :: sources) branches) :
+      TranslatesExpr state counter
+        (.expr [.sym "superpose", .expr (first :: sources)])
+        (.variable (.generated counter)) [.disjunction branches]
+        (counter + 1)
   -- [SPEC translator.pl:185-188] Translation traverses pattern, value, and
   -- body in that order, but the generated goal order begins with unification.
   | letBind {state : TranslatorState}
@@ -1312,6 +1345,144 @@ inductive TranslatesBinaryBuiltin : TranslatorState → Nat → String → Atom 
           [.call head [leftTerm, rightTerm,
             .variable (.generated argumentCounter)]])
         (argumentCounter + 1)
+
+/-- The three source heads covered by pinned binary stream rewriting, paired
+with the atom-level predicate in the rewritten target.  This finite relation
+is transcribed from `rewrite_streamops/2`; it is not computed by PLeaTTa's
+`rewriteStreamOp?` implementation.
+[SPEC translator.pl:80-88] -/
+inductive PinnedBinaryStreamOp : String → String → Prop where
+  | union : PinnedBinaryStreamOp "union" "union-atom"
+  | intersection :
+      PinnedBinaryStreamOp "intersection" "intersection-atom"
+  | subtraction :
+      PinnedBinaryStreamOp "subtraction" "subtraction-atom"
+
+/-- Independent pinned translation of a binary stream rewrite after both
+nonempty `superpose` arguments have been translated by the exact literal
+branch fragment above.  The nested binary derivation accounts for the two
+`collapse` calls and atom-level operation.  The final goal is the manual
+`call(superpose(...))` dispatch which enumerates the computed result list.
+
+The source head's own translator hook is intentionally irrelevant: pinned
+`safe_rewrite_streamops/2` runs first.  A hook named `call` remains an
+explicit blocker because it sees the rewritten head.
+[SPEC translator.pl:80-110,278-283; metta.pl:105,160-165] -/
+inductive TranslatesBinaryStream : TranslatorState → Nat → String →
+    String → Atom → Term → List Goal → Nat → Prop where
+  | rewrite {state : TranslatorState} {counter combinedCounter : Nat}
+      {surfaceHead atomHead : String}
+      {leftFirst rightFirst : Atom} {leftRest rightRest : List Atom}
+      {combinedTerm : Term} {combinedGoals : List Goal}
+      (operation : PinnedBinaryStreamOp surfaceHead atomHead)
+      (notShadowedCall : ¬ state.hasRule "call")
+      (combined :
+        TranslatesBinaryBuiltin state counter atomHead
+          (.expr [.sym atomHead,
+            .expr [.sym "collapse",
+              .expr [.sym "superpose", .expr (leftFirst :: leftRest)]],
+            .expr [.sym "collapse",
+              .expr [.sym "superpose", .expr (rightFirst :: rightRest)]]])
+          combinedTerm combinedGoals combinedCounter) :
+      TranslatesBinaryStream state counter surfaceHead atomHead
+        (.expr [.sym surfaceHead,
+          .expr [.sym "superpose", .expr (leftFirst :: leftRest)],
+          .expr [.sym "superpose", .expr (rightFirst :: rightRest)]])
+        (.variable (.generated combinedCounter))
+        (combinedGoals ++
+          [.call "superpose"
+            [combinedTerm, .variable (.generated combinedCounter)]])
+        (combinedCounter + 1)
+
+/-- Independently supported binary-stream sources are exactly those with a
+finite derivation in the pinned relation above. -/
+def SupportedBinaryStream (state : TranslatorState) (counter : Nat)
+    (surfaceHead atomHead : String) (source : Atom) : Prop :=
+  ∃ term goals nextCounter,
+    TranslatesBinaryStream state counter surfaceHead atomHead source term goals
+      nextCounter
+
+/-- Every pinned binary stream rewrite targets an ordinary atom-level builtin
+already represented by the independent binary table. -/
+theorem PinnedBinaryStreamOp.atomBuiltin {surfaceHead atomHead : String}
+    (operation : PinnedBinaryStreamOp surfaceHead atomHead) :
+    PinnedBinaryBuiltin atomHead := by
+  cases operation <;> constructor
+
+/-- Positive nontrivial witness shared by all three binary stream operations:
+two ordered integer branches on each side have an independent pinned
+translation derivation. -/
+theorem translates_binary_stream_integer_pairs (state : TranslatorState)
+    (counter : Nat) (surfaceHead atomHead : String)
+    (operation : PinnedBinaryStreamOp surfaceHead atomHead)
+    (notShadowedCall : ¬ state.hasRule "call")
+    (notShadowedAtom : ¬ state.hasRule atomHead)
+    (notShadowedCollapse : ¬ state.hasRule "collapse")
+    (notShadowedSuperpose : ¬ state.hasRule "superpose")
+    (leftFirst leftSecond rightFirst rightSecond : Int) :
+    SupportedBinaryStream state counter surfaceHead atomHead
+      (.expr [.sym surfaceHead,
+        .expr [.sym "superpose",
+          .expr [.gnd (.int leftFirst), .gnd (.int leftSecond)]],
+        .expr [.sym "superpose",
+          .expr [.gnd (.int rightFirst), .gnd (.int rightSecond)]]]) := by
+  let leftOutput : Term := .variable (.generated counter)
+  let rightOutput : Term := .variable (.generated (counter + 2))
+  have leftBranches : TranslatesLiteralAmbBranches leftOutput
+      [.gnd (.int leftFirst), .gnd (.int leftSecond)]
+      [.unify (.integer leftFirst) leftOutput,
+       .unify (.integer leftSecond) leftOutput] :=
+    .cons (.integer leftFirst) (.cons (.integer leftSecond) .nil)
+  have rightBranches : TranslatesLiteralAmbBranches rightOutput
+      [.gnd (.int rightFirst), .gnd (.int rightSecond)]
+      [.unify (.integer rightFirst) rightOutput,
+       .unify (.integer rightSecond) rightOutput] :=
+    .cons (.integer rightFirst) (.cons (.integer rightSecond) .nil)
+  have leftSuperpose : TranslatesExpr state counter
+      (.expr [.sym "superpose",
+        .expr [.gnd (.int leftFirst), .gnd (.int leftSecond)]])
+      leftOutput
+      [.disjunction
+        [.unify (.integer leftFirst) leftOutput,
+         .unify (.integer leftSecond) leftOutput]]
+      (counter + 1) :=
+    .superposeLiterals notShadowedSuperpose leftBranches
+  have rightSuperpose : TranslatesExpr state (counter + 2)
+      (.expr [.sym "superpose",
+        .expr [.gnd (.int rightFirst), .gnd (.int rightSecond)]])
+      rightOutput
+      [.disjunction
+        [.unify (.integer rightFirst) rightOutput,
+         .unify (.integer rightSecond) rightOutput]]
+      (counter + 3) := by
+    simpa [rightOutput, Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+      TranslatesExpr.superposeLiterals (counter := counter + 2)
+        notShadowedSuperpose rightBranches
+  have leftCollapse :=
+    TranslatesExpr.collapse notShadowedCollapse leftSuperpose
+  have rightCollapse :=
+    TranslatesExpr.collapse notShadowedCollapse rightSuperpose
+  have arguments := TranslatesTypedArgs.value leftCollapse
+    (TranslatesTypedArgs.value rightCollapse
+      (TranslatesTypedArgs.nil (state := state) (counter := counter + 4)))
+  have combined := TranslatesBinaryBuiltin.call operation.atomBuiltin
+    notShadowedAtom arguments
+  exact ⟨_, _, _, .rewrite operation notShadowedCall combined⟩
+
+/-- Negative boundary witness: pinned `disj_list/2` has no empty clause, and
+the independent `superpose` fragment therefore cannot translate an empty
+branch list.  The executable currently accepts `amb []`; that mismatch must
+not be hidden inside the supported-source predicate. -/
+theorem empty_superpose_not_translated (state : TranslatorState)
+    (counter nextCounter : Nat) (term : Term) (goals : List Goal) :
+    ¬ TranslatesExpr state counter
+      (.expr [.sym "superpose", .expr []]) term goals nextCounter := by
+  intro translation
+  generalize sourceEq :
+    (Atom.expr [Atom.sym "superpose", Atom.expr []]) = source at translation
+  cases translation
+  case literal value => cases value <;> simp_all
+  all_goals simp_all
 
 theorem TranslatesBinaryBuiltin.notShadowed
     {state : TranslatorState} {counter : Nat} {head : String} {source : Atom}

@@ -2122,6 +2122,67 @@ theorem compileExprFuel_unshadowed_app_eq (fuel : Nat) (env : CEnv)
     noRewrite noHook
 
 set_option maxHeartbeats 2000000 in
+/-- A successful pinned stream rewrite is selected before translator-rule
+lookup and re-enters expression compilation with the rewritten source.  The
+internal-cons premise discharges the expression compiler's sole overlapping
+application pattern; every pinned stream head satisfies it. -/
+theorem compileExprFuel_stream_rewrite_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (head : String) (arguments : List Atom) (expanded : Atom)
+    (notInternalCons : ∀ first second,
+      arguments = [first, second] → head ≠ "#c")
+    (rewrite : rewriteStreamOp? head arguments = some expanded) :
+    compileExprFuel (fuel + 2) env counter
+        (.expr (.sym head :: arguments)) =
+      compileExprFuel fuel env counter expanded := by
+  rw [show fuel + 2 = (fuel + 1) + 1 by omega]
+  rw [compileExprFuel.eq_7 (x_4 := notInternalCons)]
+  rw [compileAppFuel.eq_2, rewrite]
+
+set_option maxHeartbeats 2000000 in
+/-- Exact executable shape for a nonempty syntactic `superpose` once its
+ordered branches have been compiled.  The nonemptiness is a reference-level
+premise: the executable equation itself is valid for every source list. -/
+theorem compileExprFuel_superpose_eq (branchFuel : Nat) (env : CEnv)
+    (counter : Nat) (sources : List Atom)
+    (branches : List (Atom × List Goal))
+    (noHook : env.translatorRules.contains "superpose" = false)
+    (compiled : compileAmbBranchesWith
+      (fun next expression => compileExprFuel branchFuel env next expression)
+      counter sources = .ok (branches, counter)) :
+    compileExprFuel (branchFuel + 3) env counter
+        (.expr [.sym "superpose", .expr sources]) =
+      .ok (.var s!"_q{counter}",
+        [Goal.amb branches (.var s!"_q{counter}")], counter + 1) := by
+  rw [show branchFuel + 3 = (branchFuel + 1) + 2 by omega]
+  rw [compileExprFuel_unshadowed_app_eq (branchFuel + 1) env counter
+    "superpose" [.expr sources] (by rfl) (by simp) noHook]
+  simp only [compileAppCoreFuel, classifyAppCoreHead]
+  rw [compiled]
+  rfl
+
+set_option maxHeartbeats 2000000 in
+/-- Exact executable shape of pinned manual dispatch to `superpose/2`: compile
+the already-computed list, allocate the enclosing result, then enumerate the
+list through `Goal.spread`. -/
+theorem compileExprFuel_call_superpose_eq (bodyFuel : Nat) (env : CEnv)
+    (counter : Nat) (source term : Atom) (goals : List Goal)
+    (nextCounter : Nat)
+    (noHook : env.translatorRules.contains "call" = false)
+    (body : compileExprFuel bodyFuel env counter source =
+      .ok (term, goals, nextCounter)) :
+    compileExprFuel (bodyFuel + 3) env counter
+        (.expr [.sym "call", .expr [.sym "superpose", source]]) =
+      .ok (.var s!"_q{nextCounter}",
+        goals ++ [Goal.spread term (.var s!"_q{nextCounter}")],
+        nextCounter + 1) := by
+  rw [show bodyFuel + 3 = (bodyFuel + 1) + 2 by omega]
+  rw [compileExprFuel_unshadowed_app_eq (bodyFuel + 1) env counter "call"
+    [.expr [.sym "superpose", source]] (by rfl) (by simp) noHook]
+  simp only [compileAppCoreFuel, classifyAppCoreHead]
+  rw [body]
+  rfl
+
+set_option maxHeartbeats 2000000 in
 /-- A head classified outside every pinned special-form clause reaches the
 generic application dispatcher.  This small equation hides the generated
 negative premises of the large special-form match without changing the
