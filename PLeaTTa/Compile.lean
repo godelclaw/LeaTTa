@@ -1899,6 +1899,38 @@ theorem compilePatternListFuel_cons_eq (fuel : Nat) (env : CEnv)
   rfl
 
 set_option maxHeartbeats 2000000 in
+/-- Once stream rewriting and translator-rule shadowing are excluded, the
+application dispatcher is exactly the core classifier. This is the reusable
+priority bridge for every unshadowed application adequacy proof. -/
+theorem compileAppFuel_unshadowed_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (head : String) (arguments : List Atom)
+    (noRewrite : rewriteStreamOp? head arguments = none)
+    (noHook : env.translatorRules.contains head = false) :
+    compileAppFuel (fuel + 1) env counter head arguments =
+      compileAppCoreFuel fuel env counter head arguments := by
+  rw [compileAppFuel.eq_2]
+  rw [noRewrite]
+  simp only
+  rw [noHook]
+  rfl
+
+/-- Expression-level form of `compileAppFuel_unshadowed_eq`. The explicit
+internal-cons premise discharges the sole application-pattern overlap. -/
+theorem compileExprFuel_unshadowed_app_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat) (head : String) (arguments : List Atom)
+    (noRewrite : rewriteStreamOp? head arguments = none)
+    (notInternalCons : ∀ first second,
+      arguments = [first, second] → head ≠ "#c")
+    (noHook : env.translatorRules.contains head = false) :
+    compileExprFuel (fuel + 2) env counter
+        (.expr (.sym head :: arguments)) =
+      compileAppCoreFuel fuel env counter head arguments := by
+  rw [show fuel + 2 = (fuel + 1) + 1 by omega]
+  rw [compileExprFuel.eq_7 (x_4 := notInternalCons)]
+  exact compileAppFuel_unshadowed_eq fuel env counter head arguments
+    noRewrite noHook
+
+set_option maxHeartbeats 2000000 in
 /-- A head classified outside every pinned special-form clause reaches the
 generic application dispatcher.  This small equation hides the generated
 negative premises of the large special-form match without changing the
@@ -1942,14 +1974,9 @@ theorem compileExprFuel_fixed_builtin_eq (argumentFuel : Nat) (env : CEnv)
       .ok (.var s!"_q{nextCounter}",
         goals ++ [Goal.bin head terms (.var s!"_q{nextCounter}")],
         nextCounter + 1) := by
-  rw [show argumentFuel + 3 = (argumentFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := notInternalCons)]
-  rw [show argumentFuel + 2 = (argumentFuel + 1) + 1 by omega]
-  rw [compileAppFuel.eq_2]
-  rw [noRewrite]
-  simp only
-  rw [noHook]
-  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [show argumentFuel + 3 = (argumentFuel + 1) + 2 by omega]
+  rw [compileExprFuel_unshadowed_app_eq (argumentFuel + 1) env counter head
+    arguments noRewrite notInternalCons noHook]
   rw [compileAppCoreFuel_other_eq argumentFuel env counter head arguments
     other]
   simp only [compileAppDefaultWith]
@@ -1991,14 +2018,9 @@ theorem compileExprFuel_defined_direct_eq (argumentFuel : Nat) (env : CEnv)
       .ok (.var s!"_q{nextCounter}",
         goals ++ [Goal.call head terms (.var s!"_q{nextCounter}")],
         nextCounter + 1) := by
-  rw [show argumentFuel + 3 = (argumentFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := notInternalCons)]
-  rw [show argumentFuel + 2 = (argumentFuel + 1) + 1 by omega]
-  rw [compileAppFuel.eq_2]
-  rw [noRewrite]
-  simp only
-  rw [noHook]
-  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [show argumentFuel + 3 = (argumentFuel + 1) + 2 by omega]
+  rw [compileExprFuel_unshadowed_app_eq (argumentFuel + 1) env counter head
+    arguments noRewrite notInternalCons noHook]
   rw [compileAppCoreFuel_other_eq argumentFuel env counter head arguments
     other]
   simp only [compileAppDefaultWith]
@@ -2040,14 +2062,9 @@ theorem compileExprFuel_defined_partial_eq (argumentFuel : Nat) (env : CEnv)
     compileExprFuel (argumentFuel + 3) env counter
         (.expr (.sym head :: arguments)) =
       .ok (partialValue head terms, goals, nextCounter) := by
-  rw [show argumentFuel + 3 = (argumentFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := notInternalCons)]
-  rw [show argumentFuel + 2 = (argumentFuel + 1) + 1 by omega]
-  rw [compileAppFuel.eq_2]
-  rw [noRewrite]
-  simp only
-  rw [noHook]
-  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [show argumentFuel + 3 = (argumentFuel + 1) + 2 by omega]
+  rw [compileExprFuel_unshadowed_app_eq (argumentFuel + 1) env counter head
+    arguments noRewrite notInternalCons noHook]
   rw [compileAppCoreFuel_other_eq argumentFuel env counter head arguments
     other]
   simp only [compileAppDefaultWith]

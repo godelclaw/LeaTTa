@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=0f451e89206cf51e1781f15809150910a87202e8f2c130a4be546e7d73ae5ffe
+# compiler_sha256=ab5e69a3daf5b3bd1f04ff7202a673ce9cfd6fbea426a6680bef25c28e7c36d4
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary

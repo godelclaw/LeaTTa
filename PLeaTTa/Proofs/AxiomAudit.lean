@@ -67,6 +67,8 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.compileExprFuel_mono
 #print axioms PLeaTTa.compileExprFuel_mono_of_le
 #print axioms PLeaTTa.compileExprFuel_fixed_builtin_eq
+#print axioms PLeaTTa.compileAppFuel_unshadowed_eq
+#print axioms PLeaTTa.compileExprFuel_unshadowed_app_eq
 #print axioms PLeaTTa.compileExprFuel_defined_direct_eq
 #print axioms PLeaTTa.compileExprFuel_defined_partial_eq
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.binary_builtin_hook_blocks
