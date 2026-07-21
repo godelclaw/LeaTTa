@@ -4,6 +4,7 @@
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
 # native_source: T=src/translator.pl M=src/metta.pl F=src/filereader.pl S=src/spaces.pl HE=lib/lib_he.metta LS=lib/lib_spaces.metta LP=lib/lib_patrick.metta LT=lib/lib_tabling.metta
+# fail_witness_manifest=diffbench/compiler-mismatch-witnesses.tsv
 id	native_source	class	reference	proof	status	finding
 EX.fuel0	-	P	-	N	GAP	explicit-fuel-totalization
 EX.variable	T96	X	TranslatesExpr.literal	SC	PASS	covered
@@ -51,8 +52,8 @@ APP.test	T119-126,M205-209	S	-	N	GAP	internal-test-results-helper
 APP.trace	T73-75,T91-110	X	TranslatesTrace.rewrite	SC	PASS	pre-hook stream rewrite; rewritten progn and println priorities explicit; left-to-right result-goal-counter soundness/completeness
 APP.and_then	T177-180	X	TranslatesExpr.andThen	SC	PASS	nested-conjunction flattening; identity-test; branch-goal-order; exact-counter; runtime-positive-and-shadowing-witnesses
 APP.or_else	T181-183	X	TranslatesExpr.orElse	SC	PASS	nested-conjunction flattening; identity-test; branch-goal-order; exact-counter; runtime-positive-and-shadowing-witnesses
-APP.hash_plus	M53,M316	S	-	EQ	FAIL	ordinary-plus-not-CLPFD
-APP.hash_minus	M54,M316	S	-	EQ	FAIL	ordinary-minus-not-CLPFD
+APP.hash_plus	M53,M316	S	-	EQ	FAIL	ordinary-plus-not-CLPFD; float-domain-divergence-witnessed; unbound-relational-probe-agrees
+APP.hash_minus	M54,M316	S	-	EQ	FAIL	ordinary-minus-not-CLPFD; float-domain-divergence-witnessed; unbound-relational-probe-agrees
 APP.cons	M145,T3-8	S	-	N	GAP	direct-structural-constructor
 APP.if2	T151-155,T394-397	S	TranslatesExpr.ifThen	SC	GAP	compiler-sound-complete-for-explicit-alias-normalization; bidirectional ordered substitution simulation and proved unification primitive preserve answer order/multiplicity; one parametric variable-valued true-branch family now uses the source-facing fresh compiler, runs in the independent ordered semantics, and reaches the same singleton integer observation through actual Step; universal if-to-Step bisimulation and predicate-call instance remain open; runtime-alias-differential-pass
 APP.if3	T156-162,T394-397	S	TranslatesExpr.ifThenElse	SC	GAP	compiler-sound-complete-for-explicit-alias-normalization; bidirectional ordered substitution simulation, proved unification primitive, and concrete call-free alias-prefix bisimulation preserve answer order/multiplicity; predicate-call instance and executable Step bisimulation open; runtime-cross-branch-differential-pass

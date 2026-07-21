@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+# pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
+# Every compiler-obligations.tsv FAIL row appears exactly once. Outcomes are
+# ordered lists after diffbench normalization; normalization can hide a
+# presentation-only difference, which makes this gate fail closed by erasing
+# a divergence rather than manufacturing one. Recorded error outcomes use
+# stable classes, although their extraction necessarily recognizes selected
+# native diagnostic text and a wording change therefore turns the gate red.
+id	fixture	mode	native_kind	native_expect	pleatta_kind	pleatta_expect	note
+PAT.special_only	diffbench/probes/mismatch-pattern-unregistered-special.metta	expected-divergence	ok	[]	ok	["matched"]	unregistered special head is structural only in pinned patterns
+APP.unquote_quote	diffbench/probes/mismatch-unquote-without-library.metta	expected-divergence	ok	["(unquote (+ 1 2))"]	ok	["3"]	hardcoded unquote evaluation without lib_he
+APP.unquote_other	diffbench/probes/mismatch-unquote-source-definition.metta	expected-divergence	ok	["custom-unquote"]	ok	["(unquote 42)"]	special handler bypasses a source definition
+APP.hash_plus	diffbench/probes/mismatch-hash-plus-clpfd.metta	expected-divergence	ok	["3","(Error domain_error)"]	ok	["3","3.5"]	relational case agrees; CLP(FD) integer domain then differs from floating arithmetic
+APP.hash_minus	diffbench/probes/mismatch-hash-minus-clpfd.metta	expected-divergence	ok	["5","(Error domain_error)"]	ok	["5","1"]	relational case agrees; CLP(FD) integer domain then differs from floating arithmetic
+APP.succeedsPredicate	diffbench/probes/mismatch-succeeds-predicate-general.metta	expected-divergence	ok	["true","true"]	ok	["true","false"]	general true/0 predicate lies outside the space-only shortcut
+APP.foldall	diffbench/probes/mismatch-foldall-order.metta	expected-divergence	ok	["true","3","generator"]	ok	["true","3","aggregator"]	equal folded value but different effect order
+APP.forall	diffbench/probes/mismatch-forall-streaming.metta	expected-divergence	ok	["true","false","first"]	ok	["true","false","second"]	equal Boolean result but streaming stops before the second effect
+APP.union	diffbench/probes/mismatch-union-unshaped.metta	expected-divergence	ok	["((union 1 2))"]	ok	["(1 2)"]	pinned rewrite requires two syntactic superposes
+APP.intersection	diffbench/probes/mismatch-intersection-unshaped.metta	expected-divergence	ok	["((intersection 1 1))"]	ok	["(1)"]	pinned rewrite requires two syntactic superposes
+APP.subtraction	diffbench/probes/mismatch-subtraction-unshaped.metta	expected-divergence	ok	["((subtraction 1 2))"]	ok	["(1)"]	pinned rewrite requires two syntactic superposes
+APP.eval	diffbench/probes/mismatch-eval-precompiled-argument.metta	expected-divergence	ok	["(+ 1 2)"]	ok	["3"]	raw runtime eval versus precompiled quote
+APP.reduce	diffbench/probes/mismatch-reduce-eval-alias.metta	expected-divergence	ok	["(quote 3)"]	ok	["3"]	nested-argument translation versus eval alias
+APP.size_constraint_nonint	diffbench/probes/mismatch-size-constraint-nonint.metta	expected-divergence	ok	["false"]	error	size_nonliteral	generic native identity versus compiler rejection
+APP.add_atom_rule	diffbench/probes/mismatch-add-rule-space-strict.metta	expected-divergence	error	raw_space_type_error	ok	["true","true","changed"]	evaluated space argument for a rule atom
+APP.add_atom_other	diffbench/probes/mismatch-add-atom-space-strict.metta	expected-divergence	error	raw_space_type_error	ok	["true","true","changed"]	evaluated space argument for an ordinary atom
+APP.remove_atom_rule	diffbench/probes/mismatch-remove-rule-space-strict.metta	expected-divergence	error	raw_space_type_error	ok	["true","true","true","changed"]	evaluated space argument for a rule removal
+APP.remove_atom_other	diffbench/probes/mismatch-remove-atom-space-strict.metta	expected-divergence	error	raw_space_type_error	ok	["true","true","true","changed"]	evaluated space argument for an ordinary removal
+APP.bind_new_state	diffbench/probes/characterize-bind-new-state-hook.metta	characterization	ok	["true","true","initial"]	ok	["true","true","initial"]	reachable registration of the existing static hook agrees; no divergence claimed
+DESUGAR.lambda_list	diffbench/probes/mismatch-lambda-list-hook.metta	expected-divergence	ok	["true","(hooked-lambda 2)"]	ok	["true","7"]	hook priority versus list-parameter closure conversion
+DESUGAR.lambda_var	diffbench/probes/mismatch-lambda-var-hook.metta	expected-divergence	ok	["true","(hooked-lambda 2)"]	ok	["true","7"]	hook priority versus variable-parameter closure conversion
+DESUGAR.map5	diffbench/probes/mismatch-map-binder-hook.metta	expected-divergence	ok	["true","hooked-map"]	ok	["true","(7 7)"]	hook priority versus map binder lowering
+DESUGAR.filter5	diffbench/probes/mismatch-filter-binder-hook.metta	expected-divergence	ok	["true","hooked-filter"]	ok	["true","(1 2)"]	hook priority versus filter binder lowering
+DESUGAR.foldl5	diffbench/probes/mismatch-foldl-binder-hook.metta	expected-divergence	ok	["true","hooked-foldl"]	ok	["true","7"]	hook priority versus foldl binder lowering
+DESUGAR.expression_walk	diffbench/probes/mismatch-desugar-expression-walk.metta	expected-divergence	ok	["(|-> ($v1) 7)"]	ok	["#lamN"]	recursive walk crosses two ordinary data heads
+PROGRAM.static_predesugar	diffbench/probes/mismatch-program-static-predesugar.metta	expected-divergence	ok	["(|-> ($v1) 7)"]	ok	["#lamN"]	static source is rewritten before partition and compilation
+SEQ.normalize_atom	diffbench/probes/mismatch-sequential-normalize-atom.metta	expected-divergence	ok	["true","(|-> ($v1) 7)"]	ok	["true","#lamN"]	sequential add-atom payload is normalized before execution
+MISS.sealed	diffbench/probes/mismatch-sealed-missing.metta	expected-divergence	ok	["3"]	ok	["(sealed () 3)"]	pinned sealed evaluation versus missing translation
+MISS.dynamic_lambda_eval	diffbench/probes/mismatch-dynamic-lambda-eval.metta	expected-divergence	ok	["true","3"]	ok	["true"]	runtime sread reveals a lambda after the source prepass
