@@ -140,6 +140,187 @@ structure FunctionRegistryAgrees (registry : FunctionRegistry)
     registry.argumentModes head argumentModes →
       classifyAppCoreHead head = .other
 
+/-- The executable source-form recognizer is sound and complete for the
+independent first-pass registration judgment. -/
+theorem sourceFunctionArity?_iff {source : Atom} {head : String}
+    {arity : Nat} :
+    sourceFunctionArity? source = some (head, arity) ↔
+      RegistersFunction source head arity := by
+  constructor
+  · intro executable
+    cases source with
+    | sym | var | gnd => simp [sourceFunctionArity?] at executable
+    | expr children =>
+      rcases children with _ | ⟨first, children⟩
+      · simp [sourceFunctionArity?] at executable
+      rcases children with _ | ⟨second, children⟩
+      · simp [sourceFunctionArity?] at executable
+      rcases children with _ | ⟨third, children⟩
+      · simp [sourceFunctionArity?] at executable
+      rcases children with _ | ⟨fourth, children⟩
+      · cases first with
+        | sym firstName =>
+          by_cases firstEq : firstName = "="
+          · subst firstName
+            cases second with
+            | expr nested =>
+              rcases nested with _ | ⟨nestedHead, parameters⟩
+              · simp [sourceFunctionArity?] at executable
+              cases nestedHead with
+              | sym registeredHead =>
+                simp only [sourceFunctionArity?, Option.some.injEq,
+                  Prod.mk.injEq] at executable
+                rcases executable with ⟨rfl, rfl⟩
+                exact .equation registeredHead parameters third
+              | var | gnd | expr =>
+                simp [sourceFunctionArity?] at executable
+            | sym | var | gnd =>
+              simp [sourceFunctionArity?] at executable
+          · simp [sourceFunctionArity?, firstEq] at executable
+        | var | gnd | expr =>
+          simp [sourceFunctionArity?] at executable
+      · simp [sourceFunctionArity?] at executable
+  · intro reference
+    cases reference
+    rfl
+
+/-- Membership in the collected arity table is exactly independent source
+registration.  The collector itself is `filterMap`, so its executable list
+also retains source order and duplicate declarations. -/
+theorem mem_collectSourceFunctionArities_iff (sources : List Atom)
+    (head : String) (arity : Nat) :
+    (head, arity) ∈ collectSourceFunctionArities sources ↔
+      ProgramRegistersFunction sources head arity := by
+  simp only [collectSourceFunctionArities, List.mem_filterMap,
+    ProgramRegistersFunction]
+  constructor
+  · rintro ⟨source, sourceMember, executable⟩
+    exact ⟨source, sourceMember, sourceFunctionArity?_iff.mp executable⟩
+  · rintro ⟨source, sourceMember, reference⟩
+    exact ⟨source, sourceMember, sourceFunctionArity?_iff.mpr reference⟩
+
+/-- Deduplicating the projected heads loses no registration fact. -/
+theorem mem_collectSourceFunctionHeads_iff (sources : List Atom)
+    (head : String) :
+    head ∈ collectSourceFunctionHeads sources ↔
+      ∃ arity, ProgramRegistersFunction sources head arity := by
+  simp only [collectSourceFunctionHeads, List.mem_eraseDups, List.mem_map]
+  constructor
+  · rintro ⟨⟨registeredHead, arity⟩, registered, headEq⟩
+    change registeredHead = head at headEq
+    subst registeredHead
+    exact ⟨arity,
+      (mem_collectSourceFunctionArities_iff sources head arity).mp registered⟩
+  · rintro ⟨arity, registered⟩
+    exact ⟨(head, arity),
+      (mem_collectSourceFunctionArities_iff sources head arity).mpr registered,
+      rfl⟩
+
+/-- `mkEnv`'s filtered arity lookup is exactly membership in its input table. -/
+theorem mkEnv_arities_contains_iff (isBin : String → Bool)
+    (heads : List String) (arities : List (String × Nat))
+    (head : String) (arity : Nat) :
+    ((mkEnv isBin heads arities []).arities head).contains arity = true ↔
+      (head, arity) ∈ arities := by
+  simp [mkEnv]
+
+/-- An untyped source mode list agrees with the empty-declaration executable
+staging mask at every starting argument index. -/
+theorem valueArgumentModes_agrees_mkEnv
+    {modes : List ArgumentMode} (valueModes : ValueArgumentModes modes)
+    (isBin : String → Bool) (heads : List String)
+    (arities : List (String × Nat)) (head : String) (index : Nat) :
+    ArgModesAgree (mkEnv isBin heads arities []) head index modes := by
+  induction valueModes generalizing index with
+  | nil => exact .nil index
+  | cons tail inductionHypothesis =>
+      exact .value (by simp [mkEnv])
+        (inductionHypothesis (index := index + 1))
+
+/-- Explicit supported-fragment boundary for source-registered names that
+reach ordinary fallback rather than an earlier executable compiler clause. -/
+def OrdinarySourceDispatch (sources : List Atom) : Prop :=
+  ∀ head, (∃ arity, ProgramRegistersFunction sources head arity) →
+    (∀ arguments, rewriteStreamOp? head arguments = none) ∧
+    head ≠ "#c" ∧ classifyAppCoreHead head = .other
+
+/-- The independently registered untyped source table agrees with the exact
+environment built by `mkEnv`.  The `ordinary` premise is the explicit
+supported-fragment boundary for names captured by earlier compiler clauses;
+it is not inferred from registration alone. -/
+theorem sourceFunctionRegistry_mkEnv_agrees (sources : List Atom)
+    (isBin : String → Bool)
+    (ordinary : OrdinarySourceDispatch sources) :
+    FunctionRegistryAgrees (sourceFunctionRegistry sources)
+      (mkEnv isBin (collectSourceFunctionHeads sources)
+        (collectSourceFunctionArities sources) []) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro head
+    change (∃ arity, ProgramRegistersFunction sources head arity) ↔
+      (collectSourceFunctionHeads sources).contains head = true
+    rw [List.contains_iff_mem,
+      mem_collectSourceFunctionHeads_iff sources head]
+  · intro head arity
+    change ProgramRegistersFunction sources head arity ↔
+      ((mkEnv isBin (collectSourceFunctionHeads sources)
+        (collectSourceFunctionArities sources) []).arities head).contains
+          arity = true
+    rw [mkEnv_arities_contains_iff,
+      mem_collectSourceFunctionArities_iff]
+  · intro head modes signature
+    exact valueArgumentModes_agrees_mkEnv signature.2 isBin
+      (collectSourceFunctionHeads sources)
+      (collectSourceFunctionArities sources) head 0
+  · intro head modes signature
+    simp [mkEnv, shouldUseTypedDispatch]
+  · intro head modes signature
+    exact (ordinary head signature.1).1
+  · intro head modes signature
+    exact (ordinary head signature.1).2.1
+  · intro head modes signature
+    exact (ordinary head signature.1).2.2
+
+/-- The empty independent translator state agrees with a freshly built
+untyped source environment. -/
+theorem noTranslatorRules_mkEnv_agrees (sources : List Atom)
+    (isBin : String → Bool) :
+    EnvAgrees noTranslatorRules
+      (mkEnv isBin (collectSourceFunctionHeads sources)
+        (collectSourceFunctionArities sources) []) := by
+  constructor
+  intro name
+  simp [noTranslatorRules, mkEnv]
+
+/-- The concrete `user-f` source witness reaches ordinary dispatch. -/
+theorem unaryIdentitySource_userF_ordinary :
+    OrdinarySourceDispatch (unaryIdentitySource "user-f") := by
+  intro head registered
+  have headMember :
+      head ∈ collectSourceFunctionHeads (unaryIdentitySource "user-f") :=
+    (mem_collectSourceFunctionHeads_iff _ _).mpr registered
+  simp [collectSourceFunctionHeads, collectSourceFunctionArities,
+    sourceFunctionArity?, unaryIdentitySource] at headMember
+  subst head
+  exact ⟨by
+      intro arguments
+      simp [rewriteStreamOp?, rewriteStreamOpForHead],
+    by decide, rfl⟩
+
+/-- The concrete binary source witness also reaches ordinary dispatch. -/
+theorem binaryFirstSource_userF_ordinary :
+    OrdinarySourceDispatch (binaryFirstSource "user-f") := by
+  intro head registered
+  have headMember :
+      head ∈ collectSourceFunctionHeads (binaryFirstSource "user-f") :=
+    (mem_collectSourceFunctionHeads_iff _ _).mpr registered
+  simp [collectSourceFunctionHeads, collectSourceFunctionArities,
+    sourceFunctionArity?, binaryFirstSource] at headMember
+  subst head
+  exact ⟨by
+      intro arguments
+      simp [rewriteStreamOp?, rewriteStreamOpForHead],
+    by decide, rfl⟩
+
 /-- Concrete executable environment for the independent unary `user-f`
 registry.  This witness prevents the registry agreement from being a
 vacuous interface inhabited by no real compiler environment. -/
@@ -2442,6 +2623,140 @@ theorem compileExpr_defined_partial_complete
     Except.ok.inj (compiled.symm.trans referenceCompiled)
   cases resultEquality
   exact ⟨term, goals, native, termAgreement, goalsAgreement⟩
+
+/-- Source-loader-composed soundness for an ordinary untyped defined call.
+The registry/environment bridge is derived from the source forms rather than
+supplied as an independent hypothesis. -/
+theorem compileExpr_untyped_source_defined_direct_sound
+    (sources : List Atom) (isBin : String → Bool)
+    (ordinary : OrdinarySourceDispatch sources)
+    {counter : Nat} {head : String} {source : Atom} {term : Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (native :
+      TranslatesDefinedCall (sourceFunctionRegistry sources)
+        noTranslatorRules counter head source term goals nextCounter) :
+    ∃ internal executableGoals,
+      compileExpr
+          (mkEnv isBin (collectSourceFunctionHeads sources)
+            (collectSourceFunctionArities sources) [])
+          counter source = .ok (internal, executableGoals, nextCounter) ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  exact compileExpr_defined_direct_sound
+    (mkEnv isBin (collectSourceFunctionHeads sources)
+      (collectSourceFunctionArities sources) [])
+    (noTranslatorRules_mkEnv_agrees sources isBin)
+    (sourceFunctionRegistry_mkEnv_agrees sources isBin ordinary)
+    (by rfl) native
+
+/-- Source-loader-composed completeness on supported ordinary untyped calls. -/
+theorem compileExpr_untyped_source_defined_direct_complete
+    (sources : List Atom) (isBin : String → Bool)
+    (ordinary : OrdinarySourceDispatch sources)
+    {counter : Nat} {head : String} {source internal : Atom}
+    {executableGoals : List PLeaTTa.Goal} {nextCounter : Nat}
+    (supported :
+      SupportedDefinedCall (sourceFunctionRegistry sources)
+        noTranslatorRules counter head source)
+    (compiled :
+      compileExpr
+          (mkEnv isBin (collectSourceFunctionHeads sources)
+            (collectSourceFunctionArities sources) [])
+          counter source = .ok (internal, executableGoals, nextCounter)) :
+    ∃ term goals,
+      TranslatesDefinedCall (sourceFunctionRegistry sources)
+        noTranslatorRules counter head source term goals nextCounter ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  exact compileExpr_defined_direct_complete
+    (mkEnv isBin (collectSourceFunctionHeads sources)
+      (collectSourceFunctionArities sources) [])
+    (noTranslatorRules_mkEnv_agrees sources isBin)
+    (sourceFunctionRegistry_mkEnv_agrees sources isBin ordinary)
+    (by rfl) supported compiled
+
+/-- Source-loader-composed soundness for an incomplete-arity application. -/
+theorem compileExpr_untyped_source_defined_partial_sound
+    (sources : List Atom) (isBin : String → Bool)
+    (ordinary : OrdinarySourceDispatch sources)
+    {counter : Nat} {head : String} {source : Atom} {term : Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (native :
+      TranslatesDefinedPartial (sourceFunctionRegistry sources)
+        noTranslatorRules counter head source term goals nextCounter) :
+    ∃ internal executableGoals,
+      compileExpr
+          (mkEnv isBin (collectSourceFunctionHeads sources)
+            (collectSourceFunctionArities sources) [])
+          counter source = .ok (internal, executableGoals, nextCounter) ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  exact compileExpr_defined_partial_sound
+    (mkEnv isBin (collectSourceFunctionHeads sources)
+      (collectSourceFunctionArities sources) [])
+    (noTranslatorRules_mkEnv_agrees sources isBin)
+    (sourceFunctionRegistry_mkEnv_agrees sources isBin ordinary)
+    (by rfl) native
+
+/-- Source-loader-composed completeness on supported incomplete calls. -/
+theorem compileExpr_untyped_source_defined_partial_complete
+    (sources : List Atom) (isBin : String → Bool)
+    (ordinary : OrdinarySourceDispatch sources)
+    {counter : Nat} {head : String} {source internal : Atom}
+    {executableGoals : List PLeaTTa.Goal} {nextCounter : Nat}
+    (supported :
+      SupportedDefinedPartial (sourceFunctionRegistry sources)
+        noTranslatorRules counter head source)
+    (compiled :
+      compileExpr
+          (mkEnv isBin (collectSourceFunctionHeads sources)
+            (collectSourceFunctionArities sources) [])
+          counter source = .ok (internal, executableGoals, nextCounter)) :
+    ∃ term goals,
+      TranslatesDefinedPartial (sourceFunctionRegistry sources)
+        noTranslatorRules counter head source term goals nextCounter ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  exact compileExpr_defined_partial_complete
+    (mkEnv isBin (collectSourceFunctionHeads sources)
+      (collectSourceFunctionArities sources) [])
+    (noTranslatorRules_mkEnv_agrees sources isBin)
+    (sourceFunctionRegistry_mkEnv_agrees sources isBin ordinary)
+    (by rfl) supported compiled
+
+/-- Positive executable witness for a call registered by actual unary source. -/
+theorem unaryIdentitySource_literal_compiles (counter : Nat) (value : Int) :
+    ∃ internal executableGoals,
+      compileExpr
+          (mkEnv (fun _ => false)
+            (collectSourceFunctionHeads (unaryIdentitySource "user-f"))
+            (collectSourceFunctionArities (unaryIdentitySource "user-f")) [])
+          counter (.expr [.sym "user-f", .gnd (.int value)]) =
+        .ok (internal, executableGoals, counter + 1) ∧
+      TermAgrees (.variable (.generated counter)) internal ∧
+      GoalsAgree
+        [.call "user-f"
+          [.integer value, .variable (.generated counter)]] executableGoals := by
+  exact compileExpr_untyped_source_defined_direct_sound
+    (unaryIdentitySource "user-f") (fun _ => false)
+    unaryIdentitySource_userF_ordinary
+    (translates_source_unary_literal counter "user-f" value)
+
+/-- Positive executable witness for a partial value registered by binary
+source and called with one supplied argument. -/
+theorem binaryFirstSource_unary_partial_compiles (counter : Nat)
+    (value : Int) :
+    ∃ internal executableGoals,
+      compileExpr
+          (mkEnv (fun _ => false)
+            (collectSourceFunctionHeads (binaryFirstSource "user-f"))
+            (collectSourceFunctionArities (binaryFirstSource "user-f")) [])
+          counter (.expr [.sym "user-f", .gnd (.int value)]) =
+        .ok (internal, executableGoals, counter) ∧
+      TermAgrees
+        (.compound "partial"
+          [.atom "user-f", .list [.integer value] none]) internal ∧
+      GoalsAgree [] executableGoals := by
+  exact compileExpr_untyped_source_defined_partial_sound
+    (binaryFirstSource "user-f") (fun _ => false)
+    binaryFirstSource_userF_ordinary
+    (translates_source_unary_partial counter "user-f" value)
 
 /-- Pinned unary builtins do not participate in the earlier stream-rewrite
 phase.  This is an explicit source/executable crosswalk, not part of the

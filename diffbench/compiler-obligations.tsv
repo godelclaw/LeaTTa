@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=ea5b2432a53971a81d6a80eefb66a4c71f6be7faab5f144efce3177f2199df24
+# compiler_sha256=8e1260e510f22ef7bd6f2c5e5357ecf9ecb172d4a3997b5dfb1268c64573c74b
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -106,8 +106,8 @@ FALLBACK.prolog_function	M274,T310-346	H	-	N	BOUNDARY	typed-SWI-boundary
 FALLBACK.typed_branches	T317-370	S	TranslatesTypedArgs	N	GAP	single-chain dispatch fixed and parity-probed; branch/result assembly proof open
 FALLBACK.typed_empty_direct	T335-346	X	-	N	GAP	arity-fallback-unproved
 FALLBACK.typed_empty_partial	T335-346	X	-	N	GAP	partial-representation-unproved
-FALLBACK.defined_direct	T312-346	X	TranslatesDefinedCall	SC	PASS	direct-call-proved-under-FunctionRegistryAgrees; source-loader-must-establish-registry-crosswalk; typed-dispatch-and-imported-ownership-excluded
-FALLBACK.defined_partial	T335-346	X	TranslatesDefinedPartial	SC	PASS	incomplete-arity-partial-value-proved; ordered-arguments-preserved; no-fresh-result-or-call-goal; source-loader-must-establish-registry-crosswalk
+FALLBACK.defined_direct	T312-346	X	TranslatesDefinedCall	SC	PASS	direct-call-proved and composed with independently specified untyped source registration; ordinary-head priority explicit; typed-dispatch-and-imported-ownership-excluded
+FALLBACK.defined_partial	T335-346	X	TranslatesDefinedPartial	SC	PASS	incomplete-arity partial value proved and composed with independently specified untyped source registration; ordered arguments preserved; no fresh result or call goal
 FALLBACK.bin_fixed_direct	T312-346,M34-50,M97-99,M109,M145-165,M309-323	S	TranslatesBinaryBuiltin.call	SC	PASS	independent-24-function binary family; hook/internal-#c/ownership/arity priority explicit; left-to-right terms-goals-counter soundness and completeness; primitive execution semantics remains a Step-bisimulation obligation
 FALLBACK.bin_fixed_unary	T310-346,M28-31,M114,M139-143,M193-200,M309-323	S	TranslatesUnaryBuiltin.call	SC	PASS	independent-eleven-function-family; stream-rewrite-hook-ownership-arity-priority explicit; left-to-right goal-term-counter soundness/completeness; direct runtime differential including Prolog atom rendering
 FALLBACK.bin_fixed_println	T310-346,M198-200,M306-312	S	TranslatesUnaryBuiltin.call	SC	PASS	unary value-mode println fragment; ownership-priority and fixed arity explicit; typed host execution remains a declared boundary
@@ -139,7 +139,7 @@ SEQ.normalize_host_import	-	H	-	N	BOUNDARY	typed-loader-protocol
 SEQ.normalize_prolog_register	M274	H	-	N	BOUNDARY	typed-registration-protocol
 SEQ.normalize_import_markers	-	P	-	N	GAP	typed-loader-protocol
 SEQ.normalize_atom	T225-261	S	-	N	FAIL	quote-barrier-fixed; other-data-and-hook-order-open
-SEQ.pass1_rule_heads	F20-24	X	-	N	GAP	pre-registers-heads-and-arities
+SEQ.pass1_rule_heads	F20-24	X	RegistersFunction;sourceFunctionRegistry_mkEnv_agrees	SC	PASS	shared transparent collector used by both compiler entry points; source-form recognition and head/arity membership proved both directions; untyped ordinary-dispatch environment composed
 SEQ.import_begin_end	-	H	-	N	BOUNDARY	explicit-boundary
 SEQ.host_import	M286-298	H	-	N	BOUNDARY	explicit-boundary
 SEQ.prolog_register	M274	H	-	N	BOUNDARY	explicit-boundary

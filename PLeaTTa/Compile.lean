@@ -69,6 +69,26 @@ def mkEnv (isBin : String → Bool) (heads : List String)
       else none)
   { defined := heads, arities, isBin, atomTyped, typeChains }
 
+/-- Recognize the source form registered as a function by pinned
+`filereader.pl`'s first pass.  The stored arity counts MeTTa inputs; native
+PeTTa adds the result slot when asserting its Prolog `arity/2` fact.
+[SPEC filereader.pl:20-23] -/
+def sourceFunctionArity? : Atom → Option (String × Nat)
+  | Atom.expr [Atom.sym "=", Atom.expr (Atom.sym head :: parameters), _] =>
+      some (head, parameters.length)
+  | _ => none
+
+/-- Source-ordered function/arity table shared by both compiler entry points.
+Keeping this pass explicit makes the loader registration algorithm available
+to soundness and completeness proofs instead of duplicating mutable loops. -/
+def collectSourceFunctionArities (atoms : List Atom) :
+    List (String × Nat) :=
+  atoms.filterMap sourceFunctionArity?
+
+/-- First-occurrence order of the source-registered function heads. -/
+def collectSourceFunctionHeads (atoms : List Atom) : List String :=
+  (collectSourceFunctionArities atoms).map Prod.fst |>.eraseDups
+
 /-- Executable spelling of one compiler-generated logic variable. -/
 def compilerGeneratedName (n : Nat) : String := s!"_q{n}"
 
@@ -2824,7 +2844,6 @@ def compileProgram (isBin : String → Bool) (atoms0 : List Atom) :
       let (a', ds, k') := desugarBinders a acc.2
       (acc.1 ++ ds ++ [a'], k')) ([], 0)
   -- pass 1: collect rule heads, type decls, facts, bangs
-  let mut heads : List String := []
   let mut decls : List (Atom × Atom) := []
   let mut facts : List Atom := []
   let mut rules : List (String × List Atom × Atom) := []
@@ -2839,13 +2858,13 @@ def compileProgram (isBin : String → Bool) (atoms0 : List Atom) :
       | Atom.expr [Atom.sym "!", q] => bangs := bangs ++ [q]
       | Atom.expr [Atom.sym "=", Atom.expr (Atom.sym f :: ps), rhs] =>
           rules := rules ++ [(f, ps, rhs)]
-          if !heads.contains f then heads := heads ++ [f]
       | Atom.expr [Atom.sym ":", subj, ty] => decls := decls ++ [(subj, ty)]
       | other => facts := facts ++ [other]
   -- [SPEC translator.pl:354-363] only `Expression`-typed argument positions
   -- stay syntactic; `Atom`/`%Undefined%` translate unchecked; other types
   -- translate with a get-type post-check (the check is a v2 item, ledgered)
-  let arities := rules.map (fun (f, ps, _) => (f, ps.length))
+  let arities := collectSourceFunctionArities atoms
+  let heads := collectSourceFunctionHeads atoms
   let env : CEnv := mkEnv isBin heads arities decls
   let mut n := 0
   let mut clauses : List (String × Clause) := []
@@ -2901,19 +2920,11 @@ def compileProgramSequentialForms (isBin : String → Bool)
           let (a', ds, k') := desugarBinders a acc.2
           (acc.1 ++ ds.map (SourceForm.atom · observable) ++
             [.atom a' observable], k')) ([], 0)
-  let mut heads : List String := []
-  let mut arities : List (String × Nat) := []
-  for form in forms do
-    match form with
-    | .hostImport _ _ => pure ()
-    | .prologRegister _ _ => pure ()
-    | .importBegin | .importEnd _ => pure ()
-    | .atom a _ =>
-        match a with
-        | Atom.expr [Atom.sym "=", Atom.expr (Atom.sym f :: ps), _] =>
-            if !heads.contains f then heads := heads ++ [f]
-            arities := arities ++ [(f, ps.length)]
-        | _ => pure ()
+  let sourceAtoms := forms.filterMap fun
+    | .atom atom _ => some atom
+    | _ => none
+  let arities := collectSourceFunctionArities sourceAtoms
+  let heads := collectSourceFunctionHeads sourceAtoms
   let mut decls : List (Atom × Atom) := []
   let mut facts : List Atom := []
   let mut clauses : List (String × Clause) := []

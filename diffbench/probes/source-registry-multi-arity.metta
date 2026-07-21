@@ -1,0 +1,6 @@
+(= (source-registry-probe $x) $x)
+(= (source-registry-probe $x $y) $y)
+
+!(source-registry-probe 7)
+!(source-registry-probe 7 8)
+!(source-registry-probe)
