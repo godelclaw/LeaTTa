@@ -16,6 +16,7 @@ import PLeaTTa.Proofs.CompilerFreshness
 import PLeaTTa.Proofs.CompilerTypeFreshening
 import PLeaTTa.Proofs.CompilerTypeCollectionAdequacy
 import PLeaTTa.Proofs.CompilerTypedBranchAdequacy
+import PLeaTTa.Proofs.CompilerTypedSharedResultAdequacy
 import PLeaTTa.Proofs.CompilerCounter
 import PLeaTTa.Proofs.CompilerFuel
 import PLeaTTa.Proofs.CompilerGeneratedNames
@@ -224,6 +225,16 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerTypedBranchAdequacy.compileTypedDispatchBranches_append_sound
 #print axioms PLeaTTa.CompilerTypedBranchAdequacy.compileTypedDispatchBranches_sound
 #print axioms PLeaTTa.CompilerTypedBranchAdequacy.compileTypedDispatchBranches_complete
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.TypedSharedResult.singleton_variable_is_mgu
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.TypedSharedResult.distinct_atoms_have_no_unifier
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.TypedSharedResult.ResolvesTypedSharedResult.length_eq
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.TypedSharedResult.ResolvesTypedSharedResult.member_result_eq
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.TypedSharedResult.ResolvesTypedSharedResult.branch_results_pairwise
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.TypedSharedResult.partial_value_shared_result_resolves
+#print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.unifyTopExact_fresh_variable
+#print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.bindTypedSharedResult_fresh_initial
+#print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.fresh_singleton_bindings_agree
+#print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.bindTypedSharedResult_initial_adequate
 #print axioms PLeaTTa.typeCheckBindingTemplate_sym
 #print axioms PLeaTTa.compileTypedCallOrPartial_complete
 #print axioms PLeaTTa.compileTypedCallOrPartial_partial
