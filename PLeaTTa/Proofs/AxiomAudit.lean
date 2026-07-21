@@ -195,8 +195,13 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerAdequacy.compileArgsAtFuel_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileArgs_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileArgs_complete
+#print axioms PLeaTTa.CompilerAdequacy.pinnedUnaryBuiltin_rewrite_none
+#print axioms PLeaTTa.CompilerAdequacy.pinnedUnaryBuiltin_classify_other
+#print axioms PLeaTTa.CompilerAdequacy.pinnedUnaryBuiltin_compileBinArity
 #print axioms PLeaTTa.compileAppCoreFuel_other_eq
 #print axioms PLeaTTa.compileExprFuel_unary_builtin_eq
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_integer_isGround
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.unary_builtin_hook_blocks
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_println
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.println_hook_blocks_unary_builtin
 #print axioms PLeaTTa.CompilerAdequacy.compileExprFuel_unary_builtin_sound

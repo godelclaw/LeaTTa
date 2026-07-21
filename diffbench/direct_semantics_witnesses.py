@@ -87,6 +87,28 @@ CASES = [
         ["()", "()", "()", "()"],
     ),
     (
+        "unary-builtin-values",
+        """!(car-atom (1 2))
+!(cdr-atom (1 2))
+!(unique-atom (1 1 2))
+!(size-atom (1 2 3))
+!(repr (a b))
+!(repra (a b))
+!(repra True)
+!(repra foo-bar)
+!(repra ())
+!(parse "(a b)")
+!(is-ground (a b))
+!(is-expr (a b))
+!(is-space &self)
+""",
+        [],
+        [
+            "1", "(2)", "(1 2)", "3", '"(a b)"', "[a,b]", "true",
+            "'foo-bar'", "[]", "(a b)", "true", "true", "true",
+        ],
+    ),
+    (
         "short-circuit-booleans",
         """!(and-then False (empty))
 !(or-else True (empty))

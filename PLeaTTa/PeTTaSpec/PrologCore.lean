@@ -578,14 +578,24 @@ inductive TranslatesTypedArgs : TranslatorState → Nat → List ArgumentMode �
         (headGoals ++ refinedTypeCheckGoals term expected middleCounter ++
           tailGoals) nextCounter
 
-/-- Pinned one-input functions admitted by the first ordinary-builtin
-adequacy tranche.  This is a source-derived classification, deliberately
-separate from the executable compiler's builtin table.
-
-`println!` is registered by `metta.pl:306-312`, implemented at
-`metta.pl:198-200`, and reaches the ordinary known-function branch at
-`translator.pl:310-346`. -/
+/-- Pinned one-input functions with direct source definitions in `metta.pl`.
+This source-derived classification is deliberately separate from the
+executable compiler's builtin table.  It covers representation/parsing at
+`metta.pl:28-31`, list operations at `metta.pl:114,139-143`, predicates at
+`metta.pl:193-196`, diagnostics at `metta.pl:198-200`, and their registrations
+at `metta.pl:309-323`.  Every member reaches the ordinary known-function
+branch at `translator.pl:310-346`. -/
 inductive PinnedUnaryBuiltin : String → Prop where
+  | reprValue : PinnedUnaryBuiltin "repr"
+  | repraValue : PinnedUnaryBuiltin "repra"
+  | parseValue : PinnedUnaryBuiltin "parse"
+  | uniqueAtom : PinnedUnaryBuiltin "unique-atom"
+  | sizeAtom : PinnedUnaryBuiltin "size-atom"
+  | carAtom : PinnedUnaryBuiltin "car-atom"
+  | cdrAtom : PinnedUnaryBuiltin "cdr-atom"
+  | isGround : PinnedUnaryBuiltin "is-ground"
+  | isExpr : PinnedUnaryBuiltin "is-expr"
+  | isSpace : PinnedUnaryBuiltin "is-space"
   | println : PinnedUnaryBuiltin "println!"
 
 /-- Independent translation of a pinned unary builtin.  The argument is
@@ -622,6 +632,29 @@ theorem TranslatesUnaryBuiltin.notShadowed
   cases translation
   assumption
 
+/-- Translator-rule priority excludes every member of the ordinary unary
+builtin fragment, not only an individual example. -/
+theorem unary_builtin_hook_blocks {state : TranslatorState} {counter : Nat}
+    {head : String} {source : Atom} {term : Term} {goals : List Goal}
+    {nextCounter : Nat} (hook : state.hasRule head) :
+    ¬ TranslatesUnaryBuiltin state counter head source term goals
+      nextCounter := by
+  intro translation
+  exact translation.notShadowed hook
+
+/-- Positive source-level witness for a pure predicate in the pinned unary
+builtin family. -/
+theorem translates_integer_isGround (state : TranslatorState) (counter : Nat)
+    (value : Int) (notShadowed : ¬ state.hasRule "is-ground") :
+    TranslatesUnaryBuiltin state counter "is-ground"
+      (.expr [.sym "is-ground", .gnd (.int value)])
+      (.variable (.generated counter))
+      [.call "is-ground"
+        [.integer value, .variable (.generated counter)]]
+      (counter + 1) := by
+  simpa using TranslatesUnaryBuiltin.call PinnedUnaryBuiltin.isGround
+    notShadowed (TranslatesExpr.literal (Literal.integer value))
+
 /-- Positive source-level witness for the first pinned unary builtin. -/
 theorem translates_literal_println (state : TranslatorState) (counter : Nat)
     (message : String) (notShadowed : ¬ state.hasRule "println!") :
@@ -643,8 +676,7 @@ theorem println_hook_blocks_unary_builtin (state : TranslatorState)
       [.call "println!"
         [.string message, .variable (.generated counter)]]
       (counter + 1) := by
-  intro translation
-  exact translation.notShadowed hook
+  exact unary_builtin_hook_blocks hook
 
 /-- Independent translation after pinned `trace!` stream rewriting.  Rewriting
 precedes lookup of a hook named `trace!`; the rewritten `progn` and its

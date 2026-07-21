@@ -180,10 +180,55 @@ def reprC : List Atom → ReduceResult
   | [a] => .ok [Atom.gnd (Ground.str (Metta.Pretty.atom (unchainify 10000 a)))]
   | _ => .incorrectArgument "repr"
 
+/-- Whether SWI's ordinary term writer may emit an atom without quotes.
+Lowercase identifiers and all-graphic atoms are the two relevant lexical
+classes for PeTTa values. -/
+def prologAtomUnquoted (name : String) : Bool :=
+  let chars := name.toList
+  let identifier :=
+    match chars with
+    | [] => false
+    | first :: rest =>
+        first.isLower && rest.all (fun char => char.isAlphanum || char == '_')
+  let graphicChars := "#$&*+-./:<=>?@^~\\"
+  let graphic := !chars.isEmpty && chars.all graphicChars.toList.contains
+  identifier || graphic
+
+/-- Quote one atom using SWI-compatible single-quote and backslash escapes. -/
+def quotePrologAtom (name : String) : String :=
+  "'" ++ String.join (name.toList.map fun char =>
+    if char == '\'' then "\\'"
+    else if char == '\\' then "\\\\"
+    else String.singleton char) ++ "'"
+
+mutual
+/-- Render the supported PeTTa value representation as the text produced by
+SWI `term_to_atom/2`.  PeTTa expressions are Prolog lists, not MeTTa
+parenthesized syntax; booleans use native lowercase atoms. -/
+def prologTermAtomText : Atom → String
+  | .sym "True" => "true"
+  | .sym "False" => "false"
+  | .sym name => if prologAtomUnquoted name then name else quotePrologAtom name
+  | .var name => name
+  | .gnd (.int value) => toString value
+  | .gnd (.float value) => Metta.Pretty.floatString value
+  | .gnd (.str value) => Metta.Pretty.ground (.str value)
+  | .gnd (.bool true) => "true"
+  | .gnd (.bool false) => "false"
+  | .gnd value => Metta.Pretty.ground value
+  | .expr items => "[" ++ String.intercalate "," (prologTermAtomTexts items) ++ "]"
+termination_by structural term => term
+
+def prologTermAtomTexts : List Atom → List String
+  | [] => []
+  | term :: terms => prologTermAtomText term :: prologTermAtomTexts terms
+termination_by structural terms => terms
+end
+
 /-- `repra/2` [SPEC metta.pl:30,306]: Prolog `term_to_atom`, surfaced as a
     MeTTa atom rather than a string. -/
 def repraC : List Atom → ReduceResult
-  | [a] => .ok [Atom.sym (Metta.Pretty.atom (unchainify 10000 a))]
+  | [a] => .ok [Atom.sym (prologTermAtomText (unchainify 10000 a))]
   | _ => .incorrectArgument "repra"
 
 private def compareString (a b : String) : Ordering :=

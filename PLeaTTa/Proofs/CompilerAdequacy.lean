@@ -2075,6 +2075,28 @@ theorem compileArgs_complete {state : TranslatorState} (env : CEnv)
   cases resultEquality
   exact ⟨terms, goals, native, termsAgreement, goalsAgreement⟩
 
+/-- Pinned unary builtins do not participate in the earlier stream-rewrite
+phase.  This is an explicit source/executable crosswalk, not part of the
+independent reference definition. -/
+theorem pinnedUnaryBuiltin_rewrite_none {head : String}
+    (builtin : PinnedUnaryBuiltin head) (argument : Atom) :
+    rewriteStreamOp? head [argument] = none := by
+  cases builtin <;> rfl
+
+/-- Pinned unary builtins reach the generic application dispatcher after all
+special-form spellings have declined. -/
+theorem pinnedUnaryBuiltin_classify_other {head : String}
+    (builtin : PinnedUnaryBuiltin head) :
+    classifyAppCoreHead head = .other := by
+  cases builtin <;> rfl
+
+/-- The executable fixed-arity table agrees with the independently enumerated
+one-input source family. -/
+theorem pinnedUnaryBuiltin_compileBinArity {head : String}
+    (builtin : PinnedUnaryBuiltin head) :
+    compileBinArity head = some 1 := by
+  cases builtin <;> rfl
+
 /-- Fuel-indexed soundness for the independently specified pinned unary
 builtin fragment.  The executable ownership and argument-mode premises are
 kept explicit: a translator hook, imported Prolog predicate, local function,
@@ -2136,13 +2158,13 @@ theorem compileExprFuel_unary_builtin_sound {state : TranslatorState}
               (.cons callAgreement .nil)⟩
           rw [show (argumentFuel + 3) + extraFuel =
             (argumentFuel + extraFuel) + 3 by omega]
-          cases builtin
           exact compileExprFuel_unary_builtin_eq
-            (argumentFuel + extraFuel) env counter "println!" argumentSource
+            (argumentFuel + extraFuel) env counter head argumentSource
             executableArgument executableArgumentGoals argumentCounter
-            (by simp [rewriteStreamOp?, rewriteStreamOpForHead])
+            (pinnedUnaryBuiltin_rewrite_none builtin argumentSource)
             (agreement.notContains notShadowed)
-            (by decide) notProlog notDefined isBuiltin (by decide) compiled
+            (pinnedUnaryBuiltin_classify_other builtin) notProlog notDefined
+            isBuiltin (pinnedUnaryBuiltin_compileBinArity builtin) compiled
 
 /-- Public soundness of ordinary unary-builtin translation at the actual
 source-derived compiler budget. -/

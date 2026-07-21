@@ -108,7 +108,8 @@ FALLBACK.typed_empty_direct	T335-346	X	-	N	GAP	arity-fallback-unproved
 FALLBACK.typed_empty_partial	T335-346	X	-	N	GAP	partial-representation-unproved
 FALLBACK.defined_direct	T312-346	X	-	N	GAP	direct-call-unproved
 FALLBACK.defined_partial	T335-346	X	-	N	GAP	partial-representation-unproved
-FALLBACK.bin_fixed_direct	T312-346,M309-323	S	-	N	GAP	internal-builtin-not-Prolog-call
+FALLBACK.bin_fixed_direct	T312-346,M309-323	S	-	N	GAP	unary-direct-source-family-covered-below; binary-fixed-family-open
+FALLBACK.bin_fixed_unary	T310-346,M28-31,M114,M139-143,M193-200,M309-323	S	TranslatesUnaryBuiltin.call	SC	PASS	independent-eleven-function-family; stream-rewrite-hook-ownership-arity-priority explicit; left-to-right goal-term-counter soundness/completeness; direct runtime differential including Prolog atom rendering
 FALLBACK.bin_fixed_println	T310-346,M198-200,M306-312	S	TranslatesUnaryBuiltin.call	SC	PASS	unary value-mode println fragment; ownership-priority and fixed arity explicit; typed host execution remains a declared boundary
 FALLBACK.bin_fixed_partial	T335-346	S	-	N	GAP	internal-partial
 FALLBACK.bin_variadic	T312-346	S	-	N	GAP	internal-builtin

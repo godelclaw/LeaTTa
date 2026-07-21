@@ -348,24 +348,31 @@ def leatta_results(path, timeout):
         return []
     items, depth, cur = [], 0, ""
     in_str = False
+    in_atom = False
     esc = False
     for ch in inner:
-        if in_str:
+        if in_str or in_atom:
             cur += ch
             if esc:
                 esc = False
             elif ch == "\\":
                 esc = True
-            elif ch == '"':
+            elif in_str and ch == '"':
                 in_str = False
+            elif in_atom and ch == "'":
+                in_atom = False
             continue
         if ch == '"':
             in_str = True
             cur += ch
             continue
-        if ch == "(":
+        if ch == "'":
+            in_atom = True
+            cur += ch
+            continue
+        if ch in "([{":
             depth += 1
-        elif ch == ")":
+        elif ch in ")]}" and depth > 0:
             depth -= 1
         if ch == "," and depth == 0:
             items.append(cur.strip())
