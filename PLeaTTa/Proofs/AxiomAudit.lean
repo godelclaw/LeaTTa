@@ -14,6 +14,7 @@ import PLeaTTa.Proofs.ObservationAgreement
 import PLeaTTa.Proofs.OpenBindingAgreement
 import PLeaTTa.Proofs.CompilerFreshness
 import PLeaTTa.Proofs.CompilerCounter
+import PLeaTTa.Proofs.CompilerFuel
 import PLeaTTa.Proofs.CompilerGeneratedNames
 import PLeaTTa.Proofs.OpenOrderedStep
 import PLeaTTa.Proofs.ReaderAdequacy
@@ -62,6 +63,9 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.ReaderAdequacy.readsFile_deterministic
 #print axioms PLeaTTa.ReaderAdequacy.parseFile_rejected_iff_no_read
 #print axioms PLeaTTa.CompilerAdequacy.compileExprFuel_initial_sound
+#print axioms PLeaTTa.compilerFuelStepAt
+#print axioms PLeaTTa.compileExprFuel_mono
+#print axioms PLeaTTa.compileExprFuel_mono_of_le
 #print axioms PLeaTTa.CompilerAdequacy.compileSeqFuel_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_complete

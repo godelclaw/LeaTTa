@@ -7,6 +7,7 @@ Trusted boundary: none
 import PLeaTTa.Compile
 import PLeaTTa.PeTTaSpec.PrologSemantics
 import PLeaTTa.Proofs.CompilerDesugaring
+import PLeaTTa.Proofs.CompilerFuel
 
 namespace PLeaTTa.CompilerAdequacy
 
@@ -617,9 +618,12 @@ theorem compileExpr_literal_adequate {source : Atom} {term : Term}
     ∃ internal : Atom,
       compileExpr env counter source = .ok (internal, [], counter) ∧
       TermAgrees term internal := by
-  simpa only [compileExpr, Nat.add_assoc, Nat.reduceAdd] using
-    compileExprFuel_literal_adequate (compilerFuel source + 63) env counter
-      literal
+  obtain ⟨internal, baseCompiled, agreement⟩ :=
+    compileExprFuel_literal_adequate 0 env counter literal
+  refine ⟨internal, ?_, agreement⟩
+  unfold compileExpr
+  exact compileExprFuel_mono_of_le env counter source internal [] counter
+    (by omega) baseCompiled
 
 /-- Soundness of the executable atomic `constrain_args/3` branches.  The
 independent source relation is `ConstrainsAtomicPattern`; executable pattern
