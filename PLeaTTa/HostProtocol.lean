@@ -169,9 +169,11 @@ inductive HostFileMode where
   deriving Repr, BEq, Inhabited, ToJson, FromJson
 
 /-- Explicit effects needed by PeTTa programs at the trusted host boundary.
-    The live driver follows native process-CWD and absolute-path behaviour by
-    default; an operator may instead configure one or more confinement roots.
-    Replay never touches the filesystem or clock. -/
+    The live driver follows native process-CWD, absolute-path, and unbounded
+    sleep behaviour by default.  An operator may instead configure one or
+    more confinement roots or an explicit maximum sleep duration; the latter
+    clamps rather than raises.  Replay never touches the filesystem or clock.
+    -/
 inductive HostEffect where
   | printLine (text : String)
   | clock

@@ -8,6 +8,7 @@ is recorded and replayed as ``HostResponse.failed``, and separately exercise
 the operator's optional filesystem-confinement policy.
 """
 
+import importlib.util
 import json
 import os
 import pathlib
@@ -213,6 +214,66 @@ def check_optional_confinement(tempdir):
     print("filesystem-confinement\tPASS\tunset=native\tsingle=denied\tmultiple=allowed")
 
 
+def check_optional_sleep_bound():
+    spec = importlib.util.spec_from_file_location(
+        "pleatta_python_worker_sleep_witness", WORKER)
+    require(spec is not None and spec.loader is not None,
+            "could not load the PLeaTTa Python worker")
+    worker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(worker)
+
+    observed = []
+    original_sleep = worker.time.sleep
+    previous = os.environ.get("PLEATTA_MAX_SLEEP_SECONDS")
+    operation = {
+        "sleep": {"duration": {"integer": {"value": 86400}}}
+    }
+    try:
+        worker.time.sleep = observed.append
+
+        os.environ.pop("PLEATTA_MAX_SLEEP_SECONDS", None)
+        response = worker.host_effect(operation)
+        require(observed == [86400.0],
+                f"unset sleep policy changed native duration: {observed!r}")
+        require(response == worker._mapping(),
+                "unbounded sleep did not return the empty substitution")
+
+        observed.clear()
+        os.environ["PLEATTA_MAX_SLEEP_SECONDS"] = "120"
+        response = worker.host_effect(operation)
+        require(observed == [120.0],
+                f"explicit sleep policy did not clamp: {observed!r}")
+        require(response == worker._mapping(),
+                "clamped sleep did not return the empty substitution")
+
+        observed.clear()
+        os.environ["PLEATTA_MAX_SLEEP_SECONDS"] = ""
+        worker.host_effect(operation)
+        require(observed == [86400.0],
+                "blank sleep policy did not preserve native parity")
+
+        for invalid in ("-1", "nan"):
+            observed.clear()
+            os.environ["PLEATTA_MAX_SLEEP_SECONDS"] = invalid
+            try:
+                worker.host_effect(operation)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(
+                    f"invalid sleep policy {invalid!r} was accepted")
+            require(not observed,
+                    "invalid sleep policy reached the host sleeper")
+    finally:
+        worker.time.sleep = original_sleep
+        if previous is None:
+            os.environ.pop("PLEATTA_MAX_SLEEP_SECONDS", None)
+        else:
+            os.environ["PLEATTA_MAX_SLEEP_SECONDS"] = previous
+    print("sleep-policy\tPASS\tunset=86400\texplicit-120=clamped"
+          "\tblank=86400\tinvalid=rejected")
+
+
 def main():
     require(PLEATTA.exists(), "build the pleatta executable first")
     require(WORKER.exists(), "PLeaTTa Python worker is missing")
@@ -224,6 +285,7 @@ def main():
         check_directory_is_not_file(tempdir)
         check_open_does_not_create_parent(tempdir)
         check_optional_confinement(tempdir)
+        check_optional_sleep_bound()
     print("host-effect-semantics\tPASS")
 
 

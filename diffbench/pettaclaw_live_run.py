@@ -154,8 +154,6 @@ def runtime_environment(
         "PLEATTA_PYTHON": str(python),
         "PLEATTA_PY_WORKER": str(repo / "scripts" /
                                   "pleatta-python-worker.py"),
-        "PLEATTA_MAX_SLEEP_SECONDS": os.environ.get(
-            "PLEATTA_MAX_SLEEP_SECONDS", "120"),
         "METTACLAW_PROMPT_PATH": "memory/prompt.txt",
         "METTACLAW_HISTORY_PATH": "memory/history.metta",
         "METTACLAW_PERSISTENT_PATH": "memory/persistent.metta",

@@ -5,6 +5,7 @@ import enum
 import importlib
 import importlib.util
 import json
+import math
 import os
 import struct
 import sys
@@ -301,6 +302,26 @@ def _host_number(encoded):
     raise TypeError("invalid HostNumber")
 
 
+def _sleep_duration(requested):
+    """Apply an optional operator sleep bound without changing native parity.
+
+    Pinned PeTTa delegates directly to SWI ``sleep/1`` and has no maximum.
+    Therefore an unset or blank policy preserves the requested duration.
+    When an operator explicitly installs a maximum, clamp to it rather than
+    turning an otherwise valid sleep into a process-aborting host exception.
+    """
+    if requested < 0:
+        raise ValueError("sleep duration must be non-negative")
+    configured = os.environ.get("PLEATTA_MAX_SLEEP_SECONDS", "").strip()
+    if not configured:
+        return requested
+    maximum = float(configured)
+    if not math.isfinite(maximum) or maximum < 0:
+        raise ValueError(
+            "configured maximum sleep duration must be finite and non-negative")
+    return min(requested, maximum)
+
+
 def _configured_host_roots():
     """Return optional filesystem-confinement roots.
 
@@ -368,10 +389,7 @@ def host_effect(operation):
         raise TypeError("malformed HostEffect")
     tag, payload = next(iter(operation.items()))
     if tag == "sleep":
-        duration = _host_number(payload["duration"])
-        maximum = float(os.environ.get("PLEATTA_MAX_SLEEP_SECONDS", "5"))
-        if duration < 0 or duration > maximum:
-            raise ValueError("sleep duration is outside the allowed bound")
+        duration = _sleep_duration(_host_number(payload["duration"]))
         time.sleep(duration)
         return _mapping()
     if tag == "fileExists":
