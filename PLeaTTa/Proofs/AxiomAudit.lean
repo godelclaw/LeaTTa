@@ -66,6 +66,13 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.compilerFuelStepAt
 #print axioms PLeaTTa.compileExprFuel_mono
 #print axioms PLeaTTa.compileExprFuel_mono_of_le
+#print axioms PLeaTTa.compileExprFuel_fixed_builtin_eq
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.binary_builtin_hook_blocks
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_integer_add
+#print axioms PLeaTTa.CompilerAdequacy.TermsAgree.length_eq
+#print axioms PLeaTTa.CompilerAdequacy.compileExprFuel_binary_builtin_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileExpr_binary_builtin_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileExpr_binary_builtin_complete
 #print axioms PLeaTTa.CompilerAdequacy.compileSeqFuel_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_complete

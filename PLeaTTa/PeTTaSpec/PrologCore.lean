@@ -678,6 +678,97 @@ theorem println_hook_blocks_unary_builtin (state : TranslatorState)
       (counter + 1) := by
   exact unary_builtin_hook_blocks hook
 
+/-- Pinned two-input functions whose ordinary translation is one direct
+three-argument Prolog call (two inputs plus the generated result). This
+source-derived family is independent of the executable builtin table. It is
+anchored to arithmetic and comparison definitions at `metta.pl:34-50`,
+boolean definitions at `metta.pl:97-99`, list and multiset definitions at
+`metta.pl:109,145-165`, registrations at `metta.pl:309-323`, and the ordinary
+known-function branch at `translator.pl:310-346`. -/
+inductive PinnedBinaryBuiltin : String → Prop where
+  | notEqual : PinnedBinaryBuiltin "!="
+  | add : PinnedBinaryBuiltin "+"
+  | subtract : PinnedBinaryBuiltin "-"
+  | multiply : PinnedBinaryBuiltin "*"
+  | divide : PinnedBinaryBuiltin "/"
+  | modulo : PinnedBinaryBuiltin "%"
+  | less : PinnedBinaryBuiltin "<"
+  | greater : PinnedBinaryBuiltin ">"
+  | lessEqual : PinnedBinaryBuiltin "<="
+  | greaterEqual : PinnedBinaryBuiltin ">="
+  | minimum : PinnedBinaryBuiltin "min"
+  | maximum : PinnedBinaryBuiltin "max"
+  | booleanAnd : PinnedBinaryBuiltin "and"
+  | booleanOr : PinnedBinaryBuiltin "or"
+  | consAtom : PinnedBinaryBuiltin "cons-atom"
+  | member : PinnedBinaryBuiltin "member"
+  | isMember : PinnedBinaryBuiltin "is-member"
+  | unionAtom : PinnedBinaryBuiltin "union-atom"
+  | intersectionAtom : PinnedBinaryBuiltin "intersection-atom"
+  | subtractionAtom : PinnedBinaryBuiltin "subtraction-atom"
+  | excludeItem : PinnedBinaryBuiltin "exclude-item"
+  | indexAtom : PinnedBinaryBuiltin "index-atom"
+  | alphaEqual : PinnedBinaryBuiltin "=alpha"
+  | isAlphaMember : PinnedBinaryBuiltin "is-alpha-member"
+
+/-- Independent left-to-right translation of a pinned two-input builtin.
+Both source arguments are evaluated before the result variable is allocated
+and the direct call is appended. Higher-priority translator hooks are
+excluded explicitly. [SPEC translator.pl:310-346] -/
+inductive TranslatesBinaryBuiltin : TranslatorState → Nat → String → Atom →
+    Term → List Goal → Nat → Prop where
+  | call {state : TranslatorState} {counter argumentCounter : Nat}
+      {head : String} {leftSource rightSource : Atom}
+      {leftTerm rightTerm : Term} {argumentGoals : List Goal}
+      (builtin : PinnedBinaryBuiltin head)
+      (notShadowed : ¬ state.hasRule head)
+      (arguments :
+        TranslatesTypedArgs state counter [.value, .value]
+          [leftSource, rightSource] [leftTerm, rightTerm] argumentGoals
+          argumentCounter) :
+      TranslatesBinaryBuiltin state counter head
+        (.expr [.sym head, leftSource, rightSource])
+        (.variable (.generated argumentCounter))
+        (argumentGoals ++
+          [.call head [leftTerm, rightTerm,
+            .variable (.generated argumentCounter)]])
+        (argumentCounter + 1)
+
+theorem TranslatesBinaryBuiltin.notShadowed
+    {state : TranslatorState} {counter : Nat} {head : String} {source : Atom}
+    {term : Term} {goals : List Goal} {nextCounter : Nat}
+    (translation :
+      TranslatesBinaryBuiltin state counter head source term goals
+        nextCounter) :
+    ¬ state.hasRule head := by
+  cases translation
+  assumption
+
+/-- Translator-rule priority excludes the entire direct binary family. -/
+theorem binary_builtin_hook_blocks {state : TranslatorState} {counter : Nat}
+    {head : String} {source : Atom} {term : Term} {goals : List Goal}
+    {nextCounter : Nat} (hook : state.hasRule head) :
+    ¬ TranslatesBinaryBuiltin state counter head source term goals
+      nextCounter := by
+  intro translation
+  exact translation.notShadowed hook
+
+/-- Positive source-level witness for ordered binary arithmetic translation. -/
+theorem translates_integer_add (state : TranslatorState) (counter : Nat)
+    (left right : Int) (notShadowed : ¬ state.hasRule "+") :
+    TranslatesBinaryBuiltin state counter "+"
+      (.expr [.sym "+", .gnd (.int left), .gnd (.int right)])
+      (.variable (.generated counter))
+      [.call "+" [.integer left, .integer right,
+        .variable (.generated counter)]]
+      (counter + 1) := by
+  simpa using TranslatesBinaryBuiltin.call PinnedBinaryBuiltin.add
+    notShadowed
+    (TranslatesTypedArgs.value (TranslatesExpr.literal (Literal.integer left))
+      (TranslatesTypedArgs.value
+        (TranslatesExpr.literal (Literal.integer right))
+        (TranslatesTypedArgs.nil (state := state) (counter := counter))))
+
 /-- Independent translation after pinned `trace!` stream rewriting.  Rewriting
 precedes lookup of a hook named `trace!`; the rewritten `progn` and its
 `println!` child still obey their own ordinary translator-rule priorities.
@@ -1195,6 +1286,12 @@ def SupportedUnaryBuiltin (state : TranslatorState) (counter : Nat)
     (head : String) (source : Atom) : Prop :=
   ∃ term goals nextCounter,
     TranslatesUnaryBuiltin state counter head source term goals nextCounter
+
+/-- Independently supported application of one pinned two-input builtin. -/
+def SupportedBinaryBuiltin (state : TranslatorState) (counter : Nat)
+    (head : String) (source : Atom) : Prop :=
+  ∃ term goals nextCounter,
+    TranslatesBinaryBuiltin state counter head source term goals nextCounter
 
 /-- Independently supported pinned `trace!` stream-rewrite forms. -/
 def SupportedTrace (state : TranslatorState) (counter : Nat)

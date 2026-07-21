@@ -1804,6 +1804,55 @@ theorem compileAppCoreFuel_other_eq (fuel : Nat) (env : CEnv)
   rw [compileAppCoreFuel.eq_69] <;> simp_all only <;> simp
 
 set_option maxHeartbeats 2000000 in
+/-- Exact executable equation for a direct fixed-arity builtin application.
+
+The argument traversal is supplied as evidence because it is shared with the
+independent adequacy proof. All higher-priority dispatch premises remain
+explicit, and the arity equality is stated over the compiled argument list so
+partial application cannot be silently folded into this branch. -/
+theorem compileExprFuel_fixed_builtin_eq (argumentFuel : Nat) (env : CEnv)
+    (counter : Nat) (head : String) (arguments terms : List Atom)
+    (goals : List Goal) (nextCounter : Nat)
+    (noRewrite : rewriteStreamOp? head arguments = none)
+    (notInternalCons : ∀ first second,
+      arguments = [first, second] → head ≠ "#c")
+    (noHook : env.translatorRules.contains head = false)
+    (other : classifyAppCoreHead head = .other)
+    (notProlog : env.prologFunctions.contains head = false)
+    (notDefined : env.defined.contains head = false)
+    (isBuiltin : env.isBin head = true)
+    (fixedArity : compileBinArity head = some terms.length)
+    (argumentsCompiled :
+      compileArgsAtFuel argumentFuel env counter head 0 arguments =
+        .ok (terms, goals, nextCounter)) :
+    compileExprFuel (argumentFuel + 3) env counter
+        (.expr (.sym head :: arguments)) =
+      .ok (.var s!"_q{nextCounter}",
+        goals ++ [Goal.bin head terms (.var s!"_q{nextCounter}")],
+        nextCounter + 1) := by
+  rw [show argumentFuel + 3 = (argumentFuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_7 (x_4 := notInternalCons)]
+  rw [show argumentFuel + 2 = (argumentFuel + 1) + 1 by omega]
+  rw [compileAppFuel.eq_2]
+  rw [noRewrite]
+  simp only
+  rw [noHook]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [compileAppCoreFuel_other_eq argumentFuel env counter head arguments
+    other]
+  simp only [compileAppDefaultWith]
+  rw [notProlog]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [notDefined]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [isBuiltin]
+  simp only [↓reduceIte]
+  rw [argumentsCompiled]
+  rw [fixedArity]
+  simp only [Bind.bind, Except.bind]
+  simp [fresh]
+
+set_option maxHeartbeats 2000000 in
 /-- Exact executable equation for an ordinary unary builtin application.
 
 Every dispatch premise is explicit: stream rewriting and translator-rule,
@@ -1827,26 +1876,9 @@ theorem compileExprFuel_unary_builtin_eq (argumentFuel : Nat) (env : CEnv)
       .ok (.var s!"_q{nextCounter}",
         goals ++ [Goal.bin head [term] (.var s!"_q{nextCounter}")],
         nextCounter + 1) := by
-  rw [show argumentFuel + 3 = (argumentFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
-  rw [show argumentFuel + 2 = (argumentFuel + 1) + 1 by omega]
-  rw [compileAppFuel.eq_2]
-  rw [noRewrite]
-  simp only
-  rw [noHook]
-  simp only [Bool.false_eq_true, ↓reduceIte]
-  rw [compileAppCoreFuel_other_eq argumentFuel env counter head [argument]
-    other]
-  simp only [compileAppDefaultWith]
-  rw [notProlog]
-  simp only [Bool.false_eq_true, ↓reduceIte]
-  rw [notDefined]
-  simp only [Bool.false_eq_true, ↓reduceIte]
-  rw [isBuiltin]
-  simp only [↓reduceIte]
-  rw [argumentCompiled]
-  rw [unary]
-  rfl
+  exact compileExprFuel_fixed_builtin_eq argumentFuel env counter head
+    [argument] [term] goals nextCounter noRewrite (by simp) noHook other
+    notProlog notDefined isBuiltin (by simpa using unary) argumentCompiled
 
 set_option maxHeartbeats 2000000 in
 /-- Negative sequencing example: native `progn` requires at least one

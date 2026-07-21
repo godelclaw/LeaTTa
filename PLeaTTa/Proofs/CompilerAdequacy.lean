@@ -51,6 +51,13 @@ inductive TermsAgree : List Term → List Atom → Prop where
       (head : TermAgrees term atom) (tail : TermsAgree terms atoms) :
       TermsAgree (term :: terms) (atom :: atoms)
 
+theorem TermsAgree.length_eq {reference : List Term}
+    {executable : List Atom} (agreement : TermsAgree reference executable) :
+    reference.length = executable.length := by
+  induction agreement with
+  | nil => rfl
+  | cons _ _ => simp_all
+
 /-- Representation agreement for recursive source patterns.  Unlike the
 observation-level `TermAgrees`, this relation includes Prolog dotted list
 cells; its denotational bridge remains an explicit later obligation. -/
@@ -2220,6 +2227,160 @@ theorem compileExpr_unary_builtin_complete {state : TranslatorState}
   obtain ⟨referenceInternal, referenceGoals, referenceCompiled,
       termAgreement, goalsAgreement⟩ :=
     compileExpr_unary_builtin_sound env agreement notProlog notDefined
+      isBuiltin modeAgreement native
+  have resultEquality :
+      (internal, executableGoals, nextCounter) =
+        (referenceInternal, referenceGoals, referenceCounter) :=
+    Except.ok.inj (compiled.symm.trans referenceCompiled)
+  cases resultEquality
+  exact ⟨term, goals, native, termAgreement, goalsAgreement⟩
+
+/-- Every independently enumerated binary builtin bypasses stream rewriting. -/
+theorem pinnedBinaryBuiltin_rewrite_none {head : String}
+    (builtin : PinnedBinaryBuiltin head) (left right : Atom) :
+    rewriteStreamOp? head [left, right] = none := by
+  cases builtin <;> rfl
+
+theorem pinnedBinaryBuiltin_not_internal_cons {head : String}
+    (builtin : PinnedBinaryBuiltin head) : head ≠ "#c" := by
+  cases builtin <;> simp
+
+/-- Every independently enumerated binary builtin reaches the generic
+application dispatcher rather than a special-form branch. -/
+theorem pinnedBinaryBuiltin_classify_other {head : String}
+    (builtin : PinnedBinaryBuiltin head) :
+    classifyAppCoreHead head = .other := by
+  cases builtin <;> rfl
+
+/-- The executable fixed-arity table agrees with the independently
+enumerated two-input source family. -/
+theorem pinnedBinaryBuiltin_compileBinArity {head : String}
+    (builtin : PinnedBinaryBuiltin head) :
+    compileBinArity head = some 2 := by
+  cases builtin <;> rfl
+
+/-- Fuel-indexed compiler soundness for the independently specified direct
+binary-builtin family. Arguments and their goals are preserved left-to-right;
+the result variable is allocated only after both arguments. Execution of the
+resulting primitive call is a later Prolog/Step-semantics obligation. -/
+theorem compileExprFuel_binary_builtin_sound {state : TranslatorState}
+    (env : CEnv) (agreement : EnvAgrees state env) {counter : Nat}
+    {head : String} {source : Atom} {term : Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains head = false)
+    (notDefined : env.defined.contains head = false)
+    (isBuiltin : env.isBin head = true)
+    (modeAgreement : ArgModesAgree env head 0 [.value, .value])
+    (native :
+      TranslatesBinaryBuiltin state counter head source term goals
+        nextCounter) :
+    ∃ baseFuel,
+      0 < baseFuel ∧
+      baseFuel < 16 * source.size ∧
+      ∀ extraFuel, ∃ internal executableGoals,
+        compileExprFuel (baseFuel + extraFuel) env counter source =
+          .ok (internal, executableGoals, nextCounter) ∧
+        TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  cases native with
+  | call builtin notShadowed arguments =>
+      rename_i argumentCounter leftSource rightSource leftTerm rightTerm
+        argumentGoals
+      obtain ⟨argumentFuel, argumentPositive, argumentBound,
+          argumentCompiles⟩ :=
+        compileArgsAtFuel_initial_sound env agreement head arguments
+          modeAgreement
+      refine ⟨argumentFuel + 3, by omega, ?_, ?_⟩
+      · simp only [Atom.size, List.map, List.sum_cons, List.sum_nil,
+          Nat.add_zero] at argumentBound ⊢
+        omega
+      · intro extraFuel
+        obtain ⟨executableArguments, executableArgumentGoals, compiled,
+            termsAgreement, goalsAgreement⟩ :=
+          argumentCompiles extraFuel
+        let result := Term.variable (.generated argumentCounter)
+        let executableResult := Atom.var s!"_q{argumentCounter}"
+        have resultAgreement : TermAgrees result executableResult := by
+          exact .generatedVariable argumentCounter
+        have callAgreement :
+            GoalAgrees (.call head [leftTerm, rightTerm, result])
+              (.bin head executableArguments executableResult) := by
+          simpa [result] using GoalAgrees.builtin termsAgreement
+            resultAgreement
+        have fixedArity :
+            compileBinArity head = some executableArguments.length := by
+          rw [← termsAgreement.length_eq]
+          simpa using pinnedBinaryBuiltin_compileBinArity builtin
+        refine ⟨executableResult,
+          executableArgumentGoals ++
+            [.bin head executableArguments executableResult], ?_,
+          resultAgreement, GoalsAgree.append goalsAgreement
+            (.cons callAgreement .nil)⟩
+        rw [show (argumentFuel + 3) + extraFuel =
+          (argumentFuel + extraFuel) + 3 by omega]
+        exact compileExprFuel_fixed_builtin_eq
+          (argumentFuel + extraFuel) env counter head
+          [leftSource, rightSource] executableArguments
+          executableArgumentGoals argumentCounter
+          (pinnedBinaryBuiltin_rewrite_none builtin leftSource rightSource)
+          (by
+            intro _ _ _
+            exact pinnedBinaryBuiltin_not_internal_cons builtin)
+          (agreement.notContains notShadowed)
+          (pinnedBinaryBuiltin_classify_other builtin) notProlog notDefined
+          isBuiltin fixedArity compiled
+
+/-- Public soundness of direct binary-builtin translation at the actual
+source-derived compiler budget. -/
+theorem compileExpr_binary_builtin_sound {state : TranslatorState}
+    (env : CEnv) (agreement : EnvAgrees state env) {counter : Nat}
+    {head : String} {source : Atom} {term : Term}
+    {goals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains head = false)
+    (notDefined : env.defined.contains head = false)
+    (isBuiltin : env.isBin head = true)
+    (modeAgreement : ArgModesAgree env head 0 [.value, .value])
+    (native :
+      TranslatesBinaryBuiltin state counter head source term goals
+        nextCounter) :
+    ∃ internal executableGoals,
+      compileExpr env counter source =
+        .ok (internal, executableGoals, nextCounter) ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨baseFuel, _basePositive, baseBound, compiles⟩ :=
+    compileExprFuel_binary_builtin_sound env agreement notProlog notDefined
+      isBuiltin modeAgreement native
+  have publicBound : baseFuel ≤ compilerFuel source + 64 := by
+    simp [compilerFuel]
+    omega
+  obtain ⟨extraFuel, publicFuelEq⟩ :
+      ∃ extraFuel, compilerFuel source + 64 = baseFuel + extraFuel := by
+    exact ⟨compilerFuel source + 64 - baseFuel, by omega⟩
+  obtain ⟨internal, executableGoals, compiled, termAgreement,
+      goalsAgreement⟩ := compiles extraFuel
+  refine ⟨internal, executableGoals, ?_, termAgreement, goalsAgreement⟩
+  rw [compileExpr, publicFuelEq]
+  exact compiled
+
+/-- Completeness on independently supported ordinary binary-builtin forms. -/
+theorem compileExpr_binary_builtin_complete {state : TranslatorState}
+    (env : CEnv) (agreement : EnvAgrees state env) {counter : Nat}
+    {head : String} {source internal : Atom}
+    {executableGoals : List PLeaTTa.Goal} {nextCounter : Nat}
+    (notProlog : env.prologFunctions.contains head = false)
+    (notDefined : env.defined.contains head = false)
+    (isBuiltin : env.isBin head = true)
+    (modeAgreement : ArgModesAgree env head 0 [.value, .value])
+    (supported : SupportedBinaryBuiltin state counter head source)
+    (compiled : compileExpr env counter source =
+      .ok (internal, executableGoals, nextCounter)) :
+    ∃ term goals,
+      TranslatesBinaryBuiltin state counter head source term goals
+        nextCounter ∧
+      TermAgrees term internal ∧ GoalsAgree goals executableGoals := by
+  obtain ⟨term, goals, referenceCounter, native⟩ := supported
+  obtain ⟨referenceInternal, referenceGoals, referenceCompiled,
+      termAgreement, goalsAgreement⟩ :=
+    compileExpr_binary_builtin_sound env agreement notProlog notDefined
       isBuiltin modeAgreement native
   have resultEquality :
       (internal, executableGoals, nextCounter) =

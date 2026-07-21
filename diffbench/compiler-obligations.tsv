@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=91f176424ecbd6088862d4e490bfb1a98e797676de64116e34eb252ac4066e25
+# compiler_sha256=36ed7a351cc61b37e7d4dd3887adb89dded61449a7357082542c660abb70dd13
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -108,7 +108,7 @@ FALLBACK.typed_empty_direct	T335-346	X	-	N	GAP	arity-fallback-unproved
 FALLBACK.typed_empty_partial	T335-346	X	-	N	GAP	partial-representation-unproved
 FALLBACK.defined_direct	T312-346	X	-	N	GAP	direct-call-unproved
 FALLBACK.defined_partial	T335-346	X	-	N	GAP	partial-representation-unproved
-FALLBACK.bin_fixed_direct	T312-346,M309-323	S	-	N	GAP	unary-direct-source-family-covered-below; binary-fixed-family-open
+FALLBACK.bin_fixed_direct	T312-346,M34-50,M97-99,M109,M145-165,M309-323	S	TranslatesBinaryBuiltin.call	SC	PASS	independent-24-function binary family; hook/internal-#c/ownership/arity priority explicit; left-to-right terms-goals-counter soundness and completeness; primitive execution semantics remains a Step-bisimulation obligation
 FALLBACK.bin_fixed_unary	T310-346,M28-31,M114,M139-143,M193-200,M309-323	S	TranslatesUnaryBuiltin.call	SC	PASS	independent-eleven-function-family; stream-rewrite-hook-ownership-arity-priority explicit; left-to-right goal-term-counter soundness/completeness; direct runtime differential including Prolog atom rendering
 FALLBACK.bin_fixed_println	T310-346,M198-200,M306-312	S	TranslatesUnaryBuiltin.call	SC	PASS	unary value-mode println fragment; ownership-priority and fixed arity explicit; typed host execution remains a declared boundary
 FALLBACK.bin_fixed_partial	T335-346	S	-	N	GAP	internal-partial
