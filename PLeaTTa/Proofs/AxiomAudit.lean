@@ -14,6 +14,7 @@ import PLeaTTa.Proofs.ObservationAgreement
 import PLeaTTa.Proofs.OpenBindingAgreement
 import PLeaTTa.Proofs.CompilerFreshness
 import PLeaTTa.Proofs.CompilerCounter
+import PLeaTTa.Proofs.CompilerGeneratedNames
 import PLeaTTa.Proofs.OpenOrderedStep
 import PLeaTTa.Proofs.ReaderAdequacy
 import PLeaTTa.PeTTaSpec.OpenSubstitution
@@ -118,6 +119,17 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.compileCaseArmsFuel_counter_mono
 #print axioms PLeaTTa.compilePatternListFuel_counter_mono
 #print axioms PLeaTTa.compileListFuel_counter_mono
+#print axioms PLeaTTa.compilerGeneratedNamesAt
+#print axioms PLeaTTa.compileExprFuel_generated_names
+#print axioms PLeaTTa.compilePatternFuel_generated_names
+#print axioms PLeaTTa.compileAppFuel_generated_names
+#print axioms PLeaTTa.compileAppCoreFuel_generated_names
+#print axioms PLeaTTa.compileTypedArgsFuel_generated_names
+#print axioms PLeaTTa.compileArgsAtFuel_generated_names
+#print axioms PLeaTTa.compileCaseArmsFuel_generated_names
+#print axioms PLeaTTa.compilePatternListFuel_generated_names
+#print axioms PLeaTTa.compileListFuel_generated_names
+#print axioms PLeaTTa.compileExpr_generated_name_classification
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_variable_encoding_injective
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_resolved_bindings_agree
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_reference_runs

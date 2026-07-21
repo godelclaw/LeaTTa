@@ -112,10 +112,10 @@ def compilerFreshCounterForAtoms (counter : Nat) (atoms : List Atom) : Nat :=
 def fresh (n : Nat) : Atom × Nat :=
   (Atom.var s!"_q{n}", n + 1)
 
-private def trueA : Atom := Atom.sym "True"
-private def falseA : Atom := Atom.sym "False"
+def compilerTrueA : Atom := Atom.sym "True"
+def compilerFalseA : Atom := Atom.sym "False"
 
-private def compileBinArity : String → Option Nat
+def compileBinArity : String → Option Nat
   | "=" | "==" | "!=" | "+" | "-" | "*" | "/" | "%" | "<" | ">" | "<=" | ">="
   | "min" | "max"
   | "and" | "or" | "cons" | "cons-atom" | "member" | "is-member" | "union-atom"
@@ -128,7 +128,7 @@ private def compileBinArity : String → Option Nat
   | "is-ground" | "is-expr" | "is-space" | "argv" => some 1
   | _ => none
 
-private def partialValue (f : String) (args : List Atom) : Atom :=
+def partialValue (f : String) (args : List Atom) : Atom :=
   chainOf [Atom.sym "partial", Atom.sym f, chainOf args]
 
 private def chainListC : Atom → Option (List Atom)
@@ -146,7 +146,7 @@ private def partialValue? (a : Atom) : Option (String × List Atom) :=
     mentions. `Goal.softcut` replays one template value into the caller, so
     the template must carry those variables even when they occur only in the
     condition's generated goals and not in its result term. -/
-private def bindingTemplate (base : Atom) (sources : List Atom) : Atom :=
+def bindingTemplate (base : Atom) (sources : List Atom) : Atom :=
   let vars := (sources.flatMap Atom.vars).eraseDups
   chainOf (base :: vars.map Atom.var)
 
@@ -222,13 +222,13 @@ private def staticDataHead (env : CEnv) : Atom → Bool
       !(env.defined.contains h) && !(env.isBin h) && !specialHead h
   | _ => false
 
-private def dynamicUnknownHead : String → Bool
+def dynamicUnknownHead : String → Bool
   | h =>
       match h.toList with
       | c :: _ => c.isLower
       | [] => false
 
-private def rewriteBinaryStreamOp? (atomOp : String) : List Atom → Option Atom
+def rewriteBinaryStreamOp? (atomOp : String) : List Atom → Option Atom
   | [Atom.expr (Atom.sym "superpose" :: left),
       Atom.expr (Atom.sym "superpose" :: right)] =>
       some (Atom.expr [Atom.sym "call", Atom.expr [Atom.sym "superpose",
@@ -239,20 +239,20 @@ private def rewriteBinaryStreamOp? (atomOp : String) : List Atom → Option Atom
             Atom.expr (Atom.sym "superpose" :: right)]]]])
   | _ => none
 
-private def rewriteTrace? : List Atom → Option Atom
+def rewriteTrace? : List Atom → Option Atom
   | [message, value] =>
       some (Atom.expr [Atom.sym "progn",
         Atom.expr [Atom.sym "println!", message], value])
   | _ => none
 
-private def rewriteUnique? (atomOp : String) : List Atom → Option Atom
+def rewriteUnique? (atomOp : String) : List Atom → Option Atom
   | [source] =>
       some (Atom.expr [Atom.sym "call", Atom.expr [Atom.sym "superpose",
         Atom.expr [Atom.sym atomOp,
           Atom.expr [Atom.sym "collapse", source]]]])
   | _ => none
 
-private def rewriteStreamOpForHead (head : String) : List Atom → Option Atom :=
+def rewriteStreamOpForHead (head : String) : List Atom → Option Atom :=
   if head == "trace!" then rewriteTrace?
   else if head == "unique" then rewriteUnique? "unique-atom"
   else if head == "alpha-unique" then rewriteUnique? "alpha-unique-atom"
@@ -712,8 +712,8 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         .ok (r, goals ++ [Goal.wact "process_metta_string" [term] r], n2)
     | .hUnquote, [Atom.expr [Atom.sym "quote", e]] => compileAppFuel fuel env n "eval" [e]
     | .hUnquote, [e] => .ok (chainify (Atom.expr [Atom.sym "unquote", e]), [], n)
-    | .hEmpty, [] => .ok (trueA, [Goal.eq trueA falseA], n) -- branch failure
-    | .hCut, [] => .ok (trueA, [Goal.cut], n)
+    | .hEmpty, [] => .ok (compilerTrueA, [Goal.eq compilerTrueA compilerFalseA], n) -- branch failure
+    | .hCut, [] => .ok (compilerTrueA, [Goal.cut], n)
     | .hTest, [e, expected] => do
         -- Native collects every answer of `e`, unwraps a singleton, evaluates
         -- the expected expression, then performs variant comparison.
@@ -739,7 +739,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (r, n3) := fresh n2
         .ok (r, ga ++ [Goal.ite ta
           (r, gb ++ [Goal.eq r tb])
-          (r, [Goal.eq r falseA]) r], n3)
+          (r, [Goal.eq r compilerFalseA]) r], n3)
     | .hOrElse, [a, b] =>
         -- [SPEC translator.pl:181-184] skip `b` when `a` is already True;
         -- on the false path execute `b` before unifying its value with the
@@ -748,7 +748,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (tb, gb, n2) ← compileExprFuel fuel env n1 b
         let (r, n3) := fresh n2
         .ok (r, ga ++ [Goal.ite ta
-          (r, [Goal.eq r trueA])
+          (r, [Goal.eq r compilerTrueA])
           (r, gb ++ [Goal.eq r tb]) r], n3)
     | .hHashPlus, [a, b] => compileAppFuel fuel env n "+" [a, b]   -- petta's flexible +
     | .hHashMinus, [a, b] => compileAppFuel fuel env n "-" [a, b]
@@ -766,7 +766,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         -- identity (`Cv == true`), not unification. An open condition must
         -- therefore take the failing path without becoming bound to True.
         .ok (r, branchAliases ++ gc ++ [Goal.ite tc thenBranch
-          (r, [Goal.eq trueA falseA]) r], n3)
+          (r, [Goal.eq compilerTrueA compilerFalseA]) r], n3)
     | .hIf, [c, t, e] => do
         let (tc, gc, n1) ← compileExprFuel fuel env n c
         let (tt, gt, n2) ← compileExprFuel fuel env n1 t
@@ -865,7 +865,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (r, n2) := fresh n1
         let pat := chainify (Atom.expr (Atom.sym rel :: args))
         .ok (r, gs ++ [Goal.softcut pat [Goal.smatch (spacePat ts pat)]
-          [Goal.eq r trueA] [Goal.eq r falseA]], n2)
+          [Goal.eq r compilerTrueA] [Goal.eq r compilerFalseA]], n2)
     | .hFor, [v, collection, body] =>
         -- [SPEC lib_patrick.metta:14-18] translator-rule macro:
         -- `(for $x xs body)` compiles as `(let $x (superpose xs) body)`.
@@ -1028,7 +1028,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (r, n1) := fresh n0
         let pat := chainify p
         .ok (r, gs ++ [Goal.softcut pat [Goal.smatch (spacePat ts pat)]
-          [Goal.eq r trueA] [Goal.eq r falseA]], n1)
+          [Goal.eq r compilerTrueA] [Goal.eq r compilerFalseA]], n1)
     | .hMatch, [sp, p] => do
         -- under-applied registered fun => partial value [SPEC translator.pl:58]
         .ok (chainOf [Atom.sym "partial", Atom.sym "match",
@@ -1043,7 +1043,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
             let (slots, n2) := (List.range k.toNat).foldl
               (fun (acc : List Atom × Nat) _ =>
                 let (v, m) := fresh acc.2; (acc.1 ++ [v], m)) ([], n1)
-            .ok (trueA, ge ++ [Goal.eq te (chainOf slots)], n2)
+            .ok (compilerTrueA, ge ++ [Goal.eq te (chainOf slots)], n2)
         | _ => .error "==: size-atom vs non-literal"
     | .hEqual, [a, b] => do
         -- Boolean unification predicate [SPEC metta.pl registers `=/3`]:
@@ -1053,7 +1053,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (r, n3) := fresh n2
         let carry := bindingTemplate (chainOf [ta, tb]) [a, b]
         .ok (r, [Goal.softcut carry (ga ++ gb ++ [Goal.eq ta tb])
-                  [Goal.eq r trueA] [Goal.eq r falseA]], n3)
+                  [Goal.eq r compilerTrueA] [Goal.eq r compilerFalseA]], n3)
     | .hAddAtom, [sp, a] => do
         -- [SPEC spaces.pl:5-7 plus native probes] `add-atom` asserts the atom
         -- argument as data; surrounding bindings instantiate its variables at
@@ -1083,7 +1083,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
     | .hBind, [_name, _value] =>
         -- [SPEC metta.pl:240,303] `bind!` is registered, but native PeTTa only
         -- defines the `(new-state ...)` clause; other values fail as calls.
-        .ok (trueA, [Goal.eq trueA falseA], n)
+        .ok (compilerTrueA, [Goal.eq compilerTrueA compilerFalseA], n)
     | .hGetState, [name] => do
         let (tn, gn, n1) ← compileExprFuel fuel env n name
         let (r, n2) := fresh n1
@@ -1109,7 +1109,7 @@ def compileCaseArmsFuel : Nat → CEnv → Atom → Atom → Nat → List Atom �
     CompileM (List Goal × Nat)
   | 0, _, _, _, _, _ => .error "compiler fuel exhausted"
   | _ + 1, _, _, _, m, [] =>
-      .ok ([Goal.eq trueA falseA], m)
+      .ok ([Goal.eq compilerTrueA compilerFalseA], m)
   | fuel + 1, env, scrutinee, result, m,
       Atom.expr [Atom.sym name, body] :: more =>
       if name == "Empty" then
@@ -1235,7 +1235,7 @@ the counter. -/
 theorem compileCaseArmsFuel_nil_eq (fuel : Nat) (env : CEnv)
     (scrutinee result : Atom) (counter : Nat) :
     compileCaseArmsFuel (fuel + 1) env scrutinee result counter [] =
-      .ok ([Goal.eq trueA falseA], counter) := by
+      .ok ([Goal.eq compilerTrueA compilerFalseA], counter) := by
   rfl
 
 /-- An `Empty` arm is handled by the enclosing case compiler and therefore is
@@ -1998,7 +1998,7 @@ theorem compileAppCoreFuel_ifThen_eq (childFuel : Nat) (env : CEnv)
       .ok (.var s!"_q{thenCounter}",
         branchAliases ++ conditionGoals ++
           [Goal.ite conditionTerm thenBranch
-            (.var s!"_q{thenCounter}", [Goal.eq trueA falseA])
+            (.var s!"_q{thenCounter}", [Goal.eq compilerTrueA compilerFalseA])
             (.var s!"_q{thenCounter}")],
         thenCounter + 1) := by
   simp only [compileAppCoreFuel, classifyAppCoreHead]
@@ -2074,7 +2074,7 @@ theorem compileExprFuel_ifThen_eq (childFuel : Nat) (env : CEnv)
       .ok (.var s!"_q{thenCounter}",
         branchAliases ++ conditionGoals ++
           [Goal.ite conditionTerm thenBranch
-            (.var s!"_q{thenCounter}", [Goal.eq trueA falseA])
+            (.var s!"_q{thenCounter}", [Goal.eq compilerTrueA compilerFalseA])
             (.var s!"_q{thenCounter}")],
         thenCounter + 1) := by
   rw [show childFuel + 3 = (childFuel + 2) + 1 by omega]
@@ -2155,7 +2155,7 @@ theorem compileAppCoreFuel_andThen_eq (childFuel : Nat) (env : CEnv)
             (.var s!"_q{bodyCounter}",
               bodyGoals ++ [Goal.eq (.var s!"_q{bodyCounter}") bodyTerm])
             (.var s!"_q{bodyCounter}",
-              [Goal.eq (.var s!"_q{bodyCounter}") falseA])
+              [Goal.eq (.var s!"_q{bodyCounter}") compilerFalseA])
             (.var s!"_q{bodyCounter}")],
         bodyCounter + 1) := by
   simp only [compileAppCoreFuel, classifyAppCoreHead]
@@ -2185,7 +2185,7 @@ theorem compileAppCoreFuel_orElse_eq (childFuel : Nat) (env : CEnv)
         conditionGoals ++
           [Goal.ite conditionTerm
             (.var s!"_q{bodyCounter}",
-              [Goal.eq (.var s!"_q{bodyCounter}") trueA])
+              [Goal.eq (.var s!"_q{bodyCounter}") compilerTrueA])
             (.var s!"_q{bodyCounter}",
               bodyGoals ++ [Goal.eq (.var s!"_q{bodyCounter}") bodyTerm])
             (.var s!"_q{bodyCounter}")],
@@ -2218,7 +2218,7 @@ theorem compileExprFuel_andThen_eq (childFuel : Nat) (env : CEnv)
             (.var s!"_q{bodyCounter}",
               bodyGoals ++ [Goal.eq (.var s!"_q{bodyCounter}") bodyTerm])
             (.var s!"_q{bodyCounter}",
-              [Goal.eq (.var s!"_q{bodyCounter}") falseA])
+              [Goal.eq (.var s!"_q{bodyCounter}") compilerFalseA])
             (.var s!"_q{bodyCounter}")],
         bodyCounter + 1) := by
   rw [show childFuel + 3 = (childFuel + 2) + 1 by omega]
@@ -2251,7 +2251,7 @@ theorem compileExprFuel_orElse_eq (childFuel : Nat) (env : CEnv)
         conditionGoals ++
           [Goal.ite conditionTerm
             (.var s!"_q{bodyCounter}",
-              [Goal.eq (.var s!"_q{bodyCounter}") trueA])
+              [Goal.eq (.var s!"_q{bodyCounter}") compilerTrueA])
             (.var s!"_q{bodyCounter}",
               bodyGoals ++ [Goal.eq (.var s!"_q{bodyCounter}") bodyTerm])
             (.var s!"_q{bodyCounter}")],
@@ -2761,12 +2761,12 @@ def compileProgramSequentialForms (isBin : String → Bool)
         match a with
         | Atom.expr [Atom.sym "add-translator-rule!", Atom.sym f] =>
             translatorRules := (translatorRules ++ [f]).eraseDups
-            events := events ++ [TopEvent.query [] trueA pendingObservable]
+            events := events ++ [TopEvent.query [] compilerTrueA pendingObservable]
             pendingBang := false
             continue
         | Atom.expr [Atom.sym "remove-translator-rule!", Atom.sym f] =>
             translatorRules := translatorRules.erase f
-            events := events ++ [TopEvent.query [] trueA pendingObservable]
+            events := events ++ [TopEvent.query [] compilerTrueA pendingObservable]
             pendingBang := false
             continue
         | Atom.expr [Atom.sym "tabled", Atom.expr (Atom.sym f :: args)] =>
@@ -2792,11 +2792,11 @@ def compileProgramSequentialForms (isBin : String → Bool)
         | Atom.expr [Atom.sym "!",
             Atom.expr [Atom.sym "add-translator-rule!", Atom.sym f]] =>
             translatorRules := (translatorRules ++ [f]).eraseDups
-            events := events ++ [TopEvent.query [] trueA observable]
+            events := events ++ [TopEvent.query [] compilerTrueA observable]
         | Atom.expr [Atom.sym "!",
             Atom.expr [Atom.sym "remove-translator-rule!", Atom.sym f]] =>
             translatorRules := translatorRules.erase f
-            events := events ++ [TopEvent.query [] trueA observable]
+            events := events ++ [TopEvent.query [] compilerTrueA observable]
         | Atom.expr [Atom.sym "!", q] =>
             let liveArities := arities ++ clauses.map (fun (f, c) =>
               (f, c.params.length))
