@@ -48,6 +48,21 @@ structure CEnv where
 
 abbrev CompileM := Except String
 
+/-- Collect the distinct arrow chains declared for one function head.
+Pinned `translator.pl` gathers every matching declaration and then applies
+`list_to_set/2`, which retains the first occurrence while removing later
+duplicates.  Keeping this as a shared executable helper makes answer
+multiplicity and declaration order visible to adequacy proofs.
+[SPEC translator.pl:317-321] -/
+def collectTypeChains (decls : List (Atom × Atom)) (head : String) :
+    List (List Atom) :=
+  (decls.filterMap (fun (subject, declaredType) =>
+    if subject == Atom.sym head then
+      match declaredType with
+      | Atom.expr (Atom.sym "->" :: types) => some types
+      | _ => none
+    else none)).eraseDups
+
 def mkEnv (isBin : String → Bool) (heads : List String)
     (arities0 : List (String × Nat))
     (decls : List (Atom × Atom)) : CEnv :=
@@ -61,12 +76,7 @@ def mkEnv (isBin : String → Bool) (heads : List String)
           (tys.getD i (Atom.sym "?")) == Atom.sym "Expression"
       | _ => false)
   let typeChains : String → List (List Atom) := fun f =>
-    decls.filterMap (fun (subj, t) =>
-      if subj == Atom.sym f then
-        match t with
-        | Atom.expr (Atom.sym "->" :: tys) => some tys
-        | _ => none
-      else none)
+    collectTypeChains decls f
   { defined := heads, arities, isBin, atomTyped, typeChains }
 
 /-- Recognize the source form registered as a function by pinned
