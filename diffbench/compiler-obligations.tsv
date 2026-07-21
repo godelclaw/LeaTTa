@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=36ed7a351cc61b37e7d4dd3887adb89dded61449a7357082542c660abb70dd13
+# compiler_sha256=0ce57f257e9856d529415f87e91f85a82628edfc13ab976ae878520718753513
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -106,7 +106,7 @@ FALLBACK.prolog_function	M274,T310-346	H	-	N	BOUNDARY	typed-SWI-boundary
 FALLBACK.typed_branches	T317-370	S	TranslatesTypedArgs	N	GAP	single-chain dispatch fixed and parity-probed; branch/result assembly proof open
 FALLBACK.typed_empty_direct	T335-346	X	-	N	GAP	arity-fallback-unproved
 FALLBACK.typed_empty_partial	T335-346	X	-	N	GAP	partial-representation-unproved
-FALLBACK.defined_direct	T312-346	X	-	N	GAP	direct-call-unproved
+FALLBACK.defined_direct	T312-346	X	TranslatesDefinedCall	SC	PASS	direct-call-proved-under-FunctionRegistryAgrees; source-loader-must-establish-registry-crosswalk; typed-dispatch-imported-ownership-partial-application-excluded
 FALLBACK.defined_partial	T335-346	X	-	N	GAP	partial-representation-unproved
 FALLBACK.bin_fixed_direct	T312-346,M34-50,M97-99,M109,M145-165,M309-323	S	TranslatesBinaryBuiltin.call	SC	PASS	independent-24-function binary family; hook/internal-#c/ownership/arity priority explicit; left-to-right terms-goals-counter soundness and completeness; primitive execution semantics remains a Step-bisimulation obligation
 FALLBACK.bin_fixed_unary	T310-346,M28-31,M114,M139-143,M193-200,M309-323	S	TranslatesUnaryBuiltin.call	SC	PASS	independent-eleven-function-family; stream-rewrite-hook-ownership-arity-priority explicit; left-to-right goal-term-counter soundness/completeness; direct runtime differential including Prolog atom rendering

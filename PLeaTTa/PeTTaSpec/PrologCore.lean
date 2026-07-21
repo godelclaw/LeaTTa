@@ -525,6 +525,22 @@ inductive ArgumentMode where
   | refined (expected : String)
 deriving Repr
 
+/-- Independent source-derived registry used by ordinary function dispatch.
+`isDefined` and `acceptsArity` model the `fun/1` and predicate-arity facts
+established by pinned source loading. `directModes` identifies one signature
+whose type declarations require no nondeterministic branch choice. The two
+coherence fields prevent a direct signature from inventing an unregistered
+head or unsupported arity. [SPEC filereader.pl:20-44;
+translator.pl:18-34,310-370] -/
+structure FunctionRegistry where
+  isDefined : String → Prop
+  acceptsArity : String → Nat → Prop
+  directModes : String → List ArgumentMode → Prop
+  direct_defined {head : String} {modes : List ArgumentMode} :
+    directModes head modes → isDefined head
+  direct_arity {head : String} {modes : List ArgumentMode} :
+    directModes head modes → acceptsArity head modes.length
+
 /-- Exact pinned soft-cut type/meta-type fallback for a translated value.
 Generated variables are named by the independent compiler counter.
 [SPEC translator.pl:356-370] -/
@@ -577,6 +593,89 @@ inductive TranslatesTypedArgs : TranslatorState → Nat → List ArgumentMode �
         (source :: sources) (term :: terms)
         (headGoals ++ refinedTypeCheckGoals term expected middleCounter ++
           tailGoals) nextCounter
+
+theorem TranslatesTypedArgs.modes_length_eq_terms
+    {state : TranslatorState} {counter : Nat} {modes : List ArgumentMode}
+    {sources : List Atom} {terms : List Term} {goals : List Goal}
+    {nextCounter : Nat}
+    (translation :
+      TranslatesTypedArgs state counter modes sources terms goals
+        nextCounter) :
+    modes.length = terms.length := by
+  induction translation with
+  | nil => rfl
+  | expression _ _ ih => simp [ih]
+  | value _ _ ih => simp [ih]
+  | refined _ _ _ ih => simp [ih]
+
+/-- Independent ordinary direct-call branch for a source-registered function.
+The registry supplies a coherent direct signature, arguments follow pinned
+typed staging left-to-right, and the generated output is appended as the last
+Prolog argument. Typed nondeterministic branching and partial application are
+separate relations. [SPEC translator.pl:310-370] -/
+inductive TranslatesDefinedCall (registry : FunctionRegistry) :
+    TranslatorState → Nat → String → Atom → Term → List Goal → Nat → Prop where
+  | call {state : TranslatorState} {counter argumentCounter : Nat}
+      {head : String} {modes : List ArgumentMode} {sources : List Atom}
+      {terms : List Term} {argumentGoals : List Goal}
+      (signature : registry.directModes head modes)
+      (notShadowed : ¬ state.hasRule head)
+      (arguments :
+        TranslatesTypedArgs state counter modes sources terms argumentGoals
+          argumentCounter) :
+      TranslatesDefinedCall registry state counter head
+        (.expr (.sym head :: sources))
+        (.variable (.generated argumentCounter))
+        (argumentGoals ++
+          [.call head (terms ++ [.variable (.generated argumentCounter)])])
+        (argumentCounter + 1)
+
+theorem TranslatesDefinedCall.notShadowed {registry : FunctionRegistry}
+    {state : TranslatorState} {counter : Nat} {head : String} {source : Atom}
+    {term : Term} {goals : List Goal} {nextCounter : Nat}
+    (translation :
+      TranslatesDefinedCall registry state counter head source term goals
+        nextCounter) :
+    ¬ state.hasRule head := by
+  cases translation
+  assumption
+
+/-- Translator-rule priority excludes every ordinary direct-call derivation.
+This is the negative companion to the concrete unary witness below. -/
+theorem defined_call_hook_blocks {registry : FunctionRegistry}
+    {state : TranslatorState} {counter : Nat} {head : String}
+    {source : Atom} {term : Term} {goals : List Goal}
+    {nextCounter : Nat} (hook : state.hasRule head) :
+    ¬ TranslatesDefinedCall registry state counter head source term goals
+      nextCounter := by
+  intro translation
+  exact translation.notShadowed hook
+
+/-- A concrete non-vacuity witness: one source-defined unary value function. -/
+def unaryValueFunctionRegistry (name : String) : FunctionRegistry where
+  isDefined := fun head => head = name
+  acceptsArity := fun head arity => head = name ∧ arity = 1
+  directModes := fun head modes => head = name ∧ modes = [.value]
+  direct_defined := by
+    intro head modes signature
+    exact signature.1
+  direct_arity := by
+    intro head modes signature
+    rcases signature with ⟨headEq, rfl⟩
+    exact ⟨headEq, rfl⟩
+
+theorem translates_defined_unary_literal (state : TranslatorState)
+    (counter : Nat) (name : String) (value : Int)
+    (notShadowed : ¬ state.hasRule name) :
+    TranslatesDefinedCall (unaryValueFunctionRegistry name) state counter name
+      (.expr [.sym name, .gnd (.int value)])
+      (.variable (.generated counter))
+      [.call name [.integer value, .variable (.generated counter)]]
+      (counter + 1) := by
+  exact TranslatesDefinedCall.call (by simp [unaryValueFunctionRegistry])
+    notShadowed
+    (TranslatesTypedArgs.value (TranslatesExpr.literal (Literal.integer value))
+      (TranslatesTypedArgs.nil (state := state) (counter := counter)))
 
 /-- Pinned one-input functions with direct source definitions in `metta.pl`.
 This source-derived classification is deliberately separate from the
@@ -1292,6 +1391,15 @@ def SupportedBinaryBuiltin (state : TranslatorState) (counter : Nat)
     (head : String) (source : Atom) : Prop :=
   ∃ term goals nextCounter,
     TranslatesBinaryBuiltin state counter head source term goals nextCounter
+
+/-- Independently supported ordinary direct call through a source-derived
+function registry. -/
+def SupportedDefinedCall (registry : FunctionRegistry)
+    (state : TranslatorState) (counter : Nat) (head : String)
+    (source : Atom) : Prop :=
+  ∃ term goals nextCounter,
+    TranslatesDefinedCall registry state counter head source term goals
+      nextCounter
 
 /-- Independently supported pinned `trace!` stream-rewrite forms. -/
 def SupportedTrace (state : TranslatorState) (counter : Nat)
