@@ -7,6 +7,7 @@ Purpose: Classify every variable emitted by the executable compiler as either
 Trusted boundary: none
 -/
 import PLeaTTa.Proofs.CompilerCounter
+import PLeaTTa.Proofs.CompilerTypeFreshening
 import PLeaTTa.Specialize
 import MettaHyperonFull.Proofs.Basic
 
@@ -1105,7 +1106,7 @@ theorem compileTypeCheckWhen_generatedNames (external : String → Prop)
   split
   · simp only [fresh]
     apply (compilerGoalsNamesAllowed_cons_iff external origin (start + 2)
-      (.softcut (Atom.sym "#u")
+      (.softcut (typeCheckBindingTemplate expected)
         [Goal.bin "get-type" [value] (Atom.var (compilerGeneratedName start)),
           Goal.eq (Atom.var (compilerGeneratedName start)) (chainify expected)]
         []
@@ -1115,7 +1116,14 @@ theorem compileTypeCheckWhen_generatedNames (external : String → Prop)
       []).2
     constructor
     · apply compilerGoalNamesAllowed_softcut
-      · simp
+      · unfold typeCheckBindingTemplate
+        split
+        · simp
+        · apply bindingTemplate_namesAllowed
+          · simp
+          · simp only [compilerAtomsNamesAllowed_cons_iff,
+              compilerAtomsNamesAllowed_nil, and_true]
+            exact expectedAllowed.mono (by omega)
       · simp only [compilerGoalsNamesAllowed_cons_iff,
           compilerGoalsNamesAllowed_nil, and_true]
         constructor
@@ -2055,11 +2063,50 @@ theorem CompilerAtomsNamesAllowed.getLast?_eq_some
   rcases List.getLast?_eq_some_iff.mp lastEq with ⟨initial, rfl⟩
   exact allowed.atom_mem (by simp)
 
+/-- The executable fresh-variant algorithm replaces every chain variable by
+one compiler-owned name in the exact counter interval it consumes. -/
+theorem freshenTypeChain_generatedNames
+    (external : String → Prop) (origin start : Nat) (chain : List Atom)
+    (originStart : origin ≤ start) :
+    CompilerAtomsNamesAllowed external origin
+      (freshenTypeChain start chain).2 (freshenTypeChain start chain).1 := by
+  intro name member
+  rcases CompilerTypeFreshening.freshenTypeChain_names_generated member with
+    ⟨index, bound, rfl⟩
+  apply CompilerNameAllowed.generated
+  · omega
+  · rw [CompilerTypeFreshening.freshenTypeChain_counter_eq]
+    omega
+
+/-- The typed branch's arity decision preserves the name classification of
+both its branch template and its optional call goal. -/
+theorem compileTypedCallOrPartial_generatedNames
+    {external : String → Prop} {origin limit : Nat}
+    (arities : List Nat) (result : Atom) (head : String)
+    (terms : List Atom)
+    (resultAllowed :
+      CompilerAtomNamesAllowed external origin limit result)
+    (termsAllowed :
+      CompilerAtomsNamesAllowed external origin limit terms) :
+    CompilerAtomNamesAllowed external origin limit
+        (compileTypedCallOrPartial arities result head terms).1 ∧
+      CompilerGoalsNamesAllowed external origin limit
+        (compileTypedCallOrPartial arities result head terms).2 := by
+  unfold compileTypedCallOrPartial
+  split
+  · simp only
+    constructor
+    · exact resultAllowed
+    · simp only [compilerGoalsNamesAllowed_cons_iff,
+        compilerGoalsNamesAllowed_nil, and_true]
+      exact compilerGoalNamesAllowed_call termsAllowed resultAllowed head
+  · exact ⟨partialValue_namesAllowed termsAllowed, by simp⟩
+
 theorem compileTypedDispatchStepWith_generatedNames
     (compileTypedArgs : Nat → List Atom →
       CompileM (List Atom × List Goal × Nat))
     (external : String → Prop) (origin : Nat) (result : Atom)
-    (head : String) (arguments : List Atom)
+    (head : String) (arities : List Nat)
     (accumulator outcome : List (Atom × List Goal) × Nat)
     (chain : List Atom)
     (originAccumulator : origin ≤ accumulator.2)
@@ -2068,8 +2115,6 @@ theorem compileTypedDispatchStepWith_generatedNames
         accumulator.1)
     (resultAllowed :
       CompilerAtomNamesAllowed external origin accumulator.2 result)
-    (chainAllowed :
-      CompilerAtomsNamesAllowed external origin accumulator.2 chain)
     (typedMono : ∀ start types terms goals next,
       compileTypedArgs start types = .ok (terms, goals, next) →
         start ≤ next)
@@ -2080,89 +2125,106 @@ theorem compileTypedDispatchStepWith_generatedNames
         CompilerAtomsNamesAllowed external origin next terms ∧
         CompilerGoalsNamesAllowed external origin next goals)
     (compiled :
-      compileTypedDispatchStepWith compileTypedArgs result head arguments
+      compileTypedDispatchStepWith compileTypedArgs result head arities
         accumulator chain = .ok outcome) :
     CompilerBranchesNamesAllowed external origin outcome.2 outcome.1 := by
   unfold compileTypedDispatchStepWith at compiled
-  split at compiled
-  · rename_i _ _ resultType resultTypeEq
-    simp only [Bind.bind, Except.bind] at compiled
-    cases callbackEq : compileTypedArgs accumulator.2 chain.dropLast with
-    | error message =>
-        simp only [callbackEq] at compiled
-        contradiction
-    | ok callbackResult =>
-        simp only [callbackEq] at compiled
-        rcases Except.ok.inj compiled with rfl
-        have callbackCounter := typedMono _ _ _ _ _ callbackEq
-        have parameterTypesAllowed :
-            CompilerAtomsNamesAllowed external origin accumulator.2
-              chain.dropLast := chainAllowed.dropLast
-        have callbackNames := typedNames _ _ _ _ _ originAccumulator
-          parameterTypesAllowed callbackEq
-        have resultTypeAllowed :
-            CompilerAtomNamesAllowed external origin accumulator.2
-              resultType := by
-          apply chainAllowed.getLast?_eq_some
-          exact resultTypeEq
-        have checksAllowed := compileResultTypeCheck_generatedNames external
-          origin callbackResult.2.2 result resultType
-          (Nat.le_trans originAccumulator callbackCounter)
-          (resultAllowed.mono callbackCounter)
-          (resultTypeAllowed.mono callbackCounter)
-        have checksCounter := compileResultTypeCheck_counter_le result
-          resultType callbackResult.2.2
-        apply (compilerBranchesNamesAllowed_append_iff external origin
-            (compileResultTypeCheck result resultType
-              callbackResult.2.2).2
-            accumulator.1
-            [(result, callbackResult.2.1 ++
-              [Goal.call head callbackResult.1 result] ++
-              (compileResultTypeCheck result resultType
-                callbackResult.2.2).1)]).2
-        constructor
-        · exact accumulatorAllowed.mono
-            (Nat.le_trans callbackCounter checksCounter)
-        · simp only [compilerBranchesNamesAllowed_cons_iff,
-            compilerBranchesNamesAllowed_nil, and_true]
+  rcases freshEq : freshenTypeChain accumulator.2 chain with
+    ⟨freshChain, freshCounter⟩
+  simp only [freshEq] at compiled
+  cases resultTypeEq : freshChain.getLast? with
+  | none => simp [resultTypeEq] at compiled
+  | some resultType =>
+      simp only [resultTypeEq, Bind.bind, Except.bind] at compiled
+      cases callbackEq : compileTypedArgs freshCounter freshChain.dropLast with
+      | error message => simp [callbackEq] at compiled
+      | ok callbackResult =>
+          simp only [callbackEq] at compiled
+          rcases callEq : compileTypedCallOrPartial arities result head
+              callbackResult.1 with ⟨branchResult, callGoals⟩
+          simp only [callEq] at compiled
+          rcases Except.ok.inj compiled with rfl
+          have freshCounterMono : accumulator.2 ≤ freshCounter := by
+            simpa only [freshEq] using
+              CompilerTypeFreshening.freshenTypeChain_counter_le
+                accumulator.2 chain
+          have originFresh : origin ≤ freshCounter :=
+            Nat.le_trans originAccumulator freshCounterMono
+          have freshChainAllowed :
+              CompilerAtomsNamesAllowed external origin freshCounter
+                freshChain := by
+            have allowed := freshenTypeChain_generatedNames external origin
+              accumulator.2 chain originAccumulator
+            simpa only [freshEq] using allowed
+          have parameterTypesAllowed :
+              CompilerAtomsNamesAllowed external origin freshCounter
+                freshChain.dropLast := freshChainAllowed.dropLast
+          have callbackCounter := typedMono _ _ _ _ _ callbackEq
+          have callbackNames := typedNames _ _ _ _ _ originFresh
+            parameterTypesAllowed callbackEq
+          have resultTypeAllowed :
+              CompilerAtomNamesAllowed external origin freshCounter
+                resultType := by
+            apply freshChainAllowed.getLast?_eq_some
+            exact resultTypeEq
+          have callNamesRaw := compileTypedCallOrPartial_generatedNames
+            arities result head callbackResult.1
+            (resultAllowed.mono (Nat.le_trans freshCounterMono callbackCounter))
+            callbackNames.1
+          have callNames :
+              CompilerAtomNamesAllowed external origin callbackResult.2.2
+                  branchResult ∧
+                CompilerGoalsNamesAllowed external origin callbackResult.2.2
+                  callGoals := by
+            simpa only [callEq] using callNamesRaw
+          have checksAllowed := compileResultTypeCheck_generatedNames external
+            origin callbackResult.2.2 branchResult resultType
+            (Nat.le_trans originFresh callbackCounter)
+            callNames.1
+            (resultTypeAllowed.mono callbackCounter)
+          have checksCounter := compileResultTypeCheck_counter_le branchResult
+            resultType callbackResult.2.2
+          apply (compilerBranchesNamesAllowed_append_iff external origin
+              (compileResultTypeCheck branchResult resultType
+                callbackResult.2.2).2
+              accumulator.1
+              [(branchResult, callbackResult.2.1 ++ callGoals ++
+                (compileResultTypeCheck branchResult resultType
+                  callbackResult.2.2).1)]).2
           constructor
-          · exact (resultAllowed.mono callbackCounter).mono checksCounter
-          · rw [List.append_assoc]
-            apply (compilerGoalsNamesAllowed_append_iff external origin
-                (compileResultTypeCheck result resultType
-                  callbackResult.2.2).2
-                callbackResult.2.1
-                ([Goal.call head callbackResult.1 result] ++
-                  (compileResultTypeCheck result resultType
-                    callbackResult.2.2).1)).2
+          · exact accumulatorAllowed.mono <|
+              Nat.le_trans freshCounterMono <|
+                Nat.le_trans callbackCounter checksCounter
+          · simp only [compilerBranchesNamesAllowed_cons_iff,
+              compilerBranchesNamesAllowed_nil, and_true]
             constructor
-            · exact callbackNames.2.mono checksCounter
-            · apply (compilerGoalsNamesAllowed_append_iff external origin
-                  (compileResultTypeCheck result resultType
+            · exact callNames.1.mono checksCounter
+            · rw [List.append_assoc]
+              apply (compilerGoalsNamesAllowed_append_iff external origin
+                  (compileResultTypeCheck branchResult resultType
                     callbackResult.2.2).2
-                  [Goal.call head callbackResult.1 result]
-                  (compileResultTypeCheck result resultType
-                    callbackResult.2.2).1).2
+                  callbackResult.2.1
+                  (callGoals ++
+                    (compileResultTypeCheck branchResult resultType
+                      callbackResult.2.2).1)).2
               constructor
-              · simp only [compilerGoalsNamesAllowed_cons_iff,
-                    compilerGoalsNamesAllowed_nil, and_true]
-                exact compilerGoalNamesAllowed_call
-                  (callbackNames.1.mono checksCounter)
-                  ((resultAllowed.mono callbackCounter).mono checksCounter)
-                  head
-              · exact checksAllowed
-  · contradiction
+              · exact callbackNames.2.mono checksCounter
+              · apply (compilerGoalsNamesAllowed_append_iff external origin
+                    (compileResultTypeCheck branchResult resultType
+                      callbackResult.2.2).2
+                    callGoals
+                    (compileResultTypeCheck branchResult resultType
+                      callbackResult.2.2).1).2
+                exact ⟨callNames.2.mono checksCounter, checksAllowed⟩
 
 theorem compileTypedDispatchFoldWith_generatedNames
     (compileTypedArgs : Nat → List Atom →
       CompileM (List Atom × List Goal × Nat))
     (external : String → Prop) (origin start : Nat) (result : Atom)
-    (head : String) (arguments : List Atom) (chains : List (List Atom))
+    (head : String) (arities : List Nat) (chains : List (List Atom))
     (outcome : List (Atom × List Goal) × Nat)
     (originStart : origin ≤ start)
     (resultAllowed : CompilerAtomNamesAllowed external origin start result)
-    (chainsAllowed : ∀ chain, chain ∈ chains →
-      CompilerAtomsNamesAllowed external origin start chain)
     (typedMono : ∀ counter types terms goals next,
       compileTypedArgs counter types = .ok (terms, goals, next) →
         counter ≤ next)
@@ -2174,7 +2236,7 @@ theorem compileTypedDispatchFoldWith_generatedNames
         CompilerGoalsNamesAllowed external origin next goals)
     (compiled :
       chains.foldlM
-        (compileTypedDispatchStepWith compileTypedArgs result head arguments)
+        (compileTypedDispatchStepWith compileTypedArgs result head arities)
         ([], start) = .ok outcome) :
     CompilerBranchesNamesAllowed external origin outcome.2 outcome.1 := by
   have go : ∀ (remaining : List (List Atom))
@@ -2183,49 +2245,42 @@ theorem compileTypedDispatchFoldWith_generatedNames
       CompilerBranchesNamesAllowed external origin accumulator.2
         accumulator.1 →
       CompilerAtomNamesAllowed external origin accumulator.2 result →
-      (∀ chain, chain ∈ remaining →
-        CompilerAtomsNamesAllowed external origin accumulator.2 chain) →
       remaining.foldlM
-          (compileTypedDispatchStepWith compileTypedArgs result head arguments)
+          (compileTypedDispatchStepWith compileTypedArgs result head arities)
           accumulator = .ok final →
         CompilerBranchesNamesAllowed external origin final.2 final.1 := by
     intro remaining
     induction remaining with
     | nil =>
-        intro accumulator final _ accumulatorAllowed _ _ folded
+        intro accumulator final _ accumulatorAllowed _ folded
         rw [List.foldlM_nil] at folded
         rcases Except.ok.inj folded with rfl
         exact accumulatorAllowed
     | cons chain rest ih =>
         intro accumulator final originAccumulator accumulatorAllowed
-          resultAtAccumulator remainingAllowed folded
+          resultAtAccumulator folded
         rw [List.foldlM_cons] at folded
         cases stepEq : compileTypedDispatchStepWith compileTypedArgs result
-            head arguments accumulator chain with
+            head arities accumulator chain with
         | error message =>
             simp only [stepEq, Bind.bind, Except.bind] at folded
             contradiction
         | ok stepOutcome =>
             simp only [stepEq, Bind.bind, Except.bind] at folded
             have stepCounter := typedDispatchStep_counter compileTypedArgs
-              typedMono result head arguments accumulator chain stepOutcome
+              typedMono result head arities accumulator chain stepOutcome
               stepEq
             have stepNames := compileTypedDispatchStepWith_generatedNames
-              compileTypedArgs external origin result head arguments
+              compileTypedArgs external origin result head arities
               accumulator stepOutcome chain originAccumulator
-              accumulatorAllowed resultAtAccumulator
-              (remainingAllowed chain (by simp)) typedMono typedNames stepEq
+              accumulatorAllowed resultAtAccumulator typedMono typedNames stepEq
             apply ih stepOutcome final
             · exact Nat.le_trans originAccumulator stepCounter
             · exact stepNames
             · exact resultAtAccumulator.mono stepCounter
-            · intro later laterMem
-              exact (remainingAllowed later (by simp [laterMem])).mono stepCounter
             · exact folded
   apply go chains ([], start) outcome originStart (by simp) resultAllowed
-  · intro chain member
-    exact chainsAllowed chain member
-  · exact compiled
+  exact compiled
 
 theorem compileAppDefaultWith_generatedNames
     (compileArgs : Nat → CompileM (List Atom × List Goal × Nat))
@@ -2346,7 +2401,7 @@ theorem compileAppDefaultWith_generatedNames
         let firstCounter := start + 1
         cases foldEq : (env.typeChains head).foldlM
             (compileTypedDispatchStepWith compileTypedArgs resultAtom head
-              arguments) ([], firstCounter) with
+              (env.arities head)) ([], firstCounter) with
         | error message =>
             simp only [resultAtom, firstCounter, compilerGeneratedName] at foldEq
             rw [foldEq] at compiled
@@ -2361,19 +2416,17 @@ theorem compileAppDefaultWith_generatedNames
               exact .generated originStart (by omega)
             have foldNames := compileTypedDispatchFoldWith_generatedNames
               compileTypedArgs external origin firstCounter resultAtom head
-              arguments (env.typeChains head) foldResult
+              (env.arities head) (env.typeChains head) foldResult
               (Nat.le_trans originStart (by simp [firstCounter])) resultAtFirst
-              (by
-                intro chain member
-                exact (envAllowed head chain member).mono (by simp [firstCounter]))
               typedMono typedNames foldEq
             have stepMono : ∀ accumulator chain outcome,
                 compileTypedDispatchStepWith compileTypedArgs resultAtom head
-                    arguments accumulator chain = .ok outcome →
+                    (env.arities head) accumulator chain = .ok outcome →
                   accumulator.2 ≤ outcome.2 := by
               intro accumulator chain outcome stepCompiled
               exact typedDispatchStep_counter compileTypedArgs typedMono
-                resultAtom head arguments accumulator chain outcome stepCompiled
+                resultAtom head (env.arities head) accumulator chain outcome
+                stepCompiled
             have foldCounter := foldlM_counter_mono _ stepMono
               (env.typeChains head) ([], firstCounter) foldResult foldEq
             by_cases branchesEmpty : foldResult.1.isEmpty = true

@@ -167,6 +167,13 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerTypeFreshening.freshenTypeChain_names_generated
 #print axioms PLeaTTa.CompilerTypeFreshening.freshenTypeChain_closed_eq
 #print axioms PLeaTTa.CompilerTypeFreshening.freshenTypeChain_ranges_disjoint
+#print axioms PLeaTTa.typeCheckBindingTemplate_sym
+#print axioms PLeaTTa.compileTypedCallOrPartial_complete
+#print axioms PLeaTTa.compileTypedCallOrPartial_partial
+#print axioms PLeaTTa.freshenTypeChain_generatedNames
+#print axioms PLeaTTa.compileTypedCallOrPartial_generatedNames
+#print axioms PLeaTTa.compileTypedDispatchStepWith_generatedNames
+#print axioms PLeaTTa.compileTypedDispatchFoldWith_generatedNames
 #print axioms PLeaTTa.compileExprFuel_counter_mono
 #print axioms PLeaTTa.compilePatternFuel_counter_mono
 #print axioms PLeaTTa.compileAppFuel_counter_mono

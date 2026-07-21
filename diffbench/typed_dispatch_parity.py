@@ -27,6 +27,15 @@ MISSING_PARAMETER_TYPE = (
 VALID_PARAMETRIC_CHAIN = (
     ROOT / "diffbench" / "probes" / "typed-parametric-chain.metta"
 )
+PARAMETRIC_REJECTION = (
+    ROOT / "diffbench" / "probes" / "typed-parametric-rejection.metta"
+)
+PARAMETRIC_PARTIAL = (
+    ROOT / "diffbench" / "probes" / "typed-parametric-partial.metta"
+)
+PARAMETRIC_OVERLOADS = (
+    ROOT / "diffbench" / "probes" / "typed-parametric-overloads.metta"
+)
 
 
 def normalized(run, probe: Path) -> list[str]:
@@ -110,12 +119,48 @@ def main() -> None:
             "behavior: "
             f"PeTTa={native_parametric!r} PLeaTTa={executable_parametric!r}"
         )
+
+    native_rejection = normalized(diff.petta_results, PARAMETRIC_REJECTION)
+    executable_rejection = normalized(
+        diff.leatta_results, PARAMETRIC_REJECTION
+    )
+    if native_rejection != [] or executable_rejection != native_rejection:
+        raise SystemExit(
+            "typed dispatch parity: a shared parameter/result type variable "
+            "did not reject an inconsistent result: "
+            f"PeTTa={native_rejection!r} PLeaTTa={executable_rejection!r}"
+        )
+
+    native_partial = normalized(diff.petta_results, PARAMETRIC_PARTIAL)
+    executable_partial = normalized(diff.leatta_results, PARAMETRIC_PARTIAL)
+    expected_partial = ["(partial typed-parametric-partial (5))"]
+    if native_partial != expected_partial or executable_partial != native_partial:
+        raise SystemExit(
+            "typed dispatch parity: parametric partial-call construction "
+            "changed: "
+            f"PeTTa={native_partial!r} PLeaTTa={executable_partial!r}"
+        )
+
+    native_overloads = normalized(diff.petta_results, PARAMETRIC_OVERLOADS)
+    executable_overloads = normalized(
+        diff.leatta_results, PARAMETRIC_OVERLOADS
+    )
+    expected_overloads = ["5", "5"]
+    if (
+        native_overloads != expected_overloads
+        or executable_overloads != native_overloads
+    ):
+        raise SystemExit(
+            "typed dispatch parity: branch-local parametric overload order "
+            "or multiplicity changed: "
+            f"PeTTa={native_overloads!r} PLeaTTa={executable_overloads!r}"
+        )
     print(
         "typed dispatch parity: PASS; duplicate signatures retain one "
         "first-occurrence branch, Expression results remain checked, and "
-        "parameter-type exhaustion follows pinned asymmetry; the sampled "
-        "valid parametric chain agrees, while rejection constraints remain "
-        "a known compiler-ledger mismatch"
+        "parameter-type exhaustion follows pinned asymmetry; parametric "
+        "input/result sharing, rejection, partial calls, and overload "
+        "order/multiplicity agree"
     )
 
 

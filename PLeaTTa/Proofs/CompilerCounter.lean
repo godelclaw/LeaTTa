@@ -1,4 +1,5 @@
 import PLeaTTa.Compile
+import PLeaTTa.Proofs.CompilerTypeFreshening
 
 namespace PLeaTTa
 
@@ -550,23 +551,35 @@ theorem typedDispatchStep_counter
       compileTypedArgs start types = .ok (terms, goals, next) →
         start ≤ next)
     (result : Metta.Atom) (head : String)
-    (arguments : List Metta.Atom) :
+    (arities : List Nat) :
     ∀ (accumulator : List (Metta.Atom × List Goal) × Nat)
       (chain : List Metta.Atom)
       (outcome : List (Metta.Atom × List Goal) × Nat),
-      compileTypedDispatchStepWith compileTypedArgs result head arguments
+      compileTypedDispatchStepWith compileTypedArgs result head arities
           accumulator chain = Except.ok outcome →
         accumulator.2 ≤ outcome.2 := by
   intro accumulator chain outcome compiled
   unfold compileTypedDispatchStepWith at compiled
-  split at compiled <;> try contradiction
-  · simp only [Bind.bind, Except.bind] at compiled
-    split at compiled
-    · contradiction
-    · have argumentsMono := typedMono _ _ _ _ _ (by assumption)
-      rcases Except.ok.inj compiled with rfl
-      exact Nat.le_trans argumentsMono (by
-        apply compileResultTypeCheck_counter_le)
+  rcases freshEq : freshenTypeChain accumulator.2 chain with
+    ⟨freshChain, freshCounter⟩
+  simp only [freshEq] at compiled
+  cases lastEq : freshChain.getLast? with
+  | none => simp [lastEq] at compiled
+  | some resultType =>
+      simp only [lastEq, Bind.bind, Except.bind] at compiled
+      cases typedEq : compileTypedArgs freshCounter freshChain.dropLast with
+      | error message => simp [typedEq] at compiled
+      | ok value =>
+          simp only [typedEq] at compiled
+          have freshMono : accumulator.2 ≤ freshCounter := by
+            simpa only [freshEq] using
+              CompilerTypeFreshening.freshenTypeChain_counter_le
+                accumulator.2 chain
+          have argumentsMono := typedMono _ _ _ _ _ typedEq
+          rcases Except.ok.inj compiled with rfl
+          exact Nat.le_trans freshMono <|
+            Nat.le_trans argumentsMono <|
+              compileResultTypeCheck_counter_le _ _ _
 
 theorem compileAppDefaultWith_counter
     (compileArgs : Nat →
@@ -617,13 +630,14 @@ theorem compileAppDefaultWith_counter
         rcases freshEq : fresh start with ⟨result, firstCounter⟩
         simp only [freshEq] at compiled
         let step := compileTypedDispatchStepWith compileTypedArgs result
-          head arguments
+          head (env.arities head)
         have stepMono : ∀ accumulator chain outcome,
             step accumulator chain = .ok outcome →
               accumulator.2 ≤ outcome.2 := by
           intro accumulator chain outcome stepCompiled
           exact typedDispatchStep_counter compileTypedArgs typedMono
-            result head arguments accumulator chain outcome stepCompiled
+            result head (env.arities head) accumulator chain outcome
+            stepCompiled
         have foldMono := foldlM_counter_mono step stepMono
           (env.typeChains head) ([], firstCounter)
         have freshMono : start ≤ firstCounter := by

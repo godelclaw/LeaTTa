@@ -92,22 +92,27 @@ theorem compileTypedDispatchStepWith_success_stable
       CompileM (List Metta.Atom × List Goal × Nat))
     (typedStable : ∀ start types value,
       low start types = .ok value → high start types = .ok value)
-    (result : Metta.Atom) (head : String) (arguments : List Metta.Atom) :
+    (result : Metta.Atom) (head : String) (arities : List Nat) :
     ∀ accumulator chain outcome,
-      compileTypedDispatchStepWith low result head arguments accumulator chain =
+      compileTypedDispatchStepWith low result head arities accumulator chain =
           .ok outcome →
-        compileTypedDispatchStepWith high result head arguments accumulator chain =
+        compileTypedDispatchStepWith high result head arities accumulator chain =
           .ok outcome := by
   intro accumulator chain outcome compiled
   unfold compileTypedDispatchStepWith at compiled ⊢
-  split at compiled
-  · simp only [Bind.bind, Except.bind] at compiled ⊢
-    split at compiled
-    · contradiction
-    · rename_i typedOutcome typedValue typedEq
-      rw [typedStable _ _ _ typedEq]
-      exact compiled
-  · contradiction
+  rcases freshEq : freshenTypeChain accumulator.2 chain with
+    ⟨freshChain, freshCounter⟩
+  simp only [freshEq] at compiled ⊢
+  cases lastEq : freshChain.getLast? with
+  | none => simp [lastEq] at compiled
+  | some resultType =>
+      simp only [lastEq, Bind.bind, Except.bind] at compiled ⊢
+      cases lowEq : low freshCounter freshChain.dropLast with
+      | error message => simp [lowEq] at compiled
+      | ok value =>
+          simp only [lowEq] at compiled
+          rw [typedStable _ _ _ lowEq]
+          exact compiled
 
 /-- Ordered ambiguous-branch compilation is stable when expression
 compilation is stable. -/
@@ -180,14 +185,16 @@ theorem compileAppDefaultWith_success_stable
       · simp only [typed, if_true] at compiled ⊢
         let result := (fresh start).1
         let firstCounter := (fresh start).2
-        let lowStep := compileTypedDispatchStepWith lowTyped result head arguments
-        let highStep := compileTypedDispatchStepWith highTyped result head arguments
+        let lowStep := compileTypedDispatchStepWith lowTyped result head
+          (env.arities head)
+        let highStep := compileTypedDispatchStepWith highTyped result head
+          (env.arities head)
         have stepStable : ∀ accumulator chain branchOutcome,
             lowStep accumulator chain = .ok branchOutcome →
               highStep accumulator chain = .ok branchOutcome := by
           intro accumulator chain branchOutcome branchCompiled
           exact compileTypedDispatchStepWith_success_stable
-            lowTyped highTyped typedStable result head arguments
+            lowTyped highTyped typedStable result head (env.arities head)
             accumulator chain branchOutcome branchCompiled
         have foldStable : ∀ branchOutcome,
             (env.typeChains head).foldlM lowStep ([], firstCounter) =

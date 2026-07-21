@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=a55e57af254981cb132ed5d1d498762afc46404813afef9afcdc72c2412deb8b
+# compiler_sha256=ae3ea0f3b1e70d5e6a096abef0f85286211d8b6d42add10af67d297f6e3bed25
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -103,7 +103,7 @@ APP.bind_other	M246	S	-	N	GAP	explicit-failure-shortcut
 APP.get_state	M248	S	-	N	GAP	world-action
 APP.change_state	M247	S	-	N	GAP	world-action
 FALLBACK.prolog_function	M274,T310-346	H	-	N	BOUNDARY	typed-SWI-boundary
-FALLBACK.typed_branches	T317-370	S	TranslatesTypedArgs	N	FAIL	first-occurrence chain deduplication, distinct Expression-result checking, surplus parameter types ignored at traversal base, and missing parameter types rejected before fallback; single-chain selector omits required parametric constraints and overloaded parametric chains lack per-branch freshening; branch/result assembly proof open
+FALLBACK.typed_branches	T317-370	S	TranslatesTypedArgs	N	GAP	first-occurrence chain deduplication, distinct Expression-result checking, surplus parameter types ignored at traversal base, and missing parameter types rejected before fallback; branch-local freshening, shared parametric input/result constraints, partial calls, and overload order/multiplicity now agree behaviorally; independent branch/result assembly soundness and completeness remain open
 FALLBACK.typed_empty_direct	T335-346	X	-	N	GAP	arity-fallback-unproved
 FALLBACK.typed_empty_partial	T335-346	X	-	N	GAP	partial-representation-unproved
 FALLBACK.defined_direct	T312-346	X	TranslatesDefinedCall	SC	PASS	direct-call-proved and composed with independently specified untyped source registration; ordinary-head priority explicit; typed-dispatch-and-imported-ownership-excluded

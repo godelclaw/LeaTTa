@@ -219,6 +219,18 @@ def resultTypeRequiresCheck : Atom → Bool
   | Atom.sym name => name != "%Undefined%" && name != "Atom"
   | _ => true
 
+/-- Carry declared type variables out of the committed type-check subrun.
+Concrete types retain the historical `#u` template exactly; an open type uses
+the shared binding template so an input check constrains the same fresh type
+variable later observed by the result check. [SPEC translator.pl:349-370] -/
+def typeCheckBindingTemplate (expected : Atom) : Atom :=
+  if expected.vars.isEmpty then Atom.sym "#u"
+  else bindingTemplate (Atom.sym "#u") [expected]
+
+@[simp] theorem typeCheckBindingTemplate_sym (expected : String) :
+    typeCheckBindingTemplate (Atom.sym expected) = Atom.sym "#u" := by
+  simp [typeCheckBindingTemplate, Atom.vars]
+
 /-- Shared construction of the generated type/meta-type soft-cut. Argument
 and result positions choose different source-faithful policies below, while
 the emitted goal and counter behavior remain defined once. -/
@@ -227,7 +239,7 @@ def compileTypeCheckWhen (requiresCheck : Bool) (value expected : Atom)
   if requiresCheck then
     let (directType, nextCounter) := fresh counter
     let (metaType, finalCounter) := fresh nextCounter
-    ([Goal.softcut (Atom.sym "#u")
+    ([Goal.softcut (typeCheckBindingTemplate expected)
        [Goal.bin "get-type" [value] directType,
         Goal.eq directType (chainify expected)]
        []
@@ -413,31 +425,19 @@ private theorem rewriteStreamOp_quote_none (args : List Atom) :
     show ("quote" == "subtraction") = false by decide,
     Bool.false_eq_true, ↓reduceIte]
 
-/-- Whether the currently supported declared-type fragment requires the
-explicit typed branch machinery. Single-chain parametric and dependent
-type-variable declarations currently retain the ordinary path because their
-required freshening is not implemented; that path is not generally equivalent
-to pinned typed dispatch. Overloaded parametric chains remain unsupported as
-well. See ledger `FALLBACK.typed_branches`. -/
+/-- Whether a declared-type collection requires explicit typed branches.
+One chain needs them exactly when an input or result check is observable;
+multiple distinct chains also need them to preserve branch order and
+multiplicity. [SPEC translator.pl:317-324,349-370] -/
 def shouldUseTypedDispatch (chains : List (List Atom)) : Bool :=
-  let hasCompoundParam : List Atom → Bool := fun chain =>
-    chain.dropLast.any (fun ty =>
-      match ty with
-      | Atom.expr _ => true
-      | _ => false)
-  let isSimpleType : Atom → Bool
-    | Atom.sym _ => true
-    | _ => false
-  let isSimpleRefinedType : Atom → Bool
-    | Atom.sym name =>
-        name != "%Undefined%" && name != "Atom" &&
-          name != "Expression" && name != "true" && name != "false"
-    | _ => false
-  let hasSupportedSimpleRefinement : List Atom → Bool := fun chain =>
-    chain.all isSimpleType && chain.any isSimpleRefinedType
+  let needsChecks : List Atom → Bool := fun chain =>
+    chain.dropLast.any typeRequiresCheck ||
+      match chain.getLast? with
+      | some resultType => resultTypeRequiresCheck resultType
+      | none => false
   match chains with
   | [] => false
-  | [chain] => hasCompoundParam chain || hasSupportedSimpleRefinement chain
+  | [chain] => needsChecks chain
   | _ :: _ :: _ => true
 
 /-- A nonempty source call cannot traverse a type chain that runs out of
@@ -445,31 +445,66 @@ parameter types. An empty inner chain also lacks the mandatory result type;
 an empty outer chain list means that no type declaration exists. Pinned
 `maplist(typed_functioncall_branch, ...)` fails the whole translation when
 either occurs; this guard preserves that failure before the existing selector,
-including for fragments currently lowered through the ordinary path. It does
-not close the parametric typed-dispatch mismatch.
+including for fragments lowered through the ordinary path.
 [SPEC translator.pl:317-324,349-370] -/
 def typedDispatchInputShortage (chains : List (List Atom))
     (argumentCount : Nat) : Bool :=
   chains.any (fun chain =>
     chain.isEmpty || chain.dropLast.length < argumentCount)
 
-/-- One arrow-chain branch of typed dispatch.  Naming this executable step
-makes its counter threading and ordered fold independently checkable. -/
+/-- Pinned `build_call_or_partial/6` specialized to an already translated
+typed argument list. The returned atom is the branch template: a complete
+arity calls into the shared result, while an incomplete arity is a partial
+value and emits no call goal. [SPEC translator.pl:335-346] -/
+def compileTypedCallOrPartial (arities : List Nat) (result : Atom)
+    (head : String) (terms : List Atom) : Atom × List Goal :=
+  if arities.contains terms.length then
+    (result, [Goal.call head terms result])
+  else
+    (partialValue head terms, [])
+
+/-- A complete typed branch emits exactly one local call and preserves the
+shared result template.  Consumers use this equation instead of reopening the
+arity decision. -/
+@[simp] theorem compileTypedCallOrPartial_complete
+    (arities : List Nat) (result : Atom) (head : String) (terms : List Atom)
+    (complete : terms.length ∈ arities) :
+    compileTypedCallOrPartial arities result head terms =
+      (result, [Goal.call head terms result]) := by
+  simp [compileTypedCallOrPartial, complete]
+
+/-- An incomplete typed branch is a first-class partial value and emits no
+call goal. -/
+@[simp] theorem compileTypedCallOrPartial_partial
+    (arities : List Nat) (result : Atom) (head : String) (terms : List Atom)
+    (incomplete : terms.length ∉ arities) :
+    compileTypedCallOrPartial arities result head terms =
+      (partialValue head terms, []) := by
+  simp [compileTypedCallOrPartial, incomplete]
+
+/-- One arrow-chain branch of typed dispatch. Each chain is first made a
+fresh variant, reproducing Prolog's branch-local copying through `findall/3`;
+the advanced counter then feeds typed argument translation and result checks.
+Naming this executable step makes its counter threading and ordered fold
+independently checkable. [SPEC translator.pl:317-324,349-370] -/
 def compileTypedDispatchStepWith
     (compileTypedArgs : Nat → List Atom →
       CompileM (List Atom × List Goal × Nat))
-    (result : Atom) (head : String) (_arguments : List Atom)
+    (result : Atom) (head : String) (arities : List Nat)
     (accumulator : List (Atom × List Goal) × Nat) (chain : List Atom) :
     CompileM (List (Atom × List Goal) × Nat) :=
-  match chain.dropLast, chain.getLast? with
+  let (freshChain, freshCounter) := freshenTypeChain accumulator.2 chain
+  match freshChain.dropLast, freshChain.getLast? with
   | parameterTypes, some resultType =>
       do
       let (terms, goals, checkedArgumentsCounter) ←
-        compileTypedArgs accumulator.2 parameterTypes
+        compileTypedArgs freshCounter parameterTypes
+      let (branchResult, callGoals) :=
+        compileTypedCallOrPartial arities result head terms
       let (resultChecks, nextCounter) :=
-        compileResultTypeCheck result resultType checkedArgumentsCounter
-      .ok (accumulator.1 ++ [(result,
-        goals ++ [Goal.call head terms result] ++ resultChecks)], nextCounter)
+        compileResultTypeCheck branchResult resultType checkedArgumentsCounter
+      .ok (accumulator.1 ++ [(branchResult,
+        goals ++ callGoals ++ resultChecks)], nextCounter)
   | _, none => .error "typed dispatch: missing result type"
 
 /-- Compile an ordered collection of nondeterministic branches.  The callback
@@ -638,7 +673,8 @@ def compileAppDefaultWith
     else if shouldUseTypedDispatch chains0 then do
       let (result, firstCounter) := fresh counter
       let (branches, branchCounter) ← chains0.foldlM
-        (compileTypedDispatchStepWith compileTypedArgs result head arguments)
+        (compileTypedDispatchStepWith compileTypedArgs result head
+          (env.arities head))
         ([], firstCounter)
       if branches.isEmpty then do
         let (terms, goals, nextCounter) ← compileArgs counter
