@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=8b8f8ce1e64922ea7e86d7c2f750cf3fcc3ddb7b4dbc2ad084f34a2897a54c4c
+# compiler_sha256=75515b033387cf4c18c58c8b88addec9e222d38f54400d2b2faf73bb27c624b6
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -78,9 +78,9 @@ APP.superpose_computed	M105,T310-346	S	-	N	GAP	spread-shortcut
 APP.hyperpose_literal	T129-135,T424-427	S	-	N	GAP	concurrency-erased-and-order-fixed
 APP.hyperpose_computed	T129-135,T429-431	S	-	N	GAP	spread-plus-evalg
 APP.unique	T76-77	X	-	N	GAP	exact-rewrite-value-differential-pass; independent-rule-open
-APP.union	T80-82	S	-	N	FAIL	shaped-rewrite-differential-pass; unshaped-core-overaccepted
-APP.intersection	T83-85	S	-	N	FAIL	shaped-rewrite-differential-pass; unshaped-core-overaccepted
-APP.subtraction	T86-88	S	-	N	FAIL	shaped-rewrite-differential-pass; unshaped-core-overaccepted
+APP.union	T80-82	X	-	N	GAP	exact-shaped-rewrite-and-unshaped-parity-fixed; regressions-pass; independent-rule-open
+APP.intersection	T83-85	X	-	N	GAP	exact-shaped-rewrite-and-unshaped-parity-fixed; regressions-pass; independent-rule-open
+APP.subtraction	T86-88	X	-	N	GAP	exact-shaped-rewrite-and-unshaped-parity-fixed; regressions-pass; independent-rule-open
 APP.eval	T293-295	S	-	N	FAIL	precompiles-code-argument
 APP.catch	T300-308	X	-	N	GAP	catch-goal-agreement-missing
 APP.call	T278-283	S	-	N	GAP	superpose-dispatch-runtime-pass; general-typed-argument-staging-unproved

@@ -746,9 +746,12 @@ the original source spelling. -/
   | "transaction" => .hTransaction
   | "hyperpose" => .hHyperpose
   | "unique" => .hUnique
-  | "union" => .hUnion
-  | "intersection" => .hIntersection
-  | "subtraction" => .hSubtraction
+  -- These heads are special only when `rewriteStreamOp?` has already
+  -- recognized two syntactic `superpose` operands.  Every other shape follows
+  -- pinned ordinary application/data translation rather than a core shortcut.
+  | "union" => .other
+  | "intersection" => .other
+  | "subtraction" => .other
   | "eval" => .hEval
   | "catch" => .hCatch
   | "call" => .hCall
@@ -1200,7 +1203,8 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         .ok (r, [Goal.findall te ge lst,
                  Goal.bin "unique-atom" [lst] ded, Goal.spread ded r], n4)
     | .hUnion, [e1, e2] => do
-        -- stream union: concatenated enumerations
+        -- Unreachable from source: the shaped form is rewritten before core
+        -- classification, and every unshaped `union` classifies as ordinary.
         let (t1, g1, n1) ← compileExprFuel fuel env n e1
         let (t2, g2, n2) ← compileExprFuel fuel env n1 e2
         let (l1, n3) := fresh n2
@@ -1210,6 +1214,8 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         .ok (r, [Goal.findall t1 g1 l1, Goal.findall t2 g2 l2,
                  Goal.bin "union-atom" [l1, l2] cc, Goal.spread cc r], n6)
     | .hIntersection, [e1, e2] => do
+        -- See `hUnion`: retained only to keep the classifier result type
+        -- stable while the source-facing classifier excludes this branch.
         let (t1, g1, n1) ← compileExprFuel fuel env n e1
         let (t2, g2, n2) ← compileExprFuel fuel env n1 e2
         let (l1, n3) := fresh n2
@@ -1219,6 +1225,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         .ok (r, [Goal.findall t1 g1 l1, Goal.findall t2 g2 l2,
                  Goal.bin "intersection-atom" [l1, l2] cc, Goal.spread cc r], n6)
     | .hSubtraction, [e1, e2] => do
+        -- See `hUnion`: this constructor is not returned for source heads.
         let (t1, g1, n1) ← compileExprFuel fuel env n e1
         let (t2, g2, n2) ← compileExprFuel fuel env n1 e2
         let (l1, n3) := fresh n2

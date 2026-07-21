@@ -15,9 +15,9 @@ APP.hash_minus	diffbench/probes/mismatch-hash-minus-clpfd.metta	expected-diverge
 APP.succeedsPredicate	diffbench/probes/mismatch-succeeds-predicate-general.metta	expected-divergence	ok	["true","true"]	ok	["true","false"]	general true/0 predicate lies outside the space-only shortcut
 APP.foldall	diffbench/probes/mismatch-foldall-order.metta	expected-divergence	ok	["true","3","generator"]	ok	["true","3","aggregator"]	equal folded value but different effect order
 APP.forall	diffbench/probes/mismatch-forall-streaming.metta	expected-divergence	ok	["true","false","first"]	ok	["true","false","second"]	equal Boolean result but streaming stops before the second effect
-APP.union	diffbench/probes/mismatch-union-unshaped.metta	expected-divergence	ok	["((union 1 2))"]	ok	["(1 2)"]	pinned rewrite requires two syntactic superposes
-APP.intersection	diffbench/probes/mismatch-intersection-unshaped.metta	expected-divergence	ok	["((intersection 1 1))"]	ok	["(1)"]	pinned rewrite requires two syntactic superposes
-APP.subtraction	diffbench/probes/mismatch-subtraction-unshaped.metta	expected-divergence	ok	["((subtraction 1 2))"]	ok	["(1)"]	pinned rewrite requires two syntactic superposes
+APP.union	diffbench/probes/mismatch-union-unshaped.metta	characterization	ok	["((union 1 2))"]	ok	["((union 1 2))"]	unshaped source now follows ordinary application; independent rule open
+APP.intersection	diffbench/probes/mismatch-intersection-unshaped.metta	characterization	ok	["((intersection 1 1))"]	ok	["((intersection 1 1))"]	unshaped source now follows ordinary application; independent rule open
+APP.subtraction	diffbench/probes/mismatch-subtraction-unshaped.metta	characterization	ok	["((subtraction 1 2))"]	ok	["((subtraction 1 2))"]	unshaped source now follows ordinary application; independent rule open
 APP.eval	diffbench/probes/mismatch-eval-precompiled-argument.metta	expected-divergence	ok	["(+ 1 2)"]	ok	["3"]	raw runtime eval versus precompiled quote
 APP.reduce	diffbench/probes/mismatch-reduce-eval-alias.metta	expected-divergence	ok	["(quote 3)"]	ok	["3"]	nested-argument translation versus eval alias
 APP.size_constraint_nonint	diffbench/probes/mismatch-size-constraint-nonint.metta	expected-divergence	ok	["false"]	error	size_nonliteral	generic native identity versus compiler rejection

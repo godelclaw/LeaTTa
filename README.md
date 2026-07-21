@@ -102,13 +102,15 @@ ordered answers and multiplicity; denominator and hashes in
   the witnessed performance tier.
 - **Corpus-observed semantic divergence: 0.** This is deliberately narrower
   than “no known mismatch.” Independent source comparison currently records
-  29 compiler `FAIL` obligations in `diffbench/compiler-obligations.tsv`.
-  `diffbench/compiler-mismatch-witnesses.tsv` maps every one exactly once:
-  28 have directed programs that exhibit the recorded difference with exact
-  ordered outcomes, while one source-reachable registration case is retained
-  as an honest agreeing characterization. The canonical benchmark runs this
-  mismatch gate before the corpus, so a repaired mismatch turns the gate red
-  until its ledger row is reviewed rather than silently leaving stale debt.
+  26 compiler `FAIL` obligations in `diffbench/compiler-obligations.tsv`.
+  `diffbench/compiler-mismatch-witnesses.tsv` maps every current FAIL exactly
+  once and retains repaired cases: 25 directed programs exhibit an exact
+  recorded difference, while four are agreeing characterizations. Three of
+  those four record the repaired shape guard for `union`, `intersection`, and
+  `subtraction`; they remain GAP until independent rules and adequacy proofs
+  land. The canonical benchmark runs this gate before the corpus, so a changed
+  mismatch turns the gate red until its ledger row is reviewed rather than
+  silently leaving stale debt.
 - **Not yet covered: 4** — `git_import`, `git_import2` (network + external
   build), `llm_cities` (live LLM), and `greedy_chess` (interactive loop) are
   deferred external dependencies.

@@ -40,6 +40,7 @@ class CompilerMismatchWitnessGateTest(unittest.TestCase):
         native: witnesses.Outcome,
         pleatta: witnesses.Outcome,
         ledger_compiler_hash: str | None = None,
+        ledger_status: str = "FAIL",
     ) -> int:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -58,7 +59,7 @@ class CompilerMismatchWitnessGateTest(unittest.TestCase):
                 "# pinned_petta_revision=test-pin\n"
                 f"# compiler_sha256={recorded_compiler_hash}\n"
                 "id\tstatus\n"
-                "UNIT.fail\tFAIL\n",
+                f"UNIT.fail\t{ledger_status}\n",
                 encoding="utf-8",
             )
             manifest = root / "compiler-mismatch-witnesses.tsv"
@@ -127,6 +128,48 @@ class CompilerMismatchWitnessGateTest(unittest.TestCase):
             ),
             1,
         )
+
+    def test_repaired_characterization_is_green(self) -> None:
+        row = (
+            'UNIT.fail\tfixture.metta\tcharacterization\tok\t["same"]'
+            '\tok\t["same"]\tsynthetic'
+        )
+        self.assertEqual(
+            self._run_synthetic_gate(
+                manifest_rows=[row],
+                native=witnesses.Outcome("ok", ("same",)),
+                pleatta=witnesses.Outcome("ok", ("same",)),
+                ledger_status="GAP",
+            ),
+            0,
+        )
+
+    def test_characterization_divergence_is_red(self) -> None:
+        row = (
+            'UNIT.fail\tfixture.metta\tcharacterization\tok\t["left"]'
+            '\tok\t["right"]\tsynthetic'
+        )
+        self.assertEqual(
+            self._run_synthetic_gate(
+                manifest_rows=[row],
+                native=witnesses.Outcome("ok", ("left",)),
+                pleatta=witnesses.Outcome("ok", ("right",)),
+            ),
+            1,
+        )
+
+    def test_expected_divergence_cannot_hide_in_gap(self) -> None:
+        row = (
+            'UNIT.fail\tfixture.metta\texpected-divergence\tok\t["left"]'
+            '\tok\t["right"]\tsynthetic'
+        )
+        with self.assertRaisesRegex(SystemExit, "requires ledger FAIL"):
+            self._run_synthetic_gate(
+                manifest_rows=[row],
+                native=witnesses.Outcome("ok", ("left",)),
+                pleatta=witnesses.Outcome("ok", ("right",)),
+                ledger_status="GAP",
+            )
 
     def test_missing_fail_row_is_rejected(self) -> None:
         with self.assertRaisesRegex(SystemExit, "manifest drift"):

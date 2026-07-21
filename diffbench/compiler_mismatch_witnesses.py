@@ -115,8 +115,10 @@ def main() -> int:
 
     ledger_rows = rows(LEDGER)
     manifest_rows = rows(MANIFEST)
+    ledger_by_id = {row["id"]: row for row in ledger_rows}
     fail_ids = {
-        row["id"] for row in ledger_rows if row.get("status") == "FAIL"
+        row_id for row_id, row in ledger_by_id.items()
+        if row.get("status") == "FAIL"
     }
     manifest_ids = [row["id"] for row in manifest_rows]
     duplicates = sorted({item for item in manifest_ids
@@ -124,10 +126,10 @@ def main() -> int:
     if duplicates:
         raise SystemExit(f"duplicate mismatch IDs: {duplicates}")
     missing = sorted(fail_ids - set(manifest_ids))
-    extra = sorted(set(manifest_ids) - fail_ids)
-    if missing or extra:
+    unknown = sorted(set(manifest_ids) - set(ledger_by_id))
+    if missing or unknown:
         raise SystemExit(
-            f"mismatch manifest drift: missing={missing} extra={extra}")
+            f"mismatch manifest drift: missing={missing} unknown={unknown}")
 
     ledger_revision = metadata(LEDGER).get("pinned_petta_revision")
     manifest_revision = metadata(MANIFEST).get("pinned_petta_revision")
@@ -144,6 +146,11 @@ def main() -> int:
     for row in manifest_rows:
         if row["mode"] not in {"expected-divergence", "characterization"}:
             raise SystemExit(f"unknown mode for {row['id']}: {row['mode']}")
+        ledger_status = ledger_by_id[row["id"]]["status"]
+        if row["mode"] == "expected-divergence" and ledger_status != "FAIL":
+            raise SystemExit(
+                f"expected divergence {row['id']} requires ledger FAIL, "
+                f"not {ledger_status}")
         grouped.setdefault(row["fixture"], []).append(row)
 
     observed: dict[str, tuple[Outcome, Outcome]] = {}
@@ -192,11 +199,15 @@ def main() -> int:
     divergence_rows = sum(
         row["mode"] == "expected-divergence" for row in manifest_rows)
     characterization_rows = len(manifest_rows) - divergence_rows
+    characterization_label = (
+        "characterization row" if characterization_rows == 1
+        else "characterization rows"
+    )
     print(
         "compiler-mismatch-witnesses: "
         f"{'PASS' if ok else 'FAIL'}; "
         f"{divergence_rows} expected-divergence rows, "
-        f"{characterization_rows} characterization row, "
+        f"{characterization_rows} {characterization_label}, "
         f"{len(observed)} unique fixtures"
     )
     return 0 if ok else 1
