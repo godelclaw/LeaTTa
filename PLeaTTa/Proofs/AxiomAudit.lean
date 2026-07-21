@@ -256,6 +256,8 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_refined_integer_arg
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_andThen
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_literal_orElse
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.translates_empty
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.empty_hook_blocks_builtin
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_atomic_pattern
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_supported_atomic_pattern
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.external_not_supported_pattern
@@ -270,9 +272,15 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.once_cannot_return_two
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.duplicate_truth_preserves_multiplicity
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.fail_cannot_return_valuation
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.empty_call_all_iff
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.false_unification_all_iff
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.Ordered.empty_call_false_unification_all_equivalent
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Declarative.empty_call_false_unification_equivalent
 #print axioms PLeaTTa.PrologCoreAdequacy.compiled_empty_step_fails
 #print axioms PLeaTTa.PrologCoreAdequacy.compileExpr_empty_failure_adequate
+#print axioms PLeaTTa.PrologCoreAdequacy.compileExpr_empty_behavioral_sound
+#print axioms PLeaTTa.PrologCoreAdequacy.compileExpr_empty_behavioral_complete
+#print axioms PLeaTTa.PrologCoreAdequacy.compileExpr_empty_source_to_step_failure
 #print axioms PLeaTTa.PrologCoreAdequacy.unifyTop_fresh_variable
 #print axioms PLeaTTa.PrologCoreAdequacy.unifyB_fresh_capture
 #print axioms PLeaTTa.PrologCoreAdequacy.unifyB_fresh_capture_denotes

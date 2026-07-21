@@ -198,6 +198,13 @@ interface with pinned, clause-ordered resolution. -/
 abbrev CallSemantics :=
   String → List Term → Valuation → List Valuation → Prop
 
+/-- Ordered call interfaces faithful to pinned `empty(_) :- fail` at the one
+predicate observation used by the compiler shortcut.  Other predicates remain
+completely abstract. [SPEC metta.pl:106] -/
+def EmptyCallFails (calls : CallSemantics) : Prop :=
+  ∀ valuation argument answers,
+    calls "empty" [argument] valuation answers ↔ answers = []
+
 mutual
 
 /-- Sequential operational observations for the first pinned Prolog fragment.
@@ -311,6 +318,67 @@ theorem runsMany_empty_output {calls : CallSemantics}
       | cons _ _ _ headAnswers tailAnswers head tail =>
           cases head
           simpa using congrArg (fun rest => valuation :: rest) (ih tail)
+
+/-- Under the pinned `empty/1` contract, its singleton goal sequence has one
+and only one ordered observation: the empty answer bag. -/
+theorem empty_call_all_iff {calls : CallSemantics}
+    (emptyFails : EmptyCallFails calls) (valuation : Valuation)
+    (argument : Term) (answers : List Valuation) :
+    RunsAll calls valuation [.call "empty" [argument]] answers ↔
+      answers = [] := by
+  constructor
+  · intro execution
+    cases execution with
+    | cons _ _ _ headAnswers _ head tail =>
+        cases head with
+        | call _ _ _ _ invoked =>
+            have headEmpty : headAnswers = [] :=
+              (emptyFails valuation argument headAnswers).mp invoked
+            subst headAnswers
+            cases tail
+            rfl
+  · intro answersEmpty
+    subst answers
+    exact .cons valuation (.call "empty" [argument]) [] [] []
+      (.call valuation "empty" [argument] []
+        ((emptyFails valuation argument []).mpr rfl))
+      (.nil [])
+
+/-- The executable shortcut's contradictory truth equality likewise has
+exactly the empty ordered answer bag. -/
+theorem false_unification_all_iff (calls : CallSemantics)
+    (valuation : Valuation) (answers : List Valuation) :
+    RunsAll calls valuation [.unify (.atom "true") (.atom "false")] answers ↔
+      answers = [] := by
+  constructor
+  · intro execution
+    cases execution with
+    | cons _ _ _ headAnswers _ head tail =>
+        cases head with
+        | unifySuccess _ _ _ agreement =>
+            simp [denoteTerm] at agreement
+        | unifyFailure =>
+            cases tail
+            rfl
+  · intro answersEmpty
+    subst answers
+    exact .cons valuation
+      (.unify (.atom "true") (.atom "false")) [] [] []
+      (.unifyFailure valuation (.atom "true") (.atom "false") (by
+        simp [denoteTerm]))
+      (.nil [])
+
+/-- Native PeTTa's failing `empty(Result)` call and the executable compiler's
+explicit false equality have identical complete ordered observations.  The
+result term is intentionally arbitrary: neither side can expose it. -/
+theorem empty_call_false_unification_all_equivalent
+    (calls : CallSemantics) (emptyFails : EmptyCallFails calls)
+    (result : Term) :
+    AllEquivalent calls [.call "empty" [result]]
+      [.unify (.atom "true") (.atom "false")] := by
+  intro valuation answers
+  rw [empty_call_all_iff emptyFails valuation result answers,
+    false_unification_all_iff calls valuation answers]
 
 /-- Mutex wrapping is observationally inert only under the explicitly
 sequential model: it preserves the body's answers, order, and multiplicity. -/

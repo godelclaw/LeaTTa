@@ -45,7 +45,7 @@ APP.retractPredicate	M279-280	H	-	N	BOUNDARY	world-action
 APP.process_metta_string	F12-18	H	-	N	BOUNDARY	runtime-loader-world-action
 APP.unquote_quote	HE64-67	L	-	EQ	FAIL	hardcoded-without-library-and-cut
 APP.unquote_other	HE64-67	L	-	N	FAIL	library-presence-not-modeled
-APP.empty	M105-106	S	-	EQ	GAP	behavioral-failure-shortcut-not-composed
+APP.empty	M105-106,T310-346	S	TranslatesEmpty.call	BC	PASS	independent dispatch rule; arbitrary unobservable native result; ordered empty-answer equivalence; compiler soundness/completeness; sealed terminal failure step
 APP.cut	T117-118	X	TranslatesExpr.cut	SC	PASS	covered
 APP.test	T119-126,M205-209	S	-	N	GAP	internal-test-results-helper
 APP.trace	T73-75	X	-	EQ	GAP	pre-hook-rewrite-and-runtime-differential-pass; independent-rule-open

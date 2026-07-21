@@ -50,6 +50,12 @@ CASES = [
         ["true"],
     ),
     (
+        "empty-is-ordinary-failure",
+        "!(empty)\n!(+ 1 2)\n",
+        [],
+        ["3"],
+    ),
+    (
         "identity-equality-open-terms",
         """!(== (p $x) (p $x))
 !(== (p $x) (p $y))

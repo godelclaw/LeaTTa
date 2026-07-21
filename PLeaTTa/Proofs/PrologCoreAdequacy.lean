@@ -4,7 +4,7 @@ Purpose: Relate independently specified pure Prolog behavior to compiled
   PLeaTTa goals and the sealed small-step machine.
 Trusted boundary: none
 -/
-import PLeaTTa.Compile
+import PLeaTTa.Proofs.CompilerAdequacy
 import PLeaTTa.Semantics
 import PLeaTTa.PeTTaSpec.PrologSemantics
 import PLeaTTa.Proofs.BarrierCache
@@ -84,6 +84,85 @@ theorem compileExpr_empty_failure_adequate (env : CEnv) (counter : Nat)
         [.unify (.atom "true") (.atom "false")] := by
   exact ⟨compileExpr_empty_eq env counter noHook,
     empty_call_false_unification_equivalent nativeResult⟩
+
+/-- Soundness of the executable `empty` shortcut against the independent
+pinned translation and complete ordered observations.  No result-term
+agreement is claimed: both goal sequences fail, so neither result is
+observable. -/
+theorem compileExpr_empty_behavioral_sound {state : TranslatorState}
+    (env : CEnv) (agreement : PLeaTTa.CompilerAdequacy.EnvAgrees state env)
+    {counter : Nat} {source : Atom} {term : Term}
+    {nativeGoals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (native :
+      TranslatesEmpty state counter source term nativeGoals nextCounter) :
+    compileExpr env counter source =
+        .ok (.sym "True",
+          [PLeaTTa.Goal.eq (.sym "True") (.sym "False")], nextCounter) ∧
+      ∀ calls, Declarative.Ordered.EmptyCallFails calls →
+        Declarative.Ordered.AllEquivalent calls nativeGoals
+          [.unify (.atom "true") (.atom "false")] := by
+  cases native with
+  | @call result notShadowed =>
+      exact ⟨compileExpr_empty_eq env counter
+          (agreement.notContains notShadowed),
+        fun calls emptyFails =>
+          Declarative.Ordered.empty_call_false_unification_all_equivalent
+            calls emptyFails (.variable result)⟩
+
+/-- Completeness of the `empty` shortcut on its independent supported
+fragment.  Any successful executable compilation has the exact failing goal
+shape and is backed by the pinned translation derivation. -/
+theorem compileExpr_empty_behavioral_complete {state : TranslatorState}
+    (env : CEnv) (agreement : PLeaTTa.CompilerAdequacy.EnvAgrees state env)
+    {counter : Nat} {source internal : Atom}
+    {executableGoals : List PLeaTTa.Goal} {nextCounter : Nat}
+    (supported : SupportedEmpty state counter source)
+    (compiled : compileExpr env counter source =
+      .ok (internal, executableGoals, nextCounter)) :
+    ∃ term nativeGoals,
+      TranslatesEmpty state counter source term nativeGoals nextCounter ∧
+      internal = .sym "True" ∧
+      executableGoals =
+        [PLeaTTa.Goal.eq (.sym "True") (.sym "False")] ∧
+      ∀ calls, Declarative.Ordered.EmptyCallFails calls →
+        Declarative.Ordered.AllEquivalent calls nativeGoals
+          [.unify (.atom "true") (.atom "false")] := by
+  obtain ⟨term, nativeGoals, referenceCounter, native⟩ := supported
+  obtain ⟨referenceCompiled, behavior⟩ :=
+    compileExpr_empty_behavioral_sound env agreement native
+  have resultEquality :
+      (internal, executableGoals, nextCounter) =
+        (.sym "True",
+          [PLeaTTa.Goal.eq (.sym "True") (.sym "False")],
+          referenceCounter) :=
+    Except.ok.inj (compiled.symm.trans referenceCompiled)
+  cases resultEquality
+  exact ⟨term, nativeGoals, native, rfl, rfl, behavior⟩
+
+/-- One composed source-to-machine failure slice for `empty`: the independent
+native translation determines the real executable compilation, whose sealed
+step reaches a terminal state without appending an answer. -/
+theorem compileExpr_empty_source_to_step_failure {state : TranslatorState}
+    (env : CEnv) (agreement : PLeaTTa.CompilerAdequacy.EnvAgrees state env)
+    {counter : Nat} {source : Atom} {term : Term}
+    {nativeGoals : List PeTTaSpec.PrologCore.Goal} {nextCounter : Nat}
+    (native :
+      TranslatesEmpty state counter source term nativeGoals nextCounter)
+    (program : Prog) (grounding : GroundingTable) (c : Conf) (binding : Subst)
+    (current : c.cur = some
+      ([PLeaTTa.Goal.eq (.sym "True") (.sym "False")], binding))
+    (noAlternatives : c.alts = []) :
+    compileExpr env counter source =
+        .ok (.sym "True",
+          [PLeaTTa.Goal.eq (.sym "True") (.sym "False")], nextCounter) ∧
+      ∃ terminal,
+        Step program grounding c terminal ∧
+        Terminal terminal ∧ terminal.answers = c.answers := by
+  obtain ⟨compiled, _behavior⟩ :=
+    compileExpr_empty_behavioral_sound env agreement native
+  exact ⟨compiled,
+    compiled_empty_step_fails program grounding c binding current
+      noAlternatives⟩
 
 /-! ## Fresh-result capture for `once/1` -/
 

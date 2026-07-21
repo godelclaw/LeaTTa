@@ -611,6 +611,20 @@ inductive TranslatesOnce : TranslatorState → Nat → Atom → Term → List Go
       TranslatesOnce state counter (.expr [.sym "once", bodySource]) bodyTerm
         [.once (.conjunction bodyGoals)] nextCounter
 
+/-- Independent pinned translation of the zero-argument `empty` operation.
+Native reaches `empty/1` through ordinary function dispatch and therefore
+retains a logical output variable even though the predicate can never bind
+it.  The executable deliberately replaces that call with an immediately
+false equality.  Result-term agreement is consequently not part of this
+relation; behavioral adequacy below proves that neither target has an
+observable answer. [SPEC metta.pl:106; translator.pl:310-346] -/
+inductive TranslatesEmpty : TranslatorState → Nat → Atom → Term →
+    List Goal → Nat → Prop where
+  | call {state : TranslatorState} {counter : Nat} {result : LogicVar}
+      (notShadowed : ¬ state.hasRule "empty") :
+      TranslatesEmpty state counter (.expr [.sym "empty"])
+        (.variable result) [.call "empty" [(.variable result)]] counter
+
 /-- Independent source-to-source expansion performed by pinned
 `letstar_to_rec_let/3`.  This relation deliberately does not mention the
 executable `desugarLetStar?` function. -/
@@ -845,6 +859,26 @@ theorem once_hook_blocks_builtin (counter : Nat) (value : Int) :
   cases translation with
   | wrap notShadowed _ => exact notShadowed trivial
 
+/-- Positive pinned translation of the zero-argument failing operation. -/
+theorem translates_empty (state : TranslatorState) (counter : Nat)
+    (notShadowed : ¬ state.hasRule "empty") :
+    TranslatesEmpty state counter (.expr [.sym "empty"])
+      (.variable (.generated counter))
+      [.call "empty" [(.variable (.generated counter))]] counter :=
+  .call notShadowed
+
+/-- Negative priority example: a registered `empty` translator hook blocks
+ordinary function dispatch to the pinned failing predicate. -/
+theorem empty_hook_blocks_builtin (counter : Nat) :
+    let state : TranslatorState := ⟨fun _ => True⟩
+    ∀ term goals nextCounter,
+      ¬ TranslatesEmpty state counter (.expr [.sym "empty"])
+        term goals nextCounter := by
+  dsimp
+  intro term goals nextCounter translation
+  cases translation with
+  | call notShadowed => exact notShadowed trivial
+
 /-- Positive two-binding example: pinned `let*` expands left-to-right into two
 nested `let` forms, then translates those forms in the same order. -/
 theorem translates_two_literal_letStar (state : TranslatorState) (counter : Nat)
@@ -1009,6 +1043,12 @@ def SupportedOnce (state : TranslatorState) (counter : Nat)
     (source : Atom) : Prop :=
   ∃ term goals nextCounter,
     TranslatesOnce state counter source term goals nextCounter
+
+/-- Independently supported zero-argument `empty` forms. -/
+def SupportedEmpty (state : TranslatorState) (counter : Nat)
+    (source : Atom) : Prop :=
+  ∃ term goals nextCounter,
+    TranslatesEmpty state counter source term goals nextCounter
 
 /-- Independently supported, well-formed native `let*` forms. -/
 def SupportedLetStar (state : TranslatorState) (counter : Nat)
