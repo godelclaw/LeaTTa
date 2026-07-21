@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=b88ea4bdf100324bbc103fa525fc2cd2245cf27a9334bdbcdbe7a1b9fc288d01
+# compiler_sha256=86f2a1f2e886105f7090b766ddf339a179cb2529c875bd18440a73255bb202f2
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -132,7 +132,7 @@ PROGRAM.static_split_bang	F13-24	X	-	N	GAP	loader-reference-missing
 PROGRAM.static_partition	F20-45	S	-	N	GAP	groups-rules-and-queries-not-source-order
 PROGRAM.static_compile_rules	F36-44	S	-	N	GAP	program-reference-missing
 PROGRAM.static_compile_queries	F31-35	S	-	N	GAP	program-reference-missing
-PROGRAM.generated_name_freshness	T18-34,T96-110	X	EncodingInjectiveOn	SH	GAP	source-high-water seed and source/generated encoding injectivity proved; executable differential pass; compiler-wide counter monotonicity and universal compilation-output freshness remain open
+PROGRAM.generated_name_freshness	T18-34,T96-110	X	EncodingInjectiveOn	SH	GAP	source-high-water seed, source/generated encoding injectivity, all-nine counter monotonicity, and universal output-origin classification proved; composition with construct adequacy remains open; executable differential pass
 SEQ.normalize_host_import	-	H	-	N	BOUNDARY	typed-loader-protocol
 SEQ.normalize_prolog_register	M274	H	-	N	BOUNDARY	typed-registration-protocol
 SEQ.normalize_import_markers	-	P	-	N	GAP	typed-loader-protocol
