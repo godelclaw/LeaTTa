@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=ae3ea0f3b1e70d5e6a096abef0f85286211d8b6d42add10af67d297f6e3bed25
+# compiler_sha256=8b8f8ce1e64922ea7e86d7c2f750cf3fcc3ddb7b4dbc2ad084f34a2897a54c4c
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -30,7 +30,7 @@ ARGS.nil	T362	X	TranslatesTypedArgs	SC	PASS	exact empty-mode-and-source traversa
 ARGS.expression_typed	T363-365	X	TranslatesTypedArgs	SC	PASS	deep-source-quotation; no-goals-or-counter-change
 ARGS.evaluated	T365-367	X	TranslatesTypedArgs	SC	PASS	Undefined-or-Atom-value-mode; ordered-translation
 ARGS.evaluated_refined	T365-370	X	TranslatesTypedArgs	SC	PASS	simple-symbol softcut get-type/get-metatype; exact-order-counter
-ARGS.evaluated_refined_compound	T365-370	X	-	N	GAP	compound/dependent-type representation bridge unmodeled
+ARGS.evaluated_refined_compound	T365-370	X	TranslatesFreshTypedArgs	SC	PASS	independent recursive Term.list representation agrees with deep chainify; branch-local dependent variables, carry template, checked input/result arms, exact ordered goals and counters proved sound/complete
 LIST.nil	T409	X	TranslatesArgs	SC	PASS	empty-ordered-traversal
 LIST.cons	T410-412	X	TranslatesArgs	SC	PASS	supported-expressions-left-to-right; exact-terms-goals-counter
 PATLIST.nil	T20-22	X	ConstrainsPatternSeq	SC	PASS	recursive-fragment-empty-traversal
@@ -103,8 +103,8 @@ APP.bind_other	M246	S	-	N	GAP	explicit-failure-shortcut
 APP.get_state	M248	S	-	N	GAP	world-action
 APP.change_state	M247	S	-	N	GAP	world-action
 FALLBACK.prolog_function	M274,T310-346	H	-	N	BOUNDARY	typed-SWI-boundary
-FALLBACK.typed_branches	T317-370	S	TranslatesTypedBranches	N	GAP	outer defined-dispatch composition remains: source-to-unique-chain extraction and first-occurrence deduplication, nonempty and typed-priority premises, head-prefix goals and pre-bound partial heads, compound type atoms, initial shared-result allocation, and final amb wrapping; the narrower branch-local fold is discharged separately below
-FALLBACK.typed_branch_fold	T320-321,T335-370	S	TranslatesTypedBranches	SC	PASS	independent branch-local freshening, checked and staged argument traversal, fresh incomplete-call partial construction, result checks, counter threading, and ordered fold preserve source-chain order and multiplicity in both directions; scoped to atom heads with empty prefix goals, no pre-bound partial head, and symbol or variable type atoms; chain extraction, list_to_set, compound types, and final disjunction wrapping are excluded
+FALLBACK.typed_branches	T317-370	S	TranslatesTypedBranches	N	GAP	outer defined-dispatch composition remains: executable collection is now sound/complete for ordered findall candidates and strict list_to_set dedup (closed duplicates collapse; open copies retain multiplicity), and recursive compound types are covered; nonempty/typed-priority premises, head-prefix goals, pre-bound partial heads, initial shared-result allocation, and final amb wrapping remain
+FALLBACK.typed_branch_fold	T320-321,T335-370	S	TranslatesTypedBranches	SC	GAP	raw branch-construction fold is sound/complete and preserves source-chain order/multiplicity, including compound/dependent types; it is not yet the pinned maplist semantics because shared Out unification and global substitution through all branches lack an independent compound/list unifier bridge; prefix goals, pre-bound partial heads, collection, and final disjunction wrapping also remain outer obligations
 FALLBACK.typed_empty_direct	T335-346	X	-	N	GAP	arity-fallback-unproved
 FALLBACK.typed_empty_partial	T335-346	X	-	N	GAP	partial-representation-unproved
 FALLBACK.defined_direct	T312-346	X	TranslatesDefinedCall	SC	PASS	direct-call-proved and composed with independently specified untyped source registration; ordinary-head priority explicit; typed-dispatch-and-imported-ownership-excluded

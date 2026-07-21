@@ -163,8 +163,11 @@ theorem compileArgsAtFuel_counter_step (fuel : Nat)
 theorem compileTypeCheckWhen_counter_le (requiresCheck : Bool)
     (value expected : Metta.Atom) (start : Nat) :
     start ≤ (compileTypeCheckWhen requiresCheck value expected start).2 := by
-  unfold compileTypeCheckWhen
-  split <;> simp [fresh] <;> omega
+  cases requiresCheck with
+  | false => simp [compileTypeCheckWhen]
+  | true =>
+      simp [compileTypeCheckWhen, fresh]
+      omega
 
 theorem compileTypeCheck_counter_le (value expected : Metta.Atom)
     (start : Nat) :
@@ -647,7 +650,8 @@ theorem compileAppDefaultWith_counter
         simp only [Bind.bind, Except.bind] at compiled
         split at compiled
         · contradiction
-        · have branchesMono := foldMono _ (by assumption)
+        · rename_i foldDiscriminant foldOutcome foldCompiled
+          have branchesMono := foldMono foldOutcome foldCompiled
           split at compiled
           · split at compiled
             · contradiction
@@ -658,8 +662,13 @@ theorem compileAppDefaultWith_counter
                 omega
               · rcases Except.ok.inj compiled with ⟨_, _, rfl⟩
                 exact argumentsMono
-          · rcases Except.ok.inj compiled with ⟨_, _, rfl⟩
-            exact Nat.le_trans freshMono branchesMono
+          · cases resolutionEq : resolveTypedSharedResult result
+              foldOutcome.1 with
+            | error message => simp [resolutionEq] at compiled
+            | ok resolved =>
+                simp only [resolutionEq] at compiled
+                rcases Except.ok.inj compiled with ⟨_, _, rfl⟩
+                exact Nat.le_trans freshMono branchesMono
       · have typedFalse :
             shouldUseTypedDispatch (env.typeChains head) = false :=
           Bool.eq_false_iff.mpr typed

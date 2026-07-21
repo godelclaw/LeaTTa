@@ -14,6 +14,7 @@ import PLeaTTa.Proofs.ObservationAgreement
 import PLeaTTa.Proofs.OpenBindingAgreement
 import PLeaTTa.Proofs.CompilerFreshness
 import PLeaTTa.Proofs.CompilerTypeFreshening
+import PLeaTTa.Proofs.CompilerTypeCollectionAdequacy
 import PLeaTTa.Proofs.CompilerTypedBranchAdequacy
 import PLeaTTa.Proofs.CompilerCounter
 import PLeaTTa.Proofs.CompilerFuel
@@ -172,6 +173,23 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerTypeFreshening.compilerTypeFresheningSubst_lookup_idxOf
 #print axioms PLeaTTa.compileTypedArgsFuel_mono
 #print axioms PLeaTTa.compileTypedArgsFuel_mono_of_le
+#print axioms PLeaTTa.CompilerAdequacy.TypeCheckExpectedAgrees.term
+#print axioms PLeaTTa.CompilerAdequacy.TypeCheckExpectedAgrees.compilerTemplate_eq
+#print axioms PLeaTTa.CompilerTypeCollectionAdequacy.declaredTypeChain?_eq_some_iff
+#print axioms PLeaTTa.CompilerTypeCollectionAdequacy.collectRawTypeChains_sound
+#print axioms PLeaTTa.CompilerTypeCollectionAdequacy.collectRawTypeChains_complete
+#print axioms PLeaTTa.CompilerTypeCollectionAdequacy.typeChainClosed_iff
+#print axioms PLeaTTa.CompilerTypeCollectionAdequacy.sameCollectedTypeChain_eq_true_iff
+#print axioms PLeaTTa.CompilerTypeCollectionAdequacy.removeCopiedTypeChainDuplicates_sound
+#print axioms PLeaTTa.CompilerTypeCollectionAdequacy.removeCopiedTypeChainDuplicates_complete
+#print axioms PLeaTTa.CompilerTypeCollectionAdequacy.eraseDupsTypeChains_sound
+#print axioms PLeaTTa.CompilerTypeCollectionAdequacy.eraseDupsTypeChains_complete
+#print axioms PLeaTTa.CompilerTypeCollectionAdequacy.collectTypeChains_sound
+#print axioms PLeaTTa.CompilerTypeCollectionAdequacy.collectTypeChains_complete
+#print axioms PLeaTTa.compilerGoalNamesAllowed_substCompiled
+#print axioms PLeaTTa.bindTypedSharedResult_namesAllowed
+#print axioms PLeaTTa.bindTypedSharedResult_foldlM_namesAllowed
+#print axioms PLeaTTa.resolveTypedSharedResult_namesAllowed
 #print axioms PLeaTTa.CompilerTypedBranchAdequacy.freshensTypeAtom_sound
 #print axioms PLeaTTa.CompilerTypedBranchAdequacy.freshensTypeAtoms_sound
 #print axioms PLeaTTa.CompilerTypedBranchAdequacy.freshensTypeChain_sound

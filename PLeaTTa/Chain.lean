@@ -43,6 +43,13 @@ def chainify : Atom → Atom
   | Atom.expr es => chainOf (es.attach.map (fun ⟨e, _⟩ => chainify e))
   | a => canonBool a
 
+/-- A surface expression chainifies pointwise before the outer proper-list
+encoding.  Naming this equation avoids reopening `List.attach` in recursive
+representation proofs. -/
+@[simp] theorem chainify_expr (atoms : List Atom) :
+    chainify (.expr atoms) = chainOf (atoms.map chainify) := by
+  simp [chainify]
+
 /-- Deep unchainify for printing: chains back to tuples; non-chain exprs
     (e.g. partially instantiated) render elementwise. -/
 def unchainify (fuel : Nat) (a : Atom) : Atom :=

@@ -36,6 +36,21 @@ PARAMETRIC_PARTIAL = (
 PARAMETRIC_OVERLOADS = (
     ROOT / "diffbench" / "probes" / "typed-parametric-overloads.metta"
 )
+IDENTICAL_PARAMETRIC_OVERLOADS = (
+    ROOT
+    / "diffbench"
+    / "probes"
+    / "typed-identical-parametric-signatures.metta"
+)
+INCOMPLETE_SHARED_RESULT = (
+    ROOT / "diffbench" / "probes" / "typed-incomplete-shared-result.metta"
+)
+INCOMPATIBLE_SHARED_RESULTS = (
+    ROOT
+    / "diffbench"
+    / "probes"
+    / "typed-incomplete-shared-result-conflict.metta"
+)
 
 
 def normalized(run, probe: Path) -> list[str]:
@@ -155,12 +170,61 @@ def main() -> None:
             "or multiplicity changed: "
             f"PeTTa={native_overloads!r} PLeaTTa={executable_overloads!r}"
         )
+
+    native_identical_parametric = normalized(
+        diff.petta_results, IDENTICAL_PARAMETRIC_OVERLOADS
+    )
+    executable_identical_parametric = normalized(
+        diff.leatta_results, IDENTICAL_PARAMETRIC_OVERLOADS
+    )
+    if (
+        native_identical_parametric != expected_overloads
+        or executable_identical_parametric != native_identical_parametric
+    ):
+        raise SystemExit(
+            "typed dispatch parity: declaration-local variables were "
+            "collapsed by source spelling: "
+            f"PeTTa={native_identical_parametric!r} "
+            f"PLeaTTa={executable_identical_parametric!r}"
+        )
+
+    native_shared_result = normalized(diff.petta_results, INCOMPLETE_SHARED_RESULT)
+    executable_shared_result = normalized(
+        diff.leatta_results, INCOMPLETE_SHARED_RESULT
+    )
+    expected_shared_result = [
+        "(partial typed-incomplete-shared-result ((+ 1 2)))"
+    ]
+    if native_shared_result != expected_shared_result:
+        raise SystemExit(
+            "typed dispatch parity: pinned shared-result binding changed: "
+            f"{native_shared_result!r}"
+        )
+    if executable_shared_result != native_shared_result:
+        raise SystemExit(
+            "typed dispatch parity: incomplete overload branches did not "
+            "share one result binding: "
+            f"PeTTa={native_shared_result!r} "
+            f"PLeaTTa={executable_shared_result!r}"
+        )
+
+    native_conflict = classified(diff.petta_results, INCOMPATIBLE_SHARED_RESULTS)
+    executable_conflict = classified(
+        diff.leatta_results, INCOMPATIBLE_SHARED_RESULTS
+    )
+    if native_conflict != ("error", []) or executable_conflict != native_conflict:
+        raise SystemExit(
+            "typed dispatch parity: incompatible shared partial results did "
+            "not reject translation on both engines: "
+            f"PeTTa={native_conflict!r} PLeaTTa={executable_conflict!r}"
+        )
     print(
         "typed dispatch parity: PASS; duplicate signatures retain one "
         "first-occurrence branch, Expression results remain checked, and "
         "parameter-type exhaustion follows pinned asymmetry; parametric "
-        "input/result sharing, rejection, partial calls, and overload "
-        "order/multiplicity agree"
+        "input/result sharing, rejection, partial calls, declaration-local "
+        "freshness, overload order/multiplicity, and incomplete-overload "
+        "shared-result binding agree"
     )
 
 

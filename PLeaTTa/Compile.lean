@@ -12,11 +12,12 @@ Unsupported forms are loud `Except.error`s: each is a spec gap to close HERE.
 -/
 import PLeaTTa.Types
 import PLeaTTa.Chain
+import PLeaTTa.PeTTaUnification
 import Std.Data.String.ToNat
 
 namespace PLeaTTa
 
-open Metta (Atom)
+open Metta (Atom Subst)
 
 /-- Compile-time environment: defined rule heads, builtin membership, and
     the per-position `Atom`-typed staging mask from type declarations. -/
@@ -48,20 +49,41 @@ structure CEnv where
 
 abbrev CompileM := Except String
 
-/-- Collect the distinct arrow chains declared for one function head.
-Pinned `translator.pl` gathers every matching declaration and then applies
-`list_to_set/2`, which retains the first occurrence while removing later
-duplicates.  Keeping this as a shared executable helper makes answer
-multiplicity and declaration order visible to adequacy proofs.
+/-- Strict identity used by pinned `list_to_set/2` after `findall/3` has made
+one fresh copy of every matching declaration.  Closed equal chains are
+duplicates.  A chain containing a logical variable is never identical to a
+different `findall/3` answer, even when the two declarations use the same
+source variable spelling. [SPEC translator.pl:317-321] -/
+def sameCollectedTypeChain (left right : List Atom) : Bool :=
+  (left.flatMap Atom.vars).isEmpty &&
+    (right.flatMap Atom.vars).isEmpty && left == right
+
+/-- Recognize one matching arrow declaration without copying or deduplicating
+its type chain. [SPEC translator.pl:317] -/
+def declaredTypeChain? (head : String)
+    (declaration : Atom × Atom) : Option (List Atom) :=
+  match declaration with
+  | (subject, declaredType) =>
+      if subject == Atom.sym head then
+        match declaredType with
+        | Atom.expr (Atom.sym "->" :: types) => some types
+        | _ => none
+      else none
+
+/-- Ordered `findall/3` candidate extraction before `list_to_set/2` removes
+strictly identical closed answers. [SPEC translator.pl:317] -/
+def collectRawTypeChains (decls : List (Atom × Atom)) (head : String) :
+    List (List Atom) :=
+  decls.filterMap (declaredTypeChain? head)
+
+/-- Collect the arrow chains declared for one function head and reproduce the
+first-occurrence `findall/3` plus `list_to_set/2` behavior.  Closed duplicate
+declarations collapse; open declarations retain occurrence multiplicity
+because their Prolog variables are fresh per collected answer.
 [SPEC translator.pl:317-321] -/
 def collectTypeChains (decls : List (Atom × Atom)) (head : String) :
     List (List Atom) :=
-  (decls.filterMap (fun (subject, declaredType) =>
-    if subject == Atom.sym head then
-      match declaredType with
-      | Atom.expr (Atom.sym "->" :: types) => some types
-      | _ => none
-    else none)).eraseDups
+  (collectRawTypeChains decls head).eraseDupsBy sameCollectedTypeChain
 
 def mkEnv (isBin : String → Bool) (heads : List String)
     (arities0 : List (String × Nat))
@@ -244,7 +266,7 @@ def compileTypeCheckWhen (requiresCheck : Bool) (value expected : Atom)
         Goal.eq directType (chainify expected)]
        []
        [Goal.bin "get-metatype" [value] metaType,
-        Goal.eq metaType expected]], finalCounter)
+        Goal.eq metaType (chainify expected)]], finalCounter)
   else
     ([], counter)
 
@@ -507,6 +529,105 @@ def compileTypedDispatchStepWith
         goals ++ callGoals ++ resultChecks)], nextCounter)
   | _, none => .error "typed dispatch: missing result type"
 
+mutual
+
+/-- Apply a compile-time PeTTa substitution deeply throughout one emitted
+goal.  Native `maplist(typed_functioncall_branch, ...)` constructs every
+branch around the same Prolog `Out`; when an incomplete branch binds that
+variable, the binding is visible retroactively in goals constructed for
+earlier branches. [SPEC translator.pl:320-321,335-358] -/
+def substCompiledGoal (binding : Subst) : Goal → Goal
+  | .call head arguments result =>
+      .call head (arguments.map (subst binding)) (subst binding result)
+  | .bin operation arguments result =>
+      .bin operation (arguments.map (subst binding)) (subst binding result)
+  | .callDyn head arguments result =>
+      .callDyn (subst binding head) (arguments.map (subst binding))
+        (subst binding result)
+  | .evalg value result =>
+      .evalg (subst binding value) (subst binding result)
+  | .catchg template goals result =>
+      .catchg (subst binding template) (substCompiledGoals binding goals)
+        (subst binding result)
+  | .softcut template condition thenGoals elseGoals =>
+      .softcut (subst binding template)
+        (substCompiledGoals binding condition)
+        (substCompiledGoals binding thenGoals)
+        (substCompiledGoals binding elseGoals)
+  | .eq left right => .eq (subst binding left) (subst binding right)
+  | .cut => .cut
+  | .cutAt barrier => .cutAt barrier
+  | .findall template goals result =>
+      .findall (subst binding template) (substCompiledGoals binding goals)
+        (subst binding result)
+  | .onceg template goals result =>
+      .onceg (subst binding template) (substCompiledGoals binding goals)
+        (subst binding result)
+  | .transactiong template goals =>
+      .transactiong (subst binding template)
+        (substCompiledGoals binding goals)
+  | .amb branches result =>
+      .amb (substCompiledBranches binding branches) (subst binding result)
+  | .spread value result =>
+      .spread (subst binding value) (subst binding result)
+  | .ite condition thenBranch elseBranch result =>
+      .ite (subst binding condition)
+        (subst binding thenBranch.1,
+          substCompiledGoals binding thenBranch.2)
+        (subst binding elseBranch.1,
+          substCompiledGoals binding elseBranch.2)
+        (subst binding result)
+  | .smatch pattern => .smatch (subst binding pattern)
+  | .wact operation arguments result =>
+      .wact operation (arguments.map (subst binding))
+        (subst binding result)
+
+/-- Deep compile-time substitution over an ordered goal sequence. -/
+def substCompiledGoals (binding : Subst) : List Goal → List Goal
+  | [] => []
+  | goal :: goals =>
+      substCompiledGoal binding goal :: substCompiledGoals binding goals
+
+/-- Deep compile-time substitution over the templates and goals of an
+ordered nondeterministic branch collection. -/
+def substCompiledBranches (binding : Subst) :
+    List (Atom × List Goal) → List (Atom × List Goal)
+  | [] => []
+  | (template, goals) :: branches =>
+      (subst binding template, substCompiledGoals binding goals) ::
+        substCompiledBranches binding branches
+
+end
+
+/-- Add the constraint contributed by one raw typed branch to the single
+shared result variable used by pinned `maplist/2`.  A complete branch returns
+that variable unchanged and contributes no compile-time binding.  An
+incomplete branch returns a partial value, which unifies with the shared
+result immediately; an incompatible later partial rejects the translation.
+[SPEC translator.pl:320-321,335-358] -/
+def bindTypedSharedResult (sharedResult : Atom) (binding : Subst)
+    (branch : Atom × List Goal) : CompileM Subst :=
+  if branch.1 == sharedResult then
+    .ok binding
+  else
+    match unifyTopExact (subst binding sharedResult)
+        (subst binding branch.1) with
+    | some generated => .ok (Metta.Subst.compose generated binding)
+    | none => .error "typed dispatch: incompatible shared result"
+
+/-- Resolve the one Prolog `Out` shared by every typed overload branch.
+Branch compilation is source-independent of `Out`, so collecting raw
+branches first and then replaying their result constraints left-to-right is
+equivalent to pinned `maplist/2` on the atom-headed, empty-prefix,
+non-specializing fragment.  The final substitution is applied retroactively
+to every branch exactly as Prolog variable sharing does.
+[SPEC translator.pl:320-321,335-358] -/
+def resolveTypedSharedResult (sharedResult : Atom)
+    (branches : List (Atom × List Goal)) :
+    CompileM (Atom × List (Atom × List Goal)) := do
+  let binding ← branches.foldlM (bindTypedSharedResult sharedResult) []
+  .ok (subst binding sharedResult, substCompiledBranches binding branches)
+
 /-- Compile an ordered collection of nondeterministic branches.  The callback
 is the executable expression compiler; naming the fold makes its left-to-right
 counter threading independently checkable. -/
@@ -685,7 +806,10 @@ def compileAppDefaultWith
         else
           .ok (partialValue head terms, goals, nextCounter)
       else
-        .ok (result, [Goal.amb branches result], branchCounter)
+        let (sharedResult, resolvedBranches) ←
+          resolveTypedSharedResult result branches
+        .ok (sharedResult,
+          [Goal.amb resolvedBranches sharedResult], branchCounter)
     else do
       let (terms, goals, nextCounter) ← compileArgs counter
       if (env.arities head).contains terms.length then

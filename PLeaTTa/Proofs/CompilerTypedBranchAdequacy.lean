@@ -18,39 +18,60 @@ open PLeaTTa.PeTTaSpec.PrologCore
 open PLeaTTa.CompilerAdequacy
 open PLeaTTa.CompilerTypeFreshening
 
-/-- Independent atomic type freshening agrees with executable substitution.
-The variable case consumes the exact first-occurrence lookup law rather than
-reopening `mapIdx` and counter arithmetic. -/
+mutual
+
+/-- Independent recursive type freshening agrees with executable
+substitution followed by the Prolog-list representation boundary.  The
+variable case consumes the exact first-occurrence lookup law; the expression
+case composes pointwise agreement through `chainify`. -/
 theorem freshensTypeAtom_sound {sourceChain : List Atom} {counter : Nat}
     {source : Atom} {reference : Term}
     (derivation : FreshensTypeAtom sourceChain counter source reference) :
     TermAgrees reference
-      (Metta.Subst.apply (compilerTypeFresheningSubst counter sourceChain)
-        source) := by
+      (chainify
+        (Metta.Subst.apply
+          (compilerTypeFresheningSubst counter sourceChain) source)) := by
   cases derivation with
-  | symbol name notTrue notFalse =>
-      simpa [Metta.Subst.apply] using TermAgrees.atom notTrue notFalse
+  | symbol name =>
+      by_cases isTrue : name = "true"
+      · subst name
+        simpa [Metta.Subst.apply, chainify, canonBool] using
+          TermAgrees.trueAtom
+      · by_cases isFalse : name = "false"
+        · subst name
+          simpa [Metta.Subst.apply, chainify, canonBool] using
+            TermAgrees.falseAtom
+        · simpa [Metta.Subst.apply, chainify, canonBool, isTrue, isFalse] using
+            (TermAgrees.atom isTrue isFalse)
   | «variable» name member =>
       have executableMember : name ∈ compilerTypeVarNames sourceChain := by
         simpa [typeChainVariables, compilerTypeVarNames] using member
       have lookup := compilerTypeFresheningSubst_lookup_idxOf
         (counter := counter) executableMember
-      simpa [Metta.Subst.apply, lookup, typeChainVariables,
-        compilerTypeVarNames, compilerGeneratedName] using
+      simpa [Metta.Subst.apply, lookup, chainify, canonBool,
+        typeChainVariables, compilerTypeVarNames, compilerGeneratedName] using
         (TermAgrees.generatedVariable
           (counter + List.idxOf name (typeChainVariables sourceChain)))
+  | expression items =>
+      simpa [Metta.Subst.apply, Function.comp_def] using
+        (TermAgrees.properList
+          (freshensTypeAtoms_sound items).properList)
 
-/-- Ordered freshening agreement is pointwise. -/
+/-- Ordered recursive freshening agreement is pointwise after deep
+chainification. -/
 theorem freshensTypeAtoms_sound {sourceChain : List Atom} {counter : Nat}
     {sources : List Atom} {references : List Term}
     (derivation : FreshensTypeAtoms sourceChain counter sources references) :
     TermsAgree references
-      (sources.map (Metta.Subst.apply
-        (compilerTypeFresheningSubst counter sourceChain))) := by
-  induction derivation with
+      (sources.map (fun source =>
+        chainify (Metta.Subst.apply
+          (compilerTypeFresheningSubst counter sourceChain) source))) := by
+  cases derivation with
   | nil => exact .nil
-  | cons head _ inductionHypothesis =>
-      exact .cons (freshensTypeAtom_sound head) inductionHypothesis
+  | cons head tail =>
+      exact .cons (freshensTypeAtom_sound head) (freshensTypeAtoms_sound tail)
+
+end
 
 /-- One independent branch-local fresh copy agrees with the executable copy,
 including its exact next counter. -/
@@ -58,25 +79,33 @@ theorem freshensTypeChain_sound {counter nextCounter : Nat}
     {sourceChain : List Atom} {referenceChain : List Term}
     (derivation : FreshensTypeChain counter sourceChain referenceChain
       nextCounter) :
-    TermsAgree referenceChain (freshenTypeChain counter sourceChain).1 ∧
+    TermsAgree referenceChain
+        ((freshenTypeChain counter sourceChain).1.map chainify) ∧
       nextCounter = (freshenTypeChain counter sourceChain).2 := by
   cases derivation with
   | freshened atoms =>
-      exact ⟨freshensTypeAtoms_sound atoms, rfl⟩
+      exact ⟨by
+        simpa [freshenTypeChain, List.map_map, Function.comp_def] using
+          freshensTypeAtoms_sound atoms, rfl⟩
 
-/-- Freshened atomic types determine the exact executable soft-cut carry
-template. Open type variables are carried; closed symbol types use `#u`. -/
-theorem freshensTypeAtom_expected_agrees {sourceChain : List Atom}
+mutual
+
+/-- Freshened recursive types determine the independent soft-cut carry
+template.  Compound types retain their raw shape for selectors while both
+comparison arms use the agreeing chainified value. -/
+theorem freshensTypeAtom_expected_reference_agrees
+    {sourceChain : List Atom}
     {counter : Nat} {source : Atom} {reference : Term}
     (derivation : FreshensTypeAtom sourceChain counter source reference) :
     let executable := Metta.Subst.apply
       (compilerTypeFresheningSubst counter sourceChain) source
     TypeCheckExpectedAgrees reference executable
-      (typeCheckBindingTemplate executable) := by
+      (referenceTypeCheckTemplate reference) := by
   cases derivation with
-  | symbol name notTrue notFalse =>
-      simpa [Metta.Subst.apply] using
-        (TypeCheckExpectedAgrees.atom notTrue notFalse)
+  | symbol name =>
+      simpa [Metta.Subst.apply, referenceTypeCheckTemplate,
+        referenceTypeVariableNames] using
+        TypeCheckExpectedAgrees.atom name
   | «variable» name member =>
       have executableMember : name ∈ compilerTypeVarNames sourceChain := by
         simpa [typeChainVariables, compilerTypeVarNames] using member
@@ -84,10 +113,42 @@ theorem freshensTypeAtom_expected_agrees {sourceChain : List Atom}
         (counter := counter) executableMember
       simpa [Metta.Subst.apply, lookup, typeChainVariables,
         compilerTypeVarNames, compilerGeneratedName,
-        typeCheckBindingTemplate, bindingTemplate, Atom.vars,
-        List.eraseDups_cons] using
+        referenceTypeCheckTemplate, referenceTypeVariableNames,
+        bindingTemplate, List.eraseDups_cons] using
         (TypeCheckExpectedAgrees.generated
-          (counter + List.idxOf name (typeChainVariables sourceChain)))
+          (counter + List.idxOf name
+            (typeChainVariables sourceChain)))
+  | expression items =>
+      simpa [Metta.Subst.apply] using
+        (TypeCheckExpectedAgrees.expression
+          (freshensTypeAtoms_expected_agrees items))
+
+/-- Pointwise freshening constructs the recursive expected-type bridge for a
+compound type body. -/
+theorem freshensTypeAtoms_expected_agrees {sourceChain : List Atom}
+    {counter : Nat} {sources : List Atom} {references : List Term}
+    (derivation : FreshensTypeAtoms sourceChain counter sources references) :
+    TypeCheckExpectedListAgrees references
+      (sources.map (Metta.Subst.apply
+        (compilerTypeFresheningSubst counter sourceChain))) := by
+  cases derivation with
+  | nil => exact .nil
+  | cons head tail =>
+      exact .cons (freshensTypeAtom_expected_reference_agrees head)
+        (freshensTypeAtoms_expected_agrees tail)
+
+end
+
+/-- Freshened recursive types determine the exact executable soft-cut carry
+template. -/
+theorem freshensTypeAtom_expected_agrees {sourceChain : List Atom}
+    {counter : Nat} {source : Atom} {reference : Term}
+    (derivation : FreshensTypeAtom sourceChain counter source reference) :
+    let executable := Metta.Subst.apply
+      (compilerTypeFresheningSubst counter sourceChain) source
+    TypeCheckExpectedAgrees reference executable
+      (typeCheckBindingTemplate executable) := by
+  exact (freshensTypeAtom_expected_reference_agrees derivation).compilerTemplate
 
 /-- Pointwise agreement for a complete branch-local arrow chain.  This is
 stronger than ordinary `TermsAgree`: every expected type also determines the
@@ -101,11 +162,12 @@ inductive TypedChainAgrees : List Term → List Atom → Prop where
       (tail : TypedChainAgrees references executables) :
       TypedChainAgrees (reference :: references) (executable :: executables)
 
-/-- Typed-chain agreement forgets to ordinary ordered term agreement. -/
+/-- Typed-chain agreement forgets to ordinary ordered term agreement at the
+deep chainification boundary. -/
 theorem TypedChainAgrees.terms {references : List Term}
     {executables : List Atom}
     (agreement : TypedChainAgrees references executables) :
-    TermsAgree references executables := by
+    TermsAgree references (executables.map chainify) := by
   induction agreement with
   | nil => exact .nil
   | cons head _ inductionHypothesis =>
@@ -153,10 +215,11 @@ theorem freshensTypeAtoms_typedChain_sound {sourceChain : List Atom}
     TypedChainAgrees references
       (sources.map (Metta.Subst.apply
         (compilerTypeFresheningSubst counter sourceChain))) := by
-  induction derivation with
+  cases derivation with
   | nil => exact .nil
-  | cons head _ inductionHypothesis =>
-      exact .cons (freshensTypeAtom_expected_agrees head) inductionHypothesis
+  | cons head tail =>
+      exact .cons (freshensTypeAtom_expected_agrees head)
+        (freshensTypeAtoms_typedChain_sound tail)
 
 /-- Strong fresh-chain soundness retaining each expected type's carry
 template as well as the exact next counter. -/
@@ -216,7 +279,7 @@ theorem typeCheckExpectedAgrees_input_required
     (checked : CheckedInputType reference) :
     typeRequiresCheck executable = true := by
   cases agreement with
-  | atom _ _ =>
+  | atom _ =>
       rcases checked with ⟨notUndefined, notAtom, notExpression⟩
       have nameNotUndefined : _ := fun equal =>
         notUndefined (congrArg Term.atom equal)
@@ -227,6 +290,7 @@ theorem typeCheckExpectedAgrees_input_required
       simp only [typeRequiresCheck, Bool.and_eq_true, bne_iff_ne]
       exact ⟨⟨nameNotUndefined, nameNotAtom⟩, nameNotExpression⟩
   | generated _ => rfl
+  | expression _ => rfl
 
 /-- A checked input can never select the staged-`Expression` argument branch. -/
 theorem typeCheckExpectedAgrees_not_expression
@@ -235,13 +299,14 @@ theorem typeCheckExpectedAgrees_not_expression
     (checked : CheckedInputType reference) :
     (executable == (.sym "Expression" : Atom)) = false := by
   cases agreement with
-  | atom _ _ =>
+  | atom _ =>
       rcases checked with ⟨_, _, notExpression⟩
       have nameNotExpression : _ := fun equal =>
         notExpression (congrArg Term.atom equal)
       change (_ == "Expression") = false
       exact beq_eq_false_iff_ne.mpr nameNotExpression
   | generated _ => rfl
+  | expression _ => rfl
 
 /-- A checked independent result type selects the executable checked branch. -/
 theorem typeCheckExpectedAgrees_result_required
@@ -250,7 +315,7 @@ theorem typeCheckExpectedAgrees_result_required
     (checked : CheckedResultType reference) :
     resultTypeRequiresCheck executable = true := by
   cases agreement with
-  | atom _ _ =>
+  | atom _ =>
       rcases checked with ⟨notUndefined, notAtom⟩
       have nameNotUndefined : _ := fun equal =>
         notUndefined (congrArg Term.atom equal)
@@ -259,6 +324,7 @@ theorem typeCheckExpectedAgrees_result_required
       simp only [resultTypeRequiresCheck, Bool.and_eq_true, bne_iff_ne]
       exact ⟨nameNotUndefined, nameNotAtom⟩
   | generated _ => rfl
+  | expression _ => rfl
 
 /-- The shared executable type-check constructor preserves the independent
 soft-cut, including an open expected-type binding, and consumes two names. -/
@@ -894,9 +960,10 @@ inductive TypedBranchesAgree :
         ((executableBranch, executableGoals) :: executableBranches)
 
 set_option maxHeartbeats 4000000 in
-/-- Fold-level soundness with an arbitrary pre-existing branch prefix.  The
-proof composes the one-step theorem; it does not reopen fuel, counter, or
-type-check internals. -/
+/-- Raw fold-level soundness with an arbitrary pre-existing branch prefix.
+The proof composes the one-step theorem; it does not model the shared-output
+unification performed by the enclosing pinned `maplist/3`, nor reopen fuel,
+counter, or type-check internals. -/
 theorem compileTypedDispatchBranches_append_sound
     {registry : FunctionRegistry} {state : TranslatorState} (env : CEnv)
     (stateAgreement : EnvAgrees state env)
@@ -949,8 +1016,9 @@ theorem compileTypedDispatchBranches_append_sound
       rw [branchesCompiled]
       simp [List.append_assoc]
 
-/-- Public soundness of ordered typed-branch construction.  Source-chain
-order and multiplicity are preserved pointwise. -/
+/-- Public soundness of ordered raw typed-branch construction.  Source-chain
+order and multiplicity are preserved pointwise.  This theorem stops before
+the enclosing `maplist/3` shares and resolves its `Out` variable. -/
 theorem compileTypedDispatchBranches_sound
     {registry : FunctionRegistry} {state : TranslatorState} (env : CEnv)
     (stateAgreement : EnvAgrees state env)
@@ -976,10 +1044,10 @@ theorem compileTypedDispatchBranches_sound
   exact ⟨executableBranches, by simpa using compiled, agreement⟩
 
 /-- Independent support for a complete ordered typed-branch collection in the
-atom-headed, empty-prefix, symbol/variable-type fragment.  In particular,
-this support premise is not inhabited yet for compound type atoms, so the
-completeness theorem below makes no claim about executable successes on that
-still-open class. -/
+atom-headed, empty-prefix fragment.  Recursive compound type atoms and open
+dependent types are included; source collection, prefix goals, pre-bound
+partial heads, shared-result allocation, and final disjunction wrapping are
+separate outer obligations. -/
 def SupportedTypedBranches (registry : FunctionRegistry)
     (state : TranslatorState) (counter : Nat) (head : String)
     (sources : List Atom) (chains : List (List Atom))
@@ -989,9 +1057,9 @@ def SupportedTypedBranches (registry : FunctionRegistry)
       counter chains referenceBranches nextCounter
 
 set_option maxHeartbeats 4000000 in
-/-- Completeness of ordered typed-branch construction relative to the
-independently supported fragment.  It is intentionally silent on compound
-type atoms until `FreshensTypeAtom` is extended independently. -/
+/-- Completeness of ordered raw typed-branch construction relative to the
+independently supported recursive-type fragment.  Shared-output resolution is
+an explicit outer adequacy obligation, not hidden in this theorem. -/
 theorem compileTypedDispatchBranches_complete
     {registry : FunctionRegistry} {state : TranslatorState} (env : CEnv)
     (stateAgreement : EnvAgrees state env)

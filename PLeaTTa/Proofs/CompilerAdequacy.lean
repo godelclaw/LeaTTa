@@ -276,9 +276,11 @@ theorem sourceFunctionRegistry_mkEnv_agrees (sources : List Atom)
       (collectSourceFunctionHeads sources)
       (collectSourceFunctionArities sources) head 0
   · intro head modes signature
-    simp [mkEnv, collectTypeChains, shouldUseTypedDispatch]
+    simp [mkEnv, collectTypeChains, collectRawTypeChains,
+      shouldUseTypedDispatch]
   · intro head modes signature
-    simp [mkEnv, collectTypeChains, typedDispatchInputShortage]
+    simp [mkEnv, collectTypeChains, collectRawTypeChains,
+      typedDispatchInputShortage]
   · intro head modes signature
     exact (ordinary head signature.1).1
   · intro head modes signature
@@ -403,29 +405,177 @@ theorem EnvAgrees.notContains {state : TranslatorState} {env : CEnv}
       exact False.elim
         (absent ((agreement.translatorRules name).mpr executableRule))
 
-/-- Exact cross-representation contract for the expected type and the value
-carried out of its soft-cut check.  Native Prolog preserves the binding of an
-open type variable automatically; PLeaTTa must name that variable in the
-soft-cut query template.  This relation states the two supported atomic cases
-without calling `typeCheckBindingTemplate` or any compiler function. -/
+mutual
+
+/-- Generated logical variables occurring in an independent type term, in
+left-to-right occurrence order.  Fresh type terms contain no source or
+anonymous variables; retaining only the generated namespace makes the carry
+template independent of executable variable spellings. -/
+def referenceTypeVariableNames : Term → List String
+  | .variable (.generated index) => [s!"_q{index}"]
+  | .variable _ => []
+  | .compound _ arguments => referenceTypeVariableNamesList arguments
+  | .list items tail =>
+      referenceTypeVariableNamesList items ++
+        match tail with
+        | none => []
+        | some finalTail => referenceTypeVariableNames finalTail
+  | _ => []
+
+/-- Ordered generated-variable occurrences of an independent type-term
+sequence. -/
+def referenceTypeVariableNamesList : List Term → List String
+  | [] => []
+  | term :: terms =>
+      referenceTypeVariableNames term ++
+        referenceTypeVariableNamesList terms
+
+end
+
+/-- Independent description of the value exported by a successful type-check
+soft-cut.  Closed expected types carry only `#u`; open types additionally
+carry each generated logical variable at its first occurrence.  This does not
+call `typeCheckBindingTemplate`. -/
+def referenceTypeCheckTemplate (reference : Term) : Atom :=
+  let variables := (referenceTypeVariableNames reference).eraseDups
+  if variables.isEmpty then .sym "#u"
+  else chainOf (.sym "#u" :: variables.map Atom.var)
+
+mutual
+
+/-- Exact cross-representation contract for an expected type and the value
+carried out of its soft-cut check.  The raw executable atom is retained for
+selector decisions, while its independent term denotes the deeply chainified
+Prolog value used in both `get-type` and `get-metatype` arms. -/
 inductive TypeCheckExpectedAgrees : Term → Atom → Atom → Prop where
-  | atom {name : String} (notTrue : name ≠ "true")
-      (notFalse : name ≠ "false") :
+  | atom (name : String) :
       TypeCheckExpectedAgrees (.atom name) (.sym name) (.sym "#u")
   | generated (index : Nat) :
       TypeCheckExpectedAgrees (.variable (.generated index))
         (.var s!"_q{index}")
         (chainOf [.sym "#u", .var s!"_q{index}"])
+  | expression {references : List Term} {executables : List Atom}
+      (items : TypeCheckExpectedListAgrees references executables) :
+      TypeCheckExpectedAgrees (.list references none) (.expr executables)
+        (referenceTypeCheckTemplate (.list references none))
 
-/-- The expected value named by the type-check carry contract has the ordinary
-compiler representation agreement. -/
+/-- Ordered recursive agreement for the children of a compound expected
+type. -/
+inductive TypeCheckExpectedListAgrees : List Term → List Atom → Prop where
+  | nil : TypeCheckExpectedListAgrees [] []
+  | cons {reference : Term} {executable : Atom}
+      {references : List Term} {executables : List Atom}
+      (head : TypeCheckExpectedAgrees reference executable
+        (referenceTypeCheckTemplate reference))
+      (tail : TypeCheckExpectedListAgrees references executables) :
+      TypeCheckExpectedListAgrees (reference :: references)
+        (executable :: executables)
+
+end
+
+mutual
+
+/-- The expected value named by the type-check carry contract agrees with the
+deeply chainified executable type. -/
 theorem TypeCheckExpectedAgrees.term {reference : Term}
     {executable template : Atom}
     (agreement : TypeCheckExpectedAgrees reference executable template) :
-    TermAgrees reference executable := by
+    TermAgrees reference (chainify executable) := by
   cases agreement with
-  | atom notTrue notFalse => exact .atom notTrue notFalse
-  | generated index => exact .generatedVariable index
+  | atom name =>
+      by_cases isTrue : name = "true"
+      · subst name
+        simpa [chainify, canonBool] using TermAgrees.trueAtom
+      · by_cases isFalse : name = "false"
+        · subst name
+          simpa [chainify, canonBool] using TermAgrees.falseAtom
+        · simpa [chainify, canonBool, isTrue, isFalse] using
+            (TermAgrees.atom isTrue isFalse)
+  | generated index =>
+      simpa [chainify, canonBool] using TermAgrees.generatedVariable index
+  | expression items =>
+      simpa [chainify] using
+        (TermAgrees.properList
+          (TypeCheckExpectedListAgrees.terms items).properList)
+
+/-- Child agreement forgets to ordinary agreement after deep chainification. -/
+theorem TypeCheckExpectedListAgrees.terms {references : List Term}
+    {executables : List Atom}
+    (agreement : TypeCheckExpectedListAgrees references executables) :
+    TermsAgree references (executables.map chainify) := by
+  cases agreement with
+  | nil => exact .nil
+  | cons head tail =>
+      exact .cons head.term tail.terms
+
+end
+
+mutual
+
+/-- The independent and raw executable expected types enumerate the same
+generated variables in the same left-to-right occurrence order. -/
+theorem TypeCheckExpectedAgrees.variableNames {reference : Term}
+    {executable template : Atom}
+    (agreement : TypeCheckExpectedAgrees reference executable template) :
+    referenceTypeVariableNames reference = executable.vars := by
+  cases agreement with
+  | atom name => simp [referenceTypeVariableNames, Atom.vars]
+  | generated index => simp [referenceTypeVariableNames, Atom.vars]
+  | expression items =>
+      simpa [referenceTypeVariableNames, Atom.vars] using
+        TypeCheckExpectedListAgrees.variableNames items
+
+/-- Ordered child agreement preserves the concatenated generated-variable
+occurrence list. -/
+theorem TypeCheckExpectedListAgrees.variableNames {references : List Term}
+    {executables : List Atom}
+    (agreement : TypeCheckExpectedListAgrees references executables) :
+    referenceTypeVariableNamesList references =
+      (executables.map Atom.vars).flatten := by
+  cases agreement with
+  | nil => rfl
+  | cons head tail =>
+      simp only [referenceTypeVariableNamesList, List.map_cons,
+        List.flatten_cons]
+      rw [head.variableNames, tail.variableNames]
+
+end
+
+/-- First-occurrence duplicate removal cannot change whether a string list is
+empty. -/
+theorem stringEraseDups_isEmpty (names : List String) :
+    names.eraseDups.isEmpty = names.isEmpty := by
+  cases names <;> simp [List.eraseDups_cons]
+
+
+/-- The compiler's raw-atom carry computation is exactly the independent
+reference-term template. -/
+theorem TypeCheckExpectedAgrees.compilerTemplate_eq {reference : Term}
+    {executable template : Atom}
+    (agreement : TypeCheckExpectedAgrees reference executable template) :
+    typeCheckBindingTemplate executable = template := by
+  cases agreement with
+  | atom name => simp [typeCheckBindingTemplate, Atom.vars]
+  | generated index =>
+      simp [typeCheckBindingTemplate, bindingTemplate, Atom.vars,
+        List.eraseDups_cons]
+  | expression items =>
+      have variables := TypeCheckExpectedListAgrees.variableNames items
+      simp only [referenceTypeCheckTemplate, typeCheckBindingTemplate,
+        bindingTemplate, referenceTypeVariableNames, Atom.vars,
+        List.flatMap_cons, List.flatMap_nil, List.append_nil]
+      rw [variables]
+      rw [stringEraseDups_isEmpty]
+
+/-- Restate an independent expected-type agreement at the exact executable
+carry template. -/
+theorem TypeCheckExpectedAgrees.compilerTemplate {reference : Term}
+    {executable template : Atom}
+    (agreement : TypeCheckExpectedAgrees reference executable template) :
+    TypeCheckExpectedAgrees reference executable
+      (typeCheckBindingTemplate executable) := by
+  rw [agreement.compilerTemplate_eq]
+  exact agreement
 
 mutual
 
@@ -486,7 +636,7 @@ inductive GoalAgrees : PeTTaSpec.PrologCore.Goal → PLeaTTa.Goal → Prop where
            .eq executableDirect (chainify executableExpected)]
           []
           [.bin "get-metatype" [executableValue] executableMeta,
-           .eq executableMeta executableExpected])
+           .eq executableMeta (chainify executableExpected)])
   | shortCircuitAnd {referenceCondition referenceBody referenceOutput : Term}
       {executableCondition executableBody executableOutput : Atom}
       {referenceBodyGoals : List PeTTaSpec.PrologCore.Goal}
@@ -837,7 +987,7 @@ def SequentialGoalsAgree.ofStructural
 followed by the internal proper-list encoding. -/
 theorem chainify_expr (atoms : List Atom) :
     chainify (.expr atoms) = chainOf (atoms.map chainify) := by
-  simp [chainify]
+  simp
 
 /-- Every pinned `let*` expansion contains at least one well-formed binding. -/
 theorem letStarExpands_bindings_nonempty {bindings : List Atom}

@@ -612,6 +612,81 @@ theorem binaryFirstSource_rejects_unary (name : String) :
   subst source
   cases registration
 
+/-- One source declaration contributes an arrow-chain candidate for a
+particular atom head.  This is the single matching shape queried by pinned
+`match('&self', [':', Fun, TypeChain], ...)`.
+[SPEC translator.pl:317] -/
+inductive DeclaresTypeChain (head : String) :
+    (Atom × Atom) → List Atom → Prop where
+  | arrow (types : List Atom) :
+      DeclaresTypeChain head
+        (.sym head, .expr (.sym "->" :: types)) types
+
+/-- Ordered `findall/3` candidates before duplicate removal.  Nonmatching
+declarations are skipped; matching arrow declarations retain source order and
+occurrence multiplicity. [SPEC translator.pl:317] -/
+inductive CollectsRawTypeChains (head : String) :
+    List (Atom × Atom) → List (List Atom) → Prop where
+  | nil : CollectsRawTypeChains head [] []
+  | keep {declaration : Atom × Atom} {chain : List Atom}
+      {declarations : List (Atom × Atom)} {chains : List (List Atom)}
+      (matchProof : DeclaresTypeChain head declaration chain)
+      (tail : CollectsRawTypeChains head declarations chains) :
+      CollectsRawTypeChains head (declaration :: declarations)
+        (chain :: chains)
+  | skip {declaration : Atom × Atom}
+      {declarations : List (Atom × Atom)} {chains : List (List Atom)}
+      (doesNotMatch : ¬ ∃ chain, DeclaresTypeChain head declaration chain)
+      (tail : CollectsRawTypeChains head declarations chains) :
+      CollectsRawTypeChains head (declaration :: declarations) chains
+
+/-- A collected chain is closed when its source syntax contains no logical
+variable occurrence. -/
+def ClosedTypeChain (chain : List Atom) : Prop :=
+  chain.flatMap Atom.vars = []
+
+/-- Strict identity of two separately copied `findall/3` answers.  Separate
+answers containing variables are renamed apart and therefore never
+identical; closed answers compare by source-term structural identity.
+[SPEC translator.pl:317-318] -/
+inductive CopiedTypeChainsIdentical : List Atom → List Atom → Prop where
+  | closed {left right : List Atom}
+      (leftClosed : ClosedTypeChain left)
+      (rightClosed : ClosedTypeChain right)
+      (sameSyntax : (left == right) = true) :
+      CopiedTypeChainsIdentical left right
+
+/-- Remove every later answer strictly identical to one retained first
+occurrence. -/
+inductive RemovesCopiedTypeChainDuplicates (first : List Atom) :
+    List (List Atom) → List (List Atom) → Prop where
+  | nil : RemovesCopiedTypeChainDuplicates first [] []
+  | drop {candidate : List Atom} {input output : List (List Atom)}
+      (same : CopiedTypeChainsIdentical candidate first)
+      (tail : RemovesCopiedTypeChainDuplicates first input output) :
+      RemovesCopiedTypeChainDuplicates first (candidate :: input) output
+  | keep {candidate : List Atom} {input output : List (List Atom)}
+      (different : ¬ CopiedTypeChainsIdentical candidate first)
+      (tail : RemovesCopiedTypeChainDuplicates first input output) :
+      RemovesCopiedTypeChainDuplicates first (candidate :: input)
+        (candidate :: output)
+
+/-- Independent first-occurrence `list_to_set/2` judgment over the freshly
+copied answer list. [SPEC translator.pl:318] -/
+inductive DedupsTypeChains : List (List Atom) → List (List Atom) → Prop where
+  | nil : DedupsTypeChains [] []
+  | cons {first : List Atom} {input filtered unique : List (List Atom)}
+      (removes : RemovesCopiedTypeChainDuplicates first input filtered)
+      (tail : DedupsTypeChains filtered unique) :
+      DedupsTypeChains (first :: input) (first :: unique)
+
+/-- Independent composition of pinned type-chain collection and strict
+first-occurrence duplicate removal. -/
+def CollectsTypeChains (declarations : List (Atom × Atom)) (head : String)
+    (chains : List (List Atom)) : Prop :=
+  ∃ raw, CollectsRawTypeChains head declarations raw ∧
+    DedupsTypeChains raw chains
+
 /-- Exact pinned soft-cut type/meta-type fallback for a translated value.
 Generated variables are named by the independent compiler counter.
 [SPEC translator.pl:356-370] -/
@@ -636,13 +711,16 @@ compiler or substitution implementation. [SPEC translator.pl:317-321] -/
 def typeChainVariables (chain : List Atom) : List String :=
   (chain.flatMap Atom.vars).eraseDups
 
-/-- Independent freshening of one atomic type expression.  The supported
-exact bridge begins with symbols and variables; compound type expressions
-can add constructors without changing branch assembly. -/
+mutual
+
+/-- Independent freshening of one supported type term.  Symbols are copied,
+source type variables are replaced by branch-local generated variables, and
+compound MeTTa type syntax becomes an independent proper Prolog list.  This
+is the recursive term shape copied by `findall/3`; it does not call the
+executable substitution or chain encoder. [SPEC translator.pl:317-321] -/
 inductive FreshensTypeAtom (sourceChain : List Atom) (counter : Nat) :
     Atom → Term → Prop where
-  | symbol (name : String) (notTrue : name ≠ "true")
-      (notFalse : name ≠ "false") :
+  | symbol (name : String) :
       FreshensTypeAtom sourceChain counter (.sym name) (.atom name)
   | variable (name : String)
       (member : name ∈ typeChainVariables sourceChain) :
@@ -650,8 +728,12 @@ inductive FreshensTypeAtom (sourceChain : List Atom) (counter : Nat) :
         (.variable
           (.generated (counter + List.idxOf name
             (typeChainVariables sourceChain))))
+  | expression {sources : List Atom} {references : List Term}
+      (items : FreshensTypeAtoms sourceChain counter sources references) :
+      FreshensTypeAtom sourceChain counter (.expr sources)
+        (.list references none)
 
-/-- Ordered pointwise freshening for an atomic arrow chain. -/
+/-- Ordered pointwise freshening for a type chain or compound type body. -/
 inductive FreshensTypeAtoms (sourceChain : List Atom) (counter : Nat) :
     List Atom → List Term → Prop where
   | nil : FreshensTypeAtoms sourceChain counter [] []
@@ -661,6 +743,8 @@ inductive FreshensTypeAtoms (sourceChain : List Atom) (counter : Nat) :
       (tail : FreshensTypeAtoms sourceChain counter sources references) :
       FreshensTypeAtoms sourceChain counter (source :: sources)
         (reference :: references)
+
+end
 
 /-- One branch-local fresh variant of a complete declared arrow chain.  Its
 counter cost is the number of distinct source type variables, irrespective of
@@ -799,13 +883,20 @@ inductive TranslatesTypedBranch (registry : FunctionRegistry) :
         sharedResult branchResult
         (argumentGoals ++ callGoals ++ resultGoals) nextCounter
 
-/-- Independent ordered `maplist(typed_functioncall_branch, ...)` judgment for
-the atom-headed, empty-prefix fragment.  Every source type chain contributes
-exactly one branch in source order; duplicates therefore remain duplicates
-unless the separately specified `list_to_set/2` preprocessing relation has
-removed them.  Chain extraction, nonempty guards, prefix-goal insertion,
-pre-bound partial heads, and final disjunction construction are separate
-outer obligations. [SPEC translator.pl:320-321,349-358] -/
+/-- Independent ordered *raw branch-construction* judgment for the
+atom-headed, empty-prefix fragment.  It specifies the body of
+`typed_functioncall_branch/8` pointwise, before Prolog's shared `Out` variable
+has unified the branch results during `maplist/3`.  Every source type chain
+contributes exactly one raw branch in source order; duplicates therefore
+remain duplicates unless the separately specified `list_to_set/2`
+preprocessing relation has removed them.
+
+This relation is deliberately not the full semantics of the pinned
+`maplist/3` call: shared-output unification and its substitution through every
+branch still require an independent unification judgment.  Chain extraction,
+nonempty guards, prefix-goal insertion, pre-bound partial heads, and final
+disjunction construction are also separate outer obligations.
+[SPEC translator.pl:320-321,349-358] -/
 inductive TranslatesTypedBranches (registry : FunctionRegistry)
     (state : TranslatorState) (head : String) (sources : List Atom)
     (sharedResult : Term) : Nat → List (List Atom) →

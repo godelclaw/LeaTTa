@@ -8,6 +8,7 @@ Trusted boundary: none
 -/
 import PLeaTTa.Proofs.CompilerCounter
 import PLeaTTa.Proofs.CompilerTypeFreshening
+import PLeaTTa.Proofs.Unification
 import PLeaTTa.Specialize
 import MettaHyperonFull.Proofs.Basic
 
@@ -1049,6 +1050,353 @@ theorem compilerGoalNamesAllowed_smatch {external : String → Prop}
     CompilerGoalNamesAllowed external origin limit (.smatch pattern) :=
   patternAllowed
 
+/-- Every key or target variable carried by a compile-time substitution is
+already visible to the enclosing compiler interval. -/
+abbrev CompilerSubstNamesAllowed (external : String → Prop)
+    (origin limit : Nat) (binding : Metta.Subst) : Prop :=
+  CompilerNamesAllowed external origin limit (resolutionSubstVars binding)
+
+private theorem substRange_mem_resolutionSubstVars (binding : Metta.Subst)
+    (name : String)
+    (member : name ∈ binding.flatMap (fun entry => entry.2.vars)) :
+    name ∈ resolutionSubstVars binding := by
+  rw [resolutionSubstVars]
+  rcases List.mem_flatMap.mp member with ⟨entry, entryMember, nameMember⟩
+  exact List.mem_flatMap.mpr
+    ⟨entry, entryMember, List.mem_cons.mpr (.inr nameMember)⟩
+
+/-- Deep atom substitution preserves the compiler-origin name
+classification when the substitution itself satisfies that classification. -/
+theorem CompilerAtomNamesAllowed.subst {external : String → Prop}
+    {origin limit : Nat} {binding : Metta.Subst} {atom : Atom}
+    (bindingAllowed :
+      CompilerSubstNamesAllowed external origin limit binding)
+    (atomAllowed : CompilerAtomNamesAllowed external origin limit atom) :
+    CompilerAtomNamesAllowed external origin limit (subst binding atom) := by
+  intro name member
+  rcases subst_vars_origin binding atom name member with
+    sourceMember | rangeMember
+  · exact atomAllowed name sourceMember
+  · exact bindingAllowed name
+      (substRange_mem_resolutionSubstVars binding name rangeMember)
+
+/-- Pointwise deep atom substitution preserves the compiler-origin name
+classification for an ordered atom collection. -/
+theorem CompilerAtomsNamesAllowed.substMap {external : String → Prop}
+    {origin limit : Nat} {binding : Metta.Subst} {atoms : List Atom}
+    (bindingAllowed :
+      CompilerSubstNamesAllowed external origin limit binding)
+    (atomsAllowed : CompilerAtomsNamesAllowed external origin limit atoms) :
+    CompilerAtomsNamesAllowed external origin limit
+      (atoms.map (subst binding)) := by
+  intro name member
+  rcases List.mem_flatMap.mp member with
+    ⟨variableList, variableListMember, nameMember⟩
+  rcases List.mem_map.mp variableListMember with
+    ⟨atom, atomMember, rfl⟩
+  apply CompilerAtomNamesAllowed.subst bindingAllowed
+  · exact CompilerAtomsNamesAllowed.atom_mem atomsAllowed atomMember
+  · exact nameMember
+
+set_option maxHeartbeats 2000000 in
+/-- Applying one compile-time binding throughout a nested emitted goal tree
+does not invent variable names. The four motives follow `Goal`'s generated
+mutual recursor over goals, goal lists, branch lists, and one branch. -/
+theorem compilerGoalNamesAllowed_substCompiled
+    {external : String → Prop} {origin limit : Nat}
+    {binding : Metta.Subst}
+    (bindingAllowed :
+      CompilerSubstNamesAllowed external origin limit binding) :
+    ∀ goal,
+      CompilerGoalNamesAllowed external origin limit goal →
+      CompilerGoalNamesAllowed external origin limit
+        (substCompiledGoal binding goal) := by
+  intro goal
+  induction goal using Goal.rec
+      (motive_2 := fun goals =>
+        CompilerGoalsNamesAllowed external origin limit goals →
+        CompilerGoalsNamesAllowed external origin limit
+          (substCompiledGoals binding goals))
+      (motive_3 := fun branches =>
+        CompilerBranchesNamesAllowed external origin limit branches →
+        CompilerBranchesNamesAllowed external origin limit
+          (substCompiledBranches binding branches))
+      (motive_4 := fun branch =>
+        (CompilerAtomNamesAllowed external origin limit branch.1 ∧
+          CompilerGoalsNamesAllowed external origin limit branch.2) →
+        CompilerAtomNamesAllowed external origin limit
+            (subst binding branch.1) ∧
+          CompilerGoalsNamesAllowed external origin limit
+            (substCompiledGoals binding branch.2))
+  case call operation arguments result =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (arguments.flatMap Atom.vars ++ result.vars) at allowed
+      have parts := (compilerNamesAllowed_append_iff external origin limit
+        (arguments.flatMap Atom.vars) result.vars).mp allowed
+      exact compilerGoalNamesAllowed_call
+        (CompilerAtomsNamesAllowed.substMap bindingAllowed parts.1)
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.2) operation
+  case bin operation arguments result =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (arguments.flatMap Atom.vars ++ result.vars) at allowed
+      have parts := (compilerNamesAllowed_append_iff external origin limit
+        (arguments.flatMap Atom.vars) result.vars).mp allowed
+      exact compilerGoalNamesAllowed_bin
+        (CompilerAtomsNamesAllowed.substMap bindingAllowed parts.1)
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.2) operation
+  case callDyn head arguments result =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (head.vars ++ arguments.flatMap Atom.vars ++ result.vars) at allowed
+      simp only [compilerNamesAllowed_append_iff] at allowed
+      exact compilerGoalNamesAllowed_callDyn
+        (CompilerAtomNamesAllowed.subst bindingAllowed allowed.1.1)
+        (CompilerAtomsNamesAllowed.substMap bindingAllowed allowed.1.2)
+        (CompilerAtomNamesAllowed.subst bindingAllowed allowed.2)
+  case evalg value result =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (value.vars ++ result.vars) at allowed
+      have parts := (compilerNamesAllowed_append_iff external origin limit
+        value.vars result.vars).mp allowed
+      exact compilerGoalNamesAllowed_evalg
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.1)
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.2)
+  case catchg template goals result goalsIH =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (template.vars ++ specializationGoalsVars goals ++ result.vars)
+        at allowed
+      simp only [compilerNamesAllowed_append_iff] at allowed
+      exact compilerGoalNamesAllowed_catchg
+        (CompilerAtomNamesAllowed.subst bindingAllowed allowed.1.1)
+        (goalsIH allowed.1.2)
+        (CompilerAtomNamesAllowed.subst bindingAllowed allowed.2)
+  case softcut template condition thenGoals elseGoals conditionIH thenIH
+      elseIH =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (template.vars ++ specializationGoalsVars condition ++
+          specializationGoalsVars thenGoals ++
+          specializationGoalsVars elseGoals) at allowed
+      simp only [compilerNamesAllowed_append_iff] at allowed
+      exact compilerGoalNamesAllowed_softcut
+        (CompilerAtomNamesAllowed.subst bindingAllowed allowed.1.1.1)
+        (conditionIH allowed.1.1.2) (thenIH allowed.1.2)
+        (elseIH allowed.2)
+  case eq left right =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (left.vars ++ right.vars) at allowed
+      have parts := (compilerNamesAllowed_append_iff external origin limit
+        left.vars right.vars).mp allowed
+      exact compilerGoalNamesAllowed_eq
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.1)
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.2)
+  case cut => simp [substCompiledGoal, specializationGoalVars,
+      CompilerNamesAllowed]
+  case cutAt => simp [substCompiledGoal, specializationGoalVars,
+      CompilerNamesAllowed]
+  case findall template goals result goalsIH =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (template.vars ++ specializationGoalsVars goals ++ result.vars)
+        at allowed
+      simp only [compilerNamesAllowed_append_iff] at allowed
+      exact compilerGoalNamesAllowed_findall
+        (CompilerAtomNamesAllowed.subst bindingAllowed allowed.1.1)
+        (goalsIH allowed.1.2)
+        (CompilerAtomNamesAllowed.subst bindingAllowed allowed.2)
+  case onceg template goals result goalsIH =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (template.vars ++ specializationGoalsVars goals ++ result.vars)
+        at allowed
+      simp only [compilerNamesAllowed_append_iff] at allowed
+      exact compilerGoalNamesAllowed_onceg
+        (CompilerAtomNamesAllowed.subst bindingAllowed allowed.1.1)
+        (goalsIH allowed.1.2)
+        (CompilerAtomNamesAllowed.subst bindingAllowed allowed.2)
+  case transactiong template goals goalsIH =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (template.vars ++ specializationGoalsVars goals) at allowed
+      have parts := (compilerNamesAllowed_append_iff external origin limit
+        template.vars (specializationGoalsVars goals)).mp allowed
+      exact compilerGoalNamesAllowed_transactiong
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.1)
+        (goalsIH parts.2)
+  case amb branches result branchesIH =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (specializationBranchVars branches ++ result.vars) at allowed
+      have parts := (compilerNamesAllowed_append_iff external origin limit
+        (specializationBranchVars branches) result.vars).mp allowed
+      exact compilerGoalNamesAllowed_amb (branchesIH parts.1)
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.2)
+  case spread value result =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (value.vars ++ result.vars) at allowed
+      have parts := (compilerNamesAllowed_append_iff external origin limit
+        value.vars result.vars).mp allowed
+      exact compilerGoalNamesAllowed_spread
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.1)
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.2)
+  case ite condition thenBranch elseBranch result thenIH elseIH =>
+      intro allowed
+      rcases thenBranch with ⟨thenTerm, thenGoals⟩
+      rcases elseBranch with ⟨elseTerm, elseGoals⟩
+      change CompilerNamesAllowed external origin limit
+        (condition.vars ++ thenTerm.vars ++
+          specializationGoalsVars thenGoals ++ elseTerm.vars ++
+          specializationGoalsVars elseGoals ++ result.vars) at allowed
+      simp only [compilerNamesAllowed_append_iff] at allowed
+      have thenAllowed := thenIH ⟨allowed.1.1.1.1.2, allowed.1.1.1.2⟩
+      have elseAllowed := elseIH ⟨allowed.1.1.2, allowed.1.2⟩
+      exact compilerGoalNamesAllowed_ite
+        (CompilerAtomNamesAllowed.subst bindingAllowed allowed.1.1.1.1.1)
+        thenAllowed.1 thenAllowed.2 elseAllowed.1 elseAllowed.2
+        (CompilerAtomNamesAllowed.subst bindingAllowed allowed.2)
+  case smatch pattern =>
+      intro allowed
+      exact CompilerAtomNamesAllowed.subst bindingAllowed allowed
+  case wact operation arguments result =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (arguments.flatMap Atom.vars ++ result.vars) at allowed
+      have parts := (compilerNamesAllowed_append_iff external origin limit
+        (arguments.flatMap Atom.vars) result.vars).mp allowed
+      exact compilerGoalNamesAllowed_wact
+        (CompilerAtomsNamesAllowed.substMap bindingAllowed parts.1)
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.2) operation
+  all_goals
+    simp only [substCompiledGoals, substCompiledBranches,
+      compilerGoalsNamesAllowed_nil, compilerGoalsNamesAllowed_cons_iff,
+      compilerBranchesNamesAllowed_nil,
+      compilerBranchesNamesAllowed_cons_iff] at *
+  all_goals
+    aesop (add safe forward [CompilerAtomNamesAllowed.subst])
+
+@[simp] theorem compilerSubstNamesAllowed_nil (external : String → Prop)
+    (origin limit : Nat) :
+    CompilerSubstNamesAllowed external origin limit [] := by
+  simp [CompilerSubstNamesAllowed, CompilerNamesAllowed,
+    resolutionSubstVars]
+
+/-- One successful shared-output constraint preserves the origin of every
+variable stored in the accumulated compile-time binding. -/
+theorem bindTypedSharedResult_namesAllowed
+    {external : String → Prop} {origin limit : Nat}
+    {sharedResult : Atom} {binding nextBinding : Metta.Subst}
+    {branch : Atom × List Goal}
+    (sharedAllowed :
+      CompilerAtomNamesAllowed external origin limit sharedResult)
+    (bindingAllowed :
+      CompilerSubstNamesAllowed external origin limit binding)
+    (branchResultAllowed :
+      CompilerAtomNamesAllowed external origin limit branch.1)
+    (bound : bindTypedSharedResult sharedResult binding branch =
+      .ok nextBinding) :
+    CompilerSubstNamesAllowed external origin limit nextBinding := by
+  unfold bindTypedSharedResult at bound
+  split at bound
+  · rcases Except.ok.inj bound with rfl
+    exact bindingAllowed
+  · rename_i distinct
+    cases exactEq : unifyTopExact (subst binding sharedResult)
+        (subst binding branch.1) with
+    | none => simp [exactEq] at bound
+    | some generated =>
+        simp only [exactEq] at bound
+        rcases Except.ok.inj bound with rfl
+        intro name member
+        rcases substCompose_vars_origin generated binding name member with
+          generatedMember | existingMember
+        · have underlying := unifyTopExact_some_underlying
+              (subst binding sharedResult) (subst binding branch.1)
+              generated exactEq
+          rcases unifyTop_substVars_origin
+              (subst binding sharedResult) (subst binding branch.1)
+              generated underlying name generatedMember with
+            sharedMember | branchMember
+          · exact (CompilerAtomNamesAllowed.subst bindingAllowed
+              sharedAllowed) name sharedMember
+          · exact (CompilerAtomNamesAllowed.subst bindingAllowed
+              branchResultAllowed) name branchMember
+        · exact bindingAllowed name existingMember
+
+/-- The left-to-right typed-result fold preserves the origin invariant for
+its accumulated binding. -/
+theorem bindTypedSharedResult_foldlM_namesAllowed
+    {external : String → Prop} {origin limit : Nat}
+    {sharedResult : Atom} {branches : List (Atom × List Goal)}
+    {initial finalBinding : Metta.Subst}
+    (sharedAllowed :
+      CompilerAtomNamesAllowed external origin limit sharedResult)
+    (branchesAllowed :
+      CompilerBranchesNamesAllowed external origin limit branches)
+    (initialAllowed :
+      CompilerSubstNamesAllowed external origin limit initial)
+    (folded : branches.foldlM (bindTypedSharedResult sharedResult) initial =
+      .ok finalBinding) :
+    CompilerSubstNamesAllowed external origin limit finalBinding := by
+  induction branches generalizing initial with
+  | nil =>
+      rw [List.foldlM_nil] at folded
+      rcases Except.ok.inj folded with rfl
+      exact initialAllowed
+  | cons branch branches ih =>
+      rcases branch with ⟨branchResult, branchGoals⟩
+      have branchParts :=
+        (compilerBranchesNamesAllowed_cons_iff external origin limit
+          branchResult branchGoals branches).1 branchesAllowed
+      rw [List.foldlM_cons] at folded
+      simp only [Bind.bind, Except.bind] at folded
+      split at folded
+      · contradiction
+      · rename_i nextBinding nextBindingEq
+        apply ih branchParts.2.2
+          (bindTypedSharedResult_namesAllowed sharedAllowed initialAllowed
+            branchParts.1 nextBindingEq)
+          folded
+
+/-- Successful global shared-output resolution preserves both the returned
+result and every variable nested in every returned branch. -/
+theorem resolveTypedSharedResult_namesAllowed
+    {external : String → Prop} {origin limit : Nat}
+    {sharedResult : Atom} {branches : List (Atom × List Goal)}
+    {resolved : Atom × List (Atom × List Goal)}
+    (sharedAllowed :
+      CompilerAtomNamesAllowed external origin limit sharedResult)
+    (branchesAllowed :
+      CompilerBranchesNamesAllowed external origin limit branches)
+    (resolution : resolveTypedSharedResult sharedResult branches =
+      .ok resolved) :
+    CompilerAtomNamesAllowed external origin limit resolved.1 ∧
+      CompilerBranchesNamesAllowed external origin limit resolved.2 := by
+  unfold resolveTypedSharedResult at resolution
+  simp only [Bind.bind, Except.bind] at resolution
+  split at resolution
+  · contradiction
+  · rename_i binding bindingEq
+    rcases Except.ok.inj resolution with rfl
+    have bindingAllowed := bindTypedSharedResult_foldlM_namesAllowed
+      sharedAllowed branchesAllowed
+      (compilerSubstNamesAllowed_nil external origin limit) bindingEq
+    have resolvedAmb := compilerGoalNamesAllowed_substCompiled bindingAllowed
+      (.amb branches sharedResult)
+      (compilerGoalNamesAllowed_amb branchesAllowed sharedAllowed)
+    change CompilerNamesAllowed external origin limit
+      (specializationBranchVars (substCompiledBranches binding branches) ++
+        (subst binding sharedResult).vars) at resolvedAmb
+    have parts := (compilerNamesAllowed_append_iff external origin limit
+      (specializationBranchVars (substCompiledBranches binding branches))
+      (subst binding sharedResult).vars).1 resolvedAmb
+    exact ⟨parts.2, parts.1⟩
+
 theorem compilerCaseArmGoal_namesAllowed {external : String → Prop}
     {origin limit : Nat} {compiledPattern sourcePattern compiledBody
       scrutinee result : Atom} {patternGoals bodyGoals elseGoals : List Goal}
@@ -1112,7 +1460,8 @@ theorem compileTypeCheckWhen_generatedNames (external : String → Prop)
         []
         [Goal.bin "get-metatype" [value]
             (Atom.var (compilerGeneratedName (start + 1))),
-          Goal.eq (Atom.var (compilerGeneratedName (start + 1))) expected])
+          Goal.eq (Atom.var (compilerGeneratedName (start + 1)))
+            (chainify expected)])
       []).2
     constructor
     · apply compilerGoalNamesAllowed_softcut
@@ -1148,7 +1497,7 @@ theorem compileTypeCheckWhen_generatedNames (external : String → Prop)
         · apply compilerGoalNamesAllowed_eq
           · simp
             exact .generated (Nat.le_trans originStart (by omega)) (by omega)
-          · exact expectedAllowed.mono (by omega)
+          · exact (chainify_namesAllowed expectedAllowed).mono (by omega)
     · simp
   · simp
 
@@ -2472,14 +2821,26 @@ theorem compileAppDefaultWith_generatedNames
                       compiledNames.2⟩
             · have branchesNonempty : foldResult.1.isEmpty = false :=
                 Bool.eq_false_iff.mpr branchesEmpty
-              simp only [branchesNonempty, Bool.false_eq_true, if_false] at compiled
-              rcases Except.ok.inj compiled with ⟨rfl, rfl, rfl⟩
-              constructor
-              · exact resultAtFirst.mono foldCounter
-              · simp only [compilerGoalsNamesAllowed_cons_iff,
-                    compilerGoalsNamesAllowed_nil, and_true]
-                exact compilerGoalNamesAllowed_amb foldNames
-                  (resultAtFirst.mono foldCounter)
+              simp only [branchesNonempty, Bool.false_eq_true, if_false]
+                at compiled
+              cases resolutionEq : resolveTypedSharedResult resultAtom
+                  foldResult.1 with
+              | error message =>
+                  simp only [resultAtom, compilerGeneratedName] at resolutionEq
+                  simp only [resolutionEq] at compiled
+                  contradiction
+              | ok resolved =>
+                  simp only [resultAtom, compilerGeneratedName] at resolutionEq
+                  simp only [resolutionEq] at compiled
+                  rcases Except.ok.inj compiled with ⟨rfl, rfl, rfl⟩
+                  have resolvedNames := resolveTypedSharedResult_namesAllowed
+                    (resultAtFirst.mono foldCounter) foldNames resolutionEq
+                  constructor
+                  · exact resolvedNames.1
+                  · simp only [compilerGoalsNamesAllowed_cons_iff,
+                        compilerGoalsNamesAllowed_nil, and_true]
+                    exact compilerGoalNamesAllowed_amb resolvedNames.2
+                      resolvedNames.1
       · have typedFalse :
             shouldUseTypedDispatch (env.typeChains head) = false :=
           Bool.eq_false_iff.mpr typed
