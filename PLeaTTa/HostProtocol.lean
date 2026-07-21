@@ -231,8 +231,8 @@ private def formatStamp : PrologTerm → Option (Option HostNumber)
   | value => HostNumber.ofPrologTerm value |>.map some
 
 /-- Recognize the effectful Prolog forms whose state must be represented in
-    the typed host protocol.  Every other goal remains an ordinary bounded
-    Prolog request. -/
+    the typed host protocol.  Every other goal remains an ordinary trusted
+    Prolog request; any operator resource policy is external to this type. -/
 def HostRequest.ofPrologCall (functor : String) (args : List PrologTerm)
     (vars : List String) : HostRequest :=
   match functor, args with

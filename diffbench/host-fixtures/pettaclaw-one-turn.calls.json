@@ -33,6 +33,10 @@
       "value": {"integer": {"value": 1}}
     },
     {
+      "spec": "telegram.lastMessageArmsLightly",
+      "value": {"integer": {"value": 0}}
+    },
+    {
       "spec": "synthetic_llm.current_model",
       "value": {"string": {"value": "fixture-model"}}
     },

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Capability-bounded SWI-Prolog worker for PLeaTTa's trusted-host tier.
+"""Provenance-visible SWI-Prolog worker for PLeaTTa's trusted-host tier.
 
 Reads JSON-stdio requests, evaluates a single (translatePredicate-lowered)
 Prolog goal against PeTTa's predicate library, and returns the ordered answer
@@ -9,13 +9,16 @@ reductions remain certified, only the Prolog result is trusted.
 
 Boundary:
   * consult is restricted to one configured PeTTa source file;
-  * only an explicit predicate allowlist can be called;
-  * every goal runs under a bounded inference limit (call_with_inference_limit);
+  * predicates are callable by default, matching pinned PeTTa;
+  * an operator may install an explicit direct-call deny filter, inference
+    limit, or wall-clock timeout without confusing them with certification or
+    a complete Prolog sandbox;
   * this worker is only ever launched in LIVE grading -- replay reads the
     recorded transcript and never launches swipl.
 
 Request  (one JSON object per line):
-  {"goal": "<functor>", "args": [<term>...], "vars": ["X", ...], "limit": 1000000}
+  {"goal": "<functor>", "args": [<term>...], "vars": ["X", ...]}
+  An optional positive "limit" applies an inference limit to this request.
 Response (one JSON object per line):
   {"id": .., "answers": [ {"X": <term>, ...}, ... ]}   # ordered substitution bag
   {"id": .., "error": "<kind>"}
@@ -32,7 +35,6 @@ import subprocess
 import sys
 
 SWIPL = os.environ.get("PLEATTA_SWIPL", "swipl")
-# Allowlisted predicate library: PeTTa's own Prolog definitions (`+/3`, etc.).
 PROLOG_LIB = os.environ.get(
     "PLEATTA_PROLOG_LIB",
     os.path.join(
@@ -40,16 +42,44 @@ PROLOG_LIB = os.environ.get(
                        os.path.join(os.path.expanduser("~"), ".cache", "pleatta")),
         "petta-6b7f52f064bdbc82fabd0a0998404121fb01d52e", "src", "metta.pl"))
 
-DEFAULT_ALLOWED_GOALS = {
-    "+", "-", "*", "/", "//", "mod", "is",
-    "<", "=<", ">", ">=", "=:=", r"=\=",
-    "atom_codes", "re_replace",
-}
-ALLOWED_GOALS = DEFAULT_ALLOWED_GOALS | {
-    item.strip()
-    for item in os.environ.get("PLEATTA_PROLOG_ALLOWLIST", "").split(",")
-    if item.strip()
-}
+
+def _csv_policy(name):
+    """Read an explicit comma-separated policy set; blank means no policy."""
+    return {
+        item.strip()
+        for item in os.environ.get(name, "").split(",")
+        if item.strip()
+    }
+
+
+def _goal_denied(functor, arity):
+    """An opt-in direct-call filter, deliberately separate from proof scope.
+
+    Entries may name every arity of a functor (``shell``) or one exact
+    predicate indicator (``shell/1``).  The default set is empty.  This checks
+    only the requested outer functor: Prolog meta-calls and dynamically built
+    goals require process isolation if they are an actual security boundary.
+    """
+    denied = _csv_policy("PLEATTA_PROLOG_DENY")
+    return functor in denied or f"{functor}/{arity}" in denied
+
+
+def _optional_positive_int(value, label):
+    if value is None or str(value).strip() == "":
+        return None
+    parsed = int(value)
+    if parsed <= 0:
+        raise ValueError(f"{label} must be a positive integer")
+    return parsed
+
+
+def _optional_positive_float(value, label):
+    if value is None or str(value).strip() == "":
+        return None
+    parsed = float(value)
+    if parsed <= 0:
+        raise ValueError(f"{label} must be positive")
+    return parsed
 
 
 def term_to_prolog(term, varmap):
@@ -173,22 +203,34 @@ def _split_top_level(text, separator):
 
 
 def solve(req):
-    """Run one goal under a bounded inference limit; return the ordered answer
-    substitution bag (preserving answer order and multiplicity)."""
+    """Run one goal and return its ordered answer substitution bag.
+
+    Pinned PeTTa imposes no predicate allowlist, inference cap, or timeout.
+    PLeaTTa therefore defaults to the same behaviour.  Operators may opt into
+    each resource/safety policy explicitly; those policies do not alter the
+    certification boundary and are reported separately as runtime policy.
+    """
     import tempfile
     varmap = {}
     functor = str(req["goal"])
     libraries = [os.path.realpath(path) for path in req.get("libraries", [])]
-    if functor not in ALLOWED_GOALS and not libraries:
-        return {"error": f"predicate-not-allowed:{functor}"}
+    arguments = req.get("args", [])
+    arity = len(arguments)
+    if _goal_denied(functor, arity):
+        return {"error": f"predicate-denied:{functor}/{arity}"}
     if any(not os.path.isfile(path) for path in libraries):
         return {"error": "consult-file-missing"}
-    args = ",".join(term_to_prolog(a, varmap) for a in req.get("args", []))
+    args = ",".join(term_to_prolog(a, varmap) for a in arguments)
     goal = f"'{functor}'({args})" if args else f"'{functor}'"
     wanted = req.get("vars", list(varmap.keys()))
     for v in wanted:
         varmap.setdefault(v, f"V{len(varmap)}")
-    limit = int(req.get("limit", 1000000))
+    limit = _optional_positive_int(
+        req.get("limit", os.environ.get("PLEATTA_PROLOG_INFERENCE_LIMIT")),
+        "Prolog inference limit")
+    timeout = _optional_positive_float(
+        os.environ.get("PLEATTA_PROLOG_TIMEOUT_SECONDS"),
+        "Prolog timeout")
     binds = ",".join(
         f"{term_to_prolog({'atom': v}, varmap)}={varmap[v]}" for v in wanted
     ) if wanted else ""
@@ -199,13 +241,19 @@ def solve(req):
         for path in libraries)
     if consults:
         consults = consults + ",\n    "
+    invoked_goal = f"({goal})"
+    if limit is not None:
+        invoked_goal = (
+            f"(call_with_inference_limit(({goal}), {limit}, LimitResult), "
+            "(LimitResult == inference_limit_exceeded -> "
+            "throw(inference_limit_exceeded) ; true))")
     script = f""":- initialization(main).
 main :-
     ( exists_file('{PROLOG_LIB}') -> catch(consult('{PROLOG_LIB}'), _, true) ; true ),
     {consults}
     catch(
       ( findall(A,
-          ( call_with_inference_limit(({goal}), {limit}, _R),
+          ( {invoked_goal},
             term_to_atom([{binds}], A) ), As),
         forall(member(A, As), (write('ANS:'), write(A), nl)) ),
       E, (write('ERR:'), write_canonical(E), nl)),
@@ -217,7 +265,7 @@ main :-
     fh.close()
     try:
         p = subprocess.run([SWIPL, "-q", fh.name],
-                           capture_output=True, text=True, timeout=20)
+                           capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return {"error": "timeout"}
     finally:

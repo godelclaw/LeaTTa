@@ -84,6 +84,17 @@ ordered answers and multiplicity; denominator and hashes in
   predicates use the typed recorded boundary. Verification mode replays a
   recorded transcript through the pure stepper. The seal certifies the
   reductions *around* accepted host responses, not the external implementation.
+  External SWI predicates are callable by default, matching pinned PeTTa;
+  there is no predicate allowlist masquerading as a proof boundary. Optional
+  operator controls (`PLEATTA_PROLOG_DENY`,
+  `PLEATTA_PROLOG_INFERENCE_LIMIT`, and
+  `PLEATTA_PROLOG_TIMEOUT_SECONDS`) are empty/unset by default and remain
+  separate from certification. `PLEATTA_PROLOG_DENY` filters only the outer
+  requested functor; it is not a sandbox for nested or dynamically built
+  Prolog goals. Run
+  `pleatta --host-provenance transcript.json` to derive a path-free boundary
+  summary from the typed transcript itself; live and replay therefore receive
+  identical provenance accounting without trusting the worker to label itself.
 - **Operational coverage (adjudicated): 172/176.**
 - **Unexplained engine gaps: 0.** Value-sensitive NARS and PLN witnesses
   establish lookup, ground deduction, and variable-quantified deduction with

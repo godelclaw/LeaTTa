@@ -13,6 +13,7 @@ case "$LOG" in
   *) LOG="$(pwd)/$LOG" ;;
 esac
 WRAP="$(mktemp)"; printf '#!/bin/bash\nulimit -v 16000000 -t "${PLEATTA_CPU_SECONDS:-3600}"\nexec "%s/.lake/build/bin/pleatta" "$@"\n' "$D" > "$WRAP"; chmod +x "$WRAP"
+python3 "$D/diffbench/prolog_worker_policy.py" || exit 1
 cd "$D/diffbench"
 ADMIT_IMPORTS=1 ADMIT_SPACES=1 ADMIT_STATES=1 PLEATTA_WRAPPER="$WRAP" LEATTA_BIN="$WRAP" \
   python3 resume_run.py "$LOG"

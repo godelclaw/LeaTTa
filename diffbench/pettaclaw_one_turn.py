@@ -105,9 +105,16 @@ def sandbox_command(
         "METTACLAW_CHROMA_COLLECTION": "pleatta-fixture",
         "SYNTHETIC_MODEL": "fixture-model",
     }
-    prolog_allowlist = os.environ.get("PLEATTA_PROLOG_ALLOWLIST", "")
-    if prolog_allowlist:
-        environment["PLEATTA_PROLOG_ALLOWLIST"] = prolog_allowlist
+    # Prolog execution is open by default, matching pinned PeTTa.  These are
+    # optional operator policies, not part of the certification boundary.
+    for policy_name in (
+        "PLEATTA_PROLOG_DENY",
+        "PLEATTA_PROLOG_INFERENCE_LIMIT",
+        "PLEATTA_PROLOG_TIMEOUT_SECONDS",
+    ):
+        policy_value = os.environ.get(policy_name, "")
+        if policy_value:
+            environment[policy_name] = policy_value
     if mode in {"--host-live", "--host-live-prefix"}:
         environment.update({
             "PLEATTA_PYTHON": str(python),
@@ -313,6 +320,20 @@ def main() -> int:
     transcript = validate_transcript(
         transcript_path, [repo, pettaclaw, petta, work])
     exchanges = len(transcript)
+    provenance = subprocess.run(
+        [str(repo / ".lake" / "build" / "bin" / "pleatta"),
+         "--host-provenance", str(transcript_path)],
+        capture_output=True, text=True, timeout=30)
+    if provenance.returncode != 0:
+        raise SystemExit(
+            f"host provenance failed: {provenance.stderr.strip()}")
+    if f"host requests: {exchanges}" not in provenance.stdout:
+        raise SystemExit("host provenance total does not match transcript")
+    native_shadowed = re.search(
+        r"native-shadowed:\s+(\d+)", provenance.stdout)
+    if native_shadowed is None or int(native_shadowed.group(1)) != 0:
+        raise SystemExit(
+            "the unchanged turn leaked an engine-owned operation to a host")
     history = (live_root / "history.metta").read_text(encoding="utf-8")
     if not history.startswith("(FIXTURE_HISTORY initial)\n"):
         raise SystemExit("history append did not preserve the fixture prefix")
@@ -368,6 +389,7 @@ def main() -> int:
         "answers": int(match.group(2)),
         "live_replay_equal": True,
         "replay_filesystem_unchanged": True,
+        "native_shadowed_host_requests": 0,
         "network": "isolated",
     }, sort_keys=True))
     return 0

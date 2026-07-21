@@ -13,6 +13,7 @@ import PLeaTTa.Compile
 import PLeaTTa.Machine
 import PLeaTTa.SubstMachine
 import PLeaTTa.HostRunner
+import PLeaTTa.HostProvenance
 import PLeaTTa.RuntimeImports
 import PLeaTTa.Trace
 import MettaHyperonFull.Runtime.Parser
@@ -268,9 +269,9 @@ private def argvGrounding (values : List String) : Metta.Grounding :=
             | none => .ok []
       | _ => .incorrectArgument "argv" }
 
-def main (args : List String) : IO UInt32 := do
+private def runProgramMain (args : List String) : IO UInt32 := do
   let usage :=
-    "usage: pleatta --file <program.metta> [budget] [-- program-args...] | pleatta --host-live <program.metta> <transcript.json> [budget] [-- program-args...] | pleatta --host-replay <program.metta> <transcript.json> [budget] [-- program-args...] | pleatta --host-live-prefix <program.metta> <transcript.json> <exchanges> <budget> [-- program-args...] | pleatta --host-replay-prefix <program.metta> <transcript.json> <exchanges> <budget> [-- program-args...] | pleatta --host-profile-prefix <program.metta> <transcript.json> <exchanges> <budget> [-- program-args...] | pleatta --host-profile <program.metta> <transcript.json> [budget] [-- program-args...] | pleatta --trace <program.metta> <outdir> [budget] | pleatta --profile <program.metta> [fuel]"
+    "usage: pleatta --file <program.metta> [budget] [-- program-args...] | pleatta --host-live <program.metta> <transcript.json> [budget] [-- program-args...] | pleatta --host-replay <program.metta> <transcript.json> [budget] [-- program-args...] | pleatta --host-live-prefix <program.metta> <transcript.json> <exchanges> <budget> [-- program-args...] | pleatta --host-replay-prefix <program.metta> <transcript.json> <exchanges> <budget> [-- program-args...] | pleatta --host-profile-prefix <program.metta> <transcript.json> <exchanges> <budget> [-- program-args...] | pleatta --host-profile <program.metta> <transcript.json> [budget] [-- program-args...] | pleatta --host-provenance <transcript.json> | pleatta --trace <program.metta> <outdir> [budget] | pleatta --profile <program.metta> [fuel]"
   let (path?, traceDir?, profile?, budget?, hostMode, programArgs) := match args with
     | "--file" :: p :: b :: "--" :: rest =>
         match b.toNat? with
@@ -796,3 +797,11 @@ def main (args : List String) : IO UInt32 := do
             i := i + 1
           IO.println s!"TRACED {ok}/{tot}"
           return 0
+
+def main (args : List String) : IO UInt32 :=
+  match args with
+  | ["--host-provenance", transcriptPath] => do
+      let transcript ← readHostTranscript ⟨transcriptPath⟩
+      IO.println (HostProvenanceSummary.renderTranscript transcript)
+      return 0
+  | _ => runProgramMain args
