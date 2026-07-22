@@ -7,8 +7,10 @@ Purpose: Transport independent/executable representation agreement through
 Trusted boundary: none
 Main exports: VariableStateAgreesOn,
   TermAgrees.subst_of_variableStateOn,
+  ResolvedAliasStateOn.typeCheckSubstitutionAgreesOn,
   AliasLedgerAgrees.resolveVariableStateAndTypeCheckOn,
-  compileSuperposeBranches_alias_continuation_sound
+  compileSuperposeBranches_alias_continuation_sound (restricted same-domain
+    compatibility result)
 -/
 import PLeaTTa.Proofs.CompilerAliasFinalizationAdequacy
 
@@ -1207,10 +1209,68 @@ theorem AliasLedgerAgrees.resolveVariableStateOn
   exact ⟨reference, executable, resolved.referenceResolution,
     resolved.executableResolution, resolved.variableState⟩
 
-/-- A resolved alias certificate discharges the specialized type-check
-transport whenever the continuation domain avoids the original ledger
-sources.  The theorem derives executable-name freshness from finite encoding
-injectivity; it does not assume a separate hand-maintained namespace fact. -/
+/-- A resolved alias certificate can discharge type-check transport on a
+domain distinct from the ordinary continuation domain stored in the
+certificate.  This separation is essential: an alias source may occur in an
+ordinary continuation goal, while carry-template stability requires the
+type-template domain to avoid every alias source. -/
+theorem ResolvedAliasStateOn.typeCheckSubstitutionAgreesOn
+    {target : LogicVar} {targetName : String}
+    {sources : List LogicVar} {sourceNames : List String}
+    {referenceGoals : List PeTTaSpec.PrologCore.Goal}
+    {executableGoals : List PLeaTTa.Goal} {stateDomain typeDomain : List LogicVar}
+    {reference : Substitution} {executable : Subst}
+    {referenceSeen : List LogicVar} {executableSeen : List String}
+    (resolved : ResolvedAliasStateOn target targetName sources sourceNames
+      referenceGoals executableGoals stateDomain reference executable
+        referenceSeen executableSeen)
+    (injective : EncodingInjectiveOn (target :: (sources ++ typeDomain)))
+    (avoids : AliasDomainAvoids target sources typeDomain) :
+    TypeCheckSubstitutionAgrees reference executable typeDomain := by
+  have referenceDisjoint :
+      AliasDomainAvoids target referenceSeen typeDomain := by
+    intro identity member
+    rcases avoids identity member with same | absent
+    · exact Or.inl same
+    · exact Or.inr (fun seenMember =>
+        absent (resolved.seenWithinSources identity seenMember))
+  have memberOriginal : ∀ identity,
+      identity ∈ target :: (referenceSeen ++ typeDomain) →
+      identity ∈ target :: (sources ++ typeDomain) := by
+    intro identity member
+    simp only [List.mem_cons, List.mem_append] at member ⊢
+    rcases member with same | seen | continuation
+    · exact Or.inl same
+    · exact Or.inr (Or.inl
+        (resolved.seenWithinSources identity seen))
+    · exact Or.inr (Or.inr continuation)
+  have restrictedInjective :
+      EncodingInjectiveOn
+        (target :: (referenceSeen ++ typeDomain)) := by
+    intro left right leftMember rightMember sameName
+    exact injective (memberOriginal left leftMember)
+      (memberOriginal right rightMember) sameName
+  have executableDisjoint :
+      TypeCheckExecutableNamesDisjoint executableSeen typeDomain :=
+    typeCheckExecutableNamesDisjoint_of_encoding resolved.seenNames
+      resolved.referenceWellFormed.2 restrictedInjective referenceDisjoint
+  have fixedCanonical :
+      TypeCheckStateFixedOn reference
+        (aliasBinding targetName executableSeen) typeDomain :=
+    typeCheckStateFixedOn_of_aliasDisjoint resolved.referenceState
+      referenceDisjoint executableDisjoint
+  rw [resolved.executableBinding]
+  intro referenceExpected executableExpected executableTemplate agreement
+    supported
+  obtain ⟨referenceFixed, expectedFixed, templateFixed, chainifiedFixed⟩ :=
+    fixedCanonical agreement supported
+  constructor
+  · simpa [referenceFixed, expectedFixed, templateFixed] using agreement
+  · rw [chainifiedFixed, expectedFixed]
+
+/-- Same-domain compatibility wrapper retained for existing callers.  New
+goal-transport composition should use `typeCheckSubstitutionAgreesOn` with a
+separate type-template domain. -/
 theorem ResolvedAliasStateOn.typeCheckSubstitutionAgrees
     {target : LogicVar} {targetName : String}
     {sources : List LogicVar} {sourceNames : List String}
@@ -1223,47 +1283,8 @@ theorem ResolvedAliasStateOn.typeCheckSubstitutionAgrees
         referenceSeen executableSeen)
     (injective : EncodingInjectiveOn (target :: (sources ++ domain)))
     (avoids : AliasDomainAvoids target sources domain) :
-    TypeCheckSubstitutionAgrees reference executable domain := by
-  have referenceDisjoint :
-      AliasDomainAvoids target referenceSeen domain := by
-    intro identity member
-    rcases avoids identity member with same | absent
-    · exact Or.inl same
-    · exact Or.inr (fun seenMember =>
-        absent (resolved.seenWithinSources identity seenMember))
-  have memberOriginal : ∀ identity,
-      identity ∈ target :: (referenceSeen ++ domain) →
-      identity ∈ target :: (sources ++ domain) := by
-    intro identity member
-    simp only [List.mem_cons, List.mem_append] at member ⊢
-    rcases member with same | seen | continuation
-    · exact Or.inl same
-    · exact Or.inr (Or.inl
-        (resolved.seenWithinSources identity seen))
-    · exact Or.inr (Or.inr continuation)
-  have restrictedInjective :
-      EncodingInjectiveOn
-        (target :: (referenceSeen ++ domain)) := by
-    intro left right leftMember rightMember sameName
-    exact injective (memberOriginal left leftMember)
-      (memberOriginal right rightMember) sameName
-  have executableDisjoint :
-      TypeCheckExecutableNamesDisjoint executableSeen domain :=
-    typeCheckExecutableNamesDisjoint_of_encoding resolved.seenNames
-      resolved.referenceWellFormed.2 restrictedInjective referenceDisjoint
-  have fixedCanonical :
-      TypeCheckStateFixedOn reference
-        (aliasBinding targetName executableSeen) domain :=
-    typeCheckStateFixedOn_of_aliasDisjoint resolved.referenceState
-      referenceDisjoint executableDisjoint
-  rw [resolved.executableBinding]
-  intro referenceExpected executableExpected executableTemplate agreement
-    supported
-  obtain ⟨referenceFixed, expectedFixed, templateFixed, chainifiedFixed⟩ :=
-    fixedCanonical agreement supported
-  constructor
-  · simpa [referenceFixed, expectedFixed, templateFixed] using agreement
-  · rw [chainifiedFixed, expectedFixed]
+    TypeCheckSubstitutionAgrees reference executable domain :=
+  resolved.typeCheckSubstitutionAgreesOn injective avoids
 
 /-- Public package combining both resolver equations, finite variable-state
 agreement, and the non-generic type-check closure needed by later goal
@@ -1293,7 +1314,7 @@ theorem AliasLedgerAgrees.resolveVariableStateAndTypeCheckOn
     resolved.executableResolution, resolved.variableState,
     resolved.typeCheckSubstitutionAgrees injective avoids⟩
 
-/-! ## Ordered superpose-traversal composition -/
+/-! ## Restricted same-domain superpose package -/
 
 /-- The complete ordered `build_superpose_branches/3` traversal produces a
 canonical alias-resolution certificate whose resulting substitutions agree
@@ -1305,7 +1326,13 @@ The `aliasSafety` premise is intentionally finite and semantic: executable
 spellings must be injective on the emitted aliases plus the continuation, and
 the continuation may contain the shared result but no emitted alias source.
 The known source/generated spelling collision is therefore rejected rather
-than hidden behind a global freshness assertion. -/
+than hidden behind a global freshness assertion.
+
+This theorem is a compatibility package, not the general final-goal
+transport: ordinary variable-valued branches normally retain an emitted
+alias source in their continuation while type-check carry templates must
+exclude it.  The split-domain composition in
+`CompilerGoalSubstitutionAdequacy` handles that case. -/
 theorem compileSuperposeBranches_alias_continuation_sound
     {state : TranslatorState} (env : CEnv)
     (envAgreement : EnvAgrees state env)
