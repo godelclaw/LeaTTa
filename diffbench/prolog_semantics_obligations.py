@@ -13,6 +13,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "diffbench" / "prolog-semantics-obligations.tsv"
 TRACE_SEMANTICS = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologTraceSemantics.lean"
+TERM_ALGEBRA = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologTermAlgebra.lean"
+ORDERED_MGU = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologMgu.lean"
+LOCAL_RESOLVER = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologResolver.lean"
 PINNED_PETTA_REVISION = "6b7f52f064bdbc82fabd0a0998404121fb01d52e"
 FIELDS = ["id", "native_source", "layer", "reference", "proof", "status", "finding"]
 LAYERS = {"trace", "control", "collection", "exception", "world", "boundary",
@@ -59,6 +62,9 @@ def check() -> list[str]:
     expected_metadata = {
         "pinned_petta_revision": PINNED_PETTA_REVISION,
         "trace_semantics_sha256": digest(TRACE_SEMANTICS),
+        "term_algebra_sha256": digest(TERM_ALGEBRA),
+        "ordered_mgu_sha256": digest(ORDERED_MGU),
+        "local_resolver_sha256": digest(LOCAL_RESOLVER),
     }
     for key, expected in expected_metadata.items():
         actual = metadata.get(key)

@@ -775,7 +775,7 @@ inductive LocalPull : ClauseCursor →
       (result : Substitution)
       (pulled : pullBranch cursor = some (branch, next))
       (resolved : HeadResolution branch result) :
-      LocalPull cursor (.answer (branch.enter result) next)
+      LocalPull cursor (.reply (branch.enter result) next)
   | rejected (cursor next : ClauseCursor) (branch : ClauseBranch)
       (pulled : pullBranch cursor = some (branch, next))
       (clash : ¬ ∃ result, HeadResolution branch result) :
@@ -796,7 +796,7 @@ theorem LocalPull.total (cursor : ClauseCursor) :
       rcases pair with ⟨branch, next⟩
       by_cases resolves : ∃ result, HeadResolution branch result
       · rcases resolves with ⟨result, resolved⟩
-        exact ⟨.answer (branch.enter result) next,
+        exact ⟨.reply (branch.enter result) next,
           .matched cursor next branch result pulled resolved⟩
       · exact ⟨.silent next,
           .rejected cursor next branch pulled resolves⟩
@@ -881,6 +881,56 @@ def semanticLocalClauseProtocol :
   pull := LocalPull
   prune := fun _ => True
 
+/-- Control process used by the certified local lane.  `EnteredClause` is an
+internal provider reply, while `Answer` is reserved for values produced by the
+certified body interpreter. -/
+abbrev LocalProcess (Answer : Type) :=
+  Trace.Process CallRequest ClauseCursor EnteredClause Answer Empty Empty
+
+/-- Open a local predicate under its own cut boundary.  The provider can
+select only an entered clause occurrence; `execute` remains in the certified
+layer and is solely responsible for evaluating that clause body. -/
+def localCallProcess {Answer : Type} (scope : Trace.CutScopeId)
+    (request : CallRequest)
+    (execute : EnteredClause → LocalProcess Answer) : LocalProcess Answer :=
+  Trace.Process.scopedCall scope request execute
+
+/-- Local-call construction preserves the generic cut-scope invariant. -/
+theorem localCallProcess_wellScoped {Answer : Type}
+    (active scope : Trace.CutScopeId)
+    (request : CallRequest) (execute : EnteredClause → LocalProcess Answer)
+    (executeScoped : ∀ entered, Trace.WellScoped scope (execute entered)) :
+    Trace.WellScoped active (localCallProcess scope request execute) :=
+  Trace.Process.scopedCall_wellScoped active scope request execute executeScoped
+
+/-- Opening a local call exposes only the typed request and installs the exact
+call-start snapshot cursor under the predicate boundary. -/
+theorem localCallProcess_open_step {Answer : Type}
+    (scope : Trace.CutScopeId)
+    (request : CallRequest) (execute : EnteredClause → LocalProcess Answer) :
+    Trace.RawStep semanticLocalClauseProtocol
+      (localCallProcess scope request execute)
+      [.opened request] .none
+      (.running
+        (.cutBoundary scope
+          (.await scope (openCursor request) execute))) := by
+  exact .cutBoundaryProgress scope _ _ _
+    (.openCall request (openCursor request) _ rfl)
+
+/-- One successful local pull splices the certified body before the remaining
+clause cursor, at the same predicate cut scope, without emitting an answer.
+This is the concrete anti-laundering bridge from `LocalPull` into `RawStep`. -/
+theorem localCallProcess_reply_splice {Answer : Type}
+    (scope : Trace.CutScopeId)
+    {cursor next : ClauseCursor} {entered : EnteredClause}
+    (execute : EnteredClause → LocalProcess Answer)
+    (pulled : LocalPull cursor (.reply entered next)) :
+    Trace.RawStep semanticLocalClauseProtocol
+      (.await scope cursor execute) [] .none
+      (.running
+        (.choice scope (execute entered) (.await scope next execute))) :=
+  .awaitReply scope cursor next entered execute pulled
+
 /-- Opening the internal local protocol is functional and fixes the call-start
 snapshot. -/
 theorem semanticLocalClauseProtocol_open_unique
@@ -892,9 +942,9 @@ theorem semanticLocalClauseProtocol_open_unique
 
 /-- A yielded local branch inherits the exact call generation and advanced
 fresh counter of the certified clause pull. -/
-theorem LocalPull.answer_origin
+theorem LocalPull.reply_origin
     {cursor next : ClauseCursor} {entered : EnteredClause}
-    (pulled : LocalPull cursor (.answer entered next)) :
+    (pulled : LocalPull cursor (.reply entered next)) :
     entered.callGeneration = cursor.callGeneration ∧
       next.freshSeed = entered.nextFresh := by
   cases pulled with

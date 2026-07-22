@@ -40,14 +40,14 @@ added; reusing this identifier for them would incorrectly conflate control
 transparency policies. -/
 abbrev CutScopeId := Nat
 
-variable {Request Token Answer Effect Exception : Type}
+variable {Request Token Reply Answer Effect Exception : Type}
 
 /-- One demand on an already-open ordered call cursor.  Returning an answer
 does not imply that the call is exhausted: the next cursor remains available
 for another pull. -/
-inductive PullResult (Token Answer Effect Exception : Type) where
+inductive PullResult (Token Reply Effect Exception : Type) where
   | silent (next : Token)
-  | answer (value : Answer) (next : Token)
+  | reply (value : Reply) (next : Token)
   | effect (value : Effect) (next : Token)
   | exhausted
   | raised (exception : Exception)
@@ -61,9 +61,9 @@ locally owned predicate must eventually instantiate them with the certified
 clause resolver and MGU development; parameterization does not discharge that
 obligation. -/
 structure OrderedCallProtocol
-    (Request Token Answer Effect Exception : Type) where
+    (Request Token Reply Effect Exception : Type) where
   openCall : Request → Token → Prop
-  pull : Token → PullResult Token Answer Effect Exception → Prop
+  pull : Token → PullResult Token Reply Effect Exception → Prop
   prune : Token → Prop
 
 /-- Observable events.  Lists of these events are ordered traces, not sets:
@@ -103,26 +103,31 @@ end Observation
 `cutBoundary scope body` is the only node that catches a matching commit.
 `bind scope head tail` sequences every answer of `head` through `tail`, while
 retaining the remaining answers as a choice in the same scope.
-`suspend cursor` is the only interaction point with an external/local call
-provider. -/
-inductive Process (Request Token Answer Effect Exception : Type) where
+`await scope cursor next` is the only interaction point with an external/local
+call provider.  A provider reply is internal: the certified layer splices
+`next reply` before the retained cursor and only that process can yield an
+observable answer. -/
+inductive Process (Request Token Reply Answer Effect Exception : Type) where
   | done
-  | yield (value : Answer) (next : Process Request Token Answer Effect Exception)
-  | delay (next : Process Request Token Answer Effect Exception)
-  | emit (value : Effect) (next : Process Request Token Answer Effect Exception)
+  | yield (value : Answer)
+      (next : Process Request Token Reply Answer Effect Exception)
+  | delay (next : Process Request Token Reply Answer Effect Exception)
+  | emit (value : Effect)
+      (next : Process Request Token Reply Answer Effect Exception)
   | raise (exception : Exception)
   | commit (scope : CutScopeId)
-      (next : Process Request Token Answer Effect Exception)
+      (next : Process Request Token Reply Answer Effect Exception)
   | openCall (request : Request)
-      (next : Token → Process Request Token Answer Effect Exception)
-  | suspend (cursor : Token)
+      (next : Token → Process Request Token Reply Answer Effect Exception)
+  | await (scope : CutScopeId) (cursor : Token)
+      (next : Reply → Process Request Token Reply Answer Effect Exception)
   | choice (scope : CutScopeId)
-      (left right : Process Request Token Answer Effect Exception)
+      (left right : Process Request Token Reply Answer Effect Exception)
   | cutBoundary (scope : CutScopeId)
-      (body : Process Request Token Answer Effect Exception)
+      (body : Process Request Token Reply Answer Effect Exception)
   | bind (scope : CutScopeId)
-      (head : Process Request Token Answer Effect Exception)
-      (tail : Answer → Process Request Token Answer Effect Exception)
+      (head : Process Request Token Reply Answer Effect Exception)
+      (tail : Answer → Process Request Token Reply Answer Effect Exception)
 
 namespace Process
 
@@ -131,7 +136,7 @@ Function continuations are latent and therefore own no cursor until entered.
 This projection does not itself establish that tokens are issued, distinct, or
 linearly owned; the future well-formedness judgment must establish those facts
 for processes produced by Goal specialization. -/
-def liveTokens : Process Request Token Answer Effect Exception → List Token
+def liveTokens : Process Request Token Reply Answer Effect Exception → List Token
   | .done => []
   | .yield _ next => liveTokens next
   | .delay next => liveTokens next
@@ -139,7 +144,7 @@ def liveTokens : Process Request Token Answer Effect Exception → List Token
   | .raise _ => []
   | .commit _ next => liveTokens next
   | .openCall _ _ => []
-  | .suspend cursor => [cursor]
+  | .await _ cursor _ => [cursor]
   | .choice _ left right => liveTokens left ++ liveTokens right
   | .cutBoundary _ body => liveTokens body
   | .bind _ head _ => liveTokens head
@@ -158,44 +163,46 @@ The judgment intentionally says nothing yet about cursor issuance/linearity or
 freshness of newly entered scope identifiers.  Those are separate obligations
 for Goal specialization and the local resolver. -/
 inductive WellScoped :
-    CutScopeId → Process Request Token Answer Effect Exception → Prop where
+    CutScopeId → Process Request Token Reply Answer Effect Exception → Prop where
   | done (active : CutScopeId) : WellScoped active .done
   | yield (active : CutScopeId) (value : Answer)
-      (next : Process Request Token Answer Effect Exception)
+      (next : Process Request Token Reply Answer Effect Exception)
       (nextScoped : WellScoped active next) :
       WellScoped active (.yield value next)
   | delay (active : CutScopeId)
-      (next : Process Request Token Answer Effect Exception)
+      (next : Process Request Token Reply Answer Effect Exception)
       (nextScoped : WellScoped active next) :
       WellScoped active (.delay next)
   | emit (active : CutScopeId) (value : Effect)
-      (next : Process Request Token Answer Effect Exception)
+      (next : Process Request Token Reply Answer Effect Exception)
       (nextScoped : WellScoped active next) :
       WellScoped active (.emit value next)
   | raise (active : CutScopeId) (exception : Exception) :
       WellScoped active (.raise exception)
   | commit (active : CutScopeId)
-      (next : Process Request Token Answer Effect Exception)
+      (next : Process Request Token Reply Answer Effect Exception)
       (nextScoped : WellScoped active next) :
       WellScoped active (.commit active next)
   | openCall (active : CutScopeId) (request : Request)
-      (next : Token → Process Request Token Answer Effect Exception)
+      (next : Token → Process Request Token Reply Answer Effect Exception)
       (nextScoped : ∀ cursor, WellScoped active (next cursor)) :
       WellScoped active (.openCall request next)
-  | suspend (active : CutScopeId) (cursor : Token) :
-      WellScoped active (.suspend cursor)
+  | await (active : CutScopeId) (cursor : Token)
+      (next : Reply → Process Request Token Reply Answer Effect Exception)
+      (nextScoped : ∀ reply, WellScoped active (next reply)) :
+      WellScoped active (.await active cursor next)
   | choice (active : CutScopeId)
-      (left right : Process Request Token Answer Effect Exception)
+      (left right : Process Request Token Reply Answer Effect Exception)
       (leftScoped : WellScoped active left)
       (rightScoped : WellScoped active right) :
       WellScoped active (.choice active left right)
   | cutBoundary (active scope : CutScopeId)
-      (body : Process Request Token Answer Effect Exception)
+      (body : Process Request Token Reply Answer Effect Exception)
       (bodyScoped : WellScoped scope body) :
       WellScoped active (.cutBoundary scope body)
   | bind (active : CutScopeId)
-      (head : Process Request Token Answer Effect Exception)
-      (tail : Answer → Process Request Token Answer Effect Exception)
+      (head : Process Request Token Reply Answer Effect Exception)
+      (tail : Answer → Process Request Token Reply Answer Effect Exception)
       (headScoped : WellScoped active head)
       (tailScoped : ∀ answer, WellScoped active (tail answer)) :
       WellScoped active (.bind active head tail)
@@ -205,7 +212,7 @@ namespace WellScoped
 /-- Inversion through an opaque cut boundary. -/
 theorem cutBoundary_body
     {active scope : CutScopeId}
-    {body : Process Request Token Answer Effect Exception}
+    {body : Process Request Token Reply Answer Effect Exception}
     (wellFormed : WellScoped active (.cutBoundary scope body)) :
     WellScoped scope body := by
   cases wellFormed
@@ -214,7 +221,7 @@ theorem cutBoundary_body
 /-- Inversion through a same-scope ordered choice. -/
 theorem choice_left
     {scope : CutScopeId}
-    {left right : Process Request Token Answer Effect Exception}
+    {left right : Process Request Token Reply Answer Effect Exception}
     (wellFormed : WellScoped scope (.choice scope left right)) :
     WellScoped scope left := by
   cases wellFormed
@@ -223,7 +230,7 @@ theorem choice_left
 /-- Any well-scoped commit carries exactly the active cut scope. -/
 theorem commit_scope_eq
     {active scope : CutScopeId}
-    {next : Process Request Token Answer Effect Exception}
+    {next : Process Request Token Reply Answer Effect Exception}
     (wellFormed : WellScoped active (.commit scope next)) : scope = active := by
   cases wellFormed
   rfl
@@ -243,15 +250,15 @@ def SignalMatches (active : CutScopeId) : CutSignal → Prop
   | .commit scope => scope = active
 
 /-- Target of one raw process step. -/
-inductive RawTarget (Request Token Answer Effect Exception : Type) where
+inductive RawTarget (Request Token Reply Answer Effect Exception : Type) where
   | halted
-  | running (process : Process Request Token Answer Effect Exception)
+  | running (process : Process Request Token Reply Answer Effect Exception)
 
 /-- Every live cursor in a discarded branch accepts the prune notification.
 Prune-once behavior additionally relies on the open cursor-linearity
 obligation; it is not smuggled into this pointwise predicate. -/
 def AllPrunable
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     (tokens : List Token) : Prop :=
   ∀ token, token ∈ tokens → protocol.prune token
 
@@ -267,64 +274,73 @@ leftmost demand and every cut-pruning decision structurally visible.  A step
 may emit several prune events because one commit can discard several live
 cursors while it propagates to its cut boundary. -/
 inductive RawStep
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception) :
-    Process Request Token Answer Effect Exception →
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception) :
+    Process Request Token Reply Answer Effect Exception →
     List (Observation Request Token Answer Effect Exception) →
-    CutSignal → RawTarget Request Token Answer Effect Exception → Prop where
+    CutSignal → RawTarget Request Token Reply Answer Effect Exception → Prop where
   | done :
       RawStep protocol .done [.completed] .none .halted
   | yield (value : Answer)
-      (next : Process Request Token Answer Effect Exception) :
+      (next : Process Request Token Reply Answer Effect Exception) :
       RawStep protocol (.yield value next) [.answer value] .none (.running next)
-  | delay (next : Process Request Token Answer Effect Exception) :
+  | delay (next : Process Request Token Reply Answer Effect Exception) :
       RawStep protocol (.delay next) [] .none (.running next)
   | emit (value : Effect)
-      (next : Process Request Token Answer Effect Exception) :
+      (next : Process Request Token Reply Answer Effect Exception) :
       RawStep protocol (.emit value next) [.effect value] .none (.running next)
   | raise (exception : Exception) :
       RawStep protocol (.raise exception) [.raised exception] .none .halted
   | commit (scope : CutScopeId)
-      (next : Process Request Token Answer Effect Exception) :
+      (next : Process Request Token Reply Answer Effect Exception) :
       RawStep protocol (.commit scope next) [] (.commit scope) (.running next)
   | openCall (request : Request) (cursor : Token)
-      (next : Token → Process Request Token Answer Effect Exception)
+      (next : Token → Process Request Token Reply Answer Effect Exception)
       (opened : protocol.openCall request cursor) :
       RawStep protocol (.openCall request next) [.opened request] .none
         (.running (next cursor))
-  | suspendSilent (cursor next : Token)
+  | awaitSilent (scope : CutScopeId) (cursor next : Token)
+      (resume : Reply → Process Request Token Reply Answer Effect Exception)
       (pulled : protocol.pull cursor (.silent next)) :
-      RawStep protocol (.suspend cursor) [] .none (.running (.suspend next))
-  | suspendAnswer (cursor next : Token) (answer : Answer)
-      (pulled : protocol.pull cursor (.answer answer next)) :
-      RawStep protocol (.suspend cursor) [.answer answer] .none
-        (.running (.suspend next))
-  | suspendEffect (cursor next : Token) (effect : Effect)
+      RawStep protocol (.await scope cursor resume) [] .none
+        (.running (.await scope next resume))
+  | awaitReply (scope : CutScopeId) (cursor next : Token) (reply : Reply)
+      (resume : Reply → Process Request Token Reply Answer Effect Exception)
+      (pulled : protocol.pull cursor (.reply reply next)) :
+      RawStep protocol (.await scope cursor resume) [] .none
+        (.running (.choice scope (resume reply)
+          (.await scope next resume)))
+  | awaitEffect (scope : CutScopeId) (cursor next : Token) (effect : Effect)
+      (resume : Reply → Process Request Token Reply Answer Effect Exception)
       (pulled : protocol.pull cursor (.effect effect next)) :
-      RawStep protocol (.suspend cursor) [.effect effect] .none
-        (.running (.suspend next))
-  | suspendExhausted (cursor : Token)
+      RawStep protocol (.await scope cursor resume) [.effect effect] .none
+        (.running (.await scope next resume))
+  | awaitExhausted (scope : CutScopeId) (cursor : Token)
+      (resume : Reply → Process Request Token Reply Answer Effect Exception)
       (pulled : protocol.pull cursor .exhausted) :
-      RawStep protocol (.suspend cursor) [.completed] .none .halted
-  | suspendRaised (cursor : Token) (exception : Exception)
+      RawStep protocol (.await scope cursor resume) [.completed] .none .halted
+  | awaitRaised (scope : CutScopeId) (cursor : Token)
+      (resume : Reply → Process Request Token Reply Answer Effect Exception)
+      (exception : Exception)
       (pulled : protocol.pull cursor (.raised exception)) :
-      RawStep protocol (.suspend cursor) [.raised exception] .none .halted
+      RawStep protocol (.await scope cursor resume)
+        [.raised exception] .none .halted
   | choiceProgress (scope : CutScopeId)
-      (left right next : Process Request Token Answer Effect Exception)
+      (left right next : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
       (step : RawStep protocol left events .none (.running next)) :
       RawStep protocol (.choice scope left right) events .none
         (.running (.choice scope next right))
   | choiceComplete (scope : CutScopeId)
-      (left right : Process Request Token Answer Effect Exception)
+      (left right : Process Request Token Reply Answer Effect Exception)
       (step : RawStep protocol left [.completed] .none .halted) :
       RawStep protocol (.choice scope left right) [] .none (.running right)
   | choiceRaised (scope : CutScopeId)
-      (left right : Process Request Token Answer Effect Exception)
+      (left right : Process Request Token Reply Answer Effect Exception)
       (exception : Exception)
       (step : RawStep protocol left [.raised exception] .none .halted) :
       RawStep protocol (.choice scope left right) [.raised exception] .none .halted
   | choiceCommitHere (scope : CutScopeId)
-      (left right next : Process Request Token Answer Effect Exception)
+      (left right next : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
       (step : RawStep protocol left events (.commit scope) (.running next))
       (prunable : AllPrunable protocol right.liveTokens) :
@@ -333,49 +349,49 @@ inductive RawStep
         (.commit scope) (.running next)
   | choiceCommitOutside (scope other : CutScopeId)
       (different : other ≠ scope)
-      (left right next : Process Request Token Answer Effect Exception)
+      (left right next : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
       (step : RawStep protocol left events (.commit other) (.running next)) :
       RawStep protocol (.choice scope left right) events (.commit other)
         (.running (.choice scope next right))
   | cutBoundaryProgress (scope : CutScopeId)
-      (body next : Process Request Token Answer Effect Exception)
+      (body next : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
       (step : RawStep protocol body events .none (.running next)) :
       RawStep protocol (.cutBoundary scope body) events .none
         (.running (.cutBoundary scope next))
   | cutBoundaryComplete (scope : CutScopeId)
-      (body : Process Request Token Answer Effect Exception)
+      (body : Process Request Token Reply Answer Effect Exception)
       (step : RawStep protocol body [.completed] .none .halted) :
       RawStep protocol (.cutBoundary scope body) [.completed] .none .halted
   | cutBoundaryRaised (scope : CutScopeId)
-      (body : Process Request Token Answer Effect Exception)
+      (body : Process Request Token Reply Answer Effect Exception)
       (exception : Exception)
       (step : RawStep protocol body [.raised exception] .none .halted) :
       RawStep protocol (.cutBoundary scope body) [.raised exception] .none .halted
   | cutBoundaryCatch (scope : CutScopeId)
-      (body next : Process Request Token Answer Effect Exception)
+      (body next : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
       (step : RawStep protocol body events (.commit scope) (.running next)) :
       RawStep protocol (.cutBoundary scope body) events .none
         (.running (.cutBoundary scope next))
   | cutBoundaryPass (scope other : CutScopeId)
       (different : other ≠ scope)
-      (body next : Process Request Token Answer Effect Exception)
+      (body next : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
       (step : RawStep protocol body events (.commit other) (.running next)) :
       RawStep protocol (.cutBoundary scope body) events (.commit other)
         (.running (.cutBoundary scope next))
   | bindAnswer (scope : CutScopeId)
-      (head next : Process Request Token Answer Effect Exception)
-      (tail : Answer → Process Request Token Answer Effect Exception)
+      (head next : Process Request Token Reply Answer Effect Exception)
+      (tail : Answer → Process Request Token Reply Answer Effect Exception)
       (answer : Answer)
       (step : RawStep protocol head [.answer answer] .none (.running next)) :
       RawStep protocol (.bind scope head tail) [] .none
         (.running (.choice scope (tail answer) (.bind scope next tail)))
   | bindProgress (scope : CutScopeId)
-      (head next : Process Request Token Answer Effect Exception)
-      (tail : Answer → Process Request Token Answer Effect Exception)
+      (head next : Process Request Token Reply Answer Effect Exception)
+      (tail : Answer → Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
       (signal : CutSignal)
       (step : RawStep protocol head events signal (.running next))
@@ -383,8 +399,8 @@ inductive RawStep
       RawStep protocol (.bind scope head tail) events signal
         (.running (.bind scope next tail))
   | bindHalt (scope : CutScopeId)
-      (head : Process Request Token Answer Effect Exception)
-      (tail : Answer → Process Request Token Answer Effect Exception)
+      (head : Process Request Token Reply Answer Effect Exception)
+      (tail : Answer → Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
       (step : RawStep protocol head events .none .halted)
       (answerFree : AnswerFree events) :
@@ -394,12 +410,12 @@ namespace RawStep
 
 /-- Target-indexed subject reduction for the structural cut-scope discipline. -/
 theorem preserves_wellScoped_target
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     {active : CutScopeId}
-    {process : Process Request Token Answer Effect Exception}
+    {process : Process Request Token Reply Answer Effect Exception}
     {events : List (Observation Request Token Answer Effect Exception)}
     {signal : CutSignal}
-    {target : RawTarget Request Token Answer Effect Exception}
+    {target : RawTarget Request Token Reply Answer Effect Exception}
     (step : RawStep protocol process events signal target)
     (wellFormed : WellScoped active process) :
     match target with
@@ -423,11 +439,19 @@ theorem preserves_wellScoped_target
   | openCall request cursor next opened =>
       cases wellFormed with
       | openCall _ _ _ nextScoped => exact nextScoped cursor
-  | suspendSilent cursor next pulled => exact .suspend active next
-  | suspendAnswer cursor next answer pulled => exact .suspend active next
-  | suspendEffect cursor next effect pulled => exact .suspend active next
-  | suspendExhausted cursor pulled => exact True.intro
-  | suspendRaised cursor exception pulled => exact True.intro
+  | awaitSilent scope cursor next resume pulled =>
+      cases wellFormed with
+      | await _ _ _ nextScoped => exact .await scope next resume nextScoped
+  | awaitReply scope cursor next reply resume pulled =>
+      cases wellFormed with
+      | await _ _ _ nextScoped =>
+          exact .choice scope (resume reply) (.await scope next resume)
+            (nextScoped reply) (.await scope next resume nextScoped)
+  | awaitEffect scope cursor next effect resume pulled =>
+      cases wellFormed with
+      | await _ _ _ nextScoped => exact .await scope next resume nextScoped
+  | awaitExhausted scope cursor resume pulled => exact True.intro
+  | awaitRaised scope cursor resume exception pulled => exact True.intro
   | choiceProgress scope left right next events step inductionHypothesis =>
       cases wellFormed with
       | choice _ _ _ leftScoped rightScoped =>
@@ -489,9 +513,9 @@ theorem preserves_wellScoped_target
 enclosing scope.  The raw relation therefore cannot manufacture the malformed
 outer-commit-under-inner-boundary shape after entry. -/
 theorem preserves_wellScoped
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     {active : CutScopeId}
-    {process next : Process Request Token Answer Effect Exception}
+    {process next : Process Request Token Reply Answer Effect Exception}
     {events : List (Observation Request Token Answer Effect Exception)}
     {signal : CutSignal}
     (step : RawStep protocol process events signal (.running next))
@@ -504,12 +528,12 @@ scope.  In particular, the `choiceCommitOutside` and `cutBoundaryPass` rules
 remain available for raw diagnostic inputs but are unreachable from a
 well-scoped process. -/
 theorem signal_matches_active
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     {active : CutScopeId}
-    {process : Process Request Token Answer Effect Exception}
+    {process : Process Request Token Reply Answer Effect Exception}
     {events : List (Observation Request Token Answer Effect Exception)}
     {signal : CutSignal}
-    {target : RawTarget Request Token Answer Effect Exception}
+    {target : RawTarget Request Token Reply Answer Effect Exception}
     (step : RawStep protocol process events signal target)
     (wellFormed : WellScoped active process) :
     SignalMatches active signal := by
@@ -522,11 +546,11 @@ theorem signal_matches_active
 
 /-- Convenient negative form of `signal_matches_active`. -/
 theorem no_foreign_commit
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     {active other : CutScopeId}
-    {process : Process Request Token Answer Effect Exception}
+    {process : Process Request Token Reply Answer Effect Exception}
     {events : List (Observation Request Token Answer Effect Exception)}
-    {target : RawTarget Request Token Answer Effect Exception}
+    {target : RawTarget Request Token Reply Answer Effect Exception}
     (step : RawStep protocol process events (.commit other) target)
     (wellFormed : WellScoped active process)
     (different : other ≠ active) : False :=
@@ -537,30 +561,30 @@ end RawStep
 /-- Public machine state.  An escaped cut is recorded rather than silently
 treated as failure; well-scoped compiled calls must surround execution with the
 corresponding cut boundary. -/
-inductive State (Request Token Answer Effect Exception : Type) where
+inductive State (Request Token Reply Answer Effect Exception : Type) where
   | halted
-  | running (process : Process Request Token Answer Effect Exception)
+  | running (process : Process Request Token Reply Answer Effect Exception)
   | uncaughtCut (scope : CutScopeId)
-      (continuation : Process Request Token Answer Effect Exception)
+      (continuation : Process Request Token Reply Answer Effect Exception)
 
 private def RawTarget.toState :
-    RawTarget Request Token Answer Effect Exception →
-      State Request Token Answer Effect Exception
+    RawTarget Request Token Reply Answer Effect Exception →
+      State Request Token Reply Answer Effect Exception
   | .halted => .halted
   | .running process => .running process
 
 /-- One top-level transition. -/
 inductive Transition
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception) :
-    State Request Token Answer Effect Exception →
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception) :
+    State Request Token Reply Answer Effect Exception →
     List (Observation Request Token Answer Effect Exception) →
-    State Request Token Answer Effect Exception → Prop where
-  | ordinary (process : Process Request Token Answer Effect Exception)
+    State Request Token Reply Answer Effect Exception → Prop where
+  | ordinary (process : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
-      (target : RawTarget Request Token Answer Effect Exception)
+      (target : RawTarget Request Token Reply Answer Effect Exception)
       (step : RawStep protocol process events .none target) :
       Transition protocol (.running process) events target.toState
-  | uncaught (process next : Process Request Token Answer Effect Exception)
+  | uncaught (process next : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
       (scope : CutScopeId)
       (step : RawStep protocol process events (.commit scope) (.running next)) :
@@ -569,13 +593,13 @@ inductive Transition
 /-- A finite transition prefix.  Event lists compose by append, preserving the
 exact order and multiplicity produced by every step. -/
 inductive Steps
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception) :
-    State Request Token Answer Effect Exception →
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception) :
+    State Request Token Reply Answer Effect Exception →
     List (Observation Request Token Answer Effect Exception) →
-    State Request Token Answer Effect Exception → Prop where
-  | refl (state : State Request Token Answer Effect Exception) :
+    State Request Token Reply Answer Effect Exception → Prop where
+  | refl (state : State Request Token Reply Answer Effect Exception) :
       Steps protocol state [] state
-  | cons (start middle finish : State Request Token Answer Effect Exception)
+  | cons (start middle finish : State Request Token Reply Answer Effect Exception)
       (first rest : List (Observation Request Token Answer Effect Exception))
       (head : Transition protocol start first middle)
       (tail : Steps protocol middle rest finish) :
@@ -585,14 +609,14 @@ inductive Steps
 the judgment prevents an "arbitrarily long prefix" theorem from being
 vacuously witnessed by reflexivity. -/
 inductive StepsN
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception) :
-    Nat → State Request Token Answer Effect Exception →
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception) :
+    Nat → State Request Token Reply Answer Effect Exception →
     List (Observation Request Token Answer Effect Exception) →
-    State Request Token Answer Effect Exception → Prop where
-  | zero (state : State Request Token Answer Effect Exception) :
+    State Request Token Reply Answer Effect Exception → Prop where
+  | zero (state : State Request Token Reply Answer Effect Exception) :
       StepsN protocol 0 state [] state
   | succ (count : Nat)
-      (start middle finish : State Request Token Answer Effect Exception)
+      (start middle finish : State Request Token Reply Answer Effect Exception)
       (first rest : List (Observation Request Token Answer Effect Exception))
       (head : Transition protocol start first middle)
       (tail : StepsN protocol count middle rest finish) :
@@ -603,9 +627,9 @@ namespace StepsN
 /-- Forget only the exact transition count, retaining the same ordered events
 and endpoints in the ordinary finite-prefix relation. -/
 theorem toSteps
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     {count : Nat}
-    {start finish : State Request Token Answer Effect Exception}
+    {start finish : State Request Token Reply Answer Effect Exception}
     {events : List (Observation Request Token Answer Effect Exception)}
     (execution : StepsN protocol count start events finish) :
     Steps protocol start events finish := by
@@ -616,16 +640,72 @@ theorem toSteps
 
 end StepsN
 
+/-- Open one predicate call under its own cut boundary.  Provider replies are
+not answers: each reply is interpreted by `resume`, and the `awaitReply` rule
+places that certified interpretation before the still-live cursor at exactly
+this predicate scope. -/
+def Process.scopedCall (scope : CutScopeId) (request : Request)
+    (resume : Reply → Process Request Token Reply Answer Effect Exception) :
+    Process Request Token Reply Answer Effect Exception :=
+  .cutBoundary scope
+    (.openCall request (fun cursor => .await scope cursor resume))
+
+/-- A scoped call is well formed whenever every certified reply continuation
+is well formed at the fresh predicate scope. -/
+theorem Process.scopedCall_wellScoped (active scope : CutScopeId)
+    (request : Request)
+    (resume : Reply → Process Request Token Reply Answer Effect Exception)
+    (resumeScoped : ∀ reply, WellScoped scope (resume reply)) :
+    WellScoped active (Process.scopedCall scope request resume) := by
+  apply WellScoped.cutBoundary
+  apply WellScoped.openCall
+  intro cursor
+  exact .await scope cursor resume resumeScoped
+
+/-- Provider interaction itself is answer-free.  Even a malicious abstract
+provider cannot smuggle a user answer through the reply channel: an answer can
+become observable only after the certified continuation is spliced and takes
+its own later `yield` step. -/
+theorem RawStep.await_answerFree
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (scope : CutScopeId) (cursor : Token)
+    (resume : Reply → Process Request Token Reply Answer Effect Exception)
+    {events : List (Observation Request Token Answer Effect Exception)}
+    {signal : CutSignal}
+    {target : RawTarget Request Token Reply Answer Effect Exception}
+    (step : RawStep protocol (.await scope cursor resume) events signal target) :
+    AnswerFree events := by
+  cases step <;> simp [AnswerFree]
+
+/-- Specialization for a provider whose replies already are trusted observable
+answers.  This is appropriate for the explicitly trusted imported-SWI lane;
+locally owned predicates instead use `Reply = EnteredClause` and provide a
+certified body-execution continuation. -/
+def Process.directAwait (scope : CutScopeId) (cursor : Token) :
+    Process Request Token Answer Answer Effect Exception :=
+  .await scope cursor (fun answer => .yield answer .done)
+
+/-- Direct-answer awaiting is well scoped at its declared predicate scope. -/
+theorem Process.directAwait_wellScoped (scope : CutScopeId) (cursor : Token) :
+    WellScoped scope
+      (Process.directAwait (Request := Request) (Token := Token)
+        (Answer := Answer) (Effect := Effect)
+        (Exception := Exception) scope cursor) := by
+  apply WellScoped.await
+  intro answer
+  apply WellScoped.yield
+  exact .done _
+
 /-- A two-answer process used to demonstrate that trace equality observes
 answer order rather than only the final answer set. -/
 def orderedPair (first second : Answer) :
-    Process Request Token Answer Effect Exception :=
+    Process Request Token Reply Answer Effect Exception :=
   .yield first (.yield second .done)
 
 /-- The ordered-pair witness produces both answers and then ordinary
 completion, in exactly that order. -/
 theorem orderedPair_steps
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     (first second : Answer) :
     Steps protocol (.running (orderedPair first second))
       [.answer first, .answer second, .completed] .halted := by
@@ -663,9 +743,14 @@ theorem exception_is_not_completion (exception : Exception) :
 /-- The step relation itself cannot reinterpret a raised exception as ordinary
 completion; the list inequality above is therefore reflected operationally. -/
 theorem raised_cannot_complete
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     (exception : Exception) :
-    ¬ RawStep protocol (.raise exception) [.completed] .none .halted := by
+    ¬ RawStep protocol
+      (Process.raise exception :
+        Process Request Token Reply Answer Effect Exception)
+      ([Observation.completed] :
+        List (Observation Request Token Answer Effect Exception))
+      .none .halted := by
   intro step
   cases step
 
@@ -681,7 +766,7 @@ theorem orderedPair_answer_projection (first second : Answer) :
 
 /-- Process whose first branch commits before producing its answer. -/
 def commitFirst (first second : Answer) :
-    Process Request Token Answer Effect Exception :=
+    Process Request Token Reply Answer Effect Exception :=
   .cutBoundary 0
     (.choice 0
       (.commit 0 (.yield first .done))
@@ -691,14 +776,14 @@ def commitFirst (first second : Answer) :
 witness: a semantics that merely concatenated both branches could not derive
 this exact trace. -/
 theorem commitFirst_steps
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     (first second : Answer) :
     Steps protocol (.running (commitFirst first second))
       [.answer first, .completed] .halted := by
   have prunable : AllPrunable protocol
       (Process.liveTokens
         (Process.yield second Process.done :
-          Process Request Token Answer Effect Exception)) := by
+          Process Request Token Reply Answer Effect Exception)) := by
     intro token member
     simp [Process.liveTokens] at member
   have commitStep : RawStep protocol
@@ -722,7 +807,7 @@ theorem commitFirst_steps
 never emitted.  An eager implementation that ran the right branch before
 observing the commit therefore has a different trace. -/
 theorem commit_skips_later_effect
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     (answer : Answer) (effect : Effect) :
     Steps protocol
       (.running
@@ -734,7 +819,7 @@ theorem commit_skips_later_effect
   have prunable : AllPrunable protocol
       (Process.liveTokens
         (Process.emit effect Process.done :
-          Process Request Token Answer Effect Exception)) := by
+          Process Request Token Reply Answer Effect Exception)) := by
     intro token member
     simp [Process.liveTokens] at member
   have commitStep : RawStep protocol
@@ -757,7 +842,7 @@ theorem commit_skips_later_effect
 /-- A well-scoped nested cut: the inner commit discards only the later inner
 branch, while the sibling alternative in the enclosing scope remains live. -/
 def innerCommitWithOuterSibling (selected skipped outer : Answer) :
-    Process Request Token Answer Effect Exception :=
+    Process Request Token Reply Answer Effect Exception :=
   .cutBoundary 0
     (.choice 0
       (.cutBoundary 1
@@ -772,6 +857,7 @@ theorem innerCommitWithOuterSibling_wellScoped
     WellScoped 0
       (innerCommitWithOuterSibling
         (Request := Request) (Token := Token)
+        (Reply := Reply)
         (Effect := Effect) (Exception := Exception)
         selected skipped outer) := by
   apply WellScoped.cutBoundary
@@ -790,7 +876,7 @@ theorem innerCommitWithOuterSibling_wellScoped
 scope.  The selected inner answer and the outer answer both remain observable,
 whereas the later answer in the inner scope is absent. -/
 theorem inner_cut_preserves_outer_sibling_steps
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     (selected skipped outer : Answer) :
     Steps protocol
       (.running (innerCommitWithOuterSibling selected skipped outer))
@@ -798,7 +884,7 @@ theorem inner_cut_preserves_outer_sibling_steps
   have innerPrunable : AllPrunable protocol
       (Process.liveTokens
         (Process.yield skipped Process.done :
-          Process Request Token Answer Effect Exception)) := by
+          Process Request Token Reply Answer Effect Exception)) := by
     intro token member
     simp [Process.liveTokens] at member
   have innerCommit : RawStep protocol
@@ -857,20 +943,20 @@ theorem inner_cut_preserves_outer_sibling_steps
 branch.  This is the abstract counterpart of a nondeterministic foreign
 predicate receiving its prune notification. -/
 theorem commit_prunes_live_cursor
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     (answer : Answer) (cursor : Token)
     (canPrune : protocol.prune cursor) :
     RawStep protocol
       (.cutBoundary 0
         (.choice 0
           (.commit 0 (.yield answer .done))
-          (.suspend cursor)))
+          (.await 0 cursor (fun _ => .done))))
       [.pruned cursor] .none
       (.running (.cutBoundary 0 (.yield answer .done))) := by
   have prunable : AllPrunable protocol
       (Process.liveTokens
-        (Process.suspend cursor :
-          Process Request Token Answer Effect Exception)) := by
+        (Process.await 0 cursor (fun _ => Process.done) :
+          Process Request Token Reply Answer Effect Exception)) := by
     intro token member
     simp [Process.liveTokens] at member
     subst token
@@ -881,11 +967,235 @@ theorem commit_prunes_live_cursor
       (RawStep.choiceCommitHere (protocol := protocol) 0 _ _ _ []
         (RawStep.commit 0 _) prunable))
 
+/-! ## Reply-splice anti-vacuity witnesses -/
+
+/-- Cursor positions for a two-clause local-call witness. -/
+inductive TwoClauseToken where
+  | first
+  | second
+  | done
+deriving DecidableEq
+
+/-- Internal provider replies name clause occurrences only.  They carry no
+answer, effect, exception, or schedule. -/
+inductive TwoClauseReply where
+  | firstClause
+  | secondClause
+deriving DecidableEq
+
+/-- The provider exposes source clause order one occurrence at a time. -/
+inductive TwoClausePull : TwoClauseToken →
+    PullResult TwoClauseToken TwoClauseReply Empty Empty → Prop where
+  | first : TwoClausePull .first (.reply .firstClause .second)
+  | second : TwoClausePull .second (.reply .secondClause .done)
+  | done : TwoClausePull .done .exhausted
+
+def twoClauseProtocol :
+    OrderedCallProtocol Unit TwoClauseToken TwoClauseReply Empty Empty where
+  openCall := fun _ cursor => cursor = .first
+  pull := TwoClausePull
+  prune := fun _ => True
+
+/-- Certified interpretation of the internal clause tags.  The first clause
+commits in the predicate scope before yielding; the provider itself has no
+constructor capable of expressing either operation. -/
+def twoClauseCutBodies (selected skipped : Answer) : TwoClauseReply →
+    Process Unit TwoClauseToken TwoClauseReply Answer Empty Empty
+  | .firstClause => .commit 0 (.yield selected .done)
+  | .secondClause => .yield skipped .done
+
+def twoClauseCutCall (selected skipped : Answer) :
+    Process Unit TwoClauseToken TwoClauseReply Answer Empty Empty :=
+  Process.scopedCall 0 () (twoClauseCutBodies selected skipped)
+
+/-- The reply splice puts the entered body before the still-live clause
+cursor.  Consequently a cut in clause one prunes clause two before the latter
+can be pulled or yield its answer.  A provider-owned scheduler or eager answer
+bag cannot realize this exact trace. -/
+theorem first_clause_cut_prunes_later_clause
+    (selected skipped : Answer) :
+    Steps twoClauseProtocol
+      (.running (twoClauseCutCall selected skipped))
+      [.opened (), .pruned .second, .answer selected, .completed]
+      .halted := by
+  have opened : RawStep twoClauseProtocol
+      (twoClauseCutCall selected skipped)
+      [.opened ()] .none
+      (.running
+        (.cutBoundary 0
+          (.await 0 TwoClauseToken.first
+            (twoClauseCutBodies selected skipped)))) := by
+    exact .cutBoundaryProgress 0 _ _ _
+      (.openCall () TwoClauseToken.first _ rfl)
+  have spliced : RawStep twoClauseProtocol
+      (.cutBoundary 0
+        (.await 0 TwoClauseToken.first
+          (twoClauseCutBodies selected skipped)))
+      [] .none
+      (.running
+        (.cutBoundary 0
+          (.choice 0
+            (.commit 0 (.yield selected .done))
+            (.await 0 TwoClauseToken.second
+              (twoClauseCutBodies selected skipped))))) := by
+    exact .cutBoundaryProgress 0 _ _ _
+      (.awaitReply 0 TwoClauseToken.first TwoClauseToken.second
+        TwoClauseReply.firstClause _ TwoClausePull.first)
+  have prunable : AllPrunable twoClauseProtocol
+      (Process.liveTokens
+        (Process.await 0 TwoClauseToken.second
+          (twoClauseCutBodies selected skipped))) := by
+    intro token member
+    simp [Process.liveTokens] at member
+    subst token
+    trivial
+  have committed : RawStep twoClauseProtocol
+      (.cutBoundary 0
+        (.choice 0
+          (.commit 0 (.yield selected .done))
+          (.await 0 TwoClauseToken.second
+            (twoClauseCutBodies selected skipped))))
+      [.pruned .second] .none
+      (.running (.cutBoundary 0 (.yield selected .done))) := by
+    exact .cutBoundaryCatch 0 _ _ _
+      (.choiceCommitHere 0 _ _ _ [] (.commit 0 _) prunable)
+  refine .cons _ _ _ _ _ (.ordinary _ _ _ opened) ?_
+  refine .cons _ _ _ _ _ (.ordinary _ _ _ spliced) ?_
+  refine .cons _ _ _ _ _ (.ordinary _ _ _ committed) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary _ _ _ (.cutBoundaryProgress 0 _ _ _ (.yield selected _))) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary _ _ _ (.cutBoundaryComplete 0 _ .done)) ?_
+  exact .refl .halted
+
+/-- Certified interpretation without a cut.  The reply tags still carry no
+answer data; only the left-to-right body interpreter can yield the two
+observable values. -/
+def twoClauseOrderedBodies (first second : Answer) : TwoClauseReply →
+    Process Unit TwoClauseToken TwoClauseReply Answer Empty Empty
+  | .firstClause => .yield first .done
+  | .secondClause => .yield second .done
+
+def twoClauseOrderedCall (first second : Answer) :
+    Process Unit TwoClauseToken TwoClauseReply Answer Empty Empty :=
+  Process.scopedCall 0 () (twoClauseOrderedBodies first second)
+
+/-- Pulling both source-ordered clause occurrences preserves answer order and
+duplicate multiplicity.  In particular, setting `first = second` still emits
+two answer observations before completion. -/
+theorem two_clause_answers_preserve_order_and_multiplicity
+    (first second : Answer) :
+    Steps twoClauseProtocol
+      (.running (twoClauseOrderedCall first second))
+      [.opened (), .answer first, .answer second, .completed]
+      .halted := by
+  have opened : RawStep twoClauseProtocol
+      (twoClauseOrderedCall first second)
+      [.opened ()] .none
+      (.running
+        (.cutBoundary 0
+          (.await 0 TwoClauseToken.first
+            (twoClauseOrderedBodies first second)))) := by
+    exact .cutBoundaryProgress 0 _ _ _
+      (.openCall () TwoClauseToken.first _ rfl)
+  have firstSpliced : RawStep twoClauseProtocol
+      (.cutBoundary 0
+        (.await 0 TwoClauseToken.first
+          (twoClauseOrderedBodies first second)))
+      [] .none
+      (.running
+        (.cutBoundary 0
+          (.choice 0 (.yield first .done)
+            (.await 0 TwoClauseToken.second
+              (twoClauseOrderedBodies first second))))) := by
+    exact .cutBoundaryProgress 0 _ _ _
+      (.awaitReply 0 TwoClauseToken.first TwoClauseToken.second
+        TwoClauseReply.firstClause _ TwoClausePull.first)
+  have firstAnswer : RawStep twoClauseProtocol
+      (.cutBoundary 0
+        (.choice 0 (.yield first .done)
+          (.await 0 TwoClauseToken.second
+            (twoClauseOrderedBodies first second))))
+      [.answer first] .none
+      (.running
+        (.cutBoundary 0
+          (.choice 0 .done
+            (.await 0 TwoClauseToken.second
+              (twoClauseOrderedBodies first second))))) := by
+    exact .cutBoundaryProgress 0 _ _ _
+      (.choiceProgress 0 _ _ _ _ (.yield first .done))
+  have advanceSecond : RawStep twoClauseProtocol
+      (.cutBoundary 0
+        (.choice 0 .done
+          (.await 0 TwoClauseToken.second
+            (twoClauseOrderedBodies first second))))
+      [] .none
+      (.running
+        (.cutBoundary 0
+          (.await 0 TwoClauseToken.second
+            (twoClauseOrderedBodies first second)))) := by
+    exact .cutBoundaryProgress 0 _ _ _
+      (.choiceComplete 0 _ _ .done)
+  have secondSpliced : RawStep twoClauseProtocol
+      (.cutBoundary 0
+        (.await 0 TwoClauseToken.second
+          (twoClauseOrderedBodies first second)))
+      [] .none
+      (.running
+        (.cutBoundary 0
+          (.choice 0 (.yield second .done)
+            (.await 0 TwoClauseToken.done
+              (twoClauseOrderedBodies first second))))) := by
+    exact .cutBoundaryProgress 0 _ _ _
+      (.awaitReply 0 TwoClauseToken.second TwoClauseToken.done
+        TwoClauseReply.secondClause _ TwoClausePull.second)
+  have secondAnswer : RawStep twoClauseProtocol
+      (.cutBoundary 0
+        (.choice 0 (.yield second .done)
+          (.await 0 TwoClauseToken.done
+            (twoClauseOrderedBodies first second))))
+      [.answer second] .none
+      (.running
+        (.cutBoundary 0
+          (.choice 0 .done
+            (.await 0 TwoClauseToken.done
+              (twoClauseOrderedBodies first second))))) := by
+    exact .cutBoundaryProgress 0 _ _ _
+      (.choiceProgress 0 _ _ _ _ (.yield second .done))
+  have advanceDone : RawStep twoClauseProtocol
+      (.cutBoundary 0
+        (.choice 0 .done
+          (.await 0 TwoClauseToken.done
+            (twoClauseOrderedBodies first second))))
+      [] .none
+      (.running
+        (.cutBoundary 0
+          (.await 0 TwoClauseToken.done
+            (twoClauseOrderedBodies first second)))) := by
+    exact .cutBoundaryProgress 0 _ _ _
+      (.choiceComplete 0 _ _ .done)
+  have exhausted : RawStep twoClauseProtocol
+      (.cutBoundary 0
+        (.await 0 TwoClauseToken.done
+          (twoClauseOrderedBodies first second)))
+      [.completed] .none .halted := by
+    exact .cutBoundaryComplete 0 _
+      (.awaitExhausted 0 TwoClauseToken.done _ TwoClausePull.done)
+  refine .cons _ _ _ _ _ (.ordinary _ _ _ opened) ?_
+  refine .cons _ _ _ _ _ (.ordinary _ _ _ firstSpliced) ?_
+  refine .cons _ _ _ _ _ (.ordinary _ _ _ firstAnswer) ?_
+  refine .cons _ _ _ _ _ (.ordinary _ _ _ advanceSecond) ?_
+  refine .cons _ _ _ _ _ (.ordinary _ _ _ secondSpliced) ?_
+  refine .cons _ _ _ _ _ (.ordinary _ _ _ secondAnswer) ?_
+  refine .cons _ _ _ _ _ (.ordinary _ _ _ advanceDone) ?_
+  refine .cons _ _ _ _ _ (.ordinary _ _ _ exhausted) ?_
+  exact .refl .halted
+
 /-- The scope discipline rejects the malformed configuration used by the raw
 scope-discrimination witness below: an outer-scope commit may not occur inside
 an opaque inner cut boundary. -/
 theorem outer_commit_under_inner_not_wellScoped
-    (next right : Process Request Token Answer Effect Exception) :
+    (next right : Process Request Token Reply Answer Effect Exception) :
     ¬ (WellScoped 0
       (.cutBoundary 0 (.cutBoundary 1 (.choice 1 (.commit 0 next) right)))) := by
   intro wellFormed
@@ -901,8 +1211,8 @@ right branch is retained.  `WellScoped` rejects this outer-commit-under-inner-
 boundary shape; the theorem tests the raw relation's scope tags and does not
 claim that a compiler may emit the source process. -/
 theorem different_scope_is_not_pruned
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
-    (next right : Process Request Token Answer Effect Exception) :
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (next right : Process Request Token Reply Answer Effect Exception) :
     RawStep protocol
       (.cutBoundary 0 (.cutBoundary 1 (.choice 1 (.commit 0 next) right)))
       [] .none
@@ -916,7 +1226,7 @@ globally discards the differently scoped alternative.  The well-scoped
 cut-locality property used by compiled programs is
 `inner_cut_preserves_outer_sibling_steps` above. -/
 theorem different_scope_global_prune_impossible
-    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     (answer : Answer) :
     ¬ ∃ events, RawStep protocol
         (.cutBoundary 0
@@ -947,7 +1257,7 @@ many silent steps without reporting exhaustion. -/
 inductive OneThenLoopPull (answer : Answer) :
     OneThenLoopToken →
     PullResult OneThenLoopToken Answer Effect Exception → Prop where
-  | first : OneThenLoopPull answer .first (.answer answer .loop)
+  | first : OneThenLoopPull answer .first (.reply answer .loop)
   | loop : OneThenLoopPull answer .loop (.silent .loop)
 
 def oneThenLoopProtocol (answer : Answer) :
@@ -959,12 +1269,20 @@ def oneThenLoopProtocol (answer : Answer) :
 /-- The first answer is observable before the divergent suffix. -/
 theorem oneThenLoop_answer_prefix (answer : Answer) :
     Steps (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer)
-      (.running (.suspend OneThenLoopToken.first))
+      (.running (Process.directAwait 0 OneThenLoopToken.first))
       [.answer answer]
-      (.running (.suspend OneThenLoopToken.loop)) := by
+      (.running (Process.directAwait 0 OneThenLoopToken.loop)) := by
+  let resume : Answer → Process Unit OneThenLoopToken Answer Answer
+      Effect Exception := fun value => .yield value .done
   refine .cons _ _ _ _ _
     (.ordinary _ _ _
-      (.suspendAnswer _ _ _ (OneThenLoopPull.first (answer := answer)))) ?_
+      (.awaitReply 0 _ _ answer resume
+        (OneThenLoopPull.first (answer := answer)))) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary _ _ _
+      (.choiceProgress 0 _ _ _ _ (.yield answer .done))) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary _ _ _ (.choiceComplete 0 _ _ .done)) ?_
   exact .refl _
 
 /-- For every finite demand budget, the suffix can remain open without
@@ -973,18 +1291,18 @@ theorem oneThenLoop_arbitrarily_long_open_prefix (answer : Answer) :
     ∀ steps : Nat,
       StepsN (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer)
         steps
-        (.running (.suspend OneThenLoopToken.loop)) []
-        (.running (.suspend OneThenLoopToken.loop)) := by
+        (.running (Process.directAwait 0 OneThenLoopToken.loop)) []
+        (.running (Process.directAwait 0 OneThenLoopToken.loop)) := by
   intro steps
   induction steps with
   | zero => exact .zero _
   | succ steps inductionHypothesis =>
       refine .succ steps _ _ _ _ _
         (.ordinary _ _ _
-          (.suspendSilent _ _ (OneThenLoopPull.loop (answer := answer)))) ?_
+          (.awaitSilent 0 _ _ _ (OneThenLoopPull.loop (answer := answer)))) ?_
       change StepsN (oneThenLoopProtocol answer) steps
-        (.running (.suspend OneThenLoopToken.loop)) []
-        (.running (.suspend OneThenLoopToken.loop))
+        (.running (Process.directAwait 0 OneThenLoopToken.loop)) []
+        (.running (Process.directAwait 0 OneThenLoopToken.loop))
       exact inductionHypothesis
 
 /-- The divergent suffix cannot be reclassified as ordinary exhaustion.  This
@@ -993,10 +1311,11 @@ arbitrarily many silent demands, but no demand can fabricate completion. -/
 theorem oneThenLoop_cannot_complete (answer : Answer) :
     ¬ RawStep
       (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer)
-      (.suspend OneThenLoopToken.loop) [.completed] .none .halted := by
+      (Process.directAwait 0 OneThenLoopToken.loop)
+      [.completed] .none .halted := by
   intro step
   cases step with
-      | suspendExhausted _ pulled => cases pulled
+      | awaitExhausted _ _ _ pulled => cases pulled
 
 /-- Every exact finite execution from the divergent suffix stays in the same
 open state and emits no event.  This strengthens the one-step inversion above:
@@ -1005,13 +1324,13 @@ theorem oneThenLoop_finite_prefix_stays_open (answer : Answer) :
     ∀ (count : Nat)
       (events : List
         (Observation Unit OneThenLoopToken Answer Effect Exception))
-      (finish : State Unit OneThenLoopToken Answer Effect Exception),
+      (finish : State Unit OneThenLoopToken Answer Answer Effect Exception),
       StepsN
         (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer)
         count
-        (.running (.suspend OneThenLoopToken.loop)) events finish →
+        (.running (Process.directAwait 0 OneThenLoopToken.loop)) events finish →
       events = [] ∧
-        finish = .running (.suspend OneThenLoopToken.loop) := by
+        finish = .running (Process.directAwait 0 OneThenLoopToken.loop) := by
   intro count
   induction count with
   | zero =>
@@ -1025,17 +1344,17 @@ theorem oneThenLoop_finite_prefix_stays_open (answer : Answer) :
           cases head with
           | ordinary process observed target step =>
               cases step with
-              | suspendSilent cursor next pulled =>
+              | awaitSilent scope cursor next resume pulled =>
                   cases pulled with
                   | loop =>
                       rcases inductionHypothesis rest finish tail with
                         ⟨restEmpty, finishOpen⟩
                       subst rest
                       exact ⟨rfl, finishOpen⟩
-              | suspendAnswer cursor next value pulled => cases pulled
-              | suspendEffect cursor next value pulled => cases pulled
-              | suspendExhausted cursor pulled => cases pulled
-              | suspendRaised cursor exception pulled => cases pulled
+              | awaitReply scope cursor next value resume pulled => cases pulled
+              | awaitEffect scope cursor next value resume pulled => cases pulled
+              | awaitExhausted scope cursor resume pulled => cases pulled
+              | awaitRaised scope cursor resume exception pulled => cases pulled
           | uncaught process next observed scope step => cases step
 
 /-- In particular, the one-answer-then-diverge suffix has no finite completed
@@ -1047,7 +1366,7 @@ theorem oneThenLoop_no_finite_completion (answer : Answer) :
       ¬ StepsN
         (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer)
         count
-        (.running (.suspend OneThenLoopToken.loop)) events .halted := by
+        (.running (Process.directAwait 0 OneThenLoopToken.loop)) events .halted := by
   intro count events execution
   have staysOpen :=
     oneThenLoop_finite_prefix_stays_open

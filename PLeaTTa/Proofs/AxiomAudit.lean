@@ -331,6 +331,8 @@ import PLeaTTa.PeTTaSpec.PrologResolver
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.RawStep.preserves_wellScoped
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.RawStep.signal_matches_active
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.RawStep.no_foreign_commit
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.Process.scopedCall_wellScoped
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.RawStep.await_answerFree
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.orderedPair_steps
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.answer_order_observable
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.answer_multiplicity_observable
@@ -342,6 +344,8 @@ import PLeaTTa.PeTTaSpec.PrologResolver
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.innerCommitWithOuterSibling_wellScoped
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.inner_cut_preserves_outer_sibling_steps
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.commit_prunes_live_cursor
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.first_clause_cut_prunes_later_clause
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.two_clause_answers_preserve_order_and_multiplicity
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.outer_commit_under_inner_not_wellScoped
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.different_scope_is_not_pruned
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.different_scope_global_prune_impossible
@@ -389,7 +393,10 @@ import PLeaTTa.PeTTaSpec.PrologResolver
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.semanticLocalClauseProtocol_open_unique
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.LocalPull.total
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.LocalPull.deterministic
-#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.LocalPull.answer_origin
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.LocalPull.reply_origin
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.localCallProcess_wellScoped
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.localCallProcess_open_step
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.localCallProcess_reply_splice
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.variableHeadBranch_resolves
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.clashingHeadBranch_has_no_resolution
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.witness_snapshot_stepper_exhausted_after_assert
