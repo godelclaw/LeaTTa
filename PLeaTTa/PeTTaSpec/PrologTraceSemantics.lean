@@ -26,19 +26,33 @@ The existing complete-list `Ordered.Runs` relation remains useful as a
 terminating projection.  It is not the foundation for cut, effects, exceptions,
 or divergence.
 
-This tranche proves the generic leftmost search and *cut* control layer with
-explicit non-backtrackable provider/session state.  `raised` is observable and
-unwinds structural choices with cursor cleanup, but catch handlers, findall
-collectors, and transactions remain separate open obligations.  An imported
-protocol instance is still only an exact-trace assumption, never a theorem
-that its opaque cursors implement those invariants.
+This module proves the generic leftmost search and *cut* control layer with
+explicit non-backtrackable provider/session state.  It also gives exception
+handlers and answer collectors distinct typed structural delimiters: handlers
+consume only selected raises, while collectors consume answers incrementally,
+preserve effects, and remain exception-transparent.  Term matching, copied
+findall templates, Goal specialization, and transactions remain separate open
+obligations.  An imported protocol instance is still only an exact-trace
+assumption, never a theorem that its opaque cursors implement those invariants.
 -/
 
-/-- Identity of one dynamically entered *cut* scope.  Exception handlers and
-answer-collection regions require their own delimiter types when they are
-added; reusing this identifier for them would incorrectly conflate control
-transparency policies. -/
+/-- Identity of one dynamically entered *cut* scope. -/
 abbrev CutScopeId := Nat
+
+/-- Identity of one dynamically entered exception-handler region.  This is a
+nominally distinct type: a handler identity cannot be supplied where a cut
+scope is required. -/
+structure ExceptionScopeId where
+  index : Nat
+deriving DecidableEq, Repr
+
+/-- Identity of one dynamically entered answer-collection region.  Collection
+is transparent to exceptions but is normally nested under its own cut scope;
+using a separate type prevents either policy from being inferred from an
+accidental numeric equality. -/
+structure CollectionScopeId where
+  index : Nat
+deriving DecidableEq, Repr
 
 variable {Request Token Reply Answer Effect Exception : Type}
 
@@ -131,7 +145,14 @@ retaining the remaining answers as a choice in the same scope.
 `await scope cursor next` is the only interaction point with an external/local
 call provider.  A provider reply is internal: the certified layer splices
 `next reply` before the retained cursor and only that process can yield an
-observable answer. -/
+observable answer.
+
+`catchBoundary` and `collectionBoundary` are distinct structural delimiters.
+The former catches only exceptions selected by its handler and is transparent
+to cut signals.  The latter consumes its body's answers one at a time, stores
+them in reverse arrival order, and is transparent to exceptions and cut
+signals.  The smart constructors below place each construct underneath a
+separate cut boundary when Prolog's meta-call opacity requires one. -/
 inductive Process (Request Token Reply Answer Effect Exception : Type) where
   | done
   | yield (value : Answer)
@@ -153,6 +174,15 @@ inductive Process (Request Token Reply Answer Effect Exception : Type) where
   | bind (scope : CutScopeId)
       (head : Process Request Token Reply Answer Effect Exception)
       (tail : Answer → Process Request Token Reply Answer Effect Exception)
+  | catchBoundary (scope : ExceptionScopeId)
+      (body : Process Request Token Reply Answer Effect Exception)
+      (handler : Exception →
+        Option (Process Request Token Reply Answer Effect Exception))
+  | collectionBoundary (scope : CollectionScopeId)
+      (body : Process Request Token Reply Answer Effect Exception)
+      (project : Answer → Answer) (reversed : List Answer)
+      (finish : List Answer →
+        Process Request Token Reply Answer Effect Exception)
 
 namespace Process
 
@@ -173,6 +203,8 @@ def liveTokens : Process Request Token Reply Answer Effect Exception → List To
   | .choice _ left right => liveTokens left ++ liveTokens right
   | .cutBoundary _ body => liveTokens body
   | .bind _ head _ => liveTokens head
+  | .catchBoundary _ body _ => liveTokens body
+  | .collectionBoundary _ body _ _ _ => liveTokens body
 
 end Process
 
@@ -231,6 +263,23 @@ inductive WellScoped :
       (headScoped : WellScoped active head)
       (tailScoped : ∀ answer, WellScoped active (tail answer)) :
       WellScoped active (.bind active head tail)
+  | catchBoundary (active : CutScopeId) (scope : ExceptionScopeId)
+      (body : Process Request Token Reply Answer Effect Exception)
+      (handler : Exception →
+        Option (Process Request Token Reply Answer Effect Exception))
+      (bodyScoped : WellScoped active body)
+      (handlerScoped : ∀ exception recovery,
+        handler exception = some recovery → WellScoped active recovery) :
+      WellScoped active (.catchBoundary scope body handler)
+  | collectionBoundary (active : CutScopeId) (scope : CollectionScopeId)
+      (body : Process Request Token Reply Answer Effect Exception)
+      (project : Answer → Answer) (reversed : List Answer)
+      (finish : List Answer →
+        Process Request Token Reply Answer Effect Exception)
+      (bodyScoped : WellScoped active body)
+      (finishScoped : ∀ answers, WellScoped active (finish answers)) :
+      WellScoped active
+        (.collectionBoundary scope body project reversed finish)
 
 namespace WellScoped
 
@@ -507,6 +556,104 @@ inductive RawStep
       (answerFree : AnswerFree events) :
       RawStep protocol before (.bind scope head tail) events .none after
         (.terminal (.raised exception))
+  | catchProgress (scope : ExceptionScopeId)
+      (body next : Process Request Token Reply Answer Effect Exception)
+      (handler : Exception →
+        Option (Process Request Token Reply Answer Effect Exception))
+      (events : List (Observation Request Token Answer Effect Exception))
+      (signal : CutSignal) (before after : protocol.Session)
+      (step : RawStep protocol before body events signal after
+        (.running next)) :
+      RawStep protocol before (.catchBoundary scope body handler) events signal
+        after (.running (.catchBoundary scope next handler))
+  | catchComplete (scope : ExceptionScopeId)
+      (body : Process Request Token Reply Answer Effect Exception)
+      (handler : Exception →
+        Option (Process Request Token Reply Answer Effect Exception))
+      (before after : protocol.Session)
+      (step : RawStep protocol before body [.completed] .none after
+        (.terminal .completed)) :
+      RawStep protocol before (.catchBoundary scope body handler) [.completed]
+        .none after (.terminal .completed)
+  | catchHandled (scope : ExceptionScopeId)
+      (body recovery : Process Request Token Reply Answer Effect Exception)
+      (handler : Exception →
+        Option (Process Request Token Reply Answer Effect Exception))
+      (exception : Exception)
+      (cleanup : List (Observation Request Token Answer Effect Exception))
+      (before after : protocol.Session)
+      (step : RawStep protocol before body
+        (.raised exception :: cleanup) .none after
+        (.terminal (.raised exception)))
+      (handles : handler exception = some recovery) :
+      RawStep protocol before (.catchBoundary scope body handler) cleanup .none
+        after (.running recovery)
+  | catchUnmatched (scope : ExceptionScopeId)
+      (body : Process Request Token Reply Answer Effect Exception)
+      (handler : Exception →
+        Option (Process Request Token Reply Answer Effect Exception))
+      (exception : Exception)
+      (cleanup : List (Observation Request Token Answer Effect Exception))
+      (before after : protocol.Session)
+      (step : RawStep protocol before body
+        (.raised exception :: cleanup) .none after
+        (.terminal (.raised exception)))
+      (unmatched : handler exception = none) :
+      RawStep protocol before (.catchBoundary scope body handler)
+        (.raised exception :: cleanup) .none after
+        (.terminal (.raised exception))
+  | collectionAnswer (scope : CollectionScopeId)
+      (body next : Process Request Token Reply Answer Effect Exception)
+      (project : Answer → Answer) (reversed : List Answer)
+      (finish : List Answer →
+        Process Request Token Reply Answer Effect Exception)
+      (answer : Answer) (before after : protocol.Session)
+      (step : RawStep protocol before body [.answer answer] .none after
+        (.running next)) :
+      RawStep protocol before
+        (.collectionBoundary scope body project reversed finish) [] .none after
+        (.running (.collectionBoundary scope next project
+          (project answer :: reversed) finish))
+  | collectionProgress (scope : CollectionScopeId)
+      (body next : Process Request Token Reply Answer Effect Exception)
+      (project : Answer → Answer) (reversed : List Answer)
+      (finish : List Answer →
+        Process Request Token Reply Answer Effect Exception)
+      (events : List (Observation Request Token Answer Effect Exception))
+      (signal : CutSignal) (before after : protocol.Session)
+      (step : RawStep protocol before body events signal after
+        (.running next))
+      (answerFree : AnswerFree events) :
+      RawStep protocol before
+        (.collectionBoundary scope body project reversed finish) events signal
+        after
+        (.running (.collectionBoundary scope next project reversed finish))
+  | collectionComplete (scope : CollectionScopeId)
+      (body : Process Request Token Reply Answer Effect Exception)
+      (project : Answer → Answer) (reversed : List Answer)
+      (finish : List Answer →
+        Process Request Token Reply Answer Effect Exception)
+      (before after : protocol.Session)
+      (step : RawStep protocol before body [.completed] .none after
+        (.terminal .completed)) :
+      RawStep protocol before
+        (.collectionBoundary scope body project reversed finish) [] .none after
+        (.running (finish reversed.reverse))
+  | collectionRaised (scope : CollectionScopeId)
+      (body : Process Request Token Reply Answer Effect Exception)
+      (project : Answer → Answer) (reversed : List Answer)
+      (finish : List Answer →
+        Process Request Token Reply Answer Effect Exception)
+      (exception : Exception)
+      (cleanup : List (Observation Request Token Answer Effect Exception))
+      (before after : protocol.Session)
+      (step : RawStep protocol before body
+        (.raised exception :: cleanup) .none after
+        (.terminal (.raised exception))) :
+      RawStep protocol before
+        (.collectionBoundary scope body project reversed finish)
+        (.raised exception :: cleanup) .none after
+        (.terminal (.raised exception))
 
 namespace RawStep
 
@@ -622,6 +769,43 @@ theorem preserves_wellScoped_target
   | bindRaised scope head tail exception events before after step answerFree
       inductionHypothesis =>
       exact True.intro
+  | catchProgress scope body next handler events signal before after step
+      inductionHypothesis =>
+      cases wellFormed with
+      | catchBoundary _ _ _ _ bodyScoped handlerScoped =>
+          exact .catchBoundary active scope next handler
+            (inductionHypothesis bodyScoped) handlerScoped
+  | catchComplete scope body handler before after step inductionHypothesis =>
+      exact True.intro
+  | catchHandled scope body recovery handler exception cleanup before after step
+      handles inductionHypothesis =>
+      cases wellFormed with
+      | catchBoundary _ _ _ _ bodyScoped handlerScoped =>
+          exact handlerScoped exception recovery handles
+  | catchUnmatched scope body handler exception cleanup before after step
+      unmatched inductionHypothesis =>
+      exact True.intro
+  | collectionAnswer scope body next project reversed finish answer before after
+      step inductionHypothesis =>
+      cases wellFormed with
+      | collectionBoundary _ _ _ _ _ _ bodyScoped finishScoped =>
+          exact .collectionBoundary active scope next project
+            (project answer :: reversed) finish
+            (inductionHypothesis bodyScoped) finishScoped
+  | collectionProgress scope body next project reversed finish events signal
+      before after step answerFree inductionHypothesis =>
+      cases wellFormed with
+      | collectionBoundary _ _ _ _ _ _ bodyScoped finishScoped =>
+          exact .collectionBoundary active scope next project reversed finish
+            (inductionHypothesis bodyScoped) finishScoped
+  | collectionComplete scope body project reversed finish before after step
+      inductionHypothesis =>
+      cases wellFormed with
+      | collectionBoundary _ _ _ _ _ _ bodyScoped finishScoped =>
+          exact finishScoped reversed.reverse
+  | collectionRaised scope body project reversed finish exception cleanup before
+      after step inductionHypothesis =>
+      exact True.intro
 
 /-- Any running successor of a well-scoped process is well-scoped at the same
 enclosing scope.  The raw relation therefore cannot manufacture the malformed
@@ -672,6 +856,101 @@ theorem no_foreign_commit
     (wellFormed : WellScoped active process)
     (different : other ≠ active) : False :=
   different (signal_matches_active protocol step wellFormed)
+
+/-- Every exceptional terminal transition exposes exactly one leading raised
+marker.  Any later events are ordered cursor-cleanup observations accumulated
+while the exception unwinds structural choices.  This is the completeness
+fact that lets a handler remove only the marker while retaining cleanup. -/
+theorem raised_has_leading_marker
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    {before after : protocol.Session}
+    {process : Process Request Token Reply Answer Effect Exception}
+    {events : List (Observation Request Token Answer Effect Exception)}
+    {signal : CutSignal} {exception : Exception}
+    (step : RawStep protocol before process events signal after
+      (.terminal (.raised exception))) :
+    signal = .none ∧ ∃ cleanup, events = .raised exception :: cleanup := by
+  generalize targetEq :
+    (RawTarget.terminal (.raised exception) :
+      RawTarget Request Token Reply Answer Effect Exception) = target at step
+  induction step generalizing exception <;> simp_all
+  case choiceRaised right events inductionHypothesis =>
+    obtain ⟨cleanup, eventsEq⟩ := inductionHypothesis
+    rw [eventsEq]
+    simp
+
+/-- Stronger exact form: after the single raised marker, exceptional unwinding
+can expose only ordered cursor-prune observations. -/
+theorem raised_cleanup_is_exactly_prunes
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    {before after : protocol.Session}
+    {process : Process Request Token Reply Answer Effect Exception}
+    {events : List (Observation Request Token Answer Effect Exception)}
+    {signal : CutSignal} {exception : Exception}
+    (step : RawStep protocol before process events signal after
+      (.terminal (.raised exception))) :
+    signal = .none ∧ ∃ tokens : List Token,
+      events = .raised exception :: tokens.map Observation.pruned := by
+  generalize targetEq :
+    (RawTarget.terminal (.raised exception) :
+      RawTarget Request Token Reply Answer Effect Exception) = target at step
+  induction step generalizing exception <;> simp_all
+  case choiceRaised scope left right exception events before middle after child
+      pruned inductionHypothesis =>
+    obtain ⟨tokens, eventsEq⟩ := inductionHypothesis
+    rw [eventsEq]
+    exact ⟨tokens ++ right.liveTokens, by simp⟩
+
+/-- Any exceptional body step selected by the handler has a corresponding
+catch step.  The leading raised marker is consumed and every ordered cleanup
+event is retained. -/
+theorem catch_handles_any_raised
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (handlerScope : ExceptionScopeId)
+    {before after : protocol.Session}
+    {body recovery : Process Request Token Reply Answer Effect Exception}
+    {handler : Exception →
+      Option (Process Request Token Reply Answer Effect Exception)}
+    {events : List (Observation Request Token Answer Effect Exception)}
+    {signal : CutSignal} {exception : Exception}
+    (step : RawStep protocol before body events signal after
+      (.terminal (.raised exception)))
+    (handles : handler exception = some recovery) :
+    ∃ cleanup,
+      events = .raised exception :: cleanup ∧
+      RawStep protocol before (.catchBoundary handlerScope body handler)
+        cleanup .none after (.running recovery) := by
+  obtain ⟨signalEq, cleanup, eventsEq⟩ :=
+    raised_has_leading_marker protocol step
+  subst signal
+  subst events
+  exact ⟨cleanup, rfl,
+    .catchHandled handlerScope body recovery handler exception cleanup
+      before after step handles⟩
+
+/-- Every exceptional collection-body step propagates through the collector
+with the same terminal tag and exact event batch. -/
+theorem collection_propagates_any_raised
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (collectionScope : CollectionScopeId)
+    {before after : protocol.Session}
+    {body : Process Request Token Reply Answer Effect Exception}
+    (project : Answer → Answer) (reversed : List Answer)
+    (finish : List Answer →
+      Process Request Token Reply Answer Effect Exception)
+    {events : List (Observation Request Token Answer Effect Exception)}
+    {signal : CutSignal} {exception : Exception}
+    (step : RawStep protocol before body events signal after
+      (.terminal (.raised exception))) :
+    RawStep protocol before
+      (.collectionBoundary collectionScope body project reversed finish)
+      events .none after (.terminal (.raised exception)) := by
+  obtain ⟨signalEq, cleanup, eventsEq⟩ :=
+    raised_has_leading_marker protocol step
+  subst signal
+  subst events
+  exact .collectionRaised collectionScope body project reversed finish
+    exception cleanup before after step
 
 /-- Sequential pruning preserves every monotone measure admitted by one prune
 operation. -/
@@ -765,6 +1044,22 @@ theorem session_measure_mono
       inductionHypothesis => exact inductionHypothesis
   | bindRaised scope head tail exception events before after step answerFree
       inductionHypothesis => exact inductionHypothesis
+  | catchProgress scope body next handler events signal before after step
+      inductionHypothesis => exact inductionHypothesis
+  | catchComplete scope body handler before after step inductionHypothesis =>
+      exact inductionHypothesis
+  | catchHandled scope body recovery handler exception cleanup before after step
+      handles inductionHypothesis => exact inductionHypothesis
+  | catchUnmatched scope body handler exception cleanup before after step
+      unmatched inductionHypothesis => exact inductionHypothesis
+  | collectionAnswer scope body next project reversed finish answer before after
+      step inductionHypothesis => exact inductionHypothesis
+  | collectionProgress scope body next project reversed finish events signal
+      before after step answerFree inductionHypothesis => exact inductionHypothesis
+  | collectionComplete scope body project reversed finish before after step
+      inductionHypothesis => exact inductionHypothesis
+  | collectionRaised scope body project reversed finish exception cleanup before
+      after step inductionHypothesis => exact inductionHypothesis
 
 end RawStep
 
@@ -883,6 +1178,57 @@ theorem Process.scopedCall_wellScoped (active scope : CutScopeId)
   intro cursor
   exact .await scope cursor resume resumeScoped
 
+/-- Enter a Prolog catch region under its own cut barrier.  The nominal handler
+identity and the cut identity are different types and therefore cannot be
+confused by construction. -/
+def Process.scopedCatch (cutScope : CutScopeId)
+    (handlerScope : ExceptionScopeId)
+    (body : Process Request Token Reply Answer Effect Exception)
+    (handler : Exception →
+      Option (Process Request Token Reply Answer Effect Exception)) :
+    Process Request Token Reply Answer Effect Exception :=
+  .cutBoundary cutScope (.catchBoundary handlerScope body handler)
+
+theorem Process.scopedCatch_wellScoped (active cutScope : CutScopeId)
+    (handlerScope : ExceptionScopeId)
+    (body : Process Request Token Reply Answer Effect Exception)
+    (handler : Exception →
+      Option (Process Request Token Reply Answer Effect Exception))
+    (bodyScoped : WellScoped cutScope body)
+    (handlerScoped : ∀ exception recovery,
+      handler exception = some recovery → WellScoped cutScope recovery) :
+    WellScoped active
+      (Process.scopedCatch cutScope handlerScope body handler) := by
+  exact .cutBoundary active cutScope _
+    (.catchBoundary cutScope handlerScope body handler bodyScoped handlerScoped)
+
+/-- Enter an answer collector under its own cut barrier.  The collector drives
+the nested process to exhaustion one answer at a time; `finish` receives the
+projected answers in their original arrival order. -/
+def Process.scopedCollection (cutScope : CutScopeId)
+    (collectionScope : CollectionScopeId)
+    (body : Process Request Token Reply Answer Effect Exception)
+    (project : Answer → Answer)
+    (finish : List Answer →
+      Process Request Token Reply Answer Effect Exception) :
+    Process Request Token Reply Answer Effect Exception :=
+  .cutBoundary cutScope
+    (.collectionBoundary collectionScope body project [] finish)
+
+theorem Process.scopedCollection_wellScoped (active cutScope : CutScopeId)
+    (collectionScope : CollectionScopeId)
+    (body : Process Request Token Reply Answer Effect Exception)
+    (project : Answer → Answer)
+    (finish : List Answer →
+      Process Request Token Reply Answer Effect Exception)
+    (bodyScoped : WellScoped cutScope body)
+    (finishScoped : ∀ answers, WellScoped cutScope (finish answers)) :
+    WellScoped active
+      (Process.scopedCollection cutScope collectionScope body project finish) := by
+  exact .cutBoundary active cutScope _
+    (.collectionBoundary cutScope collectionScope body project [] finish
+      bodyScoped finishScoped)
+
 /-- Provider interaction itself is answer-free.  Even a malicious abstract
 provider cannot smuggle a user answer through the reply channel: an answer can
 become observable only after the certified continuation is spliced and takes
@@ -924,6 +1270,235 @@ theorem RawStep.await_only_silent
   all_goals
     have contract := pullOnly _ _ _ ‹protocol.pull _ cursor _ _›
     simp_all
+
+/-- A selected exception is consumed by the typed handler boundary.  The
+internal `raised` marker is absent from the observable batch, while the
+recovery process remains under whatever cut boundary encloses this node. -/
+theorem RawStep.catch_handles_raise
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (handlerScope : ExceptionScopeId) (exception : Exception)
+    (recovery : Process Request Token Reply Answer Effect Exception)
+    (session : protocol.Session) :
+    RawStep protocol session
+      (.catchBoundary handlerScope (.raise exception)
+        (fun _ => some recovery)) [] .none session (.running recovery) := by
+  exact .catchHandled handlerScope (.raise exception) recovery
+    (fun _ => some recovery) exception [] session session
+    (.raise exception session) rfl
+
+/-- A handler that declines an exception preserves the exceptional terminal
+tag and the exact raised observation. -/
+theorem RawStep.catch_unmatched_escapes
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (handlerScope : ExceptionScopeId) (exception : Exception)
+    (session : protocol.Session) :
+    RawStep protocol session
+      (.catchBoundary handlerScope (.raise exception)
+        (fun _ => (none : Option
+          (Process Request Token Reply Answer Effect Exception))))
+      [.raised exception] .none session (.terminal (.raised exception)) := by
+  exact .catchUnmatched handlerScope (.raise exception)
+    (fun _ => (none : Option
+      (Process Request Token Reply Answer Effect Exception)))
+    exception [] session session (.raise exception session) rfl
+
+/-- Collection never catches an exception.  It preserves both the raised
+terminal tag and observation for the enclosing exception delimiter. -/
+theorem RawStep.collection_exception_transparent
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (collectionScope : CollectionScopeId) (exception : Exception)
+    (project : Answer → Answer) (reversed : List Answer)
+    (finish : List Answer →
+      Process Request Token Reply Answer Effect Exception)
+    (session : protocol.Session) :
+    RawStep protocol session
+      (.collectionBoundary collectionScope (.raise exception) project reversed
+        finish)
+      [.raised exception] .none session (.terminal (.raised exception)) := by
+  exact .collectionRaised collectionScope (.raise exception) project reversed
+    finish exception [] session session (.raise exception session)
+
+/-- Collection consumes one nested answer without exposing it, and records
+the certified projection in reverse arrival order. -/
+theorem RawStep.collection_consumes_answer
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (collectionScope : CollectionScopeId) (answer : Answer)
+    (next : Process Request Token Reply Answer Effect Exception)
+    (project : Answer → Answer) (reversed : List Answer)
+    (finish : List Answer →
+      Process Request Token Reply Answer Effect Exception)
+    (session : protocol.Session) :
+    RawStep protocol session
+      (.collectionBoundary collectionScope (.yield answer next) project
+        reversed finish)
+      [] .none session
+      (.running (.collectionBoundary collectionScope next project
+        (project answer :: reversed) finish)) := by
+  exact .collectionAnswer collectionScope (.yield answer next) next project
+    reversed finish answer session session (.yield answer next session)
+
+/-- Inner completion is distinct from whole-process completion: it is consumed
+by the collector, which resumes the certified finisher with the answers in
+their original order. -/
+theorem RawStep.collection_finishes_in_original_order
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (collectionScope : CollectionScopeId)
+    (project : Answer → Answer) (reversed : List Answer)
+    (finish : List Answer →
+      Process Request Token Reply Answer Effect Exception)
+    (session : protocol.Session) :
+    RawStep protocol session
+      (.collectionBoundary collectionScope .done project reversed finish)
+      [] .none session (.running (finish reversed.reverse)) := by
+  exact .collectionComplete collectionScope .done project reversed finish
+    session session (.done session)
+
+/-- Exception handling is transparent to cut propagation; only the separately
+typed enclosing cut boundary may catch the signal. -/
+theorem RawStep.catch_cut_transparent
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (handlerScope : ExceptionScopeId) (cutScope : CutScopeId)
+    (next : Process Request Token Reply Answer Effect Exception)
+    (handler : Exception →
+      Option (Process Request Token Reply Answer Effect Exception))
+    (session : protocol.Session) :
+    RawStep protocol session
+      (.catchBoundary handlerScope (.commit cutScope next) handler) []
+      (.commit cutScope) session
+      (.running (.catchBoundary handlerScope next handler)) := by
+  exact .catchProgress handlerScope (.commit cutScope next) next handler []
+    (.commit cutScope) session session (.commit cutScope next session)
+
+/-- Answer collection is likewise transparent to cut propagation.  Prolog's
+findall opacity is supplied by the independently typed enclosing cut boundary,
+not by reusing the collection identity as a cut identity. -/
+theorem RawStep.collection_cut_transparent
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (collectionScope : CollectionScopeId) (cutScope : CutScopeId)
+    (next : Process Request Token Reply Answer Effect Exception)
+    (project : Answer → Answer) (reversed : List Answer)
+    (finish : List Answer →
+      Process Request Token Reply Answer Effect Exception)
+    (session : protocol.Session) :
+    RawStep protocol session
+      (.collectionBoundary collectionScope (.commit cutScope next) project
+        reversed finish) [] (.commit cutScope) session
+      (.running (.collectionBoundary collectionScope next project reversed
+        finish)) := by
+  exact .collectionProgress collectionScope (.commit cutScope next) next
+    project reversed finish [] (.commit cutScope) session session
+    (.commit cutScope next session) (by simp [AnswerFree])
+
+/-- Effects remain observable at the exact DFS point where the nested body
+executes them; collection suppresses answers, not effects. -/
+theorem RawStep.collection_effect_transparent
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (collectionScope : CollectionScopeId) (effect : Effect)
+    (next : Process Request Token Reply Answer Effect Exception)
+    (project : Answer → Answer) (reversed : List Answer)
+    (finish : List Answer →
+      Process Request Token Reply Answer Effect Exception)
+    (before after : protocol.Session)
+    (performed : protocol.perform before effect after) :
+    RawStep protocol before
+      (.collectionBoundary collectionScope (.emit effect next) project reversed
+        finish) [.effect effect] .none after
+      (.running (.collectionBoundary collectionScope next project reversed
+        finish)) := by
+  exact .collectionProgress collectionScope (.emit effect next) next project
+    reversed finish [.effect effect] .none before after
+    (.emit effect next before after performed) (by simp [AnswerFree])
+
+/-- The two-answer collector records projections in exact arrival order.  The
+statement remains duplicate-sensitive when `first = second`; no set or
+deduplication abstraction appears. -/
+theorem RawStep.collection_two_answers_order
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (collectionScope : CollectionScopeId) (first second : Answer)
+    (project : Answer → Answer)
+    (finish : List Answer →
+      Process Request Token Reply Answer Effect Exception)
+    (session : protocol.Session) :
+    RawStep protocol session
+      (.collectionBoundary collectionScope
+        (.yield first (.yield second .done)) project [] finish) [] .none session
+      (.running (.collectionBoundary collectionScope (.yield second .done)
+        project [project first] finish)) ∧
+    RawStep protocol session
+      (.collectionBoundary collectionScope (.yield second .done) project
+        [project first] finish) [] .none session
+      (.running (.collectionBoundary collectionScope .done project
+        [project second, project first] finish)) ∧
+    RawStep protocol session
+      (.collectionBoundary collectionScope .done project
+        [project second, project first] finish) [] .none session
+      (.running (finish [project first, project second])) := by
+  constructor
+  · exact RawStep.collection_consumes_answer protocol collectionScope first
+      (.yield second .done) project [] finish session
+  constructor
+  · exact RawStep.collection_consumes_answer protocol collectionScope second
+      .done project [project first] finish session
+  · simpa using RawStep.collection_finishes_in_original_order protocol
+      collectionScope project [project second, project first] finish session
+
+/-- A cut executed inside a collection body is caught by the collection's own
+cut barrier before an enclosing choice can see it.  The outer alternative is
+therefore retained exactly. -/
+theorem RawStep.collection_cut_preserves_outer_choice
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (outer inner : CutScopeId) (collectionScope : CollectionScopeId)
+    (afterCut outside : Process Request Token Reply Answer Effect Exception)
+    (project : Answer → Answer)
+    (finish : List Answer →
+      Process Request Token Reply Answer Effect Exception)
+    (session : protocol.Session) :
+    RawStep protocol session
+      (.choice outer
+        (Process.scopedCollection inner collectionScope
+          (.commit inner afterCut) project finish)
+        outside) [] .none session
+      (.running (.choice outer
+        (.cutBoundary inner
+          (.collectionBoundary collectionScope afterCut project [] finish))
+        outside)) := by
+  apply RawStep.choiceProgress
+  apply RawStep.cutBoundaryCatch
+  exact RawStep.collection_cut_transparent protocol collectionScope inner
+    afterCut project [] finish session
+
+/-- A throw inside a collection escapes through both the collection delimiter
+and its cut barrier.  This is the required exception-transparency witness. -/
+theorem RawStep.scoped_collection_exception_escapes
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (cutScope : CutScopeId) (collectionScope : CollectionScopeId)
+    (exception : Exception) (project : Answer → Answer)
+    (finish : List Answer →
+      Process Request Token Reply Answer Effect Exception)
+    (session : protocol.Session) :
+    RawStep protocol session
+      (Process.scopedCollection cutScope collectionScope (.raise exception)
+        project finish) [.raised exception] .none session
+      (.terminal (.raised exception)) := by
+  apply RawStep.cutBoundaryRaised
+  exact RawStep.collection_exception_transparent protocol collectionScope
+    exception project [] finish session
+
+/-- A selected throw is handled inside the catch construct's own cut barrier,
+so the recovery process cannot cut an enclosing caller. -/
+theorem RawStep.scoped_catch_handles
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (cutScope : CutScopeId) (handlerScope : ExceptionScopeId)
+    (exception : Exception)
+    (recovery : Process Request Token Reply Answer Effect Exception)
+    (session : protocol.Session) :
+    RawStep protocol session
+      (Process.scopedCatch cutScope handlerScope (.raise exception)
+        (fun _ => some recovery)) [] .none session
+      (.running (.cutBoundary cutScope recovery)) := by
+  apply RawStep.cutBoundaryProgress
+  exact RawStep.catch_handles_raise protocol handlerScope exception recovery
+    session
 
 /-- Specialization for a provider whose replies already are trusted observable
 answers.  This is appropriate for the explicitly trusted imported-SWI lane;
@@ -1269,6 +1844,36 @@ theorem exception_prunes_live_cursor
       (RawStep.choiceRaised (protocol := protocol) 0 _ _ exception
         [Observation.raised exception] before before after
         (RawStep.raise (protocol := protocol) exception before) pruned))
+
+/-- Catch consumes only the raised marker, not the cursor-cleanup evidence
+produced while the exception unwinds the protected body. -/
+theorem caught_exception_prunes_live_cursor
+    {Answer : Type}
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (handlerScope : ExceptionScopeId) (exception : Exception) (cursor : Token)
+    (recovery : Process Request Token Reply Answer Effect Exception)
+    (before after : protocol.Session)
+    (canPrune : protocol.prune before cursor after) :
+    RawStep protocol before
+      ((.catchBoundary handlerScope
+        (.choice 0
+          (.raise exception)
+          (.await 0 cursor (fun _ => .done)))
+        (fun _ => some recovery)) :
+        Process Request Token Reply Answer Effect Exception)
+      [.pruned cursor] .none after (.running recovery) := by
+  have pruned : Prunes protocol before
+      (Process.liveTokens
+        (Process.await 0 cursor (fun _ => Process.done) :
+          Process Request Token Reply Answer Effect Exception)) after := by
+    simpa [Process.liveTokens] using
+      (Prunes.cons (protocol := protocol) before after after cursor []
+        canPrune (Prunes.nil (protocol := protocol) after))
+  exact RawStep.catchHandled (protocol := protocol) handlerScope _ recovery
+    (fun _ => some recovery) exception [.pruned cursor] before after
+    (RawStep.choiceRaised (protocol := protocol) 0 _ _ exception
+      [Observation.raised exception] before before after
+      (RawStep.raise (protocol := protocol) exception before) pruned) rfl
 
 /-! ## Reply-splice anti-vacuity witnesses -/
 

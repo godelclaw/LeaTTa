@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# trace_semantics_sha256=b8011f7ec7077f66dac8f3a2e2e4812d235b77f326e52594c7d50a0ba876a486
+# trace_semantics_sha256=5775b6a9f6b12e6719846d47bf46fb8a4259c9be3ab0b14a98871c807a87c0ef
 # term_algebra_sha256=fd8c5c4912379a03a4e1ed2b88dc05501eaaa2b3a5ebb43338ece4bb1f81faf0
 # ordered_mgu_sha256=75985862b874d7b9d5e686555f8058e00b08bb648777f29880d5dd54b1f17f6c
 # local_resolver_sha256=db1889d43c17f45a1975aefb51e2c75985110d250e9966c9751a944ccca59384
@@ -19,7 +19,8 @@ CONTROL.right_first_rejected	SWI:metacall	control	GoalSemantics.RawStep;GoalSema
 CONTROL.well_scoped_preservation	SWI:metacall	control	Trace.WellScoped;GoalSemantics.Search.WellScoped;GoalSemantics.State.Rooted;RawStep	W	PASS	both the generic control layer and local Goal machine preserve scope discipline; public transitions and finite prefixes preserve the distinguished root boundary, the clause-body/cursor splice is well-scoped at predicate scope, and any reachable commit is caught at its active scope
 CONTROL.specialization_well_scoped	SWI:metacall	control	WellScoped	SH	GAP	Goal specialization must produce well-scoped processes with fresh opaque boundaries
 CONTROL.bind	SWI:metacall	control	GoalSemantics.Search.product;GoalSemantics.RawStep.product*	SH	GAP	answer-at-a-time product deterministically feeds each cumulative substitution into the raw caller tail and retains later head answers at caller scope; executable conjunction adequacy remains open
-CUT.typed_scope	T117-118	control	CutScopeId;Process.cutBoundary	SH	PASS	cut delimiter is typed separately from future exception and collection delimiters
+CUT.typed_scope	T117-118	control	CutScopeId;Process.cutBoundary	SH	PASS	cut delimiter has its own nominal type and cannot be supplied as an exception-handler or answer-collection identity
+CONTROL.distinct_delimiters	SWI:metacall	control	CutScopeId;ExceptionScopeId;CollectionScopeId;Process.scopedCatch;Process.scopedCollection	W	PASS	cut, exception-handler, and answer-collection regions use different identifier types and structural nodes; smart constructors pair catch/findall-style regions with independent cut barriers and WellScoped subject reduction covers both nodes
 CUT.same_scope	T117-118	control	RawStep.choiceCommitHere	W	PASS	matching-scope alternative is pruned before later answer or effect
 CUT.inner_locality	SWI:metacall	control	WellScoped;RawStep	W	PASS	well-scoped inner commit prunes its inner sibling but preserves and later observes the enclosing sibling
 CUT.live_cursor_prune	SWI:foreign-control	control	Process.liveTokens;Prunes	W	PASS	cut and exception unwinding sequentially prune discarded live cursors and expose ordered prune observations
@@ -27,8 +28,10 @@ CUT.wrong_scope	SWI:metacall	control	RawStep.choiceCommitOutside	W	PASS	raw scop
 CUT.meta_call_transparency	SWI:metacall	control	-	N	GAP	call/1 and control-construct transparency table not specialized
 CONTROL.once	T127-128	control	-	N	GAP	demand-driven first-answer commit rule not yet added
 CONTROL.softcut	T151-183,T356-368	control	-	N	GAP	condition-commit scope and branch ordering not yet added
-COLLECT.findall	T115-122,T317-321	collection	-	N	GAP	collector delimiter, copied template, nested search, and completion/divergence behavior open
-EXCEPTION.catch	T300-308	exception	Terminal;RawStep.choiceRaised	SH	GAP	raised terminal tags and pruning on structural unwind are proved; distinct handler delimiter, term matching, recovery, and propagation remain open
+COLLECT.stream_core	SWI:findall	collection	Process.collectionBoundary;RawStep.collection*	W	PASS	typed collector consumes one answer at a time without exposing it, preserves duplicate-sensitive arrival order, suppresses only nested completion, retains effect/cut progress, catches its own cut before any outer choice, and is transparent to exceptions
+COLLECT.findall	T115-122,T317-321	collection	Process.scopedCollection	SH	GAP	generic demand-driven collector core is proved; copied-template projection, Goal specialization, bag construction, and executable adequacy remain open
+EXCEPTION.catch_core	SWI:catch	exception	Process.catchBoundary;RawStep.catch*	W	PASS	typed handler consumes only a selected raised marker, preserves cursor-prune cleanup, lets unmatched exceptions escape, propagates cut to its independent cut barrier, and preserves WellScoped
+EXCEPTION.catch	T300-308	exception	Process.scopedCatch	SH	GAP	generic typed handler core is proved; independent term matching, catcher binding, recovery Goal specialization, and executable adequacy remain open
 WORLD.logical_update	SWI:update	world	Resolver.Database;PreparedCursor;prepareCall	W	PASS	actual protocol tokens freeze ordered call-start visibility; old/new assertion and retraction witnesses plus a wrong-live-view step discriminate drift, and nested calls take their own generation
 WORLD.assert_retract	M277-280	world	-	N	GAP	ordered dynamic updates and visibility generations open
 WORLD.transaction	T138-139,SWI:db	world	-	N	GAP	commit/rollback, exception, and nested transaction behavior open
