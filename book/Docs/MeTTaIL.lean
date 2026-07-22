@@ -1,0 +1,422 @@
+-- SPDX-FileCopyrightText: 2026 MesTTo
+-- SPDX-License-Identifier: Apache-2.0
+
+/- jscpd:ignore-start -/
+/-
+LeaTTa: Chapter: MeTTaIL, formalized.
+-/
+import VersoManual
+import Illuminate
+import Docs.Papers
+
+open Verso.Genre Manual
+open Verso.Genre.Manual.InlineLean
+open Illuminate
+open Docs
+
+set_option pp.rawOnError true
+set_option verso.code.warnLineLength 100
+
+#doc (Manual) "MeTTaIL: A Machine-Checked Meta-Language of Graph-Structured Lambda Theories" =>
+%%%
+tag := "sec-mettail"
+%%%
+/- jscpd:ignore-end -/
+
+MeTTaIL is F1R3FLY-io's intermediate language for MeTTa. Its full name is the Meta Type Talk
+Intermediate Language, and it is the work of Lucius Gregory Meredith and Mike Stay, the people behind
+the rho-calculus and the F1R3FLY blockchain. Here we formalize MeTTaIL alongside the MeTTa kernel and
+check the result against the real tool.
+
+The short version: MeTTaIL is a meta-language. You do not write a program in it, you write down a
+*model of computation*, and the tool turns that description into the concrete syntax, equations, and
+rewrite rules of the calculus you described. The description is a presentation of a graph-structured
+lambda theory, a GSLT. We formalize the presentations, the algebra that builds them, the pipeline
+that elaborates and transforms them, the reduction they induce, and the expected metatheory. I have not
+found an earlier machine-checked formalization of MeTTaIL: the
+F1R3FLY repositories named for this work (`OSLF`, Mike Stay's `GSLT`) are at present only READMEs.
+
+# What a GSLT Presentation Is
+
+A presentation of a graph-structured lambda theory has four parts:
+
+ * a set of generating shapes (sorts);
+ * a set of function symbols, each with an input arity (built from the shapes by products and
+   exponentials) and an output arity (a shape);
+ * a set of equations identifying terms;
+ * two distinguished shapes `P` (processes) and `R` (reductions), with `src, tgt : R -> P` giving each
+   reduction a source and a target.
+
+The last part is what makes a GSLT describe an operational semantics. A rewrite is an element of
+shape `R`, and `src` and `tgt` read off its redex and contractum. The RHO calculus, the lambda
+calculus, SKI, and the Ambient calculus are all presented this way.
+
+In Lean the object syntax is one data model, `MeTTaIL.Syntax`, mirroring the tool's `BasePres` and its
+BNFC abstract syntax symbol for symbol: `Cat` for arities, `Rule` for function symbols, `AST` for
+terms, `Equation`, `Rewrite`, and `Presentation`. We compare terms with a hand-written structural
+`BEq`, exactly as the Scala interpreter compares with `.equals`, because Lean's `deriving` does not
+support the inductives that nest through `List`.
+
+# Elaboration, and Why We Trust It
+
+A `.module` file is a program in an algebra of theory presentations. You start from `Empty`, extend a
+presentation with sorts, symbols, equations, and rewrites, compose presentations with union,
+intersection, and difference, and apply parameterized theories. The Lean `elaborate` function
+interprets that algebra into a presentation. The elaborator is fuel-bounded, because applying a theory expands
+another theory's body, and that keeps the development free of `partial`.
+
+The trust point is concrete. We built the real Scala tool and ran it. Then we proved, by `decide` in the
+Lean kernel, that the Lean elaborator reproduces its output exactly. Take F1R3FLY's own
+`Rholang.module`, which builds the RHO
+calculus from universal algebra (`EmptySet`, `Monoid`, `CommutativeMonoid`, then the process layers).
+The tool prints an Interpreted Presentation with the sorts `Proc` and `Name`, eight constructors, ten
+equations, and four rewrites. Our oracle states that elaborating the same module gives precisely that
+presentation, and the kernel checks it. We deliberately use `decide`, which the kernel verifies,
+rather than `native_decide`, which would trust the compiler.
+
+The transformations are checked the same way. After elaboration the tool desugars binders, optionally
+lifts the untyped calculus to a typed one (the lambda-cube-style `--hypercube` pass), and monomorphizes
+higher-order categories into a first-order grammar. We formalize all three (`desugarBinds`, the
+type-lift, `monomorphize`) and prove each reproduces the tool's printed output for the Rholang
+example: the `...ToArrow` companions, the `TypeLiftCC..DD` companions with the duplicated-channel
+extension, and the `ArrowCC..DD` sort with its application, lambda, and variable constructors.
+
+The shipped binary exposes the same idea for an editable runtime file. `MeTTaIL/Runtime/LanguageFile.lean`
+parses a small external dialect format with `sort`, `term`, and `rewrite` declarations, elaborates it,
+monomorphizes it, and runs a term with the generic reducer. For example, the checked fixture
+`tests/mettail/bool.mettail` declares `tt`, `ff`, and `notOp`; running
+`LeaTTa --mettail tests/mettail/bool.mettail --term '(notOp tt)'` prints `ff`. That file format is not
+the full BNFC MeTTaIL surface. The format is the external runtime path for base-rewrite dialects, wired to the
+same verified reducer.
+
+# The Operational Semantics
+
+A presentation's rewrites induce reduction on terms. The relation `Reduces` fires a rewrite when its
+left-hand side matches a term, binding the pattern variables; each premise `src ~> tgt` requires the
+bound `src` to itself reduce, binding `tgt`; the contractum is the right-hand side instantiated with
+those bindings. Base rewrites contract a redex directly, premised rewrites are the congruence rules.
+The executable matcher and the relation are tied together: every reduct the matcher produces is a
+genuine reduction.
+
+The conditional runtime bridge has two layers. `RuntimeCongruenceStep` is the broad runtime predicate:
+it covers one-premise `sexp` argument congruence and both `Subst` context forms (`substB`, `substR`).
+`SexpArgCongExtension` is the presentation-level predicate for premised rewrite declarations; it covers
+the rules that a presentation can add syntactically, including the RHO `RNew` shape
+`PNew[x, Src] -> PNew[x, Tgt]`. The bridge proves a `SexpArgCongExtension` extends the base runtime
+only by `RuntimeCongruenceStep`s, then derives the confluence transport as a corollary. A top-level
+`Subst` right-hand side is still not treated as a declaration-level `SexpArgCongRule`, because runtime
+instantiation resolves `Subst` immediately with `subst1` rather than rebuilding the `Subst` node.
+
+# Type Soundness and Confluence
+
+The GSLT framework is generic, so we instantiate it and prove the metatheory you would expect for the
+calculi that have a determinate typing.
+
+ * SKI combinatory logic is binder-free, so its typing and reduction are first-order. We prove subject
+   reduction and confluence (Church-Rosser, by Takahashi parallel reduction).
+ * The simply-typed lambda calculus, in de Bruijn form, pays the substitution cost. We prove the
+   weakening and substitution lemmas, then preservation and progress, then confluence of beta.
+
+Every one of these is a real kernel-checked proof. An axiom audit shows the whole corpus depends only
+on the three standard axioms (`propext`, `Classical.choice`, `Quot.sound`); several proofs use none
+beyond `propext`. There is no `sorry`, `admit`, `native_decide`, `partial`, or `unsafe` anywhere in
+the development, and a CI guard enforces that.
+
+The proof architecture follows the checked runtime modules under `MeTTaIL/Semantics`,
+`MeTTaIL/Runtime`, and `MeTTaILProofs`. Newman's lemma and the Knuth-Bendix-Huet critical-pair route
+handle first-order confluence. The conditional fragment
+uses the extended critical-pair obligations described in the conditional-rewriting literature, with
+proper conditional critical pairs and conditional variable pairs supplied as hypotheses. The OSLF line
+follows Stay and Meredith's distributive-law view of operational semantics {citep stayMeredithLogic}[]
+and its enriched-Lawvere-theory companion {citep enrichedLawvereSemantics}[]. The general categorical
+backbone is Beck's composite-monad theorem {citep beckDistributiveLaws}[], in the 2-categorical setting
+made explicit by Street {citep streetFormalTheoryMonads}[]; `MeTTaILProofs/DistributiveLaw.lean`
+formalizes that theorem for Mathlib monads.
+
+# The Denotational Semantics Target
+
+The newer F1R3FLY manuscripts add a denotational target for this operational story. The first paper
+builds a red/black reflective set theory where each colour's atoms are the other colour's sets
+{citep knottedUniverse}[]. The second paper uses that universe for the rho-calculus: quote and
+dereference become colour-swap operations, rho terms denote RSpace-style tables, and the behavioural
+model identifies equality with context bisimilarity {citep quotingColourSwap}[]. A follow-up RSpace
+paper makes the store key polymorphic: keys can be paths, the store becomes a trie, and prefix
+comparability changes what a cut matches without allowing ambient store reactions {citep pathsSubspaces}[].
+The knotted-topoi paper then lifts the pattern one categorical level: a finitely presentable GSLT
+presented in MeTTaIL should desugar to rho by installing persistent rewrite listeners at term locations,
+then inherit the fully abstract rho denotation inside the knotted topos {citep knottedTopoi}[].
+
+The compilation side has its own source trail. The MeTTa-calculus note describes the RSpace reading of
+MeTTa-style spaces: comprehensions and outputs become keyed entries, parallel composition becomes RSpace
+merge, and opposite-polarity entries at the same key react {citep mettaCalculus}[]. The Turing-to-rho
+note shows the same rho core can host a Turing-machine encoding where tape cells are channels, reads are
+for-comprehensions, writes are outputs, and step and namespace costs transport to rho reductions
+{citep rhoViaTuring}[]. The optimal-channel paper gives the missing compiler-side target for a general
+GSLT-to-rho translation: channel names should be computed from rewrite contexts by set-automaton partial
+evaluation, so outer channels survive inner reductions {citep optimalChannels}[].
+
+The store side has source code as well as papers. The ITM sketch writes the domain equation for
+interacting trie maps and the reflective `RITM` specialization {citep itmScalaState}[]. CZ2 gives the
+prefix-compressed storage direction for expression lookup {citep cz2Repository}[]. Jetta gives a runtime
+store where a packed match binding is a store index plus an atom path inside the stored expression
+{citep jettaRuntime}[].
+
+The Lean side now states that claim as an interface. `MeTTaIL.Semantics.Denotational` defines labelled
+transition systems, simulations, bisimulations, the kernel relation of a denotation, and `FullyAbstract`,
+the statement `denote s = denote t <-> Bisimilar lts s t`. The theorem `fullyAbstract_of_kernel` packages
+the coalgebraic argument used by the papers: if equality in the behaviour object is exactly the
+bisimulation kernel, the denotation is fully abstract. `BisimilarityCalibration` records the next
+obligation: the chosen context-labelled bisimilarity must agree with the object language's observational
+equivalence. `fullyAbstract_of_observation_calibration` then turns the internal full-abstraction theorem
+into the user-facing observational one. The packaged `FullyAbstractModel` also records the
+context-congruence obligation, because the papers need context labels to make bisimilarity a congruence
+without a later closure step.
+
+The transfer theorem is there too. `fullyAbstract_of_bisimilarity_translation` says that a source calculus
+inherits full abstraction from a target calculus when the translation preserves and reflects bisimilarity.
+`congruence_of_bisimilarity_translation` adds the context side: if source contexts commute with target
+contexts under the translation, target congruence pulls back to source congruence.
+`FullyAbstractModel.pullback` packages those two facts as a constructor for the pulled-back model. These
+theorems are the part of the knotted-topoi story that can already be stated before the missing
+MeTTaIL-to-rho desugaring theorem is supplied.
+
+The native-type question has its own boundary now. Dedukti and Lambdapi are useful comparison points:
+they put dependent types and user-defined rewriting rules in the same logical framework
+{citep deduktiLogicalFramework}[] {citep lambdapiDocs}[]. `MeTTaIL.Semantics.Native` keeps the MeTTaIL
+obligation explicit instead of treating host values as magic. `StepTranslation` says that a translated
+system matches labelled steps in both directions on translated states. From that, Lean proves
+`StepTranslation.bisimilarityPreserving` and `StepTranslation.bisimilarityReflecting`. A
+`NativeCarrier` then adds a native type assignment, native contexts, a commuting context square, and a
+source fully abstract model. `NativeCarrier.toFullyAbstractModel` pulls full abstraction back to the
+native surface, and `NativeCarrier.typeOf_eq_of_step` exposes the native preservation obligation. The
+module does not instantiate concrete native MeTTaIL types yet.
+
+The concrete-language side is now factored into `MeTTaIL.Semantics.NativeGrammar`, following the
+native grammatical formalism pattern in the MeTTapedia GF and OSLF paper
+{citep nativeGrammaticalFormalism}[]. A `NativeSurface` gives parse and linearize operations over native
+objects. A `NativeSurface.Reading` keeps the chosen parse explicit, so ambiguity is handled as multiple
+readings rather than as a hidden parser choice. The theorem family under `NativeSurface.SameNative`
+states the exact invariant: if two readings from any two surfaces choose the same native object, then
+their native type, inherited denotation, and native bisimilarity agree. `NativeEvidenceModel` and
+`NativeQueryModel` add the matching evidence and query-evidence invariance statements. The file also
+exports constructor predicates, checker soundness through a reading, and `NativeGaloisBridge` for the
+diamond-box adjunction shape. Goertzel's typed-metagraph paper reads Galois connections as links
+between a search preorder and an objective preorder {citep patternsOfCognition}[]. The same reading is
+available here through `NativeGaloisBridge.searchSpec`, `NativeGaloisBridge.objectiveSpec`,
+`NativeGaloisBridge.searchSpec_iff_objectiveSpec`, the unit, the counit, and monotonicity for both
+sides. The module is a target interface for a GF or MeTTaIL frontend. It is not a parser
+implementation.
+
+`MeTTaIL.Semantics.NativeTypes` brings the Native Type Theory side into the existing OSLF vocabulary
+{citep nativeTypeTheory}[]. A native type is a pair of a presentation sort, `Cat`, and an OSLF
+predicate over `AST`. Constructor types inspect the outer label of a term. Spatial types reuse
+`Pred.spatial`. The behavioral arrow is the existing OSLF arrow lifted to a native type. Sorted
+satisfaction adds the presentation check `AST.headCat p.terms t = some A.sort`, so the predicate layer
+can be used together with the generated grammar.
+
+The modal adjunctions are stated with the direction made explicit. The existing `Pred.box` in this repo
+is future safety: all future reducts satisfy a predicate. Its left adjoint is therefore `Pred.future`,
+the forward image of a predicate along many-step reduction. The existing `Pred.dia` is possible future
+reachability. It is left adjoint to `Pred.pastBox`, which checks all predecessors. The checked theorems
+are `Pred.future_box_galois` and `Pred.dia_pastBox_galois`, and the bridge values are
+`forwardGaloisBridge` and `possiblePastGaloisBridge`.
+
+`MeTTaIL.Semantics.Hypercube` adds the finite sort-center from the generated-hypercubes draft
+{citep generatedHypercubes}[]. The construction in that paper has modal type formers from rewrite
+contexts and spatial type formers from AST roots. Each generated family has slots that can be filled
+with `star` or `box`. In the equation-free case, every filling is allowed. With equations, only the
+fillings that make both sides of every equation evaluate to the same sort survive.
+
+The Lean file checks that finite condition directly. `Equation.admissible_iff` says the boolean checker
+for one equation agrees with the all-valuations condition. `centerMember_iff` lifts that to a list of
+equations. `mem_equationalCenter_iff`, `equationalCenter_sound`, and `equationalCenter_complete` say the
+computed center is exactly the raw hypercube filtered by those equation obligations. The same file also
+adds `SlotConstraint` for explicit generated slot equalities. `constrainedCenter` and
+`Presentation.hypercubeConstrainedCenter` feed those slot equalities through the existing equation
+checker, and `mem_constrainedCenter_iff` characterizes the result as raw slot assignment plus direct
+satisfaction of each listed equality. The file extracts `RewriteDecl.modalSites` from rewrite
+left-hand-side subterms and extracts `Rule.spatialHead` from term constructors.
+`ModalSite.slotFamily`, `SpatialHead.slotFamily`, and `Presentation.hypercubeSlots` then build the
+concrete slots. `ModalSite.ruleSchemes`, `SpatialHead.ruleSchemes`, and
+`Presentation.hypercubeRuleSchemes` record the generated rule surfaces. For modal families, those
+surfaces are formation, introduction, elimination step, reduct typing, and lax conversion. For spatial
+families, they are formation, introduction, and elimination. `Presentation.hypercubeJudgmentFootprints`
+records the slot footprint of those generated judgments: rely sorts, argument sorts, subject typings,
+reduct typings, rewrite steps, diamond typings, and structural motives. Lean also proves that every
+footprint slot is a slot of the generated family it came from. The presentation-facing modal and spatial
+sites, their slot families, their explicit slot constraints, their rule-scheme descriptors, and their
+judgment footprints exist in Lean now. The remaining pass is to derive those constraints automatically
+from source equations and rewrite laws, interpret the footprints as full typing judgments, and prove
+subject reduction for the generated system.
+
+`MeTTaIL.Semantics.KnottedUniverse` adds the red/black surface that sits under that target. It defines
+the two colours, the four visible sorts, the red and black quote/drop equivalences,
+structure-preserving morphisms between reflective universes, a category of those universes, and the
+category of coalgebras for a `TypeEndofunctor`. A `FinalCoalgebra` gives a Mathlib `IsTerminal`
+witness in that coalgebra category. `FinalBehaviourModel.toFullyAbstractModel` connects the
+coalgebraic reading to the existing full-abstraction package. `FinalBehaviourModel.fullyAbstractFor` and
+`FinalBehaviourModel.fullyAbstractForObservations` then apply the calibration layer, so a final
+behaviour model can be stated against the object language's observational equivalence. The module still
+does not construct the knotted topos or prove finality for the real rho behaviour functor.
+
+`MeTTaIL.Semantics.RSet` makes the rset paper do more work in this repo. It formalizes the
+hereditarily finite red/black core: red sets contain red nested sets and atoms supplied by black sets,
+and black sets mirror the same discipline. The module checks the two-state colour automaton, the absence
+of a self-loop, atom quote/drop, same-colour opacity for atoms, red/black colour-swap equivalences, and
+the finite-support theorem that a renaming fixing all atoms occurring in a finite set leaves the set
+unchanged. It also defines exact-member extensional equality, the corresponding quotient type, and the
+finite union laws at that extensional level. The `reflective_*` bridge theorems pin the generic
+`ReflectiveUniverse` fields to the concrete rset quote/drop and colour-swap functions. It does not yet
+build the recursive element quotient needed for the FM representation theorem. That quotient, then the
+algebraic-set-theory fixpoint, are the next rset-specific obligations before the knotted-topos
+construction is real.
+
+`MeTTaIL.Semantics.InteractingTrieMap` is the first checked store-side object. The `ITMStep` layer
+records the six summands from the ITM sketch. `RITM` is the reflective specialization with
+`Option RITM` for `1 + RITM`. `RITM.stepEquiv` packages the roll and unroll laws.
+`PackedBinding.root_prefix_address` and `PackedBinding.root_comparable_address` connect Jetta-style
+`storeIndex` plus `atomPath` bindings to `PathRSpace.Prefix` and `Comparable`. The file still does not
+implement CZ2's prefix-compressed store, the cut law, or the final coalgebra.
+
+`MeTTaIL.Semantics.Rho` starts the target side of that theorem. It defines rho names and processes,
+quote/drop, ordinary and persistent send/receive COMM, structural congruence for parallel composition,
+and a one-channel RSpace produce/consume boundary. The implementation sources are the public
+MeTTa-Compiler and f1r3node paths
+[`src/pathmap_par_integration.rs`](https://github.com/F1R3FLY-io/MeTTa-Compiler/blob/main/src/pathmap_par_integration.rs)
+and
+[`rholang/src/rust/interpreter/reduce.rs`](https://github.com/F1R3FLY-io/f1r3node/blob/dylon/mettatron/rholang/src/rust/interpreter/reduce.rs).
+The first serializes MeTTa state into `Par`; the second runs `produce` and `consume` against RSpace using
+`ListParWithRandom`, `BindPattern`, `TaggedContinuation`, and persistent flags. `eval_send` evaluates
+and substitutes the send channel and data before calling `produce`, which is why the Lean bridge emits
+the encoded contractum process rather than a suspended dereference.
+
+The same repo also carries an older K semantics in `rholang/src/main/k/rholang/`. Its README says that
+version is unfinished and points to newer K work elsewhere, so we use it as an operational staging
+guide, not as a finished reference semantics. The useful files are `configuration.k`,
+`sending-receiving.k`, `persistent-sending-receiving.k`, `specific-matching-rules.k`, and
+`matching-with-par.k`. They split execution into `<In>` and `<Out>` cell creation, candidate-ID
+bookkeeping, pattern matching, substitution through `<subst>`, ordinary send/receive, persistent send,
+persistent receive, the persistent/persistent loop case, and a separate par-matching machine.
+
+`MeTTaIL.Semantics.RhoKMachine` now checks the four one-channel COMM cases from that K machine:
+ordinary input with ordinary output, ordinary input with persistent output, persistent input with
+ordinary output, and persistent input with persistent output. It defines K-style input and output cells
+with IDs, candidate sets, and the local `ReadyPair` guard: `CandidatePair` from `<InData>` and
+`<OutData>`, plus `MatchedOne` for the result of `aritymatch["STDMATCH"]` on the one-message payload.
+It then proves that each branch reifies to rho COMM modulo parallel-structure laws. It also models the
+one-pair creation rules that move a surface input or output into a K cell and record candidates from the
+current global ID lists; those creation steps preserve the reified rho process by
+`Rho.KMachine.creation_to_struct`. The branch theorems are `Rho.KMachine.ordinaryReceive_to_rho`,
+`Rho.KMachine.persistentOutput_to_rho`, `Rho.KMachine.persistentReceive_to_rho`, and
+`Rho.KMachine.persistentBoth_to_rho`. The file does not yet model full multi-cell ID maintenance, the
+full K matcher, the par matcher, or the repeated scheduling discipline behind the persistent/persistent
+loop.
+
+`MeTTaIL.Semantics.RhoCompiler` adds the first checked compiler bridge. It follows the direct-rule
+shape in the `mettail-rust` GSLT2rho prototype: a rule has a persistent listener on a rule channel, and
+the matcher sends the computed contractum as a packet. The theorem
+`Rho.Compiler.applyBaseRewrite_reduces_and_emits` says that a successful `applyBaseRewrite` result is a
+real MeTTaIL `Reduces` step and that the rho listener emits `encodeAST` of the contractum at the source
+term location. The theorem is packet-level. The file also proves `Rho.Compiler.contractum_kstep`, so the
+same packet exchange is a K-machine persistent-receive step whose `ReadyPair` proof comes from the
+packet channel, and uses `Rho.KMachine.acceptAny` because `applyBaseRewrite` has already produced the
+matched contractum. `Rho.Compiler.contractumRun_struct_kSource` identifies the actual packet/listener
+rho process with the created K cells, up to the trailing `| 0` introduced by the K configuration
+renderer. `Rho.Compiler.contractumRun_kstep_to_rho` starts from that actual packet/listener process and
+takes the ready K communication step modulo `|` laws. The combined theorem
+`Rho.Compiler.applyBaseRewrite_reduces_emits_and_reifies_kstep` packages MeTTaIL reduction, ready K
+communication, and rho emission. It does not prove the full matcher/router, contextual channel compiler,
+binder freshness discipline, or two-direction operational correspondence.
+
+The path-key RSpace note adds another interface in the same Lean file. `PathRSpace.Path` is a list of
+names, `PathRSpace.Prefix` and `PathRSpace.Comparable` state the prefix-order matching condition, and
+`PathRSpace.SubspaceBranch` records the two COMM cases: output deeper than input, or input deeper than
+output. The theorem `PathRSpace.comparable_iff_nonempty_subspaceBranch` checks that comparability is
+exactly enough to choose one of those branches. `PathRSpace.SubspaceSystem` records the no-implicit-
+interaction discipline: a concrete model has to prove that every reaction comes from an explicit cut and
+that the cut exposes comparable paths.
+
+The cost-accounting papers add a second interface. `Costed.CostedLTS` is a labelled transition system
+whose steps carry a cost. `Costed.CostedLTS.forget` drops the cost annotation and recovers the ordinary
+behavioural system. The theorem `Costed.Trace.to_reflTransGen` proves that any finite costed trace is an
+ordinary trace after costs are forgotten. That is the checked kernel needed by the cost endofunctor and
+cost-accounted rho papers: phlogiston and token stacks refine behaviour, they do not replace the
+behaviour relation {citep continuedGSLTCost}[] {citep costAccountedRho}[]. The spacetime
+paper sits one layer beyond that, reading spent cost as the measure of a causal history
+{citep costSpacetime}[].
+
+`MeTTaIL.Semantics.CostRoundTrip` records the next interface from the continued-GSLT cost line. A
+`Costed.ContinuedCostSystem` has costed steps, a wrapper predicate, and a token-availability predicate.
+The theorem `Costed.ContinuedCostSystem.starved_deadlocked` says that if no gate token is available,
+then the forgotten behavioural system has no step. The theorem
+`Costed.ContinuedCostSystem.wrapped_trace_preserved` says that the wrapper invariant is preserved along
+finite costed traces. The theorem `Costed.Trace.to_stepCount_of_unitTokenCosted` states the unit-token
+case of the modulus claim: when each forced step costs one token, the Nat cost of the trace is exactly
+its step count. `Costed.CostRoundTrip` then packages the abstract endomorphism `T ◦ C`; when it respects
+bisimilarity and is idempotent up to bisimulation, `Costed.CostRoundTrip.image_iff_fixed` identifies the
+image sublanguage with the fixed points up to bisimulation.
+
+The Lean files are interfaces and small kernels, not the knotted topos. The current release proves the
+operational pieces that such a denotation must respect: `RewStep`, `RewStepMany`, executable soundness,
+OSLF predicates, greatest-fixed-point OSLF safety, confluence fragments, AC rewriting, the Cordial
+Miners runtime embedding, and the rho COMM/RSpace fragment in `MeTTaIL.Semantics.Rho`. The rho
+desugaring functor, the location-channel operational correspondence, the final
+behaviour coalgebra in a knotted topos, the path-key trie store, the cut distributive law, subspace
+reaction confluence, the set-automaton channel compiler, the cost endofunctor itself, and the calibration
+language-specific calibrations between context bisimulation and each object language's usual
+observational equivalence are still not formalized. Those are the real next theorems if the claim that a
+spec gets a denotation automatically is to become machine checked.
+
+# Two Calculi from the Papers
+
+F1R3FLY's recent papers add two calculi, and we formalize the core of each.
+
+The present-moment paper gives the rho-calculus a "spice" rule: a modified COMM that does bounded
+`n`-step lookahead, `Q --n--> {Q1, ..., Qm}`. The rule looks self-referential, because the reduction
+it uses includes COMM itself, and the paper asserts, without proof, that it is well-founded. We
+formalize the heart of it as bounded reachability over any one-step relation, defined by structural
+recursion on the fuel `n`, and we prove the grounding `Q --0--> {Q}` that resolves the apparent
+circularity. Our reachability function is total by construction (structural recursion on the fuel),
+which is the termination guarantee the source asserts without proof. The full modified COMM rule over
+an actual rho-calculus process type is not formalized here; we capture the reachability core it rests
+on.
+
+The mq-calculus paper builds a process calculus where communication is measurement. We formalize the
+semantic core that makes its COMM rule well-defined: a finite quantum state is a normalized vector of
+complex amplitudes, the Born probability of an outcome is the squared modulus of its amplitude, and
+those probabilities form a genuine distribution (they are in the unit interval and sum to one). So
+measurement-by-communication neither creates nor loses probability. We also record interference: the
+Born probability of a superposition is not the classical sum.
+
+# Connecting Back to the Kernel
+
+The book's MeTTa kernel and the MeTTaIL framework meet in a bridge: an embedding of the kernel's
+`Metta.Atom` (the four metatypes) into GSLT terms. A symbol becomes a nullary constructor, a variable
+a GSLT variable, an expression a wild-labelled application, and a grounded atom a keyed nullary
+constructor. The embedding is injective on the grounded-free fragment; grounded atoms inherit the same
+IEEE-754 float caveat the kernel documents for its own equality. The bridge is the precise sense in which
+MeTTa is a GSLT object language.
+
+The metatheory layer rounds this out: decidable equality and a lawful Boolean equality for the whole
+data model, the pipeline invariants (each transformation touches only the term list), and the
+presentation algebra's set laws (union, intersection, and difference behave as set operations on each
+component).
+
+# What Remains Open
+
+The deepest layer is still a research target. MeTTaIL's generated modal type system, the possibility
+modalities, and the recovery of arrow types in the design notes are only partly covered here. The modal
+sites, spatial heads, generated slot families, and equational center of the hypercube are now checked,
+but the pass that turns those families into generated typing rules is not yet implemented. The rho and
+knotted-topoi papers give the denotational route, and the new Lean interface states the theorem to prove,
+but the knotted topos and the MeTTaIL-to-rho desugaring are not yet formalized. We formalize the
+determinate fragments and mark the open parts in place. The Scala tool's own `--hypercube` pass omits
+the modal types too, and our type-lift matches the tool, not the unfinished note.
+The per-variable category-consistency check of the elaborator's type checker remains future work; the
+category-match and bound-variable checks are in place.
+
+Building a faithful model is also a good way to find bugs in the thing you are modeling, and we found a
+few in the tool's rename and checking code. Where the Scala does something wrong, an export rename that
+overwrites every rule's output sort, a static check that only inspects the first export, a checker that
+does not descend through `let`, the Lean does the correct thing and leaves a note at the divergence.
+The five we found are written up for the F1R3FLY team in `MeTTaIL/HYPERON_IMPROVEMENTS.md`.

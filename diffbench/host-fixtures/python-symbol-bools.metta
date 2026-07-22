@@ -1,0 +1,5 @@
+!(py-call (str True))
+!(py-call (str False))
+!(py-call (str true))
+!(py-call (str false))
+!(py-call (str ordinary-symbol))

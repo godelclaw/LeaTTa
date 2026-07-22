@@ -1,0 +1,50 @@
+file	family	note
+atomops.metta	BUILTIN	sub-op differences within atom ops (index/sort variants); re-tag after run-3
+booleansolver.metta	MODE-1-BRIDGED	solver enumerates via relational search  [T3.3a: LP/SLD-certified]
+callquoteevalreduce2.metta	ORDER-1	call/quote-eval staging (call operator)
+caseconstrain.metta	NONDET-1	branch-local failure in case machinery
+casenew.metta	NONDET-1	branch-local failure via empty in superpose
+foldall.metta	LAMBDA	aggregator armed; residual = |-> lambda generators
+forall.metta	LAMBDA	aggregator armed; residual = |-> lambda generators
+functionhead.metta	MODE-1-BRIDGED	inverts append through unbound args  [T3.3a: LP/SLD-certified]
+functionhead2.metta	MODE-1-BRIDGED	function-head inversion  [T3.3a: LP/SLD-certified]
+functionhead3.metta	MODE-1-BRIDGED	function-head inversion  [T3.3a: LP/SLD-certified]
+functiontypes.metta	TYPECHECK-1	HE BadArgType; PeTTa permissive (armable)
+he_math.metta	BUILTIN	numeric tower (pow-math int) — armed in run-3
+holbenchmark.metta	PERF	higher-order search blowup (timeout)
+holfunctions.metta	MODE-1	higher-order + currying (DIV d2)
+holfunctions_intrinsicop.metta	MODE-1	higher-order intrinsics
+hyperpose_primes.metta	PERF	deep find-divisor recursion exceeds fuel
+invertfunction.metta	MODE-1-BRIDGED	relational inversion  [T3.3a: LP/SLD-certified]
+invertpeanoplus.metta	MODE-1-BRIDGED	peano inversion  [T3.3a: LP/SLD-certified]
+is_alpha_member_test.metta	BUILTIN	is-alpha-member gap
+lambda.metta	MODE-1	lambda encoding + currying
+listhead.metta	MODE-1-BRIDGED	list-head inversion  [T3.3a: LP/SLD-certified]
+logicprogset.metta	MODE-1-BRIDGED	logic-program set enumeration  [T3.3a: LP/SLD-certified]
+matchsingle.metta	TYPES	match on typed pattern
+matchtypes.metta	TYPES-STRUCTURAL	type-gated match result-set (Prolog-layer)
+math.metta	BUILTIN	numeric tower — armed in run-3
+meta_types.metta	TYPES-STRUCTURAL	meta type-predicate (Prolog-layer)
+myinterpreter.metta	ORDER-1	meta-interpreter staging
+nestedcons.metta	MATCH-1	list-vs-cons-cell pattern decomposition (matcher convention)
+parametric_types.metta	TYPES	parametric type inference differs
+parse.metta	BUILTIN	parse builtin gap
+partialdef.metta	MODE-1-BRIDGED	partial definitions relationally  [T3.3a: LP/SLD-certified]
+plntestdirect.metta	PERF	PLN search blowup (timeout)
+recursive_types.metta	TYPES	recursive type checks
+specialize.metta	TRANSLATOR	PeTTa specializer machinery (impl-specific)
+specializecyclic.metta	TRANSLATOR	PeTTa specializer machinery
+supercollapse.metta	NONDET-1	test-wrapper presentation (harness-normalized)
+superpose_nested.metta	NONDET-1	raw-spread superpose -- armed
+test_alpha_unique_atom.metta	BUILTIN	alpha-unique-atom gap
+test_string_comments.metta	BUILTIN	repr/string surface
+translatorrule.metta	TRANSLATOR	add-translator-rule machinery
+translatorrule_fib.metta	TRANSLATOR	translator rules
+translatorrule_for.metta	TRANSLATOR	translator rules
+types.metta	TYPECHECK-1	HE type-checking rejects; PeTTa permissive (armable)
+types_dependent.metta	TYPES	dependent type surface
+types_nondet.metta	TYPES	nondet type queries
+pln_direct.metta	RELATIONAL	implicit-SLD conjunction (?/reduce resolution) -- battery tier
+spaces_find.metta	RELATIONAL	find = caller-var binding via shared logic vars -- battery tier
+matespace.metta	PERF	deep space-search truncated by fuel (swipl computes)
+matespace2.metta	PERF	deep space-search truncated by fuel (swipl computes)

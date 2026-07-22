@@ -1,0 +1,304 @@
+#!/usr/bin/env python3
+
+"""Unrewritten PeTTa helper-form witnesses against the pinned oracle.
+
+The main corpus lane rewrites diagnostic helpers to expose the values they
+test. These probes complement it by sending the original source to both
+engines and discarding only explicitly expected host-output lines.
+"""
+
+from __future__ import annotations
+
+import collections
+import os
+import pathlib
+import subprocess
+import sys
+import tempfile
+
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+import diff as D  # noqa: E402
+
+
+EXAMPLES = pathlib.Path(
+    os.environ.get("PETTA_DIR", str(pathlib.Path.home() / "repos/PeTTa"))
+) / "examples"
+
+CASES = [
+    (
+        "test-singleton",
+        "(= (twice $x) (+ $x $x))\n!(test (twice 21) 42)\n",
+        [],
+        ["true"],
+    ),
+    (
+        "test-collected",
+        "!(test (superpose (1 2)) (1 2))\n",
+        [],
+        ["true"],
+    ),
+    (
+        "trace-value",
+        "!(trace! pleatta-trace-marker (+ 1 2))\n",
+        ["pleatta-trace-marker"],
+        ["3"],
+    ),
+    (
+        "println-value",
+        "!(println! pleatta-println-marker)\n",
+        ["pleatta-println-marker"],
+        ["true"],
+    ),
+    (
+        "empty-is-ordinary-failure",
+        "!(empty)\n!(+ 1 2)\n",
+        [],
+        ["3"],
+    ),
+    (
+        "identity-equality-open-terms",
+        """!(== (p $x) (p $x))
+!(== (p $x) (p $y))
+!(== (p $x) (q $x))
+""",
+        [],
+        ["true", "false", "false"],
+    ),
+    (
+        "if2-open-condition-is-identity",
+        "!(collapse (if $condition 42))\n",
+        [],
+        ["()"],
+    ),
+    (
+        "let-star-valid-source-order",
+        "!(let* (($x 1) ($y (+ $x 2))) (+ $x $y))\n",
+        [],
+        ["4"],
+    ),
+    (
+        "current-list-fallbacks",
+        """!(car-atom ())
+!(cdr-atom ())
+!(car-atom not-a-list)
+!(cdr-atom not-a-list)
+""",
+        [],
+        ["()", "()", "()", "()"],
+    ),
+    (
+        "unary-builtin-values",
+        """!(car-atom (1 2))
+!(cdr-atom (1 2))
+!(unique-atom (1 1 2))
+!(size-atom (1 2 3))
+!(repr (a b))
+!(repra (a b))
+!(repra True)
+!(repra foo-bar)
+!(repra ())
+!(parse "(a b)")
+!(is-ground (a b))
+!(is-expr (a b))
+!(is-space &self)
+""",
+        [],
+        [
+            "1", "(2)", "(1 2)", "3", '"(a b)"', "[a,b]", "true",
+            "'foo-bar'", "[]", "(a b)", "true", "true", "true",
+        ],
+    ),
+    (
+        "short-circuit-booleans",
+        """!(and-then False (empty))
+!(or-else True (empty))
+!(and-then True 42)
+!(or-else False 43)
+""",
+        [],
+        ["false", "true", "42", "43"],
+    ),
+    (
+        "short-circuit-branch-effect-order",
+        """!(bind! and-order-state initial)
+!(let expected
+    (and-then True
+      (progn (change-state! and-order-state changed) actual))
+    unreachable)
+!(get-state and-order-state)
+!(bind! or-order-state initial)
+!(let expected
+    (or-else False
+      (progn (change-state! or-order-state changed) actual))
+    unreachable)
+!(get-state or-order-state)
+""",
+        [],
+        ["changed", "changed"],
+    ),
+    (
+        "chain-source-effect-order",
+        """!(bind! chain-order-state (new-state initial))
+!(chain
+    (progn (change-state! chain-order-state first) Same)
+    (progn (change-state! chain-order-state second) $x)
+    (get-state chain-order-state))
+""",
+        [],
+        ["true", "second"],
+    ),
+    (
+        "quoted-binders-remain-data",
+        """!(quote (|-> () 42))
+!(quote (nested (|-> () 42)))
+""",
+        [],
+        ["(|-> () 42)", "(nested (|-> () 42))"],
+    ),
+    (
+        "translator-add-remove",
+        """(= (compile42 $arg) (quote (cons 42 $arg)))
+!(add-translator-rule! compile42)
+!(compile42 (43))
+!(remove-translator-rule! compile42)
+!(compile42 (43))
+""",
+        [],
+        ["true", "(42 43)", "true", "(cons 42 (43))"],
+    ),
+    (
+        "translator-rule-shadows-builtin",
+        """(= (if $condition $then $else)
+      (quote (hooked-if $condition $then $else)))
+!(add-translator-rule! if)
+!(if False left right)
+""",
+        [],
+        ["true", "(hooked-if false left right)"],
+    ),
+    (
+        "translator-rule-shadows-short-circuit-builtins",
+        """(= (and-then $condition $body)
+      (quote (hooked-and-then $condition $body)))
+(= (or-else $condition $body)
+      (quote (hooked-or-else $condition $body)))
+!(add-translator-rule! and-then)
+!(add-translator-rule! or-else)
+!(and-then False right)
+!(or-else True right)
+""",
+        [],
+        [
+            "true",
+            "true",
+            "(hooked-and-then false right)",
+            "(hooked-or-else true right)",
+        ],
+    ),
+    (
+        "translator-rule-local-space-predicate",
+        """(= (succeedsPredicate $pattern)
+  (quote (case
+    (translatePredicate (catch (Predicate $pattern) $_ fail))
+    (($item True) (Empty False)))))
+!(add-translator-rule! succeedsPredicate)
+!(succeedsPredicate (&self friend tim tom))
+(friend a b)
+!(succeedsPredicate (&self friend $a $b))
+!(if (succeedsPredicate (&self friend $a $b)) ($a $b) NotFound)
+""",
+        [],
+        ["true", "false", "true", "(a b)"],
+    ),
+    (
+        "registered-reader-writer-stay-core-owned",
+        '''!(import_prolog_function sread)
+!(import_prolog_function swrite)
+!(sread "((rest))")
+!(swrite (hello world))
+''',
+        [],
+        ["true", "true", "((rest))", '"(hello world)"'],
+    ),
+    (
+        "stream-rewrite-precedes-translator-hook",
+        """(= (trace! $message $value)
+      (quote (hooked-trace $message $value)))
+!(add-translator-rule! trace!)
+!(trace! stream-rewrite-marker 42)
+""",
+        ["stream-rewrite-marker"],
+        ["true", "42"],
+    ),
+    (
+        "stream-rewrite-values",
+        """!(collapse (unique (superpose (1 1 2))))
+!(collapse (alpha-unique (superpose (1 1 2))))
+!(collapse (union (superpose (1 2)) (superpose (2 3))))
+!(collapse (intersection (superpose (1 2)) (superpose (2 3))))
+!(collapse (subtraction (superpose (1 2 2)) (superpose (2))))
+""",
+        [],
+        ["(1 2)", "(1 2)", "(1 2 2 3)", "(2)", "(1 2)"],
+    ),
+    (
+        "transaction-commit-rollback",
+        """!(add-atom &tx (value 1))
+!(transaction (progn (remove-atom &tx (value 1))
+                      (add-atom &tx (value 2))))
+!(collapse (get-atoms &tx))
+!(transaction (progn (remove-atom &tx (value 2)) (empty)))
+!(collapse (get-atoms &tx))
+""",
+        [],
+        ["true", "true", "((value 2))", "((value 2))"],
+    ),
+]
+
+
+def normalized(items: list[str]) -> collections.Counter[str]:
+    return collections.Counter(D.normalize(item) for item in items)
+
+
+def run_case(
+    name: str, source: str, native_noise: list[str], expected: list[str]
+) -> bool:
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".metta", prefix=".direct-semantics-",
+        dir=EXAMPLES, delete=False
+    ) as handle:
+        handle.write(source)
+        path = pathlib.Path(handle.name)
+    try:
+        native = D.petta_results(path, 15)
+        noise = normalized(native_noise)
+        for item, count in noise.items():
+            for _ in range(count):
+                try:
+                    native.remove(next(x for x in native if D.normalize(x) == item))
+                except (StopIteration, ValueError):
+                    break
+        pleatta = D.leatta_results(path, 15)
+        want = normalized(expected)
+        ok = pleatta is not None and normalized(native) == want and normalized(pleatta) == want
+        print(
+            f"{name}\t{'PASS' if ok else 'FAIL'}\t"
+            f"native={native}\tpleatta={pleatta}"
+        )
+        return ok
+    except (D.RunnerError, D.FuelExhausted, subprocess.TimeoutExpired) as error:
+        print(f"{name}\tFAIL\t{type(error).__name__}: {error}")
+        return False
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def main() -> int:
+    ok = True
+    for case in CASES:
+        ok &= run_case(*case)
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

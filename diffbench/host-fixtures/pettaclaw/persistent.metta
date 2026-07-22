@@ -1,0 +1,1 @@
+(active-model fixture-model)

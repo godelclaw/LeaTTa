@@ -1,0 +1,176 @@
+and_or.metta	IN		AGREE	1	1
+atomops.metta	IN		AGREE	9	9
+booleansolver.metta	IN		AGREE	2	2
+builin_types.metta	IN		AGREE	36	36
+callquoteevalreduce.metta	IN		LEATTA-NOOUT	4	
+callquoteevalreduce2.metta	IN		LEATTA-NOOUT	4	
+case.metta	IN		AGREE	1	1
+case2.metta	IN		AGREE	1	1
+caseconstrain.metta	IN		AGREE	1	1
+caseempty.metta	IN		AGREE	2	2
+casenew.metta	IN		AGREE	1	1
+chain.metta	IN		AGREE	2	2
+collapse.metta	IN		AGREE	1	1
+comments.metta	IN		AGREE	1	1
+constanthead.metta	IN		AGREE	1	1
+curry.metta	IN		DIFF-COUNT	6	0
+cut.metta	IN		AGREE	2	2
+empty.metta	IN		AGREE	1	1
+eval.metta	IN		DIFF-COUNT	2	0
+factorial.metta	IN		AGREE	1	1
+fib.metta	IN		LEATTA-TIMEOUT	1	
+fibadd.metta	IN		LEATTA-TIMEOUT	2	
+fibsmart.metta	IN		AGREE	1	1
+fibsmartimport.metta	IN		AGREE	1	1
+foldall.metta	IN		AGREE	10	10
+foldallmatch.metta	IN		AGREE	2	2
+foldallspacecount.metta	IN		AGREE	1	1
+forall.metta	IN		AGREE	12	12
+functionhead.metta	IN		AGREE	2	2
+functionhead2.metta	IN		AGREE	1	1
+functionhead3.metta	IN		AGREE	6	6
+functionremoval.metta	IN		DIFF-VAL	8	8
+functionremovalspec.metta	IN		AGREE	6	6
+functiontypes.metta	IN		AGREE	4	4
+git_import.metta	OUT	git-import	LEATTA-NOOUT	4	
+git_import2.metta	OUT	git-import	LEATTA-NOOUT	11	
+greedy_chess.metta	OUT	py-atom	PETTA-TIMEOUT		
+he_assert.metta	IN		AGREE	5	5
+he_atomspace.metta	IN		DIFF-COUNT	7	5
+he_equalreduct.metta	IN		AGREE	4	4
+he_error.metta	IN		DIFF-COUNT	5	4
+he_evaluation.metta	IN		AGREE	4	4
+he_math.metta	IN		AGREE	19	19
+he_minimalmetta.metta	IN		PETTA-TIMEOUT		
+he_quoting.metta	IN		AGREE	6	6
+he_types.metta	IN		AGREE	7	7
+holbenchmark.metta	IN		LEATTA-TIMEOUT	4	
+holfunctions.metta	IN		AGREE	7	7
+holfunctions_intrinsicop.metta	IN		DIFF-COUNT	1	0
+hyperpose_primes.metta	IN		LEATTA-TIMEOUT	3	
+identity.metta	IN		AGREE	1	1
+if.metta	IN		AGREE	1	1
+if2.metta	IN		AGREE	1	1
+if3.metta	IN		AGREE	1	1
+if4.metta	IN		AGREE	1	1
+ifcasenondet.metta	IN		AGREE	2	2
+ifsimple.metta	IN		AGREE	1	1
+invertfunction.metta	IN		AGREE	3	3
+invertpeanoplus.metta	IN		LEATTA-TIMEOUT	5	
+is_alpha_member_test.metta	IN		DIFF-COUNT	25	23
+iter.metta	IN		AGREE	1	1
+lambda.metta	IN		DIFF-COUNT	7	4
+let_superpose_if_case.metta	IN		AGREE	1	1
+letext.metta	IN		AGREE	1	1
+letlet.metta	IN		AGREE	1	1
+letstar.metta	IN		AGREE	1	1
+library.metta	IN		DIFF-COUNT	2	1
+listhead.metta	IN		AGREE	3	3
+llm_cities.metta	IN		AGREE	3	3
+logicprog.metta	IN		AGREE	1	1
+logicprogset.metta	IN		AGREE	1	1
+matchnested.metta	IN		AGREE	1	1
+matchnested2.metta	IN		AGREE	1	1
+matchsingle.metta	IN		AGREE	2	2
+matchtypes.metta	IN		AGREE	6	6
+matespace.metta	IN		LEATTA-TIMEOUT	1	
+matespace2.metta	IN		LEATTA-TIMEOUT	1	
+matespacefast.metta	IN		LEATTA-TIMEOUT	1	
+math.metta	IN		AGREE	19	19
+meta_types.metta	IN		AGREE	6	6
+metta4_prog.metta	IN		AGREE	3	3
+metta4_streams.metta	IN		DIFF-VAL	5	5
+mettaset.metta	IN		AGREE	9	9
+multicall.metta	IN		AGREE	1	1
+multiset_operations.metta	IN		AGREE	4	4
+mutex_and_transaction.metta	IN		DIFF-COUNT	8	4
+myinterpreter.metta	IN		DIFF-COUNT	4	2
+nars_direct.metta	IN		DIFF-VAL	7	7
+nars_tuffy.metta	IN		DIFF-COUNT	0	1
+nestedcons.metta	IN		AGREE	1	1
+nilbc.metta	IN		LEATTA-NOOUT	25	
+once.metta	IN		AGREE	2	2
+parametric_types.metta	IN		DIFF-COUNT	1	2
+parse.metta	IN		DIFF-COUNT	5	4
+partialdef.metta	IN		DIFF-COUNT	2	0
+patrick_iterate_fib.metta	IN		AGREE	2	2
+patrick_iterate_quad.metta	IN		LEATTA-TIMEOUT	2	
+patrick_test.metta	IN		DIFF-VAL	4	4
+peano.metta	IN		LEATTA-TIMEOUT	1	
+peanofast.metta	IN		LEATTA-TIMEOUT	2	
+permutations.metta	IN		LEATTA-TIMEOUT	1	
+pln_direct.metta	IN		DIFF-VAL	7	7
+pln_roman.metta	IN		AGREE	1	1
+pln_tuffy.metta	IN		AGREE	1	1
+plntest.metta	IN		DIFF-COUNT	1	0
+plntestdirect.metta	IN		LEATTA-TIMEOUT	1	
+prologimport.metta	OUT	import_prolog	DIFF-COUNT	1	3
+python.metta	OUT	py-call	DIFF-VAL	1	1
+python_import.metta	OUT	py-call	DIFF-VAL	2	2
+recursive_types.metta	IN		DIFF-VAL	4	4
+recursive_types2.metta	IN		AGREE	2	2
+repl.metta	IN		PETTA-TIMEOUT		
+repr.metta	IN		DIFF-VAL	6	6
+roman_test.metta	IN		DIFF-COUNT	20	15
+scale.metta	IN		LEATTA-TIMEOUT	1	
+selfprog.metta	IN		DIFF-COUNT	4	3
+smartdispatch.metta	IN		DIFF-VAL	1	1
+spacefunction.metta	IN		AGREE	8	8
+spaces.metta	IN		AGREE	1	1
+spaces2.metta	IN		AGREE-ORD	3	3
+spaces3.metta	IN		AGREE	7	7
+spaces_find.metta	IN		AGREE	1	1
+spaces_removeallatoms.metta	IN		DIFF-VAL	5	5
+spaces_succeedspredicate.metta	IN		DIFF-COUNT	3	1
+specialize.metta	IN		DIFF-COUNT	12	2
+specializecyclic.metta	IN		DIFF-COUNT	4	2
+specializefunctiontypes.metta	IN		DIFF-COUNT	3	1
+state.metta	IN		AGREE	4	4
+streamops.metta	IN		AGREE	4	4
+string.metta	IN		DIFF-COUNT	0	1
+supercollapse.metta	IN		AGREE	1	1
+superpose_nested.metta	IN		AGREE	1	1
+superpose_primes.metta	IN		LEATTA-TIMEOUT	1	
+tabling_fib.metta	IN		LEATTA-TIMEOUT	3	
+test_alpha_unique_atom.metta	IN		AGREE	13	13
+test_backward_v01.metta	IN		DIFF-COUNT	3	6
+test_backward_v02.metta	IN		AGREE	2	2
+test_backward_v03.metta	IN		AGREE	5	5
+test_backward_v04.metta	IN		AGREE	5	5
+test_backward_v05.metta	IN		AGREE	5	5
+test_backward_v06.metta	IN		DIFF-COUNT	7	5
+test_backward_v06_fixed.metta	IN		AGREE	7	7
+test_backward_v07.metta	IN		AGREE	5	5
+test_backward_v08.metta	IN		AGREE	5	5
+test_backward_v09.metta	IN		AGREE	10	10
+test_collapse.metta	IN		AGREE	5	5
+test_deduce_raw.metta	IN		AGREE	3	3
+test_evidence_kind.metta	IN		AGREE	5	5
+test_evidence_kind_import.metta	IN		AGREE	6	6
+test_evidence_kind_inline.metta	IN		AGREE	5	5
+test_let_match.metta	IN		AGREE	3	3
+test_match_3arg.metta	IN		AGREE	3	3
+test_match_simple.metta	IN		AGREE	5	5
+test_match_simple2.metta	IN		AGREE	1	1
+test_nal_import.metta	IN		DIFF-COUNT	5	3
+test_nal_test_primitive.metta	IN		AGREE	9	9
+test_nal_v032.metta	IN		AGREE	7	7
+test_nal_v033.metta	IN		AGREE	5	5
+test_nal_v034.metta	IN		AGREE	7	7
+test_protocosmoMain.metta	IN		AGREE	2	2
+test_string_comments.metta	IN		LEATTA-NOOUT	0	
+test_stv_match.metta	IN		AGREE	2	2
+test_ulc_accessors.metta	IN		AGREE	3	3
+test_unify_eval_branches.metta	IN		DIFF-COUNT	6	5
+tests.metta	IN		AGREE	1	1
+tilepuzzle.metta	IN		LEATTA-TIMEOUT	1	
+torch.metta	OUT	py-call	DIFF-VAL	1	1
+translatepredicate.metta	OUT	translatePredicate	LEATTA-NOOUT	1	
+translatorrule.metta	IN		DIFF-VAL	5	5
+translatorrule_fib.metta	IN		DIFF-VAL	2	2
+translatorrule_for.metta	IN		DIFF-VAL	2	2
+twostage.metta	IN		AGREE	2	2
+types.metta	IN		AGREE	13	13
+types_dependent.metta	IN		DIFF-COUNT	2	0
+types_nondet.metta	IN		DIFF-COUNT	3	4
+xor.metta	IN		AGREE	2	2

@@ -1,0 +1,59 @@
+# PLeaTTa Perf-1 Phase A0: measured dominant-cost classification.
+# Raw, reproducible rows are in perf-a0.tsv and perf-a0-scan.tsv; each row
+# records the exact generated source hash, wall time, machine steps, peak
+# substitution size, world sizes, and candidate-scan counter.
+#
+# Decisive controls (median seconds):
+#   case                 n=100   n=200   n=400   steps@400  maxSubst@400
+#   loop-control          .043    .122    .672       3207        403
+#   add-only              .043    .130    .726       4407        403
+#   term-growth           .048    .145    .776       4009        404
+#   exact-dedup           .059    .194   1.172       8407        403
+# Ordinary self-space add is O(1) (`a :: selfAtoms`) and adds little over the
+# constant-space control.  The shared superlinearity is resolution/substitution
+# maintenance: machine steps are linear while the active substitution grows
+# one binding per recursive frame.  Exact dedup adds a real scan cost on top.
+#
+# Larger scan controls (64 queries; n=1000/2000/4000):
+#   source-only facts     .030/.057/.163
+#   bound-head match      .045/.075/.197
+#   unbound match         .141/.445/1.658
+#   remove miss           .051/.079/.211
+#   fixed-clause control  .041/.064/.174
+#   growing clauses       .060/.141/.499
+# Hence ordered indices are useful for selective space queries, exact dedup,
+# and large live clause databases, but they are not the first root fix for the
+# 18 families.  Open enumeration must still visit every answer.
+#
+# Post-index result: ordered clause and space indices are now integrated and
+# proved.  Selective bound-head query overhead at n=4000 fell from about
+# .034s to .015s after subtracting source loading, and exact-dedup n=400 fell
+# from 1.172s to 1.012s.  peano, peanofast, and tilepuzzle nevertheless still
+# time out at 30s; their dominant remaining work is substitution/term growth
+# or total BFS reductions, not candidate discovery.
+#
+# phase_b_verdict:
+#   INDEX-DELIVERED    indexing measurably improves a real subpath but the
+#                      full family remains bound by a named different cost
+#   SECONDARY         indexing helps a subpath but cannot close the family
+#   NOT-INDEX         dominant cost needs another mechanism
+#
+# family	primary_class	phase_b_verdict	dominant_evidence	next_mechanism
+scale	substitution+inherent-output	SECONDARY	million-frame add loop plus 1.1M open/selective query answers; add itself is O(1)	incremental/compact substitution, then selective space index
+peanofast	substitution+term-growth	SECONDARY	2500 recursive frames build nested Peano terms; final match enumerates 2500	compact substitution/term representation
+peano	substitution+term-growth	INDEX-DELIVERED	exact duplicate candidates are now indexed, but the full file still exceeds 30s while the exact small witness value-agrees	persistent substitution/dependency representation
+tilepuzzle	BFS-reduction+queue	INDEX-DELIVERED	exact duplicate candidates are now indexed, but 181441 BFS states still exceed 30s while the exact small witness value-agrees	lower per-reduction substitution and queue cost
+matespace	space-scan+inherent-output	SECONDARY	repeated open expansion/dedup followed by 1063919 outputs	compact substitution plus exact index; full enumeration remains
+matespacefast	reduction-count+inherent-output	NOT-INDEX	binary recursion creates and returns 1572862 atoms without duplicate lookup	compact substitution/interpreter overhead; output remains
+matespace2	space-scan+inherent-output	SECONDARY	open superpose/dedup loops followed by 1297533 outputs	compact substitution plus exact index; output remains
+fib	redundant-reduction	NOT-INDEX	naive recursive fib recomputes the same calls	tabling/memoization
+fibadd	redundant-reduction	NOT-INDEX	same recursion after one dynamically installed rule	tabling/memoization
+superpose_primes	inherent-reduction	NOT-INDEX	trial division across four branches on large inputs	certified/native arithmetic primitive or lower per-step cost
+hyperpose_primes	inherent-reduction	NOT-INDEX	trial division reaches roughly sqrt(5e17)	certified/native primality primitive
+permutations	inherent-output/search	NOT-INDEX	factorial permutation enumeration	constraint/join optimization; output lower bound remains
+patrick_iterate_quad	inherent-linear+substitution	NOT-INDEX	500500 interpreted iterations	compact substitution and lower per-step overhead
+he_minimalmetta	inherent-linear+substitution	NOT-INDEX	division by repeated subtraction takes 70000 iterations	compact substitution and lower per-step overhead
+holbenchmark	term/substitution-growth	NOT-INDEX	large higher-order range/map/fold terms; constant-space term control has the same curve	compact substitution and term sharing
+nars_tuffy	inference-search	NOT-INDEX	choice-point growth over NARS inference rules	search-state sharing/tabling and rule dispatch profiling
+pln_roman	inference-search	NOT-INDEX	PLN query/search path, not a growing fact-base scan	search-state sharing/tabling
+pln_tuffy	inference-search	NOT-INDEX	quantified PLN search and alternative growth	search-state sharing/tabling

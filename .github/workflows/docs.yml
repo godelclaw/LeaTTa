@@ -1,0 +1,95 @@
+# SPDX-FileCopyrightText: 2026 MesTTo
+# SPDX-License-Identifier: Apache-2.0
+
+name: Deploy the LeaTTa book and API docs to GitHub Pages
+
+# Builds two things and publishes them as one GitHub Pages site:
+#   * the Verso book (book/), served at the site root;
+#   * the doc-gen4 API reference (docbuild/), served at /api.
+# The book does not depend on Mathlib and builds quickly. The API build elaborates the
+# whole development, so it fetches the prebuilt Mathlib cache first.
+#
+# One-time setup: in Settings > Pages, set "Source" to "GitHub Actions".
+
+on:
+  push:
+    branches: [main, master, metatheory]
+    paths:
+      - 'book/**'
+      - 'MettaHyperonFull/**'
+      - 'MeTTaIL/**'
+      - 'MeTTaILProofs/**'
+      - 'MeTTaILTests/**'
+      - 'CordialMiners/**'
+      - 'tests/mettail/**'
+      - 'docbuild/**'
+      - 'lakefile.lean'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Build the book library
+        working-directory: book
+        run: lake build Docs 2>&1 | tee book-build.log
+
+      - name: No unreviewed book build warnings
+        run: scripts/ci/check-book-warnings.sh book/book-build.log
+
+      - name: Build the book site
+        working-directory: book
+        run: lake exe docs 2>&1 | tee book-docs.log
+
+      - name: No unreviewed book generation warnings
+        run: scripts/ci/check-book-warnings.sh book/book-docs.log
+
+      - name: Fetch the prebuilt Mathlib cache (shared with the API build)
+        run: lake exe cache get
+
+      - name: Build the API documentation (doc-gen4)
+        working-directory: docbuild
+        run: lake build MettaHyperonFull:docs Metatheory:docs Operational:docs MeTTaIL:docs MeTTaILProofs:docs CordialMiners:docs
+
+      - name: Trim API docs for hosting (retarget Mathlib links, drop local Mathlib tree)
+        working-directory: docbuild
+        run: ./finalize-docs.sh .lake/build/doc
+
+      - name: Assemble the site (book at root, API reference at /api)
+        run: |
+          mkdir -p book/_out/html-multi/api
+          cp -r docbuild/.lake/build/doc/. book/_out/html-multi/api/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: book/_out/html-multi
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

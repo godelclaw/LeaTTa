@@ -1,0 +1,34 @@
+/.lake/
+*.olean
+/dist/
+/book/.lake/
+/book/_out/
+/docbuild/.lake/
+/.playwright-mcp/
+/leatta-*.png
+/leatta-*.jpeg
+diffbench/__pycache__/
+*.pyc
+
+# diffbench transient artifacts (never commit)
+diffbench/repos/
+diffbench/run-*.log
+diffbench/*.out
+diffbench/coverage-*-current.tsv
+
+# local-only working files, not for publication
+/AGENTS.md
+/CLAUDE.md
+/repos/
+
+# WIP profiling/diagnostic dumps (callgrind embeds local paths)
+*.callgrind
+*.valgrind
+*.log
+.perf2-*.log
+
+# trusted-host live transcripts (may contain host paths; only synthetic ones publishable)
+diffbench/host-transcripts/
+
+# internal goal pointer (local path, not for publication)
+GOAL-PLEATTA.md

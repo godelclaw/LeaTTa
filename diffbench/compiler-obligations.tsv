@@ -1,0 +1,163 @@
+# pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
+# compiler_sha256=a4746e61d863b31aaf149acb26b558eb6babdcb9e7f76a77fd6612716a093b6f
+# class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
+# proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
+# status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
+# native_source: T=src/translator.pl M=src/metta.pl F=src/filereader.pl S=src/spaces.pl HE=lib/lib_he.metta LS=lib/lib_spaces.metta LP=lib/lib_patrick.metta LT=lib/lib_tabling.metta
+# fail_witness_manifest=diffbench/compiler-mismatch-witnesses.tsv
+id	native_source	class	reference	proof	status	finding
+EX.fuel0	-	P	-	N	GAP	explicit-fuel-totalization
+EX.variable	T96	X	TranslatesExpr.literal	SC	PASS	covered
+EX.symbol	T96	X	TranslatesExpr.literal	SC	PASS	boolean-representation-related
+EX.ground	T96	X	TranslatesExpr.literal	SC	PASS	int-float-string-bool-only
+EX.empty_list	T96	X	TranslatesExpr.literal	SC	PASS	covered
+EX.internal_chain	-	P	-	N	GAP	internal-encoding-not-source
+EX.symbol_head	T97-333	X	-	N	GAP	dispatcher-unproved
+EX.variable_head	T332-333	S	-	N	GAP	callDyn-models-reduce
+EX.compound_head	T97-99,329-333	S	-	N	GAP	static-data-or-callDyn-shortcut
+PAT.fuel0	-	P	-	N	GAP	totalization
+PAT.atomic	T2	X	ConstrainsAtomicPattern	SC	PASS	atomic-source-fragment; host-external-excluded
+PAT.internal_chain	-	P	-	N	GAP	internal-encoding
+PAT.cons	T3-8	X	ConstrainsPattern	SC	PASS	atomic-recursive-cons-fragment; proper-and-dotted; function-child-and-dotted-observation-bridges-open
+PAT.known_head	T9-12	X	-	N	GAP	native-fun-premise-unproved
+PAT.special_only	T2-14	S	-	N	FAIL	unregistered-special-heads-compiled
+PAT.data_tree	T13-14	X	-	N	GAP	no-pattern-reference
+HOOK.registered	T101-110	X	-	N	GAP	builtin-shadowing-differential-pass; typed-staging-proof-open
+CASE.nil	T399-406	S	-	N	GAP	explicit-failure-goal
+CASE.empty_arm	T163-176,T399-406	S	-	N	GAP	default-handling-unproved
+CASE.normal_arm	T399-406	S	-	N	GAP	softcut-IR-unproved
+CASE.malformed	T399-406	X	-	N	GAP	explicit-error-vs-native-failure
+ARGS.nil	T362	X	TranslatesTypedArgs	SC	PASS	exact empty-mode-and-source traversal; pinned surplus-type tolerance is behaviorally probed but not represented by this relation
+ARGS.expression_typed	T363-365	X	TranslatesTypedArgs	SC	PASS	deep-source-quotation; no-goals-or-counter-change
+ARGS.evaluated	T365-367	X	TranslatesTypedArgs	SC	PASS	Undefined-or-Atom-value-mode; ordered-translation
+ARGS.evaluated_refined	T365-370	X	TranslatesTypedArgs	SC	PASS	simple-symbol softcut get-type/get-metatype; exact-order-counter
+ARGS.evaluated_refined_compound	T365-370	X	TranslatesFreshTypedArgs	SC	PASS	independent recursive Term.list representation agrees with deep chainify; branch-local dependent variables, carry template, checked input/result arms, exact ordered goals and counters proved sound/complete
+LIST.nil	T409	X	TranslatesArgs	SC	PASS	empty-ordered-traversal
+LIST.cons	T410-412	X	TranslatesArgs	SC	PASS	supported-expressions-left-to-right; exact-terms-goals-counter
+PATLIST.nil	T20-22	X	ConstrainsPatternSeq	SC	PASS	recursive-fragment-empty-traversal
+PATLIST.cons	T20-22	X	ConstrainsPatternSeq	SC	PASS	atomic-and-cons-members-left-to-right; function-and-data-patterns-open
+APP.quote	T297-299	X	TranslatesExpr.quote	SC	PASS	covered
+APP.Predicate	M275	H	-	N	BOUNDARY	typed-wrapper
+APP.translatePredicate	T271-275	H	-	N	BOUNDARY	ownership-dispatch
+APP.callPredicate	M276	H	-	N	BOUNDARY	ownership-dispatch
+APP.assertaPredicate	M278	H	-	N	BOUNDARY	world-action
+APP.assertzPredicate	M277	H	-	N	BOUNDARY	world-action
+APP.retractPredicate	M279-280	H	-	N	BOUNDARY	world-action
+APP.process_metta_string	F12-18	H	-	N	BOUNDARY	runtime-loader-world-action
+APP.unquote_quote	HE64-67	L	-	EQ	FAIL	hardcoded-without-library-and-cut
+APP.unquote_other	HE64-67	L	-	N	FAIL	library-presence-not-modeled
+APP.empty	M105-106,T310-346	S	TranslatesEmpty.call	BC	PASS	independent dispatch rule; arbitrary unobservable native result; ordered empty-answer equivalence; compiler soundness/completeness; sealed terminal failure step
+APP.cut	T117-118	X	TranslatesExpr.cut	SC	PASS	covered
+APP.test	T119-126,M205-209	S	-	N	GAP	internal-test-results-helper
+APP.trace	T73-75,T91-110	X	TranslatesTrace.rewrite	SC	PASS	pre-hook stream rewrite; rewritten progn and println priorities explicit; left-to-right result-goal-counter soundness/completeness
+APP.and_then	T177-180	X	TranslatesExpr.andThen	SC	PASS	nested-conjunction flattening; identity-test; branch-goal-order; exact-counter; runtime-positive-and-shadowing-witnesses
+APP.or_else	T181-183	X	TranslatesExpr.orElse	SC	PASS	nested-conjunction flattening; identity-test; branch-goal-order; exact-counter; runtime-positive-and-shadowing-witnesses
+APP.hash_plus	M53,M316	S	-	EQ	FAIL	ordinary-plus-not-CLPFD; float-domain-divergence-witnessed; unbound-relational-probe-agrees
+APP.hash_minus	M54,M316	S	-	EQ	FAIL	ordinary-minus-not-CLPFD; float-domain-divergence-witnessed; unbound-relational-probe-agrees
+APP.cons	M145,T3-8	S	-	N	GAP	direct-structural-constructor
+APP.if2	T151-155,T394-397	S	TranslatesExpr.ifThen	SC	GAP	compiler-sound-complete-for-explicit-alias-normalization; bidirectional ordered substitution simulation and proved unification primitive preserve answer order/multiplicity; one parametric variable-valued true-branch family now uses the source-facing fresh compiler, runs in the independent ordered semantics, and reaches the same singleton integer observation through actual Step; universal if-to-Step bisimulation and predicate-call instance remain open; runtime-alias-differential-pass
+APP.if3	T156-162,T394-397	S	TranslatesExpr.ifThenElse	SC	GAP	compiler-sound-complete-for-explicit-alias-normalization; bidirectional ordered substitution simulation, proved unification primitive, and concrete call-free alias-prefix bisimulation preserve answer order/multiplicity; predicate-call instance and executable Step bisimulation open; runtime-cross-branch-differential-pass
+APP.let	T185-188	X	TranslatesExpr.letBind	SC	PASS	covered
+APP.let_star	T189-190,T384-386	X	TranslatesLetStar	SC	PASS	well-formed-nonempty-over-supported-nested-fragment; empty-and-malformed-rejected
+APP.case	T163-176,T399-406	S	-	N	GAP	order-failure-binding-proof-missing
+APP.collapse	T115-116	X	TranslatesExpr.collapse	SC	PASS	covered
+APP.once	T127-128	S	TranslatesOnce.wrap	SH	GAP	fresh-capture-equivalence-unproved
+APP.superpose_literal	T112-114,T419-422	X	TranslatesExpr.superposeLiterals+RejectsExpr.emptySuperpose	SC	PASS	nonempty-literal-and-empty-rejection-fragments-sound-complete
+APP.superpose_general	T112-114,T394-397,T414-422	X	TranslatesExpr.superposeBranches+TranslatesSuperposeBranches+BuildsBranchNormalized	SC	GAP	local-branch-relation-sound-complete; whole-expression-alias-finalization-behavior-agrees; independent-finalization-theorem-open
+APP.unify_self	HE24-31	L	-	N	GAP	specialized-library-definition
+APP.unify_general	HE32-35	L	-	N	GAP	specialized-library-definition
+APP.succeedsPredicate	LS15-20	L	-	N	FAIL	incorrectly-restricted-to-space-shape
+APP.for	LP14-18	L	-	N	GAP	hardcoded-hook-macro
+APP.chain	T185-188	X	TranslatesExpr.chainBind	SC	PASS	source-order-fixed-at-0dd4454
+APP.foldall	T208-223	S	-	N	FAIL	wrong-translation-order-and-listified-execution
+APP.forall	T194-207	S	-	N	FAIL	streaming-generator-replaced-by-findall
+APP.progn	T141-144	X	TranslatesExpr.progn	SC	PASS	nonempty-covered
+APP.prog1	T145-149	X	TranslatesExpr.prog1	SC	PASS	nonempty-covered
+APP.with_mutex	T136-137	S	TranslatesWithMutex.wrap	BC	PASS	sequential-observation-model
+APP.transaction	T138-139	S	-	N	GAP	transaction-goal-reference-unused
+APP.superpose_computed	M105,T310-346	S	-	N	GAP	spread-shortcut
+APP.hyperpose_literal	T129-135,T424-427	S	-	N	GAP	concurrency-erased-and-order-fixed
+APP.hyperpose_computed	T129-135,T429-431	S	-	N	GAP	spread-plus-evalg
+APP.unique	T76-77	X	-	N	GAP	exact-rewrite-value-differential-pass; independent-rule-open
+APP.union	T80-82	X	TranslatesBinaryStream	SC	GAP	nonempty-literal-branch-fragment-sound-complete; empty-and-effectful-branches-open
+APP.intersection	T83-85	X	TranslatesBinaryStream	SC	GAP	nonempty-literal-branch-fragment-sound-complete; empty-and-effectful-branches-open
+APP.subtraction	T86-88	X	TranslatesBinaryStream	SC	GAP	nonempty-literal-branch-fragment-sound-complete; empty-and-effectful-branches-open
+APP.eval	T293-295	S	-	N	FAIL	precompiles-code-argument
+APP.catch	T300-308	X	-	N	GAP	catch-goal-agreement-missing
+APP.call	T278-283	S	-	N	GAP	superpose-dispatch-runtime-pass; general-typed-argument-staging-unproved
+APP.reduce	T285-291	S	-	N	FAIL	incorrectly-aliased-to-eval
+APP.get_type_space	HE77-78	L	-	N	GAP	hardcoded-library-definition
+APP.get_atoms	S66-69	S	-	N	GAP	space-primitive-lowered-to-smatch
+APP.get_type	M172-183	S	-	N	GAP	builtin-dispatch
+APP.get_metatype	M184-191	S	-	N	GAP	builtin-dispatch
+APP.match3	T266-269,S43-63	X	-	N	GAP	space-goal-agreement-missing
+APP.find	LS8-12	L	-	N	GAP	specialized-library-definition
+APP.match2	T335-346	S	-	N	GAP	partial-value-shortcut
+APP.size_constraint_int	M41,M139	P	-	N	GAP	compiler-optimization-not-pinned-clause
+APP.size_constraint_nonint	M41,M139	P	-	N	FAIL	explicit-error-vs-generic-native-behavior
+APP.boolean_unify	M43	S	-	N	GAP	softcut-implementation
+APP.add_atom_rule	T263-265,S10-23	S	-	N	FAIL	evaluates-space-native-passes-raw
+APP.add_atom_other	T263-265,S10-23	S	-	N	FAIL	evaluates-space-native-passes-raw
+APP.remove_atom_rule	T263-265,S26-41	S	-	N	FAIL	evaluates-space-native-passes-raw
+APP.remove_atom_other	T263-265,S26-41	S	-	N	FAIL	evaluates-space-native-passes-raw
+APP.bind_new_state	M246	S	-	N	FAIL	redispatch-can-hit-change-state-hook
+APP.bind_other	M246	S	-	N	GAP	explicit-failure-shortcut
+APP.get_state	M248	S	-	N	GAP	world-action
+APP.change_state	M247	S	-	N	GAP	world-action
+FALLBACK.prolog_function	M274,T310-346	H	-	N	BOUNDARY	typed-SWI-boundary
+FALLBACK.typed_branches	T317-370	S	TranslatesTypedBranches	N	GAP	outer defined-dispatch composition remains: executable collection is now sound/complete for ordered findall candidates and strict list_to_set dedup (closed duplicates collapse; open copies retain multiplicity), and recursive compound types are covered; nonempty/typed-priority premises, head-prefix goals, pre-bound partial heads, initial shared-result allocation, and final amb wrapping remain
+FALLBACK.typed_branch_fold	T320-321,T335-370	S	TranslatesTypedBranches	SC	GAP	raw branch-construction fold is sound/complete and preserves source-chain order/multiplicity, including compound/dependent types; independent shared-result semantics now has incremental MGU composition plus exact ordered instantiation for a nontrivial two-branch unary partial/2 alias, connected to the constructive executable resolution and source/generated-name bridge for empty branch-local goals; arbitrary arity and term shapes, reverse source-to-generated alias orientation, general goal-substitution transport, a general executable-fold-to-semantic-MGU theorem, prefix goals, pre-bound partial heads, collection, and final disjunction wrapping remain open
+FALLBACK.typed_empty_direct	T335-346	X	-	N	GAP	arity-fallback-unproved
+FALLBACK.typed_empty_partial	T335-346	X	-	N	GAP	partial-representation-unproved
+FALLBACK.defined_direct	T312-346	X	TranslatesDefinedCall	SC	PASS	direct-call-proved and composed with independently specified untyped source registration; ordinary-head priority explicit; typed-dispatch-and-imported-ownership-excluded
+FALLBACK.defined_partial	T335-346	X	TranslatesDefinedPartial	SC	PASS	incomplete-arity partial value proved and composed with independently specified untyped source registration; ordered arguments preserved; no fresh result or call goal
+FALLBACK.bin_fixed_direct	T312-346,M34-50,M97-99,M109,M145-165,M309-323	S	TranslatesBinaryBuiltin.call	SC	PASS	independent-24-function binary family; hook/internal-#c/ownership/arity priority explicit; left-to-right terms-goals-counter soundness and completeness; primitive execution semantics remains a Step-bisimulation obligation
+FALLBACK.bin_fixed_unary	T310-346,M28-31,M114,M139-143,M193-200,M309-323	S	TranslatesUnaryBuiltin.call	SC	PASS	independent-eleven-function-family; stream-rewrite-hook-ownership-arity-priority explicit; left-to-right goal-term-counter soundness/completeness; direct runtime differential including Prolog atom rendering
+FALLBACK.bin_fixed_println	T310-346,M198-200,M306-312	S	TranslatesUnaryBuiltin.call	SC	PASS	unary value-mode println fragment; ownership-priority and fixed arity explicit; typed host execution remains a declared boundary
+FALLBACK.bin_fixed_partial	T335-346	S	-	N	GAP	internal-partial
+FALLBACK.bin_variadic	T312-346	S	-	N	GAP	internal-builtin
+FALLBACK.unknown_dynamic	T332-333,M50-64	S	-	N	GAP	deferred-runtime-classification
+FALLBACK.unknown_data	T325-331	X	-	N	GAP	data-chain-unproved
+RULE.dynamic_unknown_false	T18-34	S	-	N	GAP	translation-time-environment-shortcut
+RULE.patterns	T2-14,T18-22	X	-	N	GAP	no-clause-reference
+RULE.body	T25	X	-	N	GAP	no-clause-reference
+RULE.partial_complete	T26-30	S	-	N	GAP	arity-environment-replaces-current-predicate
+RULE.partial_incomplete	T30-34	X	-	N	GAP	no-clause-reference
+RULE.normal	T30-34	X	-	N	GAP	no-clause-reference
+DESUGAR.quote_exact	T297-299	X	-	N	GAP	runtime-differential-pass; independent-opacity-proof-open
+DESUGAR.lambda_list	T244-261	S	-	N	FAIL	prepass-before-translator-hook-priority
+DESUGAR.lambda_var	T244-261	S	-	N	FAIL	extended-lambda-shape-before-translator-hook-priority
+DESUGAR.map5	T232-237	S	-	N	FAIL	prepass-before-translator-hook-priority
+DESUGAR.filter5	T238-243	S	-	N	FAIL	prepass-before-translator-hook-priority
+DESUGAR.foldl5	T225-231	S	-	N	FAIL	prepass-before-translator-hook-priority
+DESUGAR.expression_walk	-	P	-	N	FAIL	quote-barrier-fixed; other-data-barriers-unproved
+DESUGAR.leaf	-	P	-	N	GAP	identity-helper
+PROGRAM.static_predesugar	F13-45,T225-261	S	-	N	FAIL	rewrites-before-source-processing; quote-barrier-fixed
+PROGRAM.static_split_bang	F13-24	X	-	N	GAP	loader-reference-missing
+PROGRAM.static_partition	F20-45	S	-	N	GAP	groups-rules-and-queries-not-source-order
+PROGRAM.static_compile_rules	F36-44	S	-	N	GAP	program-reference-missing
+PROGRAM.static_compile_queries	F31-35	S	-	N	GAP	program-reference-missing
+PROGRAM.generated_name_freshness	T18-34,T96-110	X	EncodingInjectiveOn	SH	GAP	source-high-water seed, source/generated encoding injectivity, all-nine counter monotonicity, and universal output-origin classification proved; composition with construct adequacy remains open; executable differential pass
+SEQ.normalize_host_import	-	H	-	N	BOUNDARY	typed-loader-protocol
+SEQ.normalize_prolog_register	M274	H	-	N	BOUNDARY	typed-registration-protocol
+SEQ.normalize_import_markers	-	P	-	N	GAP	typed-loader-protocol
+SEQ.normalize_atom	T225-261	S	-	N	FAIL	quote-barrier-fixed; other-data-and-hook-order-open
+SEQ.pass1_rule_heads	F20-24	X	RegistersFunction;sourceFunctionRegistry_mkEnv_agrees	SC	PASS	shared transparent collector used by both compiler entry points; source-form recognition and head/arity membership proved both directions; untyped ordinary-dispatch environment composed
+SEQ.import_begin_end	-	H	-	N	BOUNDARY	explicit-boundary
+SEQ.host_import	M286-298	H	-	N	BOUNDARY	explicit-boundary
+SEQ.prolog_register	M274	H	-	N	BOUNDARY	explicit-boundary
+SEQ.pending_add_rule	M301-302	S	-	N	GAP	compile-time-interception
+SEQ.pending_remove_rule	M304	S	-	N	GAP	compile-time-interception
+SEQ.pending_tabled	LT6-11	L	-	N	GAP	hardcoded-library-directive
+SEQ.pending_query	F31-35	X	-	N	GAP	program-reference-missing
+SEQ.bang_marker	F24,F31-35	X	-	N	GAP	split-form-protocol
+SEQ.inline_tabled	LT6-11	L	-	N	GAP	hardcoded-library-directive
+SEQ.inline_add_rule	M301-302	S	-	N	GAP	compile-time-interception
+SEQ.inline_remove_rule	M304	S	-	N	GAP	compile-time-interception
+SEQ.inline_query	F31-35	X	-	N	GAP	program-reference-missing
+SEQ.rule	F36-44,T18-34	X	-	N	GAP	rule-and-program-reference-missing
+SEQ.type_decl	F27-30	S	-	N	GAP	separate-event-shortcut
+SEQ.fact	F27-30	X	-	N	GAP	program-reference-missing
+APP.alpha_unique	T78-79	X	-	N	GAP	exact-rewrite-value-differential-pass; independent-rule-open
+MISS.sealed	T191-192	M	-	N	FAIL	pinned-translation-absent
+MISS.dynamic_lambda_eval	T225-261	M	-	N	FAIL	prepass-only-runtime-code-bypasses-translation

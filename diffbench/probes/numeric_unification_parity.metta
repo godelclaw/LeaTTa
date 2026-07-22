@@ -1,0 +1,12 @@
+(= (numeric-head 1) integer-clause)
+(= (numeric-head 1.0) float-clause)
+(= (numeric-nested (box 1)) nested-integer-clause)
+(= (numeric-nested (box 1.0)) nested-float-clause)
+(= (numeric-alias $x $x) same-numeric-term)
+
+!(numeric-head 1)
+!(numeric-head 1.0)
+!(numeric-nested (box 1))
+!(numeric-nested (box 1.0))
+!(numeric-alias 1 1)
+!(numeric-alias 1 1.0)

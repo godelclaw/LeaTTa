@@ -1,0 +1,15 @@
+pln_direct.metta	IN		DIFF-COUNT	7	4
+plntest.metta	IN		AGREE	1	1
+plntestdirect.metta	IN		LEATTA-TIMEOUT	1	
+test_stv_match.metta	IN		AGREE	2	2
+test_deduce_raw.metta	IN		AGREE	3	3
+test_evidence_kind_inline.metta	IN		AGREE	5	5
+hyperpose_primes.metta	IN		DIFF-COUNT	3	6
+chain.metta	IN		AGREE	2	2
+foldallspacecount.metta	IN		AGREE	1	1
+matespace.metta	IN		LEATTA-TIMEOUT	1	
+matespace2.metta	IN		DIFF-VAL	1	1
+spaces_find.metta	IN		DIFF-COUNT	1	2
+
+# corpus=12 in-fragment=12 (100%) agree=6/12 (50% of in-fragment)
+# in-fragment verdicts: {'DIFF-COUNT': 3, 'AGREE': 6, 'LEATTA-TIMEOUT': 2, 'DIFF-VAL': 1}
