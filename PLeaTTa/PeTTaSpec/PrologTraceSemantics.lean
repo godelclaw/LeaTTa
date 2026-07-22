@@ -26,12 +26,12 @@ The existing complete-list `Ordered.Runs` relation remains useful as a
 terminating projection.  It is not the foundation for cut, effects, exceptions,
 or divergence.
 
-This first tranche proves only the generic leftmost search and *cut* control
-layer.  `raised` is observable but is not caught here; exception handlers,
-findall collectors, transactions, logical-update snapshots, and explicit
-provider/session-state threading are separate open obligations.  Until that
-stateful interface lands, an imported protocol instance is only an exact-trace
-assumption, never a theorem that its opaque cursors implement those invariants.
+This tranche proves the generic leftmost search and *cut* control layer with
+explicit non-backtrackable provider/session state.  `raised` is observable and
+unwinds structural choices with cursor cleanup, but catch handlers, findall
+collectors, and transactions remain separate open obligations.  An imported
+protocol instance is still only an exact-trace assumption, never a theorem
+that its opaque cursors implement those invariants.
 -/
 
 /-- Identity of one dynamically entered *cut* scope.  Exception handlers and
@@ -54,17 +54,42 @@ inductive PullResult (Token Reply Effect Exception : Type) where
 
 /-- Abstract demand-driven meaning of calls not reduced by this control layer.
 
-The protocol exposes three distinct obligations: opening a typed request,
-pulling exactly one ordered result, and pruning a live cursor.  An imported SWI
-worker may instantiate these relations as an explicit trusted boundary.  A
-locally owned predicate must eventually instantiate them with the certified
-clause resolver and MGU development; parameterization does not discharge that
-obligation. -/
+The protocol exposes explicit session transitions for four distinct actions:
+opening a typed request, pulling exactly one ordered result, pruning a live
+cursor, and performing a typed effect.  An imported SWI worker may instantiate
+these relations as an explicit trusted boundary.  A locally owned predicate
+must instantiate them with the certified clause resolver and MGU development;
+parameterization does not discharge that obligation. -/
 structure OrderedCallProtocol
     (Request Token Reply Effect Exception : Type) where
-  openCall : Request → Token → Prop
-  pull : Token → PullResult Token Reply Effect Exception → Prop
-  prune : Token → Prop
+  /-- Explicit non-backtrackable provider/control state.  Local execution uses
+  this for the global fresh high-water and dynamic world; imported providers
+  use it for their transcript/session state. -/
+  Session : Type
+  openCall : Session → Request → Token → Session → Prop
+  pull : Session → Token → PullResult Token Reply Effect Exception →
+    Session → Prop
+  prune : Session → Token → Session → Prop
+  perform : Session → Effect → Session → Prop
+
+namespace OrderedCallProtocol
+
+/-- Lift an old stateless protocol into the explicit-session interface.  The
+unit session is definitionally preserved by every action. -/
+def pure
+    (openCall : Request → Token → Prop)
+    (pull : Token → PullResult Token Reply Effect Exception → Prop)
+    (prune : Token → Prop) :
+    OrderedCallProtocol Request Token Reply Effect Exception where
+  Session := Unit
+  openCall := fun before request token after =>
+    openCall request token ∧ after = before
+  pull := fun before token result after =>
+    pull token result ∧ after = before
+  prune := fun before token after => prune token ∧ after = before
+  perform := fun before _ after => after = before
+
+end OrderedCallProtocol
 
 /-- Observable events.  Lists of these events are ordered traces, not sets:
 answer duplicates and the order of effects remain visible. -/
@@ -249,18 +274,30 @@ def SignalMatches (active : CutScopeId) : CutSignal → Prop
   | .none => True
   | .commit scope => scope = active
 
+/-- Terminal tags remain explicit in machine states.  Completion/failure and
+exceptional termination therefore cannot collapse merely because both stop
+the current process. -/
+inductive Terminal (Exception : Type) where
+  | completed
+  | raised (exception : Exception)
+
 /-- Target of one raw process step. -/
 inductive RawTarget (Request Token Reply Answer Effect Exception : Type) where
-  | halted
+  | terminal (tag : Terminal Exception)
   | running (process : Process Request Token Reply Answer Effect Exception)
 
-/-- Every live cursor in a discarded branch accepts the prune notification.
-Prune-once behavior additionally relies on the open cursor-linearity
-obligation; it is not smuggled into this pointwise predicate. -/
-def AllPrunable
-    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
-    (tokens : List Token) : Prop :=
-  ∀ token, token ∈ tokens → protocol.prune token
+/-- Sequentially prune every live cursor in a discarded branch.  Threading the
+session makes cleanup observable to stateful foreign providers and prevents
+pointwise prune assumptions from laundering incompatible state transitions. -/
+inductive Prunes
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception) :
+    protocol.Session → List Token → protocol.Session → Prop where
+  | nil (session : protocol.Session) : Prunes protocol session [] session
+  | cons (before middle after : protocol.Session) (token : Token)
+      (tokens : List Token)
+      (head : protocol.prune before token middle)
+      (tail : Prunes protocol middle tokens after) :
+      Prunes protocol before (token :: tokens) after
 
 /-- No answer is present in an internal-progress event batch. -/
 def AnswerFree
@@ -275,136 +312,201 @@ may emit several prune events because one commit can discard several live
 cursors while it propagates to its cut boundary. -/
 inductive RawStep
     (protocol : OrderedCallProtocol Request Token Reply Effect Exception) :
+    protocol.Session →
     Process Request Token Reply Answer Effect Exception →
     List (Observation Request Token Answer Effect Exception) →
-    CutSignal → RawTarget Request Token Reply Answer Effect Exception → Prop where
-  | done :
-      RawStep protocol .done [.completed] .none .halted
+    CutSignal → protocol.Session →
+    RawTarget Request Token Reply Answer Effect Exception → Prop where
+  | done (session : protocol.Session) :
+      RawStep protocol session .done [.completed] .none session
+        (.terminal .completed)
   | yield (value : Answer)
-      (next : Process Request Token Reply Answer Effect Exception) :
-      RawStep protocol (.yield value next) [.answer value] .none (.running next)
-  | delay (next : Process Request Token Reply Answer Effect Exception) :
-      RawStep protocol (.delay next) [] .none (.running next)
+      (next : Process Request Token Reply Answer Effect Exception)
+      (session : protocol.Session) :
+      RawStep protocol session (.yield value next) [.answer value] .none
+        session (.running next)
+  | delay (next : Process Request Token Reply Answer Effect Exception)
+      (session : protocol.Session) :
+      RawStep protocol session (.delay next) [] .none session (.running next)
   | emit (value : Effect)
-      (next : Process Request Token Reply Answer Effect Exception) :
-      RawStep protocol (.emit value next) [.effect value] .none (.running next)
-  | raise (exception : Exception) :
-      RawStep protocol (.raise exception) [.raised exception] .none .halted
+      (next : Process Request Token Reply Answer Effect Exception)
+      (before after : protocol.Session) :
+      protocol.perform before value after →
+      RawStep protocol before (.emit value next) [.effect value] .none after
+        (.running next)
+  | raise (exception : Exception) (session : protocol.Session) :
+      RawStep protocol session (.raise exception) [.raised exception] .none
+        session (.terminal (.raised exception))
   | commit (scope : CutScopeId)
-      (next : Process Request Token Reply Answer Effect Exception) :
-      RawStep protocol (.commit scope next) [] (.commit scope) (.running next)
+      (next : Process Request Token Reply Answer Effect Exception)
+      (session : protocol.Session) :
+      RawStep protocol session (.commit scope next) [] (.commit scope) session
+        (.running next)
   | openCall (request : Request) (cursor : Token)
       (next : Token → Process Request Token Reply Answer Effect Exception)
-      (opened : protocol.openCall request cursor) :
-      RawStep protocol (.openCall request next) [.opened request] .none
-        (.running (next cursor))
+      (before after : protocol.Session)
+      (opened : protocol.openCall before request cursor after) :
+      RawStep protocol before (.openCall request next) [.opened request] .none
+        after (.running (next cursor))
   | awaitSilent (scope : CutScopeId) (cursor next : Token)
       (resume : Reply → Process Request Token Reply Answer Effect Exception)
-      (pulled : protocol.pull cursor (.silent next)) :
-      RawStep protocol (.await scope cursor resume) [] .none
+      (before after : protocol.Session)
+      (pulled : protocol.pull before cursor (.silent next) after) :
+      RawStep protocol before (.await scope cursor resume) [] .none after
         (.running (.await scope next resume))
   | awaitReply (scope : CutScopeId) (cursor next : Token) (reply : Reply)
       (resume : Reply → Process Request Token Reply Answer Effect Exception)
-      (pulled : protocol.pull cursor (.reply reply next)) :
-      RawStep protocol (.await scope cursor resume) [] .none
+      (before after : protocol.Session)
+      (pulled : protocol.pull before cursor (.reply reply next) after) :
+      RawStep protocol before (.await scope cursor resume) [] .none after
         (.running (.choice scope (resume reply)
           (.await scope next resume)))
   | awaitEffect (scope : CutScopeId) (cursor next : Token) (effect : Effect)
       (resume : Reply → Process Request Token Reply Answer Effect Exception)
-      (pulled : protocol.pull cursor (.effect effect next)) :
-      RawStep protocol (.await scope cursor resume) [.effect effect] .none
+      (before after : protocol.Session)
+      (pulled : protocol.pull before cursor (.effect effect next) after) :
+      RawStep protocol before (.await scope cursor resume) [.effect effect] .none
+        after
         (.running (.await scope next resume))
   | awaitExhausted (scope : CutScopeId) (cursor : Token)
       (resume : Reply → Process Request Token Reply Answer Effect Exception)
-      (pulled : protocol.pull cursor .exhausted) :
-      RawStep protocol (.await scope cursor resume) [.completed] .none .halted
+      (before after : protocol.Session)
+      (pulled : protocol.pull before cursor .exhausted after) :
+      RawStep protocol before (.await scope cursor resume) [.completed] .none
+        after (.terminal .completed)
   | awaitRaised (scope : CutScopeId) (cursor : Token)
       (resume : Reply → Process Request Token Reply Answer Effect Exception)
       (exception : Exception)
-      (pulled : protocol.pull cursor (.raised exception)) :
-      RawStep protocol (.await scope cursor resume)
-        [.raised exception] .none .halted
+      (before after : protocol.Session)
+      (pulled : protocol.pull before cursor (.raised exception) after) :
+      RawStep protocol before (.await scope cursor resume)
+        [.raised exception] .none after (.terminal (.raised exception))
   | choiceProgress (scope : CutScopeId)
       (left right next : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
-      (step : RawStep protocol left events .none (.running next)) :
-      RawStep protocol (.choice scope left right) events .none
+      (before after : protocol.Session)
+      (step : RawStep protocol before left events .none after (.running next)) :
+      RawStep protocol before (.choice scope left right) events .none after
         (.running (.choice scope next right))
   | choiceComplete (scope : CutScopeId)
       (left right : Process Request Token Reply Answer Effect Exception)
-      (step : RawStep protocol left [.completed] .none .halted) :
-      RawStep protocol (.choice scope left right) [] .none (.running right)
+      (before after : protocol.Session)
+      (step : RawStep protocol before left [.completed] .none after
+        (.terminal .completed)) :
+      RawStep protocol before (.choice scope left right) [] .none after
+        (.running right)
   | choiceRaised (scope : CutScopeId)
       (left right : Process Request Token Reply Answer Effect Exception)
       (exception : Exception)
-      (step : RawStep protocol left [.raised exception] .none .halted) :
-      RawStep protocol (.choice scope left right) [.raised exception] .none .halted
+      (events : List (Observation Request Token Answer Effect Exception))
+      (before middle after : protocol.Session)
+      (step : RawStep protocol before left events .none middle
+        (.terminal (.raised exception)))
+      (pruned : Prunes protocol middle right.liveTokens after) :
+      RawStep protocol before (.choice scope left right)
+        (events ++ right.liveTokens.map Observation.pruned) .none after
+        (.terminal (.raised exception))
   | choiceCommitHere (scope : CutScopeId)
       (left right next : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
-      (step : RawStep protocol left events (.commit scope) (.running next))
-      (prunable : AllPrunable protocol right.liveTokens) :
-      RawStep protocol (.choice scope left right)
+      (before middle after : protocol.Session)
+      (step : RawStep protocol before left events (.commit scope) middle
+        (.running next))
+      (pruned : Prunes protocol middle right.liveTokens after) :
+      RawStep protocol before (.choice scope left right)
         (events ++ right.liveTokens.map Observation.pruned)
-        (.commit scope) (.running next)
+        (.commit scope) after (.running next)
   | choiceCommitOutside (scope other : CutScopeId)
       (different : other ≠ scope)
       (left right next : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
-      (step : RawStep protocol left events (.commit other) (.running next)) :
-      RawStep protocol (.choice scope left right) events (.commit other)
+      (before after : protocol.Session)
+      (step : RawStep protocol before left events (.commit other) after
+        (.running next)) :
+      RawStep protocol before (.choice scope left right) events (.commit other)
+        after
         (.running (.choice scope next right))
   | cutBoundaryProgress (scope : CutScopeId)
       (body next : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
-      (step : RawStep protocol body events .none (.running next)) :
-      RawStep protocol (.cutBoundary scope body) events .none
+      (before after : protocol.Session)
+      (step : RawStep protocol before body events .none after (.running next)) :
+      RawStep protocol before (.cutBoundary scope body) events .none after
         (.running (.cutBoundary scope next))
   | cutBoundaryComplete (scope : CutScopeId)
       (body : Process Request Token Reply Answer Effect Exception)
-      (step : RawStep protocol body [.completed] .none .halted) :
-      RawStep protocol (.cutBoundary scope body) [.completed] .none .halted
+      (before after : protocol.Session)
+      (step : RawStep protocol before body [.completed] .none after
+        (.terminal .completed)) :
+      RawStep protocol before (.cutBoundary scope body) [.completed] .none after
+        (.terminal .completed)
   | cutBoundaryRaised (scope : CutScopeId)
       (body : Process Request Token Reply Answer Effect Exception)
       (exception : Exception)
-      (step : RawStep protocol body [.raised exception] .none .halted) :
-      RawStep protocol (.cutBoundary scope body) [.raised exception] .none .halted
+      (events : List (Observation Request Token Answer Effect Exception))
+      (before after : protocol.Session)
+      (step : RawStep protocol before body events .none after
+        (.terminal (.raised exception))) :
+      RawStep protocol before (.cutBoundary scope body) events .none after
+        (.terminal (.raised exception))
   | cutBoundaryCatch (scope : CutScopeId)
       (body next : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
-      (step : RawStep protocol body events (.commit scope) (.running next)) :
-      RawStep protocol (.cutBoundary scope body) events .none
+      (before after : protocol.Session)
+      (step : RawStep protocol before body events (.commit scope) after
+        (.running next)) :
+      RawStep protocol before (.cutBoundary scope body) events .none after
         (.running (.cutBoundary scope next))
   | cutBoundaryPass (scope other : CutScopeId)
       (different : other ≠ scope)
       (body next : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
-      (step : RawStep protocol body events (.commit other) (.running next)) :
-      RawStep protocol (.cutBoundary scope body) events (.commit other)
+      (before after : protocol.Session)
+      (step : RawStep protocol before body events (.commit other) after
+        (.running next)) :
+      RawStep protocol before (.cutBoundary scope body) events (.commit other)
+        after
         (.running (.cutBoundary scope next))
   | bindAnswer (scope : CutScopeId)
       (head next : Process Request Token Reply Answer Effect Exception)
       (tail : Answer → Process Request Token Reply Answer Effect Exception)
       (answer : Answer)
-      (step : RawStep protocol head [.answer answer] .none (.running next)) :
-      RawStep protocol (.bind scope head tail) [] .none
+      (before after : protocol.Session)
+      (step : RawStep protocol before head [.answer answer] .none after
+        (.running next)) :
+      RawStep protocol before (.bind scope head tail) [] .none after
         (.running (.choice scope (tail answer) (.bind scope next tail)))
   | bindProgress (scope : CutScopeId)
       (head next : Process Request Token Reply Answer Effect Exception)
       (tail : Answer → Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
       (signal : CutSignal)
-      (step : RawStep protocol head events signal (.running next))
+      (before after : protocol.Session)
+      (step : RawStep protocol before head events signal after (.running next))
       (answerFree : AnswerFree events) :
-      RawStep protocol (.bind scope head tail) events signal
+      RawStep protocol before (.bind scope head tail) events signal after
         (.running (.bind scope next tail))
-  | bindHalt (scope : CutScopeId)
+  | bindComplete (scope : CutScopeId)
       (head : Process Request Token Reply Answer Effect Exception)
       (tail : Answer → Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
-      (step : RawStep protocol head events .none .halted)
+      (before after : protocol.Session)
+      (step : RawStep protocol before head events .none after
+        (.terminal .completed))
       (answerFree : AnswerFree events) :
-      RawStep protocol (.bind scope head tail) events .none .halted
+      RawStep protocol before (.bind scope head tail) events .none after
+        (.terminal .completed)
+  | bindRaised (scope : CutScopeId)
+      (head : Process Request Token Reply Answer Effect Exception)
+      (tail : Answer → Process Request Token Reply Answer Effect Exception)
+      (exception : Exception)
+      (events : List (Observation Request Token Answer Effect Exception))
+      (before after : protocol.Session)
+      (step : RawStep protocol before head events .none after
+        (.terminal (.raised exception)))
+      (answerFree : AnswerFree events) :
+      RawStep protocol before (.bind scope head tail) events .none after
+        (.terminal (.raised exception))
 
 namespace RawStep
 
@@ -415,98 +517,110 @@ theorem preserves_wellScoped_target
     {process : Process Request Token Reply Answer Effect Exception}
     {events : List (Observation Request Token Answer Effect Exception)}
     {signal : CutSignal}
+    {before after : protocol.Session}
     {target : RawTarget Request Token Reply Answer Effect Exception}
-    (step : RawStep protocol process events signal target)
+    (step : RawStep protocol before process events signal after target)
     (wellFormed : WellScoped active process) :
     match target with
-    | .halted => True
+    | .terminal _ => True
     | .running next => WellScoped active next := by
   induction step generalizing active with
-  | done => exact True.intro
-  | yield value next =>
+  | done session => exact True.intro
+  | yield value next session =>
       cases wellFormed with
       | yield _ _ _ nextScoped => exact nextScoped
-  | delay next =>
+  | delay next session =>
       cases wellFormed with
       | delay _ _ nextScoped => exact nextScoped
-  | emit value next =>
+  | emit value next before after performed =>
       cases wellFormed with
       | emit _ _ _ nextScoped => exact nextScoped
-  | raise exception => exact True.intro
-  | commit scope next =>
+  | raise exception session => exact True.intro
+  | commit scope next session =>
       cases wellFormed with
       | commit _ _ nextScoped => exact nextScoped
-  | openCall request cursor next opened =>
+  | openCall request cursor next before after opened =>
       cases wellFormed with
       | openCall _ _ _ nextScoped => exact nextScoped cursor
-  | awaitSilent scope cursor next resume pulled =>
+  | awaitSilent scope cursor next resume before after pulled =>
       cases wellFormed with
       | await _ _ _ nextScoped => exact .await scope next resume nextScoped
-  | awaitReply scope cursor next reply resume pulled =>
+  | awaitReply scope cursor next reply resume before after pulled =>
       cases wellFormed with
       | await _ _ _ nextScoped =>
           exact .choice scope (resume reply) (.await scope next resume)
             (nextScoped reply) (.await scope next resume nextScoped)
-  | awaitEffect scope cursor next effect resume pulled =>
+  | awaitEffect scope cursor next effect resume before after pulled =>
       cases wellFormed with
       | await _ _ _ nextScoped => exact .await scope next resume nextScoped
-  | awaitExhausted scope cursor resume pulled => exact True.intro
-  | awaitRaised scope cursor resume exception pulled => exact True.intro
-  | choiceProgress scope left right next events step inductionHypothesis =>
+  | awaitExhausted scope cursor resume before after pulled => exact True.intro
+  | awaitRaised scope cursor resume exception before after pulled =>
+      exact True.intro
+  | choiceProgress scope left right next events before after step
+      inductionHypothesis =>
       cases wellFormed with
       | choice _ _ _ leftScoped rightScoped =>
           exact .choice scope next right
             (inductionHypothesis leftScoped) rightScoped
-  | choiceComplete scope left right step inductionHypothesis =>
+  | choiceComplete scope left right before after step inductionHypothesis =>
       cases wellFormed with
       | choice _ _ _ leftScoped rightScoped => exact rightScoped
-  | choiceRaised scope left right exception step inductionHypothesis =>
+  | choiceRaised scope left right exception events before middle after step
+      pruned inductionHypothesis =>
       exact True.intro
-  | choiceCommitHere scope left right next events step prunable
+  | choiceCommitHere scope left right next events before middle after step pruned
       inductionHypothesis =>
       cases wellFormed with
       | choice _ _ _ leftScoped rightScoped =>
           exact inductionHypothesis leftScoped
-  | choiceCommitOutside scope other different left right next events step
-      inductionHypothesis =>
+  | choiceCommitOutside scope other different left right next events before after
+      step inductionHypothesis =>
       cases wellFormed with
       | choice _ _ _ leftScoped rightScoped =>
           exact .choice scope next right
             (inductionHypothesis leftScoped) rightScoped
-  | cutBoundaryProgress scope body next events step inductionHypothesis =>
-      cases wellFormed with
-      | cutBoundary active _ _ bodyScoped =>
-          exact .cutBoundary active scope next
-            (inductionHypothesis bodyScoped)
-  | cutBoundaryComplete scope body step inductionHypothesis =>
-      exact True.intro
-  | cutBoundaryRaised scope body exception step inductionHypothesis =>
-      exact True.intro
-  | cutBoundaryCatch scope body next events step inductionHypothesis =>
-      cases wellFormed with
-      | cutBoundary active _ _ bodyScoped =>
-          exact .cutBoundary active scope next
-            (inductionHypothesis bodyScoped)
-  | cutBoundaryPass scope other different body next events step
+  | cutBoundaryProgress scope body next events before after step
       inductionHypothesis =>
       cases wellFormed with
       | cutBoundary active _ _ bodyScoped =>
           exact .cutBoundary active scope next
             (inductionHypothesis bodyScoped)
-  | bindAnswer scope head next tail answer step inductionHypothesis =>
+  | cutBoundaryComplete scope body before after step inductionHypothesis =>
+      exact True.intro
+  | cutBoundaryRaised scope body exception events before after step
+      inductionHypothesis =>
+      exact True.intro
+  | cutBoundaryCatch scope body next events before after step
+      inductionHypothesis =>
+      cases wellFormed with
+      | cutBoundary active _ _ bodyScoped =>
+          exact .cutBoundary active scope next
+            (inductionHypothesis bodyScoped)
+  | cutBoundaryPass scope other different body next events before after step
+      inductionHypothesis =>
+      cases wellFormed with
+      | cutBoundary active _ _ bodyScoped =>
+          exact .cutBoundary active scope next
+            (inductionHypothesis bodyScoped)
+  | bindAnswer scope head next tail answer before after step
+      inductionHypothesis =>
       cases wellFormed with
       | bind _ _ _ headScoped tailScoped =>
           exact .choice scope (tail answer) (.bind scope next tail)
             (tailScoped answer)
             (.bind scope next tail
               (inductionHypothesis headScoped) tailScoped)
-  | bindProgress scope head next tail events signal step answerFree
+  | bindProgress scope head next tail events signal before after step answerFree
       inductionHypothesis =>
       cases wellFormed with
       | bind _ _ _ headScoped tailScoped =>
           exact .bind scope next tail
             (inductionHypothesis headScoped) tailScoped
-  | bindHalt scope head tail events step answerFree inductionHypothesis =>
+  | bindComplete scope head tail events before after step answerFree
+      inductionHypothesis =>
+      exact True.intro
+  | bindRaised scope head tail exception events before after step answerFree
+      inductionHypothesis =>
       exact True.intro
 
 /-- Any running successor of a well-scoped process is well-scoped at the same
@@ -518,7 +632,8 @@ theorem preserves_wellScoped
     {process next : Process Request Token Reply Answer Effect Exception}
     {events : List (Observation Request Token Answer Effect Exception)}
     {signal : CutSignal}
-    (step : RawStep protocol process events signal (.running next))
+    {before after : protocol.Session}
+    (step : RawStep protocol before process events signal after (.running next))
     (wellFormed : WellScoped active process) :
     WellScoped active next :=
   preserves_wellScoped_target protocol step wellFormed
@@ -533,8 +648,9 @@ theorem signal_matches_active
     {process : Process Request Token Reply Answer Effect Exception}
     {events : List (Observation Request Token Answer Effect Exception)}
     {signal : CutSignal}
+    {before after : protocol.Session}
     {target : RawTarget Request Token Reply Answer Effect Exception}
-    (step : RawStep protocol process events signal target)
+    (step : RawStep protocol before process events signal after target)
     (wellFormed : WellScoped active process) :
     SignalMatches active signal := by
   induction step generalizing active <;> cases wellFormed <;>
@@ -550,56 +666,161 @@ theorem no_foreign_commit
     {active other : CutScopeId}
     {process : Process Request Token Reply Answer Effect Exception}
     {events : List (Observation Request Token Answer Effect Exception)}
+    {before after : protocol.Session}
     {target : RawTarget Request Token Reply Answer Effect Exception}
-    (step : RawStep protocol process events (.commit other) target)
+    (step : RawStep protocol before process events (.commit other) after target)
     (wellFormed : WellScoped active process)
     (different : other ≠ active) : False :=
   different (signal_matches_active protocol step wellFormed)
 
+/-- Sequential pruning preserves every monotone measure admitted by one prune
+operation. -/
+theorem prunes_measure_mono
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (measure : protocol.Session → Nat)
+    (pruneMono : ∀ before token after,
+      protocol.prune before token after → measure before ≤ measure after)
+    {before after : protocol.Session} {tokens : List Token}
+    (pruned : Prunes protocol before tokens after) :
+    measure before ≤ measure after := by
+  induction pruned with
+  | nil => exact Nat.le_refl _
+  | cons before middle after token tokens head tail inductionHypothesis =>
+      exact Nat.le_trans (pruneMono before token middle head)
+        inductionHypothesis
+
+/-- Generic rely/guarantee lifting: if each protocol action is monotone in a
+session measure, every structural control step is monotone too.  Choice,
+backtracking, cut, and exception unwinding cannot roll state back because the
+session is threaded outside `Process`; cleanup composes through `Prunes`. -/
+theorem session_measure_mono
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (measure : protocol.Session → Nat)
+    (openMono : ∀ before request token after,
+      protocol.openCall before request token after →
+        measure before ≤ measure after)
+    (pullMono : ∀ before token outcome after,
+      protocol.pull before token outcome after →
+        measure before ≤ measure after)
+    (pruneMono : ∀ before token after,
+      protocol.prune before token after → measure before ≤ measure after)
+    (performMono : ∀ before effect after,
+      protocol.perform before effect after → measure before ≤ measure after)
+    {before after : protocol.Session}
+    {process : Process Request Token Reply Answer Effect Exception}
+    {events : List (Observation Request Token Answer Effect Exception)}
+    {signal : CutSignal}
+    {target : RawTarget Request Token Reply Answer Effect Exception}
+    (step : RawStep protocol before process events signal after target) :
+    measure before ≤ measure after := by
+  induction step with
+  | done session => exact Nat.le_refl _
+  | yield value next session => exact Nat.le_refl _
+  | delay next session => exact Nat.le_refl _
+  | emit value next before after performed =>
+      exact performMono before value after performed
+  | raise exception session => exact Nat.le_refl _
+  | commit scope next session => exact Nat.le_refl _
+  | openCall request cursor next before after opened =>
+      exact openMono before request cursor after opened
+  | awaitSilent scope cursor next resume before after pulled =>
+      exact pullMono before cursor (.silent next) after pulled
+  | awaitReply scope cursor next reply resume before after pulled =>
+      exact pullMono before cursor (.reply reply next) after pulled
+  | awaitEffect scope cursor next effect resume before after pulled =>
+      exact pullMono before cursor (.effect effect next) after pulled
+  | awaitExhausted scope cursor resume before after pulled =>
+      exact pullMono before cursor .exhausted after pulled
+  | awaitRaised scope cursor resume exception before after pulled =>
+      exact pullMono before cursor (.raised exception) after pulled
+  | choiceProgress scope left right next events before after step
+      inductionHypothesis => exact inductionHypothesis
+  | choiceComplete scope left right before after step inductionHypothesis =>
+      exact inductionHypothesis
+  | choiceRaised scope left right exception events before middle after step
+      pruned inductionHypothesis =>
+      exact Nat.le_trans inductionHypothesis
+        (prunes_measure_mono protocol measure pruneMono pruned)
+  | choiceCommitHere scope left right next events before middle after step
+      pruned inductionHypothesis =>
+      exact Nat.le_trans inductionHypothesis
+        (prunes_measure_mono protocol measure pruneMono pruned)
+  | choiceCommitOutside scope other different left right next events before after
+      step inductionHypothesis => exact inductionHypothesis
+  | cutBoundaryProgress scope body next events before after step
+      inductionHypothesis => exact inductionHypothesis
+  | cutBoundaryComplete scope body before after step inductionHypothesis =>
+      exact inductionHypothesis
+  | cutBoundaryRaised scope body exception events before after step
+      inductionHypothesis => exact inductionHypothesis
+  | cutBoundaryCatch scope body next events before after step
+      inductionHypothesis => exact inductionHypothesis
+  | cutBoundaryPass scope other different body next events before after step
+      inductionHypothesis => exact inductionHypothesis
+  | bindAnswer scope head next tail answer before after step
+      inductionHypothesis => exact inductionHypothesis
+  | bindProgress scope head next tail events signal before after step answerFree
+      inductionHypothesis => exact inductionHypothesis
+  | bindComplete scope head tail events before after step answerFree
+      inductionHypothesis => exact inductionHypothesis
+  | bindRaised scope head tail exception events before after step answerFree
+      inductionHypothesis => exact inductionHypothesis
+
 end RawStep
 
-/-- Public machine state.  An escaped cut is recorded rather than silently
-treated as failure; well-scoped compiled calls must surround execution with the
-corresponding cut boundary. -/
-inductive State (Request Token Reply Answer Effect Exception : Type) where
-  | halted
-  | running (process : Process Request Token Reply Answer Effect Exception)
-  | uncaughtCut (scope : CutScopeId)
+/-- Public machine state.  The provider/control session is part of every
+endpoint rather than an invisible parameter of the transition relation.  It
+is therefore non-backtrackable across structural choices.  An escaped cut is
+recorded rather than silently treated as failure; well-scoped compiled calls
+must surround execution with the corresponding cut boundary. -/
+inductive State
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception) where
+  | terminal (session : protocol.Session) (tag : Terminal Exception)
+  | running (session : protocol.Session)
+      (process : Process Request Token Reply Answer Effect Exception)
+  | uncaughtCut (session : protocol.Session) (scope : CutScopeId)
       (continuation : Process Request Token Reply Answer Effect Exception)
 
-private def RawTarget.toState :
+private def RawTarget.toState
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (session : protocol.Session) :
     RawTarget Request Token Reply Answer Effect Exception →
-      State Request Token Reply Answer Effect Exception
-  | .halted => .halted
-  | .running process => .running process
+      State (Answer := Answer) protocol
+  | .terminal tag => .terminal session tag
+  | .running process => .running session process
 
 /-- One top-level transition. -/
 inductive Transition
     (protocol : OrderedCallProtocol Request Token Reply Effect Exception) :
-    State Request Token Reply Answer Effect Exception →
+    State protocol →
     List (Observation Request Token Answer Effect Exception) →
-    State Request Token Reply Answer Effect Exception → Prop where
+    State protocol → Prop where
   | ordinary (process : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
+      (before after : protocol.Session)
       (target : RawTarget Request Token Reply Answer Effect Exception)
-      (step : RawStep protocol process events .none target) :
-      Transition protocol (.running process) events target.toState
+      (step : RawStep protocol before process events .none after target) :
+      Transition protocol (.running before process) events
+        (target.toState protocol after)
   | uncaught (process next : Process Request Token Reply Answer Effect Exception)
       (events : List (Observation Request Token Answer Effect Exception))
+      (before after : protocol.Session)
       (scope : CutScopeId)
-      (step : RawStep protocol process events (.commit scope) (.running next)) :
-      Transition protocol (.running process) events (.uncaughtCut scope next)
+      (step : RawStep protocol before process events (.commit scope) after
+        (.running next)) :
+      Transition protocol (.running before process) events
+        (.uncaughtCut after scope next)
 
 /-- A finite transition prefix.  Event lists compose by append, preserving the
 exact order and multiplicity produced by every step. -/
 inductive Steps
     (protocol : OrderedCallProtocol Request Token Reply Effect Exception) :
-    State Request Token Reply Answer Effect Exception →
+    State protocol →
     List (Observation Request Token Answer Effect Exception) →
-    State Request Token Reply Answer Effect Exception → Prop where
-  | refl (state : State Request Token Reply Answer Effect Exception) :
+    State protocol → Prop where
+  | refl (state : State protocol) :
       Steps protocol state [] state
-  | cons (start middle finish : State Request Token Reply Answer Effect Exception)
+  | cons (start middle finish : State protocol)
       (first rest : List (Observation Request Token Answer Effect Exception))
       (head : Transition protocol start first middle)
       (tail : Steps protocol middle rest finish) :
@@ -610,13 +831,13 @@ the judgment prevents an "arbitrarily long prefix" theorem from being
 vacuously witnessed by reflexivity. -/
 inductive StepsN
     (protocol : OrderedCallProtocol Request Token Reply Effect Exception) :
-    Nat → State Request Token Reply Answer Effect Exception →
+    Nat → State protocol →
     List (Observation Request Token Answer Effect Exception) →
-    State Request Token Reply Answer Effect Exception → Prop where
-  | zero (state : State Request Token Reply Answer Effect Exception) :
+    State protocol → Prop where
+  | zero (state : State protocol) :
       StepsN protocol 0 state [] state
   | succ (count : Nat)
-      (start middle finish : State Request Token Reply Answer Effect Exception)
+      (start middle finish : State protocol)
       (first rest : List (Observation Request Token Answer Effect Exception))
       (head : Transition protocol start first middle)
       (tail : StepsN protocol count middle rest finish) :
@@ -629,7 +850,7 @@ and endpoints in the ordinary finite-prefix relation. -/
 theorem toSteps
     (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     {count : Nat}
-    {start finish : State Request Token Reply Answer Effect Exception}
+    {start finish : State protocol}
     {events : List (Observation Request Token Answer Effect Exception)}
     (execution : StepsN protocol count start events finish) :
     Steps protocol start events finish := by
@@ -672,10 +893,37 @@ theorem RawStep.await_answerFree
     (resume : Reply → Process Request Token Reply Answer Effect Exception)
     {events : List (Observation Request Token Answer Effect Exception)}
     {signal : CutSignal}
+    {before after : protocol.Session}
     {target : RawTarget Request Token Reply Answer Effect Exception}
-    (step : RawStep protocol (.await scope cursor resume) events signal target) :
+    (step : RawStep protocol before (.await scope cursor resume) events signal
+      after target) :
     AnswerFree events := by
   cases step <;> simp [AnswerFree]
+
+/-- Generic inversion for a cursor whose protocol admits only a silent
+self-loop.  Keeping the protocol abstract avoids baking a provider's schedule
+into the control semantics; the conclusion is forced solely by the supplied
+pull contract. -/
+theorem RawStep.await_only_silent
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (scope : CutScopeId) (cursor : Token)
+    (resume : Reply → Process Request Token Reply Answer Effect Exception)
+    (pullOnly : ∀ before result after,
+      protocol.pull before cursor result after →
+        result = .silent cursor ∧ after = before)
+    {before after : protocol.Session}
+    {process : Process Request Token Reply Answer Effect Exception}
+    {events : List (Observation Request Token Answer Effect Exception)}
+    {signal : CutSignal}
+    {target : RawTarget Request Token Reply Answer Effect Exception}
+    (step : RawStep protocol before process events signal after target)
+    (processEq : process = .await scope cursor resume) :
+    events = [] ∧ signal = .none ∧ after = before ∧
+      target = .running (.await scope cursor resume) := by
+  induction step <;> simp_all
+  all_goals
+    have contract := pullOnly _ _ _ ‹protocol.pull _ cursor _ _›
+    simp_all
 
 /-- Specialization for a provider whose replies already are trusted observable
 answers.  This is appropriate for the explicitly trusted imported-SWI lane;
@@ -706,13 +954,17 @@ def orderedPair (first second : Answer) :
 completion, in exactly that order. -/
 theorem orderedPair_steps
     (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
-    (first second : Answer) :
-    Steps protocol (.running (orderedPair first second))
-      [.answer first, .answer second, .completed] .halted := by
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ (.yield first _)) ?_
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ (.yield second _)) ?_
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ .done) ?_
-  exact .refl .halted
+    (session : protocol.Session) (first second : Answer) :
+    Steps protocol (.running session (orderedPair first second))
+      [.answer first, .answer second, .completed]
+      (.terminal session .completed) := by
+  refine .cons _ _ _ _ _
+    (.ordinary _ _ session session _ (.yield first _ session)) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary _ _ session session _ (.yield second _ session)) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary _ _ session session _ (.done session)) ?_
+  exact .refl (.terminal session .completed)
 
 /-- Reversing two distinct answers changes the trace. -/
 theorem answer_order_observable
@@ -744,13 +996,13 @@ theorem exception_is_not_completion (exception : Exception) :
 completion; the list inequality above is therefore reflected operationally. -/
 theorem raised_cannot_complete
     (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
-    (exception : Exception) :
-    ¬ RawStep protocol
+    (session : protocol.Session) (exception : Exception) :
+    ¬ RawStep protocol session
       (Process.raise exception :
         Process Request Token Reply Answer Effect Exception)
       ([Observation.completed] :
         List (Observation Request Token Answer Effect Exception))
-      .none .halted := by
+      .none session (.terminal .completed) := by
   intro step
   cases step
 
@@ -777,67 +1029,75 @@ witness: a semantics that merely concatenated both branches could not derive
 this exact trace. -/
 theorem commitFirst_steps
     (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
-    (first second : Answer) :
-    Steps protocol (.running (commitFirst first second))
-      [.answer first, .completed] .halted := by
-  have prunable : AllPrunable protocol
+    (session : protocol.Session) (first second : Answer) :
+    Steps protocol (.running session (commitFirst first second))
+      [.answer first, .completed] (.terminal session .completed) := by
+  have prunable : Prunes protocol session
       (Process.liveTokens
         (Process.yield second Process.done :
-          Process Request Token Reply Answer Effect Exception)) := by
-    intro token member
-    simp [Process.liveTokens] at member
-  have commitStep : RawStep protocol
+          Process Request Token Reply Answer Effect Exception)) session := by
+    simpa [Process.liveTokens] using (Prunes.nil session)
+  have commitStep : RawStep protocol session
       (Process.cutBoundary 0
         (Process.choice 0
           (Process.commit 0 (Process.yield first Process.done))
           (Process.yield second Process.done)))
-      [] .none
+      [] .none session
       (.running
         (Process.cutBoundary 0 (Process.yield first Process.done))) :=
-    .cutBoundaryCatch 0 _ _ []
-      (.choiceCommitHere 0 _ _ _ [] (.commit 0 _) prunable)
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ commitStep) ?_
+    .cutBoundaryCatch 0 _ _ [] session session
+      (.choiceCommitHere 0 _ _ _ [] session session session
+        (.commit 0 _ session) prunable)
   refine .cons _ _ _ _ _
-    (.ordinary _ _ _ (.cutBoundaryProgress 0 _ _ _ (.yield first _))) ?_
+    (.ordinary _ _ session session _ commitStep) ?_
   refine .cons _ _ _ _ _
-    (.ordinary _ _ _ (.cutBoundaryComplete 0 _ .done)) ?_
-  exact .refl .halted
+    (.ordinary _ _ session session _
+      (.cutBoundaryProgress 0 _ _ _ session session
+        (.yield first _ session))) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary _ _ session session _
+      (.cutBoundaryComplete 0 _ session session (.done session))) ?_
+  exact .refl (.terminal session .completed)
 
 /-- A post-cut effect is not merely hidden from the final answer bag: it is
 never emitted.  An eager implementation that ran the right branch before
 observing the commit therefore has a different trace. -/
 theorem commit_skips_later_effect
     (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
-    (answer : Answer) (effect : Effect) :
+    (session : protocol.Session) (answer : Answer) (effect : Effect) :
     Steps protocol
-      (.running
+      (.running session
         (.cutBoundary 0
           (.choice 0
             (.commit 0 (.yield answer .done))
             (.emit effect .done))))
-      [.answer answer, .completed] .halted := by
-  have prunable : AllPrunable protocol
+      [.answer answer, .completed] (.terminal session .completed) := by
+  have prunable : Prunes protocol session
       (Process.liveTokens
         (Process.emit effect Process.done :
-          Process Request Token Reply Answer Effect Exception)) := by
-    intro token member
-    simp [Process.liveTokens] at member
-  have commitStep : RawStep protocol
+          Process Request Token Reply Answer Effect Exception)) session := by
+    simpa [Process.liveTokens] using (Prunes.nil session)
+  have commitStep : RawStep protocol session
       (Process.cutBoundary 0
         (Process.choice 0
           (Process.commit 0 (Process.yield answer Process.done))
           (Process.emit effect Process.done)))
-      [] .none
+      [] .none session
       (.running
         (Process.cutBoundary 0 (Process.yield answer Process.done))) :=
-    .cutBoundaryCatch 0 _ _ []
-      (.choiceCommitHere 0 _ _ _ [] (.commit 0 _) prunable)
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ commitStep) ?_
+    .cutBoundaryCatch 0 _ _ [] session session
+      (.choiceCommitHere 0 _ _ _ [] session session session
+        (.commit 0 _ session) prunable)
   refine .cons _ _ _ _ _
-    (.ordinary _ _ _ (.cutBoundaryProgress 0 _ _ _ (.yield answer _))) ?_
+    (.ordinary _ _ session session _ commitStep) ?_
   refine .cons _ _ _ _ _
-    (.ordinary _ _ _ (.cutBoundaryComplete 0 _ .done)) ?_
-  exact .refl .halted
+    (.ordinary _ _ session session _
+      (.cutBoundaryProgress 0 _ _ _ session session
+        (.yield answer _ session))) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary _ _ session session _
+      (.cutBoundaryComplete 0 _ session session (.done session))) ?_
+  exact .refl (.terminal session .completed)
 
 /-- A well-scoped nested cut: the inner commit discards only the later inner
 branch, while the sibling alternative in the enclosing scope remains live. -/
@@ -877,67 +1137,77 @@ scope.  The selected inner answer and the outer answer both remain observable,
 whereas the later answer in the inner scope is absent. -/
 theorem inner_cut_preserves_outer_sibling_steps
     (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
-    (selected skipped outer : Answer) :
+    (session : protocol.Session) (selected skipped outer : Answer) :
     Steps protocol
-      (.running (innerCommitWithOuterSibling selected skipped outer))
-      [.answer selected, .answer outer, .completed] .halted := by
-  have innerPrunable : AllPrunable protocol
+      (.running session
+        (innerCommitWithOuterSibling selected skipped outer))
+      [.answer selected, .answer outer, .completed]
+      (.terminal session .completed) := by
+  have innerPrunable : Prunes protocol session
       (Process.liveTokens
         (Process.yield skipped Process.done :
-          Process Request Token Reply Answer Effect Exception)) := by
-    intro token member
-    simp [Process.liveTokens] at member
-  have innerCommit : RawStep protocol
+          Process Request Token Reply Answer Effect Exception)) session := by
+    simpa [Process.liveTokens] using (Prunes.nil session)
+  have innerCommit : RawStep protocol session
       (Process.cutBoundary 1
         (Process.choice 1
           (Process.commit 1 (Process.yield selected Process.done))
           (Process.yield skipped Process.done)))
-      [] .none
+      [] .none session
       (.running
         (Process.cutBoundary 1 (Process.yield selected Process.done))) :=
-    .cutBoundaryCatch 1 _ _ []
-      (.choiceCommitHere 1 _ _ _ [] (.commit 1 _) innerPrunable)
-  have firstStep : RawStep protocol
+    .cutBoundaryCatch 1 _ _ [] session session
+      (.choiceCommitHere 1 _ _ _ [] session session session
+        (.commit 1 _ session) innerPrunable)
+  have firstStep : RawStep protocol session
       (innerCommitWithOuterSibling selected skipped outer)
-      [] .none
+      [] .none session
       (.running
         (.cutBoundary 0
           (.choice 0
             (.cutBoundary 1 (.yield selected .done))
             (.yield outer .done)))) :=
-    .cutBoundaryProgress 0 _ _ []
-      (.choiceProgress 0 _ _ _ [] innerCommit)
-  have secondStep : RawStep protocol
+    .cutBoundaryProgress 0 _ _ [] session session
+      (.choiceProgress 0 _ _ _ [] session session innerCommit)
+  have secondStep : RawStep protocol session
       (.cutBoundary 0
         (.choice 0
           (.cutBoundary 1 (.yield selected .done))
           (.yield outer .done)))
-      [.answer selected] .none
+      [.answer selected] .none session
       (.running
         (.cutBoundary 0
           (.choice 0
             (.cutBoundary 1 .done)
             (.yield outer .done)))) :=
-    .cutBoundaryProgress 0 _ _ _
-      (.choiceProgress 0 _ _ _ _
-        (.cutBoundaryProgress 1 _ _ _ (.yield selected _)))
-  have thirdStep : RawStep protocol
+    .cutBoundaryProgress 0 _ _ _ session session
+      (.choiceProgress 0 _ _ _ _ session session
+        (.cutBoundaryProgress 1 _ _ _ session session
+          (.yield selected _ session)))
+  have thirdStep : RawStep protocol session
       (.cutBoundary 0
         (.choice 0
           (.cutBoundary 1 .done)
           (.yield outer .done)))
-      [] .none
+      [] .none session
       (.running (.cutBoundary 0 (.yield outer .done))) :=
-    .cutBoundaryProgress 0 _ _ []
-      (.choiceComplete 0 _ _ (.cutBoundaryComplete 1 _ .done))
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ firstStep) ?_
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ secondStep) ?_
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ thirdStep) ?_
+    .cutBoundaryProgress 0 _ _ [] session session
+      (.choiceComplete 0 _ _ session session
+        (.cutBoundaryComplete 1 _ session session (.done session)))
   refine .cons _ _ _ _ _
-    (.ordinary _ _ _ (.cutBoundaryProgress 0 _ _ _ (.yield outer _))) ?_
+    (.ordinary _ _ session session _ firstStep) ?_
   refine .cons _ _ _ _ _
-    (.ordinary _ _ _ (.cutBoundaryComplete 0 _ .done)) ?_
-  exact .refl .halted
+    (.ordinary _ _ session session _ secondStep) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary _ _ session session _ thirdStep) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary _ _ session session _
+      (.cutBoundaryProgress 0 _ _ _ session session
+        (.yield outer _ session))) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary _ _ session session _
+      (.cutBoundaryComplete 0 _ session session (.done session))) ?_
+  exact .refl (.terminal session .completed)
 
 /-- A same-scope commit explicitly prunes a live call cursor in a discarded
 branch.  This is the abstract counterpart of a nondeterministic foreign
@@ -945,27 +1215,60 @@ predicate receiving its prune notification. -/
 theorem commit_prunes_live_cursor
     (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
     (answer : Answer) (cursor : Token)
-    (canPrune : protocol.prune cursor) :
-    RawStep protocol
+    (before after : protocol.Session)
+    (canPrune : protocol.prune before cursor after) :
+    RawStep protocol before
       (.cutBoundary 0
         (.choice 0
           (.commit 0 (.yield answer .done))
           (.await 0 cursor (fun _ => .done))))
-      [.pruned cursor] .none
+      [.pruned cursor] .none after
       (.running (.cutBoundary 0 (.yield answer .done))) := by
-  have prunable : AllPrunable protocol
+  have prunable : Prunes protocol before
       (Process.liveTokens
         (Process.await 0 cursor (fun _ => Process.done) :
-          Process Request Token Reply Answer Effect Exception)) := by
-    intro token member
-    simp [Process.liveTokens] at member
-    subst token
-    exact canPrune
+          Process Request Token Reply Answer Effect Exception)) after := by
+    simpa [Process.liveTokens] using
+      (Prunes.cons before after after cursor [] canPrune
+        (Prunes.nil after))
   simpa [Process.liveTokens] using
     (RawStep.cutBoundaryCatch (protocol := protocol) 0 _ _
-      [Observation.pruned cursor]
+      [Observation.pruned cursor] before after
       (RawStep.choiceCommitHere (protocol := protocol) 0 _ _ _ []
-        (RawStep.commit 0 _) prunable))
+        before before after (RawStep.commit 0 _ before) prunable))
+
+/-- Exceptional unwinding prunes every live cursor in the discarded sibling
+before preserving the raised terminal tag.  This is the exception-symmetric
+counterpart of cut cleanup; a live foreign cursor cannot be silently leaked
+merely because the left branch raised instead of committed. -/
+theorem exception_prunes_live_cursor
+    {Answer : Type}
+    (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (exception : Exception) (cursor : Token)
+    (before after : protocol.Session)
+    (canPrune : protocol.prune before cursor after) :
+    RawStep protocol before
+      ((.cutBoundary 0
+        (.choice 0
+          (.raise exception)
+          (.await 0 cursor (fun _ => .done)))) :
+        Process Request Token Reply Answer Effect Exception)
+      [.raised exception, .pruned cursor] .none after
+      (.terminal (.raised exception)) := by
+  have pruned : Prunes protocol before
+      (Process.liveTokens
+        (Process.await 0 cursor (fun _ => Process.done) :
+          Process Request Token Reply Answer Effect Exception)) after := by
+    simpa [Process.liveTokens] using
+      (Prunes.cons (protocol := protocol) before after after cursor []
+        canPrune (Prunes.nil (protocol := protocol) after))
+  simpa [Process.liveTokens] using
+    (RawStep.cutBoundaryRaised (protocol := protocol) 0 _ exception
+      [Observation.raised exception, Observation.pruned cursor]
+      before after
+      (RawStep.choiceRaised (protocol := protocol) 0 _ _ exception
+        [Observation.raised exception] before before after
+        (RawStep.raise (protocol := protocol) exception before) pruned))
 
 /-! ## Reply-splice anti-vacuity witnesses -/
 
@@ -991,10 +1294,31 @@ inductive TwoClausePull : TwoClauseToken →
   | done : TwoClausePull .done .exhausted
 
 def twoClauseProtocol :
-    OrderedCallProtocol Unit TwoClauseToken TwoClauseReply Empty Empty where
-  openCall := fun _ cursor => cursor = .first
-  pull := TwoClausePull
-  prune := fun _ => True
+    OrderedCallProtocol Unit TwoClauseToken TwoClauseReply Empty Empty :=
+  OrderedCallProtocol.pure
+    (fun _ cursor => cursor = .first)
+    TwoClausePull
+    (fun _ => True)
+
+private theorem twoClause_open :
+    twoClauseProtocol.openCall () () .first () := by
+  exact ⟨rfl, rfl⟩
+
+private theorem twoClause_pull_first :
+    twoClauseProtocol.pull () .first (.reply .firstClause .second) () := by
+  exact ⟨TwoClausePull.first, rfl⟩
+
+private theorem twoClause_pull_second :
+    twoClauseProtocol.pull () .second (.reply .secondClause .done) () := by
+  exact ⟨TwoClausePull.second, rfl⟩
+
+private theorem twoClause_pull_done :
+    twoClauseProtocol.pull () .done .exhausted () := by
+  exact ⟨TwoClausePull.done, rfl⟩
+
+private theorem twoClause_prune (token : TwoClauseToken) :
+    twoClauseProtocol.prune () token () := by
+  exact ⟨True.intro, rfl⟩
 
 /-- Certified interpretation of the internal clause tags.  The first clause
 commits in the predicate scope before yielding; the provider itself has no
@@ -1015,58 +1339,70 @@ bag cannot realize this exact trace. -/
 theorem first_clause_cut_prunes_later_clause
     (selected skipped : Answer) :
     Steps twoClauseProtocol
-      (.running (twoClauseCutCall selected skipped))
+      (.running () (twoClauseCutCall selected skipped))
       [.opened (), .pruned .second, .answer selected, .completed]
-      .halted := by
-  have opened : RawStep twoClauseProtocol
+      (.terminal () .completed) := by
+  have opened : RawStep twoClauseProtocol ()
       (twoClauseCutCall selected skipped)
-      [.opened ()] .none
+      [.opened ()] .none ()
       (.running
         (.cutBoundary 0
           (.await 0 TwoClauseToken.first
             (twoClauseCutBodies selected skipped)))) := by
-    exact .cutBoundaryProgress 0 _ _ _
-      (.openCall () TwoClauseToken.first _ rfl)
-  have spliced : RawStep twoClauseProtocol
+    exact .cutBoundaryProgress (protocol := twoClauseProtocol) 0 _ _ _ () ()
+      (.openCall (protocol := twoClauseProtocol) () TwoClauseToken.first _ () ()
+        twoClause_open)
+  have spliced : RawStep twoClauseProtocol ()
       (.cutBoundary 0
         (.await 0 TwoClauseToken.first
           (twoClauseCutBodies selected skipped)))
-      [] .none
+      [] .none ()
       (.running
         (.cutBoundary 0
           (.choice 0
             (.commit 0 (.yield selected .done))
             (.await 0 TwoClauseToken.second
               (twoClauseCutBodies selected skipped))))) := by
-    exact .cutBoundaryProgress 0 _ _ _
-      (.awaitReply 0 TwoClauseToken.first TwoClauseToken.second
-        TwoClauseReply.firstClause _ TwoClausePull.first)
-  have prunable : AllPrunable twoClauseProtocol
+    exact .cutBoundaryProgress (protocol := twoClauseProtocol) 0 _ _ _ () ()
+      (.awaitReply (protocol := twoClauseProtocol) 0 TwoClauseToken.first
+        TwoClauseToken.second TwoClauseReply.firstClause _ () ()
+        twoClause_pull_first)
+  have prunable : Prunes twoClauseProtocol ()
       (Process.liveTokens
         (Process.await 0 TwoClauseToken.second
-          (twoClauseCutBodies selected skipped))) := by
-    intro token member
-    simp [Process.liveTokens] at member
-    subst token
-    trivial
-  have committed : RawStep twoClauseProtocol
+          (twoClauseCutBodies selected skipped))) () := by
+    simpa [Process.liveTokens] using
+      (Prunes.cons (protocol := twoClauseProtocol) () () ()
+        TwoClauseToken.second []
+        (twoClause_prune .second)
+        (Prunes.nil (protocol := twoClauseProtocol) ()))
+  have committed : RawStep twoClauseProtocol ()
       (.cutBoundary 0
         (.choice 0
           (.commit 0 (.yield selected .done))
           (.await 0 TwoClauseToken.second
             (twoClauseCutBodies selected skipped))))
-      [.pruned .second] .none
+      [.pruned .second] .none ()
       (.running (.cutBoundary 0 (.yield selected .done))) := by
-    exact .cutBoundaryCatch 0 _ _ _
-      (.choiceCommitHere 0 _ _ _ [] (.commit 0 _) prunable)
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ opened) ?_
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ spliced) ?_
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ committed) ?_
+    exact .cutBoundaryCatch (protocol := twoClauseProtocol) 0 _ _ _ () ()
+      (.choiceCommitHere (protocol := twoClauseProtocol) 0 _ _ _ [] () () ()
+        (.commit (protocol := twoClauseProtocol) 0 _ ()) prunable)
   refine .cons _ _ _ _ _
-    (.ordinary _ _ _ (.cutBoundaryProgress 0 _ _ _ (.yield selected _))) ?_
+    (.ordinary (protocol := twoClauseProtocol) _ _ () () _ opened) ?_
   refine .cons _ _ _ _ _
-    (.ordinary _ _ _ (.cutBoundaryComplete 0 _ .done)) ?_
-  exact .refl .halted
+    (.ordinary (protocol := twoClauseProtocol) _ _ () () _ spliced) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary (protocol := twoClauseProtocol) _ _ () () _ committed) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary (protocol := twoClauseProtocol) _ _ () () _
+      (.cutBoundaryProgress (protocol := twoClauseProtocol) 0 _ _ _ () ()
+        (.yield (protocol := twoClauseProtocol) selected _ ()))) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary (protocol := twoClauseProtocol) _ _ () () _
+      (.cutBoundaryComplete (protocol := twoClauseProtocol) 0 _ () ()
+        (.done (protocol := twoClauseProtocol) ()))) ?_
+  exact .refl
+    (.terminal (protocol := twoClauseProtocol) (Answer := Answer) () .completed)
 
 /-- Certified interpretation without a cut.  The reply tags still carry no
 answer data; only the left-to-right body interpreter can yield the two
@@ -1086,110 +1422,127 @@ two answer observations before completion. -/
 theorem two_clause_answers_preserve_order_and_multiplicity
     (first second : Answer) :
     Steps twoClauseProtocol
-      (.running (twoClauseOrderedCall first second))
+      (.running () (twoClauseOrderedCall first second))
       [.opened (), .answer first, .answer second, .completed]
-      .halted := by
-  have opened : RawStep twoClauseProtocol
+      (.terminal () .completed) := by
+  have opened : RawStep twoClauseProtocol ()
       (twoClauseOrderedCall first second)
-      [.opened ()] .none
+      [.opened ()] .none ()
       (.running
         (.cutBoundary 0
           (.await 0 TwoClauseToken.first
             (twoClauseOrderedBodies first second)))) := by
-    exact .cutBoundaryProgress 0 _ _ _
-      (.openCall () TwoClauseToken.first _ rfl)
-  have firstSpliced : RawStep twoClauseProtocol
+    exact .cutBoundaryProgress (protocol := twoClauseProtocol) 0 _ _ _ () ()
+      (.openCall (protocol := twoClauseProtocol) () TwoClauseToken.first _ () ()
+        twoClause_open)
+  have firstSpliced : RawStep twoClauseProtocol ()
       (.cutBoundary 0
         (.await 0 TwoClauseToken.first
           (twoClauseOrderedBodies first second)))
-      [] .none
+      [] .none ()
       (.running
         (.cutBoundary 0
           (.choice 0 (.yield first .done)
             (.await 0 TwoClauseToken.second
               (twoClauseOrderedBodies first second))))) := by
-    exact .cutBoundaryProgress 0 _ _ _
-      (.awaitReply 0 TwoClauseToken.first TwoClauseToken.second
-        TwoClauseReply.firstClause _ TwoClausePull.first)
-  have firstAnswer : RawStep twoClauseProtocol
+    exact .cutBoundaryProgress (protocol := twoClauseProtocol) 0 _ _ _ () ()
+      (.awaitReply (protocol := twoClauseProtocol) 0 TwoClauseToken.first
+        TwoClauseToken.second TwoClauseReply.firstClause _ () ()
+        twoClause_pull_first)
+  have firstAnswer : RawStep twoClauseProtocol ()
       (.cutBoundary 0
         (.choice 0 (.yield first .done)
           (.await 0 TwoClauseToken.second
             (twoClauseOrderedBodies first second))))
-      [.answer first] .none
+      [.answer first] .none ()
       (.running
         (.cutBoundary 0
           (.choice 0 .done
             (.await 0 TwoClauseToken.second
               (twoClauseOrderedBodies first second))))) := by
-    exact .cutBoundaryProgress 0 _ _ _
-      (.choiceProgress 0 _ _ _ _ (.yield first .done))
-  have advanceSecond : RawStep twoClauseProtocol
+    exact .cutBoundaryProgress (protocol := twoClauseProtocol) 0 _ _ _ () ()
+      (.choiceProgress (protocol := twoClauseProtocol) 0 _ _ _ _ () ()
+        (.yield (protocol := twoClauseProtocol) first .done ()))
+  have advanceSecond : RawStep twoClauseProtocol ()
       (.cutBoundary 0
         (.choice 0 .done
           (.await 0 TwoClauseToken.second
             (twoClauseOrderedBodies first second))))
-      [] .none
+      [] .none ()
       (.running
         (.cutBoundary 0
           (.await 0 TwoClauseToken.second
             (twoClauseOrderedBodies first second)))) := by
-    exact .cutBoundaryProgress 0 _ _ _
-      (.choiceComplete 0 _ _ .done)
-  have secondSpliced : RawStep twoClauseProtocol
+    exact .cutBoundaryProgress (protocol := twoClauseProtocol) 0 _ _ _ () ()
+      (.choiceComplete (protocol := twoClauseProtocol) 0 _ _ () ()
+        (.done (protocol := twoClauseProtocol) ()))
+  have secondSpliced : RawStep twoClauseProtocol ()
       (.cutBoundary 0
         (.await 0 TwoClauseToken.second
           (twoClauseOrderedBodies first second)))
-      [] .none
+      [] .none ()
       (.running
         (.cutBoundary 0
           (.choice 0 (.yield second .done)
             (.await 0 TwoClauseToken.done
               (twoClauseOrderedBodies first second))))) := by
-    exact .cutBoundaryProgress 0 _ _ _
-      (.awaitReply 0 TwoClauseToken.second TwoClauseToken.done
-        TwoClauseReply.secondClause _ TwoClausePull.second)
-  have secondAnswer : RawStep twoClauseProtocol
+    exact .cutBoundaryProgress (protocol := twoClauseProtocol) 0 _ _ _ () ()
+      (.awaitReply (protocol := twoClauseProtocol) 0 TwoClauseToken.second
+        TwoClauseToken.done TwoClauseReply.secondClause _ () ()
+        twoClause_pull_second)
+  have secondAnswer : RawStep twoClauseProtocol ()
       (.cutBoundary 0
         (.choice 0 (.yield second .done)
           (.await 0 TwoClauseToken.done
             (twoClauseOrderedBodies first second))))
-      [.answer second] .none
+      [.answer second] .none ()
       (.running
         (.cutBoundary 0
           (.choice 0 .done
             (.await 0 TwoClauseToken.done
               (twoClauseOrderedBodies first second))))) := by
-    exact .cutBoundaryProgress 0 _ _ _
-      (.choiceProgress 0 _ _ _ _ (.yield second .done))
-  have advanceDone : RawStep twoClauseProtocol
+    exact .cutBoundaryProgress (protocol := twoClauseProtocol) 0 _ _ _ () ()
+      (.choiceProgress (protocol := twoClauseProtocol) 0 _ _ _ _ () ()
+        (.yield (protocol := twoClauseProtocol) second .done ()))
+  have advanceDone : RawStep twoClauseProtocol ()
       (.cutBoundary 0
         (.choice 0 .done
           (.await 0 TwoClauseToken.done
             (twoClauseOrderedBodies first second))))
-      [] .none
+      [] .none ()
       (.running
         (.cutBoundary 0
           (.await 0 TwoClauseToken.done
             (twoClauseOrderedBodies first second)))) := by
-    exact .cutBoundaryProgress 0 _ _ _
-      (.choiceComplete 0 _ _ .done)
-  have exhausted : RawStep twoClauseProtocol
+    exact .cutBoundaryProgress (protocol := twoClauseProtocol) 0 _ _ _ () ()
+      (.choiceComplete (protocol := twoClauseProtocol) 0 _ _ () ()
+        (.done (protocol := twoClauseProtocol) ()))
+  have exhausted : RawStep twoClauseProtocol ()
       (.cutBoundary 0
         (.await 0 TwoClauseToken.done
           (twoClauseOrderedBodies first second)))
-      [.completed] .none .halted := by
-    exact .cutBoundaryComplete 0 _
-      (.awaitExhausted 0 TwoClauseToken.done _ TwoClausePull.done)
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ opened) ?_
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ firstSpliced) ?_
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ firstAnswer) ?_
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ advanceSecond) ?_
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ secondSpliced) ?_
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ secondAnswer) ?_
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ advanceDone) ?_
-  refine .cons _ _ _ _ _ (.ordinary _ _ _ exhausted) ?_
-  exact .refl .halted
+      [.completed] .none () (.terminal .completed) := by
+    exact .cutBoundaryComplete (protocol := twoClauseProtocol) 0 _ () ()
+      (.awaitExhausted (protocol := twoClauseProtocol) 0 TwoClauseToken.done _
+        () () twoClause_pull_done)
+  refine .cons _ _ _ _ _
+    (.ordinary (protocol := twoClauseProtocol) _ _ () () _ opened) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary (protocol := twoClauseProtocol) _ _ () () _ firstSpliced) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary (protocol := twoClauseProtocol) _ _ () () _ firstAnswer) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary (protocol := twoClauseProtocol) _ _ () () _ advanceSecond) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary (protocol := twoClauseProtocol) _ _ () () _ secondSpliced) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary (protocol := twoClauseProtocol) _ _ () () _ secondAnswer) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary (protocol := twoClauseProtocol) _ _ () () _ advanceDone) ?_
+  refine .cons _ _ _ _ _
+    (.ordinary (protocol := twoClauseProtocol) _ _ () () _ exhausted) ?_
+  exact .refl
+    (.terminal (protocol := twoClauseProtocol) (Answer := Answer) () .completed)
 
 /-- The scope discipline rejects the malformed configuration used by the raw
 scope-discrimination witness below: an outer-scope commit may not occur inside
@@ -1212,14 +1565,16 @@ boundary shape; the theorem tests the raw relation's scope tags and does not
 claim that a compiler may emit the source process. -/
 theorem different_scope_is_not_pruned
     (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
+    (session : protocol.Session)
     (next right : Process Request Token Reply Answer Effect Exception) :
-    RawStep protocol
+    RawStep protocol session
       (.cutBoundary 0 (.cutBoundary 1 (.choice 1 (.commit 0 next) right)))
-      [] .none
+      [] .none session
       (.running (.cutBoundary 0 (.cutBoundary 1 (.choice 1 next right)))) := by
-  exact .cutBoundaryCatch 0 _ _ []
-    (.cutBoundaryPass 1 0 (by decide) _ _ []
-      (.choiceCommitOutside 1 0 (by decide) _ _ _ [] (.commit 0 next)))
+  exact .cutBoundaryCatch 0 _ _ [] session session
+    (.cutBoundaryPass 1 0 (by decide) _ _ [] session session
+      (.choiceCommitOutside 1 0 (by decide) _ _ _ [] session session
+        (.commit 0 next session)))
 
 /-- The same intentionally ill-scoped raw witness cannot take a step that
 globally discards the differently scoped alternative.  The well-scoped
@@ -1227,24 +1582,24 @@ cut-locality property used by compiled programs is
 `inner_cut_preserves_outer_sibling_steps` above. -/
 theorem different_scope_global_prune_impossible
     (protocol : OrderedCallProtocol Request Token Reply Effect Exception)
-    (answer : Answer) :
-    ¬ ∃ events, RawStep protocol
+    (session : protocol.Session) (answer : Answer) :
+    ¬ ∃ events, RawStep protocol session
         (.cutBoundary 0
           (.cutBoundary 1
             (.choice 1 (.commit 0 .done) (.yield answer .done))))
-        events .none
+        events .none session
         (.running (.cutBoundary 0 (.cutBoundary 1 .done))) := by
   rintro ⟨events, step⟩
   cases step with
-  | cutBoundaryProgress _ _ _ _ inner =>
+  | cutBoundaryProgress _ _ _ _ _ _ inner =>
       cases inner with
-      | cutBoundaryProgress _ _ _ _ choiceStep => cases choiceStep
-      | cutBoundaryCatch _ _ _ _ choiceStep =>
+      | cutBoundaryProgress _ _ _ _ _ _ choiceStep => cases choiceStep
+      | cutBoundaryCatch _ _ _ _ _ _ choiceStep =>
           cases choiceStep with
-          | choiceCommitHere _ _ _ _ _ leafStep _ => cases leafStep
-  | cutBoundaryCatch _ _ _ _ inner =>
+          | choiceCommitHere _ _ _ _ _ _ _ _ leafStep _ => cases leafStep
+  | cutBoundaryCatch _ _ _ _ _ _ inner =>
       cases inner with
-      | cutBoundaryPass _ _ _ _ _ _ choiceStep => cases choiceStep
+      | cutBoundaryPass _ _ _ _ _ _ _ _ choiceStep => cases choiceStep
 
 /-- Tokens for the canonical one-answer-then-diverge counterexample. -/
 inductive OneThenLoopToken where
@@ -1261,28 +1616,81 @@ inductive OneThenLoopPull (answer : Answer) :
   | loop : OneThenLoopPull answer .loop (.silent .loop)
 
 def oneThenLoopProtocol (answer : Answer) :
-    OrderedCallProtocol Unit OneThenLoopToken Answer Effect Exception where
-  openCall := fun _ cursor => cursor = .first
-  pull := OneThenLoopPull answer
-  prune := fun _ => True
+    OrderedCallProtocol Unit OneThenLoopToken Answer Effect Exception :=
+  OrderedCallProtocol.pure
+    (fun _ cursor => cursor = .first)
+    (OneThenLoopPull answer)
+    (fun _ => True)
+
+private theorem oneThenLoop_pull_first (answer : Answer) :
+    (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer).pull
+      () .first (.reply answer .loop) () := by
+  exact ⟨OneThenLoopPull.first, rfl⟩
+
+private theorem oneThenLoop_pull_loop (answer : Answer) :
+    (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer).pull
+      () .loop (.silent .loop) () := by
+  exact ⟨OneThenLoopPull.loop, rfl⟩
+
+private theorem oneThenLoop_loop_not_exhausted (answer : Answer) :
+    ¬ (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer).pull
+      () .loop .exhausted () := by
+  rintro ⟨pulled, _⟩
+  cases pulled
+
+private theorem oneThenLoop_pull_only (answer : Answer) :
+    ∀ before result after,
+      (oneThenLoopProtocol
+        (Effect := Effect) (Exception := Exception) answer).pull
+          before .loop result after →
+        result = .silent .loop ∧ after = before := by
+  intro before result after pulled
+  rcases pulled with ⟨pulled, afterEq⟩
+  cases pulled
+  exact ⟨rfl, afterEq⟩
+
+/-- Complete one-step inversion for the divergent suffix.  The deliberately
+open cursor can take exactly one kind of step: silent, session-preserving, and
+back to the same open process.  In particular it cannot fabricate completion,
+an exception, an answer, or an effect. -/
+private theorem oneThenLoop_raw_step_shape (answer : Answer)
+    {before after : Unit}
+    {process : Process Unit OneThenLoopToken Answer Answer Effect Exception}
+    {events : List
+      (Observation Unit OneThenLoopToken Answer Effect Exception)}
+    {signal : CutSignal}
+    {target : RawTarget Unit OneThenLoopToken Answer Answer Effect Exception}
+    (step : RawStep
+      (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer)
+      before process events signal after target)
+    (processEq : process = Process.directAwait 0 OneThenLoopToken.loop) :
+    events = [] ∧ signal = .none ∧ after = before ∧
+      target = .running (Process.directAwait 0 OneThenLoopToken.loop) := by
+  exact RawStep.await_only_silent
+    (oneThenLoopProtocol answer) 0 OneThenLoopToken.loop
+    (fun value => .yield value .done) (oneThenLoop_pull_only answer)
+    step (by simpa [Process.directAwait] using processEq)
 
 /-- The first answer is observable before the divergent suffix. -/
 theorem oneThenLoop_answer_prefix (answer : Answer) :
     Steps (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer)
-      (.running (Process.directAwait 0 OneThenLoopToken.first))
+      (.running () (Process.directAwait 0 OneThenLoopToken.first))
       [.answer answer]
-      (.running (Process.directAwait 0 OneThenLoopToken.loop)) := by
+      (.running () (Process.directAwait 0 OneThenLoopToken.loop)) := by
   let resume : Answer → Process Unit OneThenLoopToken Answer Answer
       Effect Exception := fun value => .yield value .done
   refine .cons _ _ _ _ _
-    (.ordinary _ _ _
-      (.awaitReply 0 _ _ answer resume
-        (OneThenLoopPull.first (answer := answer)))) ?_
+    (.ordinary (protocol := oneThenLoopProtocol answer) _ _ () () _
+      (.awaitReply (protocol := oneThenLoopProtocol answer) 0 _ _ answer resume
+        () () (oneThenLoop_pull_first answer))) ?_
   refine .cons _ _ _ _ _
-    (.ordinary _ _ _
-      (.choiceProgress 0 _ _ _ _ (.yield answer .done))) ?_
+    (.ordinary (protocol := oneThenLoopProtocol answer) _ _ () () _
+      (.choiceProgress (protocol := oneThenLoopProtocol answer) 0 _ _ _ _ () ()
+        (.yield (protocol := oneThenLoopProtocol answer) answer .done ()))) ?_
   refine .cons _ _ _ _ _
-    (.ordinary _ _ _ (.choiceComplete 0 _ _ .done)) ?_
+    (.ordinary (protocol := oneThenLoopProtocol answer) _ _ () () _
+      (.choiceComplete (protocol := oneThenLoopProtocol answer) 0 _ _ () ()
+        (.done (protocol := oneThenLoopProtocol answer) ()))) ?_
   exact .refl _
 
 /-- For every finite demand budget, the suffix can remain open without
@@ -1291,18 +1699,19 @@ theorem oneThenLoop_arbitrarily_long_open_prefix (answer : Answer) :
     ∀ steps : Nat,
       StepsN (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer)
         steps
-        (.running (Process.directAwait 0 OneThenLoopToken.loop)) []
-        (.running (Process.directAwait 0 OneThenLoopToken.loop)) := by
+        (.running () (Process.directAwait 0 OneThenLoopToken.loop)) []
+        (.running () (Process.directAwait 0 OneThenLoopToken.loop)) := by
   intro steps
   induction steps with
   | zero => exact .zero _
   | succ steps inductionHypothesis =>
       refine .succ steps _ _ _ _ _
-        (.ordinary _ _ _
-          (.awaitSilent 0 _ _ _ (OneThenLoopPull.loop (answer := answer)))) ?_
+        (.ordinary (protocol := oneThenLoopProtocol answer) _ _ () () _
+          (.awaitSilent (protocol := oneThenLoopProtocol answer) 0 _ _ _ () ()
+            (oneThenLoop_pull_loop answer))) ?_
       change StepsN (oneThenLoopProtocol answer) steps
-        (.running (Process.directAwait 0 OneThenLoopToken.loop)) []
-        (.running (Process.directAwait 0 OneThenLoopToken.loop))
+        (.running () (Process.directAwait 0 OneThenLoopToken.loop)) []
+        (.running () (Process.directAwait 0 OneThenLoopToken.loop))
       exact inductionHypothesis
 
 /-- The divergent suffix cannot be reclassified as ordinary exhaustion.  This
@@ -1311,11 +1720,12 @@ arbitrarily many silent demands, but no demand can fabricate completion. -/
 theorem oneThenLoop_cannot_complete (answer : Answer) :
     ¬ RawStep
       (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer)
+      ()
       (Process.directAwait 0 OneThenLoopToken.loop)
-      [.completed] .none .halted := by
+      [.completed] .none () (.terminal .completed) := by
   intro step
-  cases step with
-      | awaitExhausted _ _ _ pulled => cases pulled
+  have shape := oneThenLoop_raw_step_shape answer step rfl
+  cases shape.1
 
 /-- Every exact finite execution from the divergent suffix stays in the same
 open state and emits no event.  This strengthens the one-step inversion above:
@@ -1324,13 +1734,14 @@ theorem oneThenLoop_finite_prefix_stays_open (answer : Answer) :
     ∀ (count : Nat)
       (events : List
         (Observation Unit OneThenLoopToken Answer Effect Exception))
-      (finish : State Unit OneThenLoopToken Answer Answer Effect Exception),
+      (finish : State
+        (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer)),
       StepsN
         (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer)
         count
-        (.running (Process.directAwait 0 OneThenLoopToken.loop)) events finish →
+        (.running () (Process.directAwait 0 OneThenLoopToken.loop)) events finish →
       events = [] ∧
-        finish = .running (Process.directAwait 0 OneThenLoopToken.loop) := by
+        finish = .running () (Process.directAwait 0 OneThenLoopToken.loop) := by
   intro count
   induction count with
   | zero =>
@@ -1342,20 +1753,20 @@ theorem oneThenLoop_finite_prefix_stays_open (answer : Answer) :
       cases execution with
       | succ _ start middle finish first rest head tail =>
           cases head with
-          | ordinary process observed target step =>
-              cases step with
-              | awaitSilent scope cursor next resume pulled =>
-                  cases pulled with
-                  | loop =>
-                      rcases inductionHypothesis rest finish tail with
-                        ⟨restEmpty, finishOpen⟩
-                      subst rest
-                      exact ⟨rfl, finishOpen⟩
-              | awaitReply scope cursor next value resume pulled => cases pulled
-              | awaitEffect scope cursor next value resume pulled => cases pulled
-              | awaitExhausted scope cursor resume pulled => cases pulled
-              | awaitRaised scope cursor resume exception pulled => cases pulled
-          | uncaught process next observed scope step => cases step
+          | ordinary process observed before after target step =>
+              have shape := oneThenLoop_raw_step_shape answer step rfl
+              rcases shape with
+                ⟨observedEmpty, _, afterEq, targetEq⟩
+              subst first
+              subst after
+              subst target
+              rcases inductionHypothesis rest finish tail with
+                ⟨restEmpty, finishOpen⟩
+              subst rest
+              exact ⟨rfl, finishOpen⟩
+          | uncaught process next observed before after scope step =>
+              have shape := oneThenLoop_raw_step_shape answer step rfl
+              cases shape.2.1
 
 /-- In particular, the one-answer-then-diverge suffix has no finite completed
 run, regardless of how many silent pulls are allowed. -/
@@ -1366,12 +1777,13 @@ theorem oneThenLoop_no_finite_completion (answer : Answer) :
       ¬ StepsN
         (oneThenLoopProtocol (Effect := Effect) (Exception := Exception) answer)
         count
-        (.running (Process.directAwait 0 OneThenLoopToken.loop)) events .halted := by
+        (.running () (Process.directAwait 0 OneThenLoopToken.loop)) events
+        (.terminal () .completed) := by
   intro count events execution
   have staysOpen :=
     oneThenLoop_finite_prefix_stays_open
       (Effect := Effect) (Exception := Exception) answer
-      count events .halted execution
+      count events (.terminal () .completed) execution
   cases staysOpen.2
 
 end PLeaTTa.PeTTaSpec.PrologCore.Trace

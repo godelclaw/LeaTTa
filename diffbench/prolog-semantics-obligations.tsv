@@ -1,8 +1,8 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# trace_semantics_sha256=3e2e7dfaa25e9b5e04aa6025dd712578ffc4b57b17ffec5822ea54d033f80927
+# trace_semantics_sha256=b8011f7ec7077f66dac8f3a2e2e4812d235b77f326e52594c7d50a0ba876a486
 # term_algebra_sha256=fd8c5c4912379a03a4e1ed2b88dc05501eaaa2b3a5ebb43338ece4bb1f81faf0
 # ordered_mgu_sha256=75985862b874d7b9d5e686555f8058e00b08bb648777f29880d5dd54b1f17f6c
-# local_resolver_sha256=9f9748abff11e0f3fd08e7ae84726384b32d14e9179c143eba6175bad941d0ec
+# local_resolver_sha256=18925761dd7f34064ebba2a6d6b5ec9d93bbf2c10b1a00baee4452038f5da050
 # status: PASS=proved-property-of-the-independent-model GAP=open-reference-or-adequacy-proof FAIL=known-implementation/reference-mismatch BOUNDARY=permanent-explicit-trusted-boundary
 # proof: SC=sound-complete W=witness/inversion theorem SH=shape-only N=none
 # native_source: T=src/translator.pl M=src/metta.pl SWI=official SWI-Prolog manual ISO=ISO Prolog working documents -=independent infrastructure
@@ -11,7 +11,7 @@ id	native_source	layer	reference	proof	status	finding
 TRACE.ordered_answers	-	trace	Observation;Steps	W	PASS	ordered-pair derivation and reversal inequality proved
 TRACE.answer_multiplicity	-	trace	Observation;Steps	W	PASS	duplicate answer remains a distinct event
 TRACE.exception_tag	T300-308	trace	Observation;RawStep	W	PASS	raised and completed are distinct; raise cannot step as completion
-TRACE.open_continuation	-	trace	State;StepsN	W	PASS	running continuation is distinct from halted completion
+TRACE.open_continuation	-	trace	State;Terminal;StepsN	W	PASS	running continuation is distinct from completed and raised terminal states
 TRACE.answer_then_diverge	-	trace	oneThenLoopProtocol	W	PASS	first answer plus exact arbitrarily-long silent prefixes; every finite suffix stays open and fabricated exhaustion is impossible
 CONTROL.leftmost_dfs	SWI:metacall	control	Process;RawStep	SH	GAP	certified reply splice and two-clause ordered witness are proved; generic determinism and Goal specialization remain open
 CONTROL.well_scoped_preservation	SWI:metacall	control	WellScoped;RawStep	W	PASS	malformed outer commit rejected; running steps preserve scope discipline; any emitted commit matches the active scope
@@ -20,27 +20,27 @@ CONTROL.bind	SWI:metacall	control	Process.bind;RawStep.bind*	SH	GAP	answer-at-a-
 CUT.typed_scope	T117-118	control	CutScopeId;Process.cutBoundary	SH	PASS	cut delimiter is typed separately from future exception and collection delimiters
 CUT.same_scope	T117-118	control	RawStep.choiceCommitHere	W	PASS	matching-scope alternative is pruned before later answer or effect
 CUT.inner_locality	SWI:metacall	control	WellScoped;RawStep	W	PASS	well-scoped inner commit prunes its inner sibling but preserves and later observes the enclosing sibling
-CUT.live_cursor_prune	SWI:foreign-control	control	Process.liveTokens;AllPrunable	W	PASS	discarded live cursor receives an explicit prune observation
+CUT.live_cursor_prune	SWI:foreign-control	control	Process.liveTokens;Prunes	W	PASS	cut and exception unwinding sequentially prune discarded live cursors and expose ordered prune observations
 CUT.wrong_scope	SWI:metacall	control	RawStep.choiceCommitOutside	W	PASS	raw scope discrimination on intentionally ill-scoped input; global-prune target underivable, not a compiled-reachability claim
 CUT.meta_call_transparency	SWI:metacall	control	-	N	GAP	call/1 and control-construct transparency table not specialized
 CONTROL.once	T127-128	control	-	N	GAP	demand-driven first-answer commit rule not yet added
 CONTROL.softcut	T151-183,T356-368	control	-	N	GAP	condition-commit scope and branch ordering not yet added
 COLLECT.findall	T115-122,T317-321	collection	-	N	GAP	collector delimiter, copied template, nested search, and completion/divergence behavior open
-EXCEPTION.catch	T300-308	exception	-	N	GAP	distinct exception delimiter, term matching, recovery, propagation, and pruning of discarded live cursors on unwind open
-WORLD.logical_update	SWI:update	world	Resolver.Database;ClauseCursor	W	PASS	call-start generation fixes an immutable ordered snapshot; old-view assertion/retraction and wrong-live-view step witnesses discriminate drift
+EXCEPTION.catch	T300-308	exception	Terminal;RawStep.choiceRaised	SH	GAP	raised terminal tags and pruning on structural unwind are proved; distinct handler delimiter, term matching, recovery, and propagation remain open
+WORLD.logical_update	SWI:update	world	Resolver.Database;PreparedCursor;prepareCall	W	PASS	actual protocol tokens freeze ordered call-start visibility; old/new assertion and retraction witnesses plus a wrong-live-view step discriminate drift, and nested calls take their own generation
 WORLD.assert_retract	M277-280	world	-	N	GAP	ordered dynamic updates and visibility generations open
 WORLD.transaction	T138-139,SWI:db	world	-	N	GAP	commit/rollback, exception, and nested transaction behavior open
-CALL.cursor_protocol	SWI:foreign-control	boundary	OrderedCallProtocol	SH	GAP	open/pull/prune shape present; functional/stateful conformance contracts open
-CALL.local_protocol	ISO:SLD	resolver	semanticLocalClauseProtocol;LocalPull	SC	PASS	local opening is unique and every cursor pull is total and deterministic; match/reject/exhaust are disjoint
+CALL.cursor_protocol	SWI:foreign-control	boundary	OrderedCallProtocol	SH	GAP	open/pull/prune/perform thread explicit Session state; imported-provider functionality, replay, and cursor-ownership conformance remain open
+CALL.local_protocol	ISO:SLD	resolver	semanticLocalClauseProtocol;PreparedCursor;LocalPull	SC	PASS	local opening is unique, returns a well-formed eagerly reserved cursor, and every pull is total and deterministic; match/reject/exhaust are disjoint
 CALL.reply_answer_separation	ISO:SLD	resolver	Process.await;localCallProcess	W	PASS	local pulls return entered-clause tags only; answer-free splice, ordered two-clause answers, and clause-one cut pruning are proved in certified control
-CALL.cursor_linearity	SWI:foreign-control	boundary	Process.liveTokens	N	GAP	well-formedness must forbid forged or multiply-owned live cursors, prune exception-discarded siblings, and prove prune-once preservation
-CALL.stateful_session	SWI:foreign-control	boundary	-	N	GAP	explicit provider/session-state threading and replay invariant open
-RESOLVER.clause_order	ISO:SLD	resolver	Resolver.Database;pullBranch	W	PASS	ordered snapshot selection preserves duplicate occurrences and pulls exactly one source-ordered standardized clause
-RESOLVER.freshening	ISO:SLD	resolver	LocalClause.freshCopy;FreshSeedDominates	W	GAP	adjacent pulls use disjoint intervals and avoid the live query, but a nested body allocation can collide with the retained lazy cursor; eager snapshot reservation plus a body-threaded global high-water invariant is open
+CALL.cursor_linearity	SWI:foreign-control	boundary	Process.liveTokens;Prunes	SH	GAP	discarded siblings are pruned sequentially, but well-formedness must still forbid forged or multiply-owned live cursors and prove prune-once preservation
+CALL.stateful_session	SWI:foreign-control	boundary	OrderedCallProtocol;State;RawStep.session_measure_mono	W	PASS	every state and action threads explicit Session state; a generic monotone-measure theorem and its local fresh-high-water instance rule out rollback through backtracking, cut, or exception unwind; imported-provider replay conformance remains separate
+RESOLVER.clause_order	ISO:SLD	resolver	Resolver.Database;reserveVisible;PreparedCursor;LocalPull	W	PASS	eager call-start reservation preserves duplicate occurrences and exact source order while each pull exposes at most one standardized clause
+RESOLVER.freshening	ISO:SLD	resolver	reserveVisible;FreshReservation;prepareCall	W	PASS	all actual renaming targets lie in disjoint reserved intervals above the live query, nested targets begin above every retained outer target, and raw control steps cannot roll the high-water back; a concrete lazy-cursor foil collides
 RESOLVER.mgu	ISO:unification	resolver	Canonical.TreeMgu;OrderedTreeMgu	SC	PASS	finite-tree occurs check, ordered Robinson derivation, most-generality, completeness, determinism, exact typed reification, and head-resolution uniqueness proved
 RESOLVER.mgu_executable	ISO:unification	composition	PLeaTTa.unifyTopExact	N	GAP	executable substitution orientation and exact canonical-MGU refinement remain open
 RESOLVER.float_identity	SWI:term-order	composition	Canonical.RigidSymbol.float	N	GAP	executable equality must use Float.toBits rather than IEEE equality; NaN identity must be reconciled explicitly with pinned SWI
-RESOLVER.body_execution	M251-256	resolver	EnteredClause;Trace.Process	SH	GAP	provider replies are now structurally unable to emit answers and entered bodies splice before remaining clauses; recursive leftmost execution, global supply threading, and final-answer streaming remain open
+RESOLVER.body_execution	M251-256	resolver	EnteredClause;Trace.Process	SH	GAP	provider replies are structurally unable to emit answers, entered bodies splice before remaining clauses, and global fresh supply is non-backtrackable; recursive leftmost Goal execution and final-answer streaming remain open
 EXTERNAL.imported_swi	M271-280	boundary	OrderedCallProtocol	N	BOUNDARY	exact typed trace is trusted and replay-policed; SWI implementation is never counted as certified core
 EXTERNAL.current_worker	M271-280	boundary	pleatta-prolog-worker.py	N	FAIL	worker eagerly materializes a complete findall answer bag and cannot preserve answer-before-divergence or demand-time pruning
 PROJECTION.complete_answer_list	-	projection	Ordered.Runs	N	GAP	terminating trace-to-list projection theorem open; list semantics may not be primary equivalence
