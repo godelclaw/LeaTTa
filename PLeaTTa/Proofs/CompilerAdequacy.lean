@@ -47,6 +47,12 @@ inductive ProperListAgrees : List Term → Atom → Prop where
 
 end
 
+/-- Agreement between an independent pinned-translation failure and the
+executable compiler's diagnostic representation. -/
+inductive CompilerFailureAgrees : TranslationFailure → String → Prop where
+  | emptySuperpose :
+      CompilerFailureAgrees .emptySuperpose "superpose: empty"
+
 /-- Pointwise ordered agreement between independent Prolog terms and the
 executable atoms produced by compiler traversals. -/
 inductive TermsAgree : List Term → List Atom → Prop where
@@ -1742,27 +1748,73 @@ theorem compileAmbBranchesWith_literals_sound (fuel : Nat) (env : CEnv)
       simpa [compileAmbBranchesWith] using compiled,
     branchesAgreement⟩
 
-/-- Executable negative-boundary witness paired with
-`empty_superpose_not_translated`: unlike pinned `disj_list/2`, the current
-compiler accepts an empty branch collection and emits `amb []`.  Keeping both
-theorems visible prevents the supported relation from laundering this known
-translation mismatch. -/
-theorem compileExpr_empty_superpose_accepts (env : CEnv) (counter : Nat)
-    (noHook : env.translatorRules.contains "superpose" = false) :
-    compileExpr env counter (.expr [.sym "superpose", .expr []]) =
-      .ok (.var s!"_q{counter}",
-        [PLeaTTa.Goal.amb [] (.var s!"_q{counter}")], counter + 1) := by
-  have branches : compileAmbBranchesWith
-      (fun next expression =>
-        compileExprFuel
-          (compilerFuel (.expr [.sym "superpose", .expr []]) + 61)
-          env next expression)
-      counter [] = .ok ([], counter) := by
-    rfl
-  simpa only [compileExpr, Nat.add_assoc, Nat.reduceAdd] using
-    compileExprFuel_superpose_eq
-      (compilerFuel (.expr [.sym "superpose", .expr []]) + 61) env counter
-      [] [] noHook branches
+/-- Fuel-indexed soundness of independent empty-`superpose` rejection. -/
+theorem compileExprFuel_empty_superpose_sound {state : TranslatorState}
+    (env : CEnv) (agreement : EnvAgrees state env) (counter fuel : Nat)
+    {source : Atom} {failure : TranslationFailure}
+    (native : RejectsExpr state source failure) :
+    ∃ message,
+      compileExprFuel (fuel + 3) env counter source = .error message ∧
+      CompilerFailureAgrees failure message := by
+  cases native with
+  | emptySuperpose notShadowed =>
+      exact ⟨"superpose: empty",
+        compileExprFuel_empty_superpose_eq fuel env counter
+          (agreement.notContains notShadowed),
+        .emptySuperpose⟩
+
+/-- Public soundness of independent empty-`superpose` rejection at the
+source-derived compiler budget. -/
+theorem compileExpr_empty_superpose_sound {state : TranslatorState}
+    (env : CEnv) (agreement : EnvAgrees state env) (counter : Nat)
+    {source : Atom} {failure : TranslationFailure}
+    (native : RejectsExpr state source failure) :
+    ∃ message,
+      compileExpr env counter source = .error message ∧
+      CompilerFailureAgrees failure message := by
+  obtain ⟨message, compiled, failureAgreement⟩ :=
+    compileExprFuel_empty_superpose_sound env agreement counter
+      (compilerFuel source + 61) native
+  exact ⟨message, by
+    simpa only [compileExpr, Nat.add_assoc, Nat.reduceAdd] using compiled,
+    failureAgreement⟩
+
+/-- Completeness for the exact unshadowed empty form: any executable error at
+that source has a corresponding independent pinned rejection, and determinism
+identifies its diagnostic. -/
+theorem compileExpr_empty_superpose_complete {state : TranslatorState}
+    (env : CEnv) (agreement : EnvAgrees state env) (counter : Nat)
+    {message : String} (notShadowed : ¬ state.hasRule "superpose")
+    (compiled : compileExpr env counter
+      (.expr [.sym "superpose", .expr []]) = .error message) :
+    ∃ failure,
+      RejectsExpr state (.expr [.sym "superpose", .expr []]) failure ∧
+      CompilerFailureAgrees failure message := by
+  have native : RejectsExpr state (.expr [.sym "superpose", .expr []])
+      .emptySuperpose := .emptySuperpose notShadowed
+  obtain ⟨expected, referenceCompiled, failureAgreement⟩ :=
+    compileExpr_empty_superpose_sound env agreement counter native
+  rw [referenceCompiled] at compiled
+  cases compiled
+  exact ⟨.emptySuperpose, native, failureAgreement⟩
+
+/-- Composed positive witness: the same empty source is rejected by the
+independent pinned judgment and by the executable compiler with an agreeing
+diagnostic. -/
+theorem empty_superpose_rejection_adequate {state : TranslatorState}
+    (env : CEnv) (agreement : EnvAgrees state env) (counter : Nat)
+    (notShadowed : ¬ state.hasRule "superpose") :
+    ∃ message,
+      RejectsExpr state (.expr [.sym "superpose", .expr []])
+          .emptySuperpose ∧
+      compileExpr env counter (.expr [.sym "superpose", .expr []]) =
+          .error message ∧
+      CompilerFailureAgrees .emptySuperpose message := by
+  have native : RejectsExpr state (.expr [.sym "superpose", .expr []])
+      .emptySuperpose := .emptySuperpose notShadowed
+  obtain ⟨message, compiled, failureAgreement⟩ :=
+    compileExpr_empty_superpose_sound env agreement counter native
+  exact ⟨message, native, compiled, failureAgreement⟩
 
 mutual
 
@@ -1845,7 +1897,7 @@ theorem compileExprFuel_initial_sound {state : TranslatorState} (env : CEnv)
           outputAgreement, .cons (.literalAmb branchesAgreement) .nil⟩
         simpa [output, Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using
           compileExprFuel_superpose_eq (extraFuel + 1) env counter
-            (first :: sources) executableBranches
+            first sources executableBranches
             (agreement.notContains notShadowed) branchesCompiled
   | letBind notShadowed patternTranslation valueTranslation bodyTranslation =>
       obtain ⟨patternFuel, patternPositive, patternBound, patternCompiles⟩ :=

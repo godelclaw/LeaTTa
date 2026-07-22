@@ -74,6 +74,11 @@ def stable_value(value: str) -> str:
 
 def classify_runner_error(error: diff.RunnerError) -> str:
     diagnostic = (error.stdout or "") + "\n" + (error.stderr or "")
+    if "superpose: empty" in diagnostic or (
+        "failed to process form" in diagnostic and
+        "[superpose,[]]" in diagnostic
+    ):
+        return "empty_superpose_rejected"
     if "clpfd_expression" in diagnostic:
         return "clpfd_expression"
     if "size-atom vs non-literal" in diagnostic:

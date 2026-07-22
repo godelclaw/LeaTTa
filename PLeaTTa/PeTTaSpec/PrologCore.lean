@@ -527,6 +527,34 @@ inductive TranslatesSeq : TranslatorState → Nat → List Atom → Term → Ter
 
 end
 
+/-- Independent translation failures of the currently supported pinned
+fragment.  These constructors describe native clause failure, not PLeaTTa's
+executable error strings. -/
+inductive TranslationFailure where
+  | emptySuperpose
+deriving DecidableEq, Repr
+
+/-- Independent rejection judgment for pinned `translate_expr/3`.  Empty
+syntactic `superpose` commits to the special-form clause, constructs no
+branches, and then fails because `disj_list/2` has no empty clause.  A
+translator rule shadows this clause and therefore excludes the judgment.
+[SPEC translator.pl:99-114,414-422] -/
+inductive RejectsExpr : TranslatorState → Atom → TranslationFailure → Prop where
+  | emptySuperpose {state : TranslatorState}
+      (notShadowed : ¬ state.hasRule "superpose") :
+      RejectsExpr state (.expr [.sym "superpose", .expr []])
+        .emptySuperpose
+
+/-- A registered translator hook has priority over the empty-`superpose`
+failure, so the independent rejection judgment is impossible in that state. -/
+theorem empty_superpose_hook_not_rejected {state : TranslatorState}
+    (hook : state.hasRule "superpose") :
+    ¬ RejectsExpr state (.expr [.sym "superpose", .expr []])
+      .emptySuperpose := by
+  intro rejected
+  cases rejected with
+  | emptySuperpose notShadowed => exact notShadowed hook
+
 /-- Independent ordered `translate_args/3` traversal from pinned
 `translator.pl:409-412`.  Unlike `TranslatesSeq`, this relation includes the
 empty case and preserves every translated argument term, not merely the first
@@ -1469,10 +1497,9 @@ theorem translates_binary_stream_integer_pairs (state : TranslatorState)
     notShadowedAtom arguments
   exact ⟨_, _, _, .rewrite operation notShadowedCall combined⟩
 
-/-- Negative boundary witness: pinned `disj_list/2` has no empty clause, and
-the independent `superpose` fragment therefore cannot translate an empty
-branch list.  The executable currently accepts `amb []`; that mismatch must
-not be hidden inside the supported-source predicate. -/
+/-- Negative success witness paired with `RejectsExpr.emptySuperpose`: pinned
+`disj_list/2` has no empty clause, so the independent translator cannot both
+reject and successfully translate the empty branch list. -/
 theorem empty_superpose_not_translated (state : TranslatorState)
     (counter nextCounter : Nat) (term : Term) (goals : List Goal) :
     ¬ TranslatesExpr state counter

@@ -1080,13 +1080,19 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (te, ge, n1) ← compileExprFuel fuel env n e
         let (r, n2) := fresh n1
         .ok (r, [Goal.onceg te ge r], n2)
-    | .hSuperpose, [Atom.expr es] => do
-        -- each SYNTACTIC element evaluated in its own branch (NONDET-1)
-        let (branches, n1) ← compileAmbBranchesWith
-          (fun counter expression =>
-            compileExprFuel fuel env counter expression) n es
-        let (r, n2) := fresh n1
-        .ok (r, [Goal.amb branches r], n2)
+    | .hSuperpose, [Atom.expr es] =>
+        if es.isEmpty then
+          -- [SPEC translator.pl:112-114,414-416,419-422] Branch construction
+          -- returns [], but disj_list/2 has no empty clause, so native
+          -- translation fails after committing to the superpose branch.
+          .error "superpose: empty"
+        else do
+          -- each SYNTACTIC element evaluated in its own branch (NONDET-1)
+          let (branches, n1) ← compileAmbBranchesWith
+            (fun counter expression =>
+              compileExprFuel fuel env counter expression) n es
+          let (r, n2) := fresh n1
+          .ok (r, [Goal.amb branches r], n2)
     | .hUnify, [Atom.sym "&self", pat, thn, els] => do
         if !env.defined.contains "unify" then do
           let (ts, gs, n1) ← compileListFuel fuel env n [Atom.sym "&self", pat, thn, els]
@@ -2140,24 +2146,36 @@ theorem compileExprFuel_stream_rewrite_eq (fuel : Nat) (env : CEnv)
 
 set_option maxHeartbeats 2000000 in
 /-- Exact executable shape for a nonempty syntactic `superpose` once its
-ordered branches have been compiled.  The nonemptiness is a reference-level
-premise: the executable equation itself is valid for every source list. -/
+ordered branches have been compiled. -/
 theorem compileExprFuel_superpose_eq (branchFuel : Nat) (env : CEnv)
-    (counter : Nat) (sources : List Atom)
+    (counter : Nat) (first : Atom) (sources : List Atom)
     (branches : List (Atom × List Goal))
     (noHook : env.translatorRules.contains "superpose" = false)
     (compiled : compileAmbBranchesWith
       (fun next expression => compileExprFuel branchFuel env next expression)
-      counter sources = .ok (branches, counter)) :
+      counter (first :: sources) = .ok (branches, counter)) :
     compileExprFuel (branchFuel + 3) env counter
-        (.expr [.sym "superpose", .expr sources]) =
+        (.expr [.sym "superpose", .expr (first :: sources)]) =
       .ok (.var s!"_q{counter}",
         [Goal.amb branches (.var s!"_q{counter}")], counter + 1) := by
   rw [show branchFuel + 3 = (branchFuel + 1) + 2 by omega]
   rw [compileExprFuel_unshadowed_app_eq (branchFuel + 1) env counter
-    "superpose" [.expr sources] (by rfl) (by simp) noHook]
-  simp only [compileAppCoreFuel, classifyAppCoreHead]
+    "superpose" [.expr (first :: sources)] (by rfl) (by simp) noHook]
+  simp only [compileAppCoreFuel, classifyAppCoreHead, List.isEmpty_cons]
   rw [compiled]
+  rfl
+
+/-- Exact executable rejection corresponding to pinned `disj_list/2` having
+no empty clause.  Translator-rule priority remains explicit. -/
+theorem compileExprFuel_empty_superpose_eq (fuel : Nat) (env : CEnv)
+    (counter : Nat)
+    (noHook : env.translatorRules.contains "superpose" = false) :
+    compileExprFuel (fuel + 3) env counter
+        (.expr [.sym "superpose", .expr []]) =
+      .error "superpose: empty" := by
+  rw [show fuel + 3 = (fuel + 1) + 2 by omega]
+  rw [compileExprFuel_unshadowed_app_eq (fuel + 1) env counter
+    "superpose" [.expr []] (by rfl) (by simp) noHook]
   rfl
 
 set_option maxHeartbeats 2000000 in

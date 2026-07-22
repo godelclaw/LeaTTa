@@ -4152,6 +4152,38 @@ theorem compileAmbThenFresh_generatedNames (fuel : Nat)
         exact compilerGoalNamesAllowed_amb (branchNames.mono (by omega))
           resultAllowed
 
+/-- A rejected empty branch collection cannot produce names; every successful
+guarded collection is therefore the ordinary nonempty branch traversal. -/
+theorem compileNonemptyAmbThenFresh_generatedNames (fuel : Nat)
+    (ih : CompilerGeneratedNamesAt fuel)
+    (external : String → Prop) (origin : Nat) (env : CEnv) (start : Nat)
+    (expressions : List Atom) (term : Atom) (goals : List Goal) (next : Nat)
+    (originStart : origin ≤ start)
+    (envAllowed : CompilerEnvNamesAllowed external origin start env)
+    (expressionsAllowed :
+      CompilerAtomsNamesAllowed external origin start expressions)
+    (compiled :
+      (if expressions.isEmpty then
+        .error "superpose: empty"
+      else do
+        let (branches, middle) ← compileAmbBranchesWith
+          (fun counter expression =>
+            compileExprFuel fuel env counter expression) start expressions
+        let (result, finalCounter) := fresh middle
+        .ok (result, [Goal.amb branches result], finalCounter)) =
+        .ok (term, goals, next)) :
+    CompilerAtomNamesAllowed external origin next term ∧
+    CompilerGoalsNamesAllowed external origin next goals := by
+  by_cases empty : expressions.isEmpty = true
+  · simp only [empty, if_true] at compiled
+    contradiction
+  · have nonempty : expressions.isEmpty = false :=
+      Bool.eq_false_iff.mpr empty
+    simp only [nonempty, Bool.false_eq_true, if_false] at compiled
+    exact compileAmbThenFresh_generatedNames fuel ih external origin env start
+      expressions term goals next originStart envAllowed expressionsAllowed
+      compiled
+
 theorem compileExprFreshExprFresh_generatedNames (fuel : Nat)
     (ih : CompilerGeneratedNamesAt fuel)
     (external : String → Prop) (origin : Nat) (env : CEnv) (start : Nat)
@@ -6298,7 +6330,8 @@ private theorem compileAppCoreFuel_hSuperpose_generatedNames (fuel : Nat)
       origin env start head _ term goals next originStart envAllowed
       argumentsAllowed compiled
   all_goals try
-    exact compileAmbThenFresh_generatedNames fuel ih external origin env start
+    exact compileNonemptyAmbThenFresh_generatedNames fuel ih external origin env
+      start
       _ term goals next originStart envAllowed
       (by simpa [CompilerNamesAllowed, Atom.vars] using argumentsAllowed)
       compiled
