@@ -63,7 +63,7 @@ APP.case	T163-176,T399-406	S	-	N	GAP	order-failure-binding-proof-missing
 APP.collapse	T115-116	X	TranslatesExpr.collapse	SC	PASS	covered
 APP.once	T127-128	S	TranslatesOnce.wrap	SH	GAP	fresh-capture-equivalence-unproved
 APP.superpose_literal	T112-114,T419-422	X	TranslatesExpr.superposeLiterals+RejectsExpr.emptySuperpose	SC	PASS	nonempty-literal-and-empty-rejection-fragments-sound-complete
-APP.superpose_general	T112-114,T394-397,T414-422	X	TranslatesExpr.superposeBranches+TranslatesSuperposeBranches+BuildsBranchNormalized	SC	GAP	local-branch-relation-sound-complete; alias-ledger-and-independent-prefix-finalization-agree; whole-continuation-substitution-and-Step-composition-open
+APP.superpose_general	T112-114,T394-397,T414-422	X	TranslatesExpr.superposeBranches+TranslatesSuperposeBranches+BuildsBranchNormalized	SC	GAP	local-branch-relation-sound-complete; ordered alias-ledger finalization now yields exact independent/executable resolver certificates, finite variable-state agreement, and type-check carry transport under explicit injectivity/disjointness while preserving branch order/multiplicity; general continuation-goal substitution and Step composition remain open
 APP.unify_self	HE24-31	L	-	N	GAP	specialized-library-definition
 APP.unify_general	HE32-35	L	-	N	GAP	specialized-library-definition
 APP.succeedsPredicate	LS15-20	L	-	N	FAIL	incorrectly-restricted-to-space-shape
