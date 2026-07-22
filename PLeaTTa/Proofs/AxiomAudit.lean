@@ -35,6 +35,9 @@ import PLeaTTa.Proofs.CompilerSubstitutionAdequacy
 import PLeaTTa.Proofs.CompilerGoalSubstitutionAdequacy
 import PLeaTTa.Proofs.CompilerTranslationSupportAdequacy
 import PLeaTTa.PeTTaSpec.PrologTraceSemantics
+import PLeaTTa.PeTTaSpec.PrologTermAlgebra
+import PLeaTTa.PeTTaSpec.PrologMgu
+import PLeaTTa.PeTTaSpec.PrologResolver
 
 #print axioms PLeaTTa.machineMirrorsSpecTotal_proved
 #print axioms PLeaTTa.localGetTypeExtensionAlts_below
@@ -347,6 +350,50 @@ import PLeaTTa.PeTTaSpec.PrologTraceSemantics
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.oneThenLoop_cannot_complete
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.oneThenLoop_finite_prefix_stays_open
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.oneThenLoop_no_finite_completion
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.raw_substitution_is_not_canonical
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.denotation_closes_proper_list_tail
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.Substitution.denote_applyTerm
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.Tree.no_finite_unifier_of_occurs_true
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.singleton_variable_is_denotational_mgu
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.distinct_atoms_have_no_denotational_unifier
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.TreeIsMgu.compose_append
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.TreeMgu.isMostGeneral
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.TreesMgu.isMostGeneral
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.TreeMgu.complete
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.TreesMgu.complete
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.TreeMgu.deterministic
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.TreesMgu.deterministic
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.OrderedTreeMgu.isMostGeneral
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.OrderedTreeMgu.complete
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.OrderedTreeMgu.deterministic
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.OrderedTreeMgu.binding_wellFormed
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.OrderedTreeMgu.computesReified
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.ComputesDenotationalMgu.exists_of_unifier
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.ComputesDenotationalMgu.isMostGeneral
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.ComputesDenotationalMgu.unique
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.ComputesDenotationalMgu.denotation_unique
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.compound_two_children_ordered_mgu
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.compound_two_children_is_mgu
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.dotted_list_computed_mgu
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.distinct_rigid_nodes_have_no_mgu
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Canonical.occurs_check_rejects_cycle
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.Database.assertz_old_view
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.Database.asserta_old_view
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.pullBranch_successive_fresh_disjoint
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.pullBranch_preserves_freshSeedDominates
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.pullBranch_fresh_target_not_live
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.HeadResolution.unifies
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.HeadResolution.deterministic
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.HeadResolution.exists_iff_unifiable
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.HeadResolution.isMostGeneral_of_empty
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.semanticLocalClauseProtocol_open_unique
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.LocalPull.total
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.LocalPull.deterministic
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.LocalPull.answer_origin
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.variableHeadBranch_resolves
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.clashingHeadBranch_has_no_resolution
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.witness_snapshot_stepper_exhausted_after_assert
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.witness_wrong_stepper_emits_late_clause
 #print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.bindTypedSharedResult_after_unary_partial
 #print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.bindTypedSharedResult_fresh_initial
 #print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.foldlM_bindTypedSharedResult_two_unary_partial
