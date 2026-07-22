@@ -324,6 +324,27 @@ inductive MacroStepsN (prog : Prog) (gt : GroundingTable) :
 
 namespace MacroStepsN
 
+/-- Sequential composition of bracketed runs.  This is the algebra used by
+the prefix parser when an open collector closes and rejoins its caller. -/
+theorem trans {prog : Prog} {gt : GroundingTable}
+    {left middle right : Conf} {m n : Nat}
+    (first : MacroStepsN prog gt m left middle)
+    (second : MacroStepsN prog gt n middle right) :
+    MacroStepsN prog gt (m + n) left right := by
+  induction first with
+  | zero state => simpa using second
+  | ordinary k before stepMiddle after notFindall step tail tailIH =>
+      have combined := MacroStepsN.ordinary (k + n) before stepMiddle right
+        notFindall step (tailIH second)
+      have lengthEq : k + n + 1 = k + 1 + n := by omega
+      rw [lengthEq] at combined
+      exact combined
+  | findall innerCount tailCount outer inner finish template sub result rest
+      binding head innerRun done tail innerIH tailIH =>
+      simpa [Nat.add_assoc] using
+        MacroStepsN.findall innerCount (tailCount + n) outer inner right
+          template sub result rest binding head innerRun done (tailIH second)
+
 /-- Erasing fine collector boundaries from a structured terminating run gives
 an ordinary sealed run.  Nested collectors collapse recursively. -/
 theorem toStepStar {prog : Prog} {gt : GroundingTable}
@@ -393,6 +414,329 @@ theorem lift {prog : Prog} {gt : GroundingTable}
       simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using combined
 
 end MacroStepsN
+
+/-- A parsed fine prefix relative to a protected caller-frame suffix.  A
+`closed` prefix has returned to that suffix.  An `open` prefix records the
+already completed caller macro, the pending collector entry, and recursively
+parses the active generator above the newly pushed frame. -/
+inductive MacroPrefixN (prog : Prog) (gt : GroundingTable) :
+    List Frame → Nat → Conf → OpenConf → Prop where
+  | closed (baseFrames : List Frame) (n : Nat) (start finish : Conf)
+      (run : MacroStepsN prog gt n start finish) :
+      MacroPrefixN prog gt baseFrames n start
+        (OpenConf.ofConf finish baseFrames)
+  | suspended (baseFrames : List Frame) (beforeCount innerCount : Nat)
+      (start outer : Conf)
+      (template : Atom) (sub : List Goal) (result : Atom)
+      (rest : List Goal) (binding : Subst) (target : OpenConf)
+      (before : MacroStepsN prog gt beforeCount start outer)
+      (head : outer.cur =
+        some (Goal.findall template sub result :: rest, binding))
+      (inner : MacroPrefixN prog gt
+        (.findall (findallFrameOf outer template result rest binding) ::
+          baseFrames)
+        innerCount (subConfOf outer sub binding template) target) :
+      MacroPrefixN prog gt baseFrames (beforeCount + 1 + innerCount)
+        start target
+
+namespace MacroPrefixN
+
+/-- One fine step cannot cross a protected frame suffix when its source owns
+at least one frame above that suffix.  An exit removes only the unique top
+frame; ordinary work preserves the stack and entry adds one. -/
+theorem step_preserves_suffix_of_strict {prog : Prog} {gt : GroundingTable}
+    {baseFrames : List Frame} {before after : OpenConf}
+    (strict : ∃ top extra,
+      before.frames = top :: (extra ++ baseFrames))
+    (step : Step prog gt before after) :
+    ∃ extra, after.frames = extra ++ baseFrames := by
+  rcases strict with ⟨top, extra, framesEq⟩
+  cases step with
+  | ordinary next notFindall machineStep =>
+      exact ⟨top :: extra, by simpa using framesEq⟩
+  | findallEnter template sub result rest binding head =>
+      refine ⟨.findall
+        { outer := before.control
+          template := template
+          result := result
+          rest := rest
+          binding := binding } :: top :: extra, ?_⟩
+      simp [enterFindall, framesEq]
+  | findallExit frame remaining frameHead done =>
+      rw [framesEq] at frameHead
+      injection frameHead with _ tailEq
+      exact ⟨extra, by simpa [resumeFindall] using tailEq.symm⟩
+
+/-- Every parsed target owns a stack extending its protected caller suffix. -/
+theorem frames_suffix {prog : Prog} {gt : GroundingTable}
+    {baseFrames : List Frame} {n : Nat} {start : Conf} {target : OpenConf}
+    (parsed : MacroPrefixN prog gt baseFrames n start target) :
+    ∃ extra, target.frames = extra ++ baseFrames := by
+  induction parsed with
+  | closed => exact ⟨[], rfl⟩
+  | suspended baseFrames beforeCount innerCount start outer template sub result rest binding
+      target before head inner innerIH =>
+      rcases innerIH with ⟨extra, framesEq⟩
+      refine ⟨extra ++ [.findall
+        (findallFrameOf outer template result rest binding)], ?_⟩
+      rw [framesEq, List.append_assoc]
+      rfl
+
+/-- An open parser state owns at least one frame above the protected suffix. -/
+theorem open_frames_cons_suffix {prog : Prog} {gt : GroundingTable}
+    {baseFrames : List Frame} {beforeCount innerCount : Nat}
+    {start outer : Conf} {template : Atom} {sub : List Goal}
+    {result : Atom} {rest : List Goal} {binding : Subst}
+    {target : OpenConf}
+    (_before : MacroStepsN prog gt beforeCount start outer)
+    (_head : outer.cur =
+      some (Goal.findall template sub result :: rest, binding))
+    (inner : MacroPrefixN prog gt
+      (.findall (findallFrameOf outer template result rest binding) ::
+        baseFrames)
+      innerCount (subConfOf outer sub binding template) target) :
+    ∃ top extra, target.frames = top :: (extra ++ baseFrames) := by
+  rcases inner.frames_suffix with ⟨extra, framesEq⟩
+  cases extra with
+  | nil =>
+      exact ⟨.findall (findallFrameOf outer template result rest binding), [],
+        by simpa using framesEq⟩
+  | cons top tail =>
+      refine ⟨top,
+        tail ++ [.findall
+          (findallFrameOf outer template result rest binding)], ?_⟩
+      rw [framesEq]
+      simp only [List.cons_append, List.append_assoc]
+      rfl
+
+/-- Extend a parsed prefix by one fine step without crossing its protected
+caller suffix.  The only non-local case is an exit: a closed inner parser is
+folded into one `MacroStepsN.findall`, whereas an exit above a still-open
+inner parser is delegated recursively. -/
+theorem advance {prog : Prog} {gt : GroundingTable}
+    {baseFrames : List Frame} {n : Nat} {start : Conf}
+    {before after : OpenConf}
+    (parsed : MacroPrefixN prog gt baseFrames n start before)
+    (oneStep : Step prog gt before after)
+    (afterSuffix : ∃ extra, after.frames = extra ++ baseFrames) :
+    MacroPrefixN prog gt baseFrames (n + 1) start after := by
+  induction parsed generalizing after with
+  | closed baseFrames n start finish run =>
+      cases oneStep with
+      | ordinary next notFindall machineStep =>
+          let tail : MacroStepsN prog gt 1 finish next :=
+            .ordinary 0 finish next next notFindall machineStep (.zero next)
+          simpa using MacroPrefixN.closed baseFrames (n + 1) start next
+            (run.trans tail)
+      | findallEnter template sub result rest binding head =>
+          let frame := findallFrameOf finish template result rest binding
+          let innerStart := subConfOf finish sub binding template
+          have inner : MacroPrefixN prog gt (.findall frame :: baseFrames) 0
+              innerStart (OpenConf.ofConf innerStart
+                (.findall frame :: baseFrames)) :=
+            .closed _ 0 innerStart innerStart (.zero innerStart)
+          simpa [frame, innerStart] using
+            MacroPrefixN.suspended baseFrames n 0 start finish template sub
+              result rest binding _ run (by simpa using head) inner
+      | findallExit frame remaining frameHead done =>
+          rcases afterSuffix with ⟨extra, afterFrames⟩
+          have baseEq : baseFrames = .findall frame :: remaining := by
+            simpa using frameHead
+          have remainingEq : remaining = extra ++ baseFrames := by
+            simpa [resumeFindall] using afterFrames
+          have longer := congrArg List.length baseEq
+          have shorter := congrArg List.length remainingEq
+          simp at longer shorter
+          omega
+  | suspended baseFrames beforeCount innerCount start outer template sub result
+      rest binding target beforeRun head innerParsed innerIH =>
+      cases oneStep with
+      | ordinary next notFindall machineStep =>
+          rcases innerParsed.frames_suffix with ⟨extra, targetFrames⟩
+          have recursiveStep : Step prog gt target
+              (OpenConf.ofConf next target.frames) :=
+            .ordinary target next notFindall machineStep
+          have recursiveSuffix : ∃ more,
+              (OpenConf.ofConf next target.frames).frames =
+                more ++
+                  (.findall
+                    (findallFrameOf outer template result rest binding) ::
+                    baseFrames) :=
+            ⟨extra, by simpa using targetFrames⟩
+          have advanced := innerIH recursiveStep recursiveSuffix
+          have rebuilt := MacroPrefixN.suspended baseFrames beforeCount
+            (innerCount + 1) start outer template sub result rest binding _
+            beforeRun head advanced
+          simpa [Nat.add_assoc] using rebuilt
+      | findallEnter nestedTemplate nestedSub nestedResult nestedRest
+          nestedBinding nestedHead =>
+          rcases innerParsed.frames_suffix with ⟨extra, targetFrames⟩
+          let nestedFrame :=
+            { outer := target.control
+              template := nestedTemplate
+              result := nestedResult
+              rest := nestedRest
+              binding := nestedBinding : FindallFrame }
+          have recursiveStep : Step prog gt target
+              (enterFindall target nestedTemplate nestedSub nestedResult
+                nestedRest nestedBinding) :=
+            .findallEnter target nestedTemplate nestedSub nestedResult
+              nestedRest nestedBinding nestedHead
+          have recursiveSuffix : ∃ more,
+              (enterFindall target nestedTemplate nestedSub nestedResult
+                nestedRest nestedBinding).frames =
+                more ++
+                  (.findall
+                    (findallFrameOf outer template result rest binding) ::
+                    baseFrames) := by
+            refine ⟨.findall nestedFrame :: extra, ?_⟩
+            simp [enterFindall, nestedFrame, targetFrames]
+          have advanced := innerIH recursiveStep recursiveSuffix
+          have rebuilt := MacroPrefixN.suspended baseFrames beforeCount
+            (innerCount + 1) start outer template sub result rest binding _
+            beforeRun head advanced
+          simpa [Nat.add_assoc] using rebuilt
+      | findallExit exitFrame remaining frameHead done =>
+          cases innerParsed with
+          | closed innerBase innerCount innerStart innerFinish innerRun =>
+              have frameEq :
+                  findallFrameOf outer template result rest binding =
+                    exitFrame := by
+                simpa using congrArg List.head? frameHead
+              have remainingEq : baseFrames = remaining := by
+                simpa using congrArg List.tail frameHead
+              subst exitFrame
+              subst remaining
+              let successor :=
+                findallSuccessor outer innerFinish result rest binding
+              let collector : MacroStepsN prog gt (innerCount + 2) outer
+                  successor :=
+                .findall innerCount 0 outer innerFinish successor template sub
+                  result rest binding head innerRun (by simpa using done)
+                  (.zero successor)
+              have combined := beforeRun.trans collector
+              have combined' : MacroStepsN prog gt
+                  ((beforeCount + 1 + innerCount) + 1) start successor := by
+                simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+                  combined
+              simpa [successor] using
+                MacroPrefixN.closed baseFrames _ start successor combined'
+          | suspended nestedBase nestedBeforeCount nestedInnerCount nestedStart
+              nestedOuter nestedTemplate nestedSub nestedResult nestedRest
+              nestedBinding nestedTarget nestedBefore nestedHead nestedInner =>
+              have strict : ∃ top extra,
+                  target.frames = top ::
+                    (extra ++
+                      (.findall
+                        (findallFrameOf outer template result rest binding) ::
+                        baseFrames)) :=
+                open_frames_cons_suffix nestedBefore nestedHead nestedInner
+              have recursiveStep : Step prog gt target
+                  (resumeFindall target exitFrame remaining) :=
+                .findallExit target exitFrame remaining frameHead done
+              have recursiveSuffix :=
+                step_preserves_suffix_of_strict strict recursiveStep
+              have advanced := innerIH recursiveStep recursiveSuffix
+              have rebuilt := MacroPrefixN.suspended baseFrames beforeCount
+                _ start outer template sub result rest binding _
+                beforeRun head advanced
+              simpa [Nat.add_assoc] using rebuilt
+
+/-- Extend a top-level parsed prefix by an arbitrary fine run.  With no
+protected caller frames, every intermediate target trivially has the empty
+list as a suffix, so `advance` can be iterated without an additional safety
+premise. -/
+theorem extendRoot {prog : Prog} {gt : GroundingTable}
+    {m n : Nat} {start : Conf} {before after : OpenConf}
+    (parsed : MacroPrefixN prog gt [] m start before)
+    (execution : StepsN prog gt n before after) :
+    MacroPrefixN prog gt [] (m + n) start after := by
+  induction execution generalizing m start with
+  | zero state => simpa using parsed
+  | succ count before middle after oneStep tail tailIH =>
+      have middleSuffix : ∃ extra, middle.frames = extra ++ ([] : List Frame) :=
+        ⟨middle.frames, by simp⟩
+      have advanced := parsed.advance oneStep middleSuffix
+      have finished := tailIH advanced
+      have countEq : (m + 1) + count = m + (count + 1) := by omega
+      rw [countEq] at finished
+      exact finished
+
+/-- Parse any top-level fine run into either a closed macro run or an explicit
+stack of unpaired collector entries. -/
+theorem ofRootSteps {prog : Prog} {gt : GroundingTable}
+    {n : Nat} {start : Conf} {target : OpenConf}
+    (execution : StepsN prog gt n (OpenConf.ofConf start []) target) :
+    MacroPrefixN prog gt [] n start target := by
+  have initial : MacroPrefixN prog gt [] 0 start
+      (OpenConf.ofConf start []) :=
+    .closed [] 0 start start (.zero start)
+  simpa using initial.extendRoot execution
+
+/-- A top-level parsed prefix is either a closed macro with an exact plain
+endpoint, or it still owns at least one suspended collector frame. -/
+theorem root_closed_or_has_frames {prog : Prog} {gt : GroundingTable}
+    {n : Nat} {start : Conf} {target : OpenConf}
+    (parsed : MacroPrefixN prog gt [] n start target) :
+    (∃ finish,
+        target = OpenConf.ofConf finish [] ∧
+        MacroStepsN prog gt n start finish) ∨
+      target.frames ≠ [] := by
+  cases parsed with
+  | closed baseFrames count parsedStart parsedFinish run =>
+      exact Or.inl ⟨parsedFinish, rfl, run⟩
+  | suspended baseFrames beforeCount innerCount parsedStart outer template sub
+      result rest binding target beforeRun head inner =>
+      right
+      rcases open_frames_cons_suffix beforeRun head inner with
+        ⟨top, extra, framesEq⟩
+      intro emptyFrames
+      rw [emptyFrames] at framesEq
+      simp at framesEq
+
+/-- Completeness of the bracket parser for closed top-level runs.  Returning
+to an empty frame stack excludes the suspended case, so every such raw
+`StepsN` derivation yields a `MacroStepsN` with the same exact count and
+endpoints. -/
+theorem closedRootSteps_complete {prog : Prog} {gt : GroundingTable}
+    {n : Nat} {start finish : Conf}
+    (execution : StepsN prog gt n (OpenConf.ofConf start [])
+      (OpenConf.ofConf finish [])) :
+    MacroStepsN prog gt n start finish := by
+  have parsed := ofRootSteps execution
+  rcases parsed.root_closed_or_has_frames with
+    ⟨parsedFinish, endpoint, run⟩ | stillOpen
+  · have finishEq : finish = parsedFinish := by
+      have projected := congrArg OpenConf.toConf endpoint
+      simpa using projected
+    subst parsedFinish
+    exact run
+  · exact False.elim (stillOpen rfl)
+
+/-- Exact terminating-run correspondence for the fine `findall` lane.  This
+is count-preserving in both directions and includes arbitrary collector
+nesting; open prefixes are intentionally outside the right-hand side. -/
+theorem closedRootSteps_iff_macro {prog : Prog} {gt : GroundingTable}
+    {n : Nat} {start finish : Conf} :
+    StepsN prog gt n (OpenConf.ofConf start [])
+        (OpenConf.ofConf finish []) ↔
+      MacroStepsN prog gt n start finish := by
+  constructor
+  · exact closedRootSteps_complete
+  · intro structured
+    exact MacroStepsN.lift [] structured
+
+/-- Every closed top-level fine run is licensed by the sealed `StepStar`.
+Unlike answer-list projection, this theorem is obtained only after the exact
+frame-bracket parser has ruled out every unpaired open prefix. -/
+theorem closedRootSteps_collapse_to_sealed {prog : Prog}
+    {gt : GroundingTable} {n : Nat} {start finish : Conf}
+    (execution : StepsN prog gt n (OpenConf.ofConf start [])
+      (OpenConf.ofConf finish [])) :
+    PLeaTTa.StepStar prog gt start finish :=
+  (closedRootSteps_complete execution).toStepStar
+
+end MacroPrefixN
 
 /-- One arbitrarily nested terminating collector has both views at once: its
 fine lane contains exactly entry, every recursively expanded inner step, and

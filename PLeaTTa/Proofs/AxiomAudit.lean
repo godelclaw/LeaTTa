@@ -994,6 +994,16 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.DemandDrivenStep.resumeFindall_transfers_alts
 #print axioms PLeaTTa.DemandDrivenStep.MacroStepsN.toStepStar
 #print axioms PLeaTTa.DemandDrivenStep.MacroStepsN.lift
+#print axioms PLeaTTa.DemandDrivenStep.MacroStepsN.trans
+#print axioms PLeaTTa.DemandDrivenStep.MacroPrefixN.frames_suffix
+#print axioms PLeaTTa.DemandDrivenStep.MacroPrefixN.step_preserves_suffix_of_strict
+#print axioms PLeaTTa.DemandDrivenStep.MacroPrefixN.advance
+#print axioms PLeaTTa.DemandDrivenStep.MacroPrefixN.extendRoot
+#print axioms PLeaTTa.DemandDrivenStep.MacroPrefixN.ofRootSteps
+#print axioms PLeaTTa.DemandDrivenStep.MacroPrefixN.root_closed_or_has_frames
+#print axioms PLeaTTa.DemandDrivenStep.MacroPrefixN.closedRootSteps_complete
+#print axioms PLeaTTa.DemandDrivenStep.MacroPrefixN.closedRootSteps_iff_macro
+#print axioms PLeaTTa.DemandDrivenStep.MacroPrefixN.closedRootSteps_collapse_to_sealed
 #print axioms PLeaTTa.DemandDrivenStep.findall_nested_run_expands_and_collapses
 #print axioms PLeaTTa.DemandDrivenStep.empty_generator_findall_is_three_fine_steps
 #print axioms PLeaTTa.DemandDrivenStep.FlatStepsN.lift
