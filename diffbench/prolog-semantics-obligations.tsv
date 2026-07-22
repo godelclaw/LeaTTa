@@ -3,7 +3,7 @@
 # term_algebra_sha256=fd8c5c4912379a03a4e1ed2b88dc05501eaaa2b3a5ebb43338ece4bb1f81faf0
 # ordered_mgu_sha256=75985862b874d7b9d5e686555f8058e00b08bb648777f29880d5dd54b1f17f6c
 # local_resolver_sha256=db1889d43c17f45a1975aefb51e2c75985110d250e9966c9751a944ccca59384
-# goal_semantics_sha256=2583fc75e9b2e122299c816dc1bca3784717eb7e9f20cbb91a61fd57ef81255f
+# goal_semantics_sha256=205c052f50cffdb4b6b47332bae9373b2ba01c3f6fc1ce3ed7ce9e91081c46ee
 # status: PASS=proved-property-of-the-independent-model GAP=open-reference-or-adequacy-proof FAIL=known-implementation/reference-mismatch BOUNDARY=permanent-explicit-trusted-boundary
 # proof: SC=sound-complete W=witness/inversion theorem SH=shape-only N=none
 # native_source: T=src/translator.pl M=src/metta.pl SWI=official SWI-Prolog manual ISO=ISO Prolog working documents -=independent infrastructure
@@ -35,7 +35,8 @@ WORLD.transaction	T138-139,SWI:db	world	-	N	GAP	commit/rollback, exception, and 
 CALL.cursor_protocol	SWI:foreign-control	boundary	OrderedCallProtocol	SH	GAP	open/pull/prune/perform thread explicit Session state; imported-provider functionality, replay, and cursor-ownership conformance remain open
 CALL.local_protocol	ISO:SLD	resolver	semanticLocalClauseProtocol;PreparedCursor;LocalPull	SC	PASS	local opening is unique, returns a well-formed eagerly reserved cursor, and every pull is total and deterministic; match/reject/exhaust are disjoint
 CALL.reply_answer_separation	ISO:SLD	resolver	Process.await;localCallProcess	W	PASS	local pulls return entered-clause tags only; answer-free splice, ordered two-clause answers, and clause-one cut pruning are proved in certified control
-CALL.cursor_linearity	SWI:foreign-control	boundary	Process.liveTokens;Prunes	SH	GAP	discarded siblings are pruned sequentially, but well-formedness must still forbid forged or multiply-owned live cursors and prove prune-once preservation
+CALL.local_cursor_linearity	ISO:SLD	resolver	GoalSemantics.CursorToken;Search.CursorOwnership;StepsN.prunedScopes_nodup	W	PASS	local cursor identity is the fresh predicate-activation scope rather than snapshot equality; initialized public states forbid duplicate and future identities, preserve ownership through every finite prefix, remove every reported prune, cannot resurrect old identities, and report each activation pruned at most once; explicit duplicate/future-forgery counterexamples are rejected while equal snapshots at distinct scopes remain legal
+CALL.imported_cursor_linearity	SWI:foreign-control	boundary	Process.liveTokens;Prunes	SH	GAP	generic imported providers prune discarded siblings sequentially, but their stateful protocol conformance must still prove token issuance, exclusive ownership, no reuse after pull, and prune-once preservation
 CALL.stateful_session	SWI:foreign-control	boundary	OrderedCallProtocol;State;RawStep.session_measure_mono	W	PASS	every state and action threads explicit Session state; a generic monotone-measure theorem and its local fresh-high-water instance rule out rollback through backtracking, cut, or exception unwind; imported-provider replay conformance remains separate
 RESOLVER.clause_order	ISO:SLD	resolver	Resolver.Database;reserveVisible;PreparedCursor;LocalPull	W	PASS	eager call-start reservation preserves duplicate occurrences and exact source order while each pull exposes at most one standardized clause
 RESOLVER.freshening	ISO:SLD	resolver	reserveVisible;FreshReservation;prepareCall	W	PASS	all actual renaming targets lie in disjoint reserved intervals above the live query, nested targets begin above every retained outer target, and raw control steps cannot roll the high-water back; a concrete lazy-cursor foil collides

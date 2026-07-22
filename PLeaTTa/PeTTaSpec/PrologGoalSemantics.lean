@@ -39,11 +39,43 @@ than an infinite inductive value.
 
 abbrev CutScopeId := Trace.CutScopeId
 
+/-- Identity-bearing handle for one live local predicate cursor.
+
+The prepared snapshot alone is not an identity: two independent calls can
+prepare extensionally equal snapshots.  The fresh predicate cut scope is the
+activation identifier allocated by the certified layer, while `cursor` keeps
+the exact frozen clauses that would be discarded. -/
+structure CursorToken where
+  scope : CutScopeId
+  cursor : PreparedCursor
+deriving Repr, Inhabited
+
 /-- Ordered observations of the certified local lane.  `Empty` in the effect
 slot is intentional for this first core: world actions receive a distinct
 typed extension rather than being smuggled through a clause reply. -/
 abbrev Observation :=
-  Trace.Observation CallRequest PreparedCursor Substitution Empty Term
+  Trace.Observation CallRequest CursorToken Substitution Empty Term
+
+/-- Activation identities explicitly reported as pruned by an event batch. -/
+def prunedScopes : List Observation → List CutScopeId
+  | [] => []
+  | .pruned cursor :: rest => cursor.scope :: prunedScopes rest
+  | _ :: rest => prunedScopes rest
+
+@[simp] theorem prunedScopes_append (left right : List Observation) :
+    prunedScopes (left ++ right) = prunedScopes left ++ prunedScopes right := by
+  induction left with
+  | nil => rfl
+  | cons event rest inductionHypothesis =>
+      cases event <;> simp [prunedScopes, inductionHypothesis]
+
+@[simp] theorem prunedScopes_pruned_map (cursors : List CursorToken) :
+    prunedScopes (cursors.map Trace.Observation.pruned) =
+      cursors.map CursorToken.scope := by
+  induction cursors with
+  | nil => rfl
+  | cons cursor rest inductionHypothesis =>
+      simp [prunedScopes, inductionHypothesis]
 
 /-- Non-backtrackable state.  The local database and fresh-name high-water
 remain outside the search tree; cut-scope identities use a separate monotone
@@ -114,15 +146,47 @@ namespace Search
 
 /-- Live local cursors in the exact left-to-right structural order in which a
 cut or exception would discard them.  A latent product tail owns no cursor
-until it is entered. -/
-def liveCursors : Search → List PreparedCursor
+until it is entered.  Pairing the snapshot with its activation scope makes
+two equal snapshots from distinct calls distinguishable resources. -/
+def liveCursors : Search → List CursorToken
   | .done => []
   | .task _ _ _ => []
-  | .clauses _ cursor => [cursor]
+  | .clauses scope cursor => [{ scope := scope, cursor := cursor }]
   | .raise _ => []
   | .choice _ left right => left.liveCursors ++ right.liveCursors
   | .cutBoundary _ body => body.liveCursors
   | .product _ head _ => head.liveCursors
+
+/-- Activation identities of all live cursors, preserving structural order. -/
+def liveCursorScopes : Search → List CutScopeId
+  | .done => []
+  | .task _ _ _ => []
+  | .clauses scope _ => [scope]
+  | .raise _ => []
+  | .choice _ left right => left.liveCursorScopes ++ right.liveCursorScopes
+  | .cutBoundary _ body => body.liveCursorScopes
+  | .product _ head _ => head.liveCursorScopes
+
+theorem liveCursorScopes_eq_map (search : Search) :
+    search.liveCursorScopes = search.liveCursors.map CursorToken.scope := by
+  induction search <;>
+    simp_all [liveCursorScopes, liveCursors]
+
+@[simp] theorem prunedScopes_liveCursors (search : Search) :
+    prunedScopes (search.liveCursors.map Trace.Observation.pruned) =
+      search.liveCursorScopes := by
+  rw [prunedScopes_pruned_map, liveCursorScopes_eq_map]
+
+/-- Linear ownership invariant for local cursors.
+
+`Nodup` forbids copying one activation cursor into two search positions.  The
+high-water bound rules out inventing a future activation identity.  Starting
+from `initialState`, preservation below strengthens the latter into an
+issuance guarantee: the only transition that can introduce a previously
+absent scope is `taskCall`, at the current high-water. -/
+def CursorOwnership (nextCutScope : Nat) (search : Search) : Prop :=
+  search.liveCursorScopes.Nodup ∧
+    ∀ scope ∈ search.liveCursorScopes, scope < nextCutScope
 
 /-- Source-order disjunction.  Every alternative contains the same residual
 tail, so a later cut in that tail can prune the not-yet-entered disjuncts at
@@ -137,6 +201,25 @@ def disjoin (scope : CutScopeId) (branches : List Goal) (tail : List Goal)
       | _ =>
           .choice scope (.task scope (branch :: tail) bindings)
             (disjoin scope rest tail bindings)
+
+@[simp] theorem disjoin_liveCursors (scope : CutScopeId)
+    (branches tail : List Goal) (bindings : Substitution) :
+    (disjoin scope branches tail bindings).liveCursors = [] := by
+  induction branches with
+  | nil => rfl
+  | cons branch rest inductionHypothesis =>
+      cases rest with
+      | nil => rfl
+      | cons next remaining =>
+          change [] ++
+            (disjoin scope (next :: remaining) tail bindings).liveCursors = []
+          simpa using inductionHypothesis
+
+@[simp] theorem disjoin_liveCursorScopes (scope : CutScopeId)
+    (branches tail : List Goal) (bindings : Substitution) :
+    (disjoin scope branches tail bindings).liveCursorScopes = [] := by
+  rw [liveCursorScopes_eq_map, disjoin_liveCursors]
+  rfl
 
 /-- Structural cut-scope discipline for finite local search states. -/
 inductive WellScoped : CutScopeId → Search → Prop where
@@ -207,6 +290,21 @@ inductive RawTarget where
   | terminal (tag : Trace.Terminal Term)
   | running (search : Search)
 deriving Inhabited
+
+namespace RawTarget
+
+/-- Cursor activations retained by a raw successor. -/
+def liveCursorScopes : RawTarget → List CutScopeId
+  | .terminal _ => []
+  | .running search => search.liveCursorScopes
+
+/-- A terminal successor owns no cursor; a running successor must satisfy the
+same linear ownership invariant as a search state. -/
+def CursorOwnership (nextCutScope : Nat) : RawTarget → Prop
+  | .terminal _ => True
+  | .running search => search.CursorOwnership nextCutScope
+
+end RawTarget
 
 /-- Terminal targets need no scope proof; running successors must preserve the
 active predicate cut scope. -/
@@ -416,6 +514,250 @@ inductive RawStep : Session → Search → List Observation → Trace.CutSignal 
         (.terminal (.raised exception))
 
 namespace RawStep
+
+/-- A raw step can retain an old cursor activation or introduce one at/above
+the incoming scope high-water.  This is the frame lemma used to show that a
+nested call cannot collide with a cursor parked in a right alternative. -/
+theorem cursor_scope_old_or_fresh {before after : Session} {search : Search}
+    {events : List Observation} {signal : Trace.CutSignal}
+    {target : RawTarget}
+    (step : RawStep before search events signal after target) :
+    ∀ scope ∈ target.liveCursorScopes,
+      scope ∈ search.liveCursorScopes ∨ before.nextCutScope ≤ scope := by
+  induction step with
+  | clausesPull scope cursor outcome session pulled =>
+      cases outcome with
+      | silent next =>
+          simp [RawTarget.liveCursorScopes, Search.liveCursorScopes,
+            localPullTarget]
+      | reply entered next =>
+          simp [RawTarget.liveCursorScopes, Search.liveCursorScopes,
+            localPullTarget]
+      | effect effect next => exact Empty.elim effect
+      | exhausted =>
+          simp [RawTarget.liveCursorScopes, localPullTarget]
+      | raised exception => exact Empty.elim exception
+  | choiceProgress scope left right next events before after child
+      inductionHypothesis =>
+    intro scope member
+    simp only [RawTarget.liveCursorScopes, Search.liveCursorScopes,
+      List.mem_append] at member ⊢
+    rcases member with member | member
+    · rcases inductionHypothesis scope member with old | fresh
+      · exact Or.inl (Or.inl old)
+      · exact Or.inr fresh
+    · exact Or.inl (Or.inr member)
+  | choiceCommitHere scope left right next events before after child
+      inductionHypothesis =>
+    intro scope member
+    simp only [RawTarget.liveCursorScopes, Search.liveCursorScopes,
+      List.mem_append] at member ⊢
+    rcases inductionHypothesis scope member with old | fresh
+    · exact Or.inl (Or.inl old)
+    · exact Or.inr fresh
+  | choiceCommitOutside scope other different left right next events before
+      after child inductionHypothesis =>
+    intro scope member
+    simp only [RawTarget.liveCursorScopes, Search.liveCursorScopes,
+      List.mem_append] at member ⊢
+    rcases member with member | member
+    · rcases inductionHypothesis scope member with old | fresh
+      · exact Or.inl (Or.inl old)
+      · exact Or.inr fresh
+    · exact Or.inl (Or.inr member)
+  | taskDisjunction scope branches rest bindings session =>
+      simp [RawTarget.liveCursorScopes, Search.liveCursorScopes]
+  | taskCall scope predicate arguments rest bindings session =>
+      simp [RawTarget.liveCursorScopes, Search.liveCursorScopes,
+        openedFor, openLocalCall]
+  | _ =>
+      simp_all (config := { failIfUnchanged := false })
+        [RawTarget.liveCursorScopes, Search.liveCursorScopes]
+
+/-- Once an identity below the incoming high-water is absent, no step can
+reintroduce it.  A new call can use only the high-water or a later identity. -/
+theorem old_absence_preserved {before after : Session} {search : Search}
+    {events : List Observation} {signal : Trace.CutSignal}
+    {target : RawTarget} (step : RawStep before search events signal after target)
+    (scope : CutScopeId) (old : scope < before.nextCutScope)
+    (absent : scope ∉ search.liveCursorScopes) :
+    scope ∉ target.liveCursorScopes := by
+  intro member
+  rcases cursor_scope_old_or_fresh step scope member with retained | fresh
+  · exact absent retained
+  · exact (Nat.not_le_of_gt old) fresh
+
+/-- Every reported prune names a cursor activation that was live in the
+source search state.  Prune observations therefore cannot be fabricated by a
+primitive task or by a continuation that never owned the cursor. -/
+theorem pruned_scope_origin {before after : Session} {search : Search}
+    {events : List Observation} {signal : Trace.CutSignal}
+    {target : RawTarget}
+    (step : RawStep before search events signal after target) :
+    ∀ scope ∈ prunedScopes events, scope ∈ search.liveCursorScopes := by
+  induction step with
+  | clausesPull scope cursor outcome session pulled =>
+      cases outcome with
+      | silent next => simp [localPullEvents, prunedScopes]
+      | reply entered next => simp [localPullEvents, prunedScopes]
+      | effect effect next => exact Empty.elim effect
+      | exhausted => simp [localPullEvents, prunedScopes]
+      | raised exception => exact Empty.elim exception
+  | choiceRaised scope left right exception events before after child
+      inductionHypothesis =>
+      intro cursor member
+      simp only [prunedScopes_append, prunedScopes_pruned_map,
+        List.mem_append] at member
+      simp only [Search.liveCursorScopes, List.mem_append]
+      rcases member with childPrune | rightPrune
+      · exact Or.inl (inductionHypothesis cursor childPrune)
+      · exact Or.inr (by
+          rw [Search.liveCursorScopes_eq_map]
+          exact rightPrune)
+  | choiceCommitHere scope left right next events before after child
+      inductionHypothesis =>
+      intro cursor member
+      simp only [prunedScopes_append, prunedScopes_pruned_map,
+        List.mem_append] at member
+      simp only [Search.liveCursorScopes, List.mem_append]
+      rcases member with childPrune | rightPrune
+      · exact Or.inl (inductionHypothesis cursor childPrune)
+      · exact Or.inr (by
+          rw [Search.liveCursorScopes_eq_map]
+          exact rightPrune)
+  | _ =>
+      simp_all (config := { failIfUnchanged := false })
+        [prunedScopes, Search.liveCursorScopes]
+
+/-- Every cursor reported as pruned is absent from the successor.  The
+nontrivial cases are nested pruning under a retained sibling: source `Nodup`
+separates old branches, and the allocator high-water separates newly opened
+calls from every old sibling. -/
+theorem pruned_scope_removed {before after : Session} {search : Search}
+    {events : List Observation} {signal : Trace.CutSignal}
+    {target : RawTarget} (step : RawStep before search events signal after target)
+    (owned : search.CursorOwnership before.nextCutScope) :
+    ∀ scope ∈ prunedScopes events, scope ∉ target.liveCursorScopes := by
+  induction step with
+  | clausesPull scope cursor outcome session pulled =>
+      cases outcome with
+      | silent next => simp [localPullEvents, prunedScopes]
+      | reply entered next => simp [localPullEvents, prunedScopes]
+      | effect effect next => exact Empty.elim effect
+      | exhausted => simp [localPullEvents, prunedScopes]
+      | raised exception => exact Empty.elim exception
+  | choiceProgress scope left right next events before after child
+      inductionHypothesis =>
+      rw [Search.CursorOwnership] at owned
+      simp only [Search.liveCursorScopes, List.nodup_append,
+        List.mem_append] at owned
+      rcases owned with
+        ⟨⟨leftNodup, rightNodup, separated⟩, oldBound⟩
+      have leftOwned : left.CursorOwnership before.nextCutScope :=
+        ⟨leftNodup, fun cursor member => oldBound cursor (Or.inl member)⟩
+      intro cursor pruned
+      simp only [RawTarget.liveCursorScopes, Search.liveCursorScopes,
+        List.mem_append]
+      intro retained
+      rcases retained with retainedInNext | retainedInRight
+      · exact inductionHypothesis leftOwned cursor pruned retainedInNext
+      · have origin := pruned_scope_origin child cursor pruned
+        exact separated cursor origin cursor retainedInRight rfl
+  | choiceRaised scope left right exception events before after child
+      inductionHypothesis =>
+      simp [RawTarget.liveCursorScopes]
+  | choiceCommitHere scope left right next events before after child
+      inductionHypothesis =>
+      rw [Search.CursorOwnership] at owned
+      simp only [Search.liveCursorScopes, List.nodup_append,
+        List.mem_append] at owned
+      rcases owned with
+        ⟨⟨leftNodup, rightNodup, separated⟩, oldBound⟩
+      have leftOwned : left.CursorOwnership before.nextCutScope :=
+        ⟨leftNodup, fun cursor member => oldBound cursor (Or.inl member)⟩
+      intro cursor pruned retained
+      simp only [prunedScopes_append, Search.prunedScopes_liveCursors,
+        List.mem_append] at pruned
+      simp only [RawTarget.liveCursorScopes] at retained
+      rcases pruned with childPrune | rightPrune
+      · exact inductionHypothesis leftOwned cursor childPrune retained
+      · rcases cursor_scope_old_or_fresh child cursor retained with
+          retainedOld | retainedFresh
+        · exact separated cursor retainedOld cursor rightPrune rfl
+        · exact (Nat.not_le_of_gt (oldBound cursor (Or.inr rightPrune)))
+            retainedFresh
+  | choiceCommitOutside scope other different left right next events before
+      after child inductionHypothesis =>
+      rw [Search.CursorOwnership] at owned
+      simp only [Search.liveCursorScopes, List.nodup_append,
+        List.mem_append] at owned
+      rcases owned with
+        ⟨⟨leftNodup, rightNodup, separated⟩, oldBound⟩
+      have leftOwned : left.CursorOwnership before.nextCutScope :=
+        ⟨leftNodup, fun cursor member => oldBound cursor (Or.inl member)⟩
+      intro cursor pruned
+      simp only [RawTarget.liveCursorScopes, Search.liveCursorScopes,
+        List.mem_append]
+      intro retained
+      rcases retained with retainedInNext | retainedInRight
+      · exact inductionHypothesis leftOwned cursor pruned retainedInNext
+      · have origin := pruned_scope_origin child cursor pruned
+        exact separated cursor origin cursor retainedInRight rfl
+  | _ =>
+      simp_all (config := { failIfUnchanged := false })
+        [prunedScopes, RawTarget.liveCursorScopes, Search.CursorOwnership,
+          Search.liveCursorScopes, List.nodup_append]
+
+/-- One well-owned transition cannot report the same activation as pruned
+twice.  Nested child prunes and a discarded right branch are disjoint because
+the source search owns their cursor scopes linearly. -/
+theorem prunedScopes_nodup {before after : Session} {search : Search}
+    {events : List Observation} {signal : Trace.CutSignal}
+    {target : RawTarget} (step : RawStep before search events signal after target)
+    (owned : search.CursorOwnership before.nextCutScope) :
+    (prunedScopes events).Nodup := by
+  induction step with
+  | clausesPull scope cursor outcome session pulled =>
+      cases outcome with
+      | silent next => simp [localPullEvents, prunedScopes]
+      | reply entered next => simp [localPullEvents, prunedScopes]
+      | effect effect next => exact Empty.elim effect
+      | exhausted => simp [localPullEvents, prunedScopes]
+      | raised exception => exact Empty.elim exception
+  | choiceRaised scope left right exception events before after child
+      inductionHypothesis =>
+      rw [Search.CursorOwnership] at owned
+      simp only [Search.liveCursorScopes, List.nodup_append,
+        List.mem_append] at owned
+      rcases owned with
+        ⟨⟨leftNodup, rightNodup, separated⟩, oldBound⟩
+      have leftOwned : left.CursorOwnership before.nextCutScope :=
+        ⟨leftNodup, fun cursor member => oldBound cursor (Or.inl member)⟩
+      simp only [prunedScopes_append, Search.prunedScopes_liveCursors,
+        List.nodup_append]
+      refine ⟨inductionHypothesis leftOwned, rightNodup, ?_⟩
+      intro cursor childPrune sibling siblingInRight equal
+      have origin := pruned_scope_origin child cursor childPrune
+      exact separated cursor origin sibling siblingInRight equal
+  | choiceCommitHere scope left right next events before after child
+      inductionHypothesis =>
+      rw [Search.CursorOwnership] at owned
+      simp only [Search.liveCursorScopes, List.nodup_append,
+        List.mem_append] at owned
+      rcases owned with
+        ⟨⟨leftNodup, rightNodup, separated⟩, oldBound⟩
+      have leftOwned : left.CursorOwnership before.nextCutScope :=
+        ⟨leftNodup, fun cursor member => oldBound cursor (Or.inl member)⟩
+      simp only [prunedScopes_append, Search.prunedScopes_liveCursors,
+        List.nodup_append]
+      refine ⟨inductionHypothesis leftOwned, rightNodup, ?_⟩
+      intro cursor childPrune sibling siblingInRight equal
+      have origin := pruned_scope_origin child cursor childPrune
+      exact separated cursor origin sibling siblingInRight equal
+  | _ =>
+      simp_all (config := { failIfUnchanged := false })
+        [prunedScopes, Search.CursorOwnership, Search.liveCursorScopes,
+          List.nodup_append]
 
 /-- Primitive task reduction is deterministic.  In particular, the only
 relational computation here is the canonical ordered MGU, whose exact
@@ -690,6 +1032,110 @@ theorem nextCutScope_mono {before after : Session} {search : Search}
     omega
   all_goals assumption
 
+/-- Cursor ownership is subject-reduction invariant.  No transition can
+duplicate a live activation, manufacture a future identifier, or collide a
+nested call with a retained right alternative.  The proof uses both halves of
+the invariant: old branch identities are disjoint by `Nodup`, while a newly
+opened call is at/above the old high-water and every retained sibling is
+strictly below it. -/
+theorem preserves_cursorOwnership_target {before after : Session}
+    {search : Search} {events : List Observation}
+    {signal : Trace.CutSignal} {target : RawTarget}
+    (step : RawStep before search events signal after target)
+    (owned : search.CursorOwnership before.nextCutScope) :
+    target.CursorOwnership after.nextCutScope := by
+  induction step with
+  | clausesPull scope cursor outcome session pulled =>
+      cases outcome with
+      | silent next =>
+          simpa [RawTarget.CursorOwnership, Search.CursorOwnership,
+            Search.liveCursorScopes, localPullTarget] using owned
+      | reply entered next =>
+          simpa [RawTarget.CursorOwnership, Search.CursorOwnership,
+            Search.liveCursorScopes, localPullTarget] using owned
+      | effect effect next => exact Empty.elim effect
+      | exhausted => exact True.intro
+      | raised exception => exact Empty.elim exception
+  | choiceProgress scope left right next events before after child
+      inductionHypothesis =>
+      rw [Search.CursorOwnership] at owned
+      simp only [Search.liveCursorScopes, List.nodup_append,
+        List.mem_append] at owned
+      rcases owned with
+        ⟨⟨leftNodup, rightNodup, separated⟩, oldBound⟩
+      have leftOwned : left.CursorOwnership before.nextCutScope :=
+        ⟨leftNodup, fun cursor member => oldBound cursor (Or.inl member)⟩
+      rcases inductionHypothesis leftOwned with
+        ⟨nextNodup, nextBound⟩
+      rw [RawTarget.CursorOwnership, Search.CursorOwnership]
+      simp only [Search.liveCursorScopes, List.nodup_append,
+        List.mem_append]
+      refine ⟨⟨nextNodup, rightNodup, ?_⟩, ?_⟩
+      · intro cursor cursorInNext sibling siblingInRight equal
+        rcases cursor_scope_old_or_fresh child cursor cursorInNext with
+          old | fresh
+        · exact separated cursor old sibling siblingInRight equal
+        · have siblingBound := oldBound sibling (Or.inr siblingInRight)
+          subst sibling
+          exact (Nat.not_le_of_gt siblingBound) fresh
+      · intro cursor member
+        rcases member with inNext | inRight
+        · exact nextBound cursor inNext
+        · exact Nat.lt_of_lt_of_le (oldBound cursor (Or.inr inRight))
+            (nextCutScope_mono child)
+  | choiceComplete scope left right before after child inductionHypothesis =>
+      rw [Search.CursorOwnership] at owned
+      simp only [Search.liveCursorScopes, List.nodup_append,
+        List.mem_append] at owned
+      rcases owned with
+        ⟨⟨leftNodup, rightNodup, separated⟩, oldBound⟩
+      rw [RawTarget.CursorOwnership, Search.CursorOwnership]
+      exact ⟨rightNodup, fun cursor member =>
+        Nat.lt_of_lt_of_le (oldBound cursor (Or.inr member))
+          (nextCutScope_mono child)⟩
+  | choiceCommitOutside scope other different left right next events before
+      after child inductionHypothesis =>
+      rw [Search.CursorOwnership] at owned
+      simp only [Search.liveCursorScopes, List.nodup_append,
+        List.mem_append] at owned
+      rcases owned with
+        ⟨⟨leftNodup, rightNodup, separated⟩, oldBound⟩
+      have leftOwned : left.CursorOwnership before.nextCutScope :=
+        ⟨leftNodup, fun cursor member => oldBound cursor (Or.inl member)⟩
+      rcases inductionHypothesis leftOwned with
+        ⟨nextNodup, nextBound⟩
+      rw [RawTarget.CursorOwnership, Search.CursorOwnership]
+      simp only [Search.liveCursorScopes, List.nodup_append,
+        List.mem_append]
+      refine ⟨⟨nextNodup, rightNodup, ?_⟩, ?_⟩
+      · intro cursor cursorInNext sibling siblingInRight equal
+        rcases cursor_scope_old_or_fresh child cursor cursorInNext with
+          old | fresh
+        · exact separated cursor old sibling siblingInRight equal
+        · have siblingBound := oldBound sibling (Or.inr siblingInRight)
+          subst sibling
+          exact (Nat.not_le_of_gt siblingBound) fresh
+      · intro cursor member
+        rcases member with inNext | inRight
+        · exact nextBound cursor inNext
+        · exact Nat.lt_of_lt_of_le (oldBound cursor (Or.inr inRight))
+            (nextCutScope_mono child)
+  | _ =>
+      simp_all (config := { failIfUnchanged := false })
+        [RawTarget.CursorOwnership, Search.CursorOwnership,
+          Search.liveCursorScopes, openedFor, openLocalCall,
+          List.nodup_append] <;>
+        try omega
+
+/-- Running successors inherit the linear cursor-ownership invariant. -/
+theorem preserves_cursorOwnership {before after : Session}
+    {search next : Search} {events : List Observation}
+    {signal : Trace.CutSignal}
+    (step : RawStep before search events signal after (.running next))
+    (owned : search.CursorOwnership before.nextCutScope) :
+    next.CursorOwnership after.nextCutScope :=
+  preserves_cursorOwnership_target step owned
+
 /-- The present pure local core never rewinds or mutates the database.  When
 dynamic world-action rules are added this equality will be replaced by a
 generation-monotone extension relation; the database will remain in this
@@ -950,6 +1396,30 @@ inductive Rooted : State → Prop where
       (bodyScoped : body.WellScoped 0) :
       Rooted (.running session (.cutBoundary 0 body))
 
+/-- Cursor resources carried by a public state are linearly owned below that
+state's allocator high-water. -/
+def CursorOwned : State → Prop
+  | .terminal _ _ => True
+  | .running session search =>
+      search.CursorOwnership session.nextCutScope
+  | .uncaughtCut session _ continuation =>
+      continuation.CursorOwnership session.nextCutScope
+
+/-- Session high-water carried by every public state. -/
+def scopeHighWater : State → Nat
+  | .terminal session _ => session.nextCutScope
+  | .running session _ => session.nextCutScope
+  | .uncaughtCut session _ _ => session.nextCutScope
+
+/-- Live cursor activations carried by every public state. -/
+def liveCursorScopes : State → List CutScopeId
+  | .terminal _ _ => []
+  | .running _ search => search.liveCursorScopes
+  | .uncaughtCut _ _ continuation => continuation.liveCursorScopes
+
+/-- Complete public structural invariant used by reachability theorems. -/
+def WellFormed (state : State) : Prop := state.Rooted ∧ state.CursorOwned
+
 end State
 
 private def RawTarget.toState (session : Session) : RawTarget → State
@@ -1037,6 +1507,103 @@ theorem preserves_rooted {start finish : State} {events : List Observation}
               exact False.elim
                 (RawStep.no_foreign_commit child bodyScoped different)
 
+/-- Public transitions preserve linear cursor ownership, including diagnostic
+escaped-cut states for arbitrary non-rooted inputs. -/
+theorem preserves_cursorOwned {start finish : State}
+    {events : List Observation} (step : Transition start events finish)
+    (owned : start.CursorOwned) : finish.CursorOwned := by
+  cases step with
+  | ordinary search events before after target raw =>
+      change search.CursorOwnership before.nextCutScope at owned
+      have targetOwned := raw.preserves_cursorOwnership_target owned
+      cases target <;> exact targetOwned
+  | uncaught search next events before after scope raw =>
+      change search.CursorOwnership before.nextCutScope at owned
+      exact raw.preserves_cursorOwnership owned
+
+/-- Public transitions never rewind the predicate-activation allocator. -/
+theorem scopeHighWater_mono {start finish : State}
+    {events : List Observation} (step : Transition start events finish) :
+    start.scopeHighWater ≤ finish.scopeHighWater := by
+  cases step with
+  | ordinary search events before after target raw =>
+      cases target <;>
+        exact raw.nextCutScope_mono
+  | uncaught search next events before after scope raw =>
+      exact raw.nextCutScope_mono
+
+/-- Every public prune event names a cursor live in the source state. -/
+theorem pruned_scope_origin {start finish : State}
+    {events : List Observation} (step : Transition start events finish) :
+    ∀ scope ∈ prunedScopes events, scope ∈ start.liveCursorScopes := by
+  cases step with
+  | ordinary search events before after target raw =>
+      exact raw.pruned_scope_origin
+  | uncaught search next events before after scope raw =>
+      exact raw.pruned_scope_origin
+
+/-- Every public prune event removes that activation from the successor. -/
+theorem pruned_scope_removed {start finish : State}
+    {events : List Observation} (step : Transition start events finish)
+    (owned : start.CursorOwned) :
+    ∀ scope ∈ prunedScopes events, scope ∉ finish.liveCursorScopes := by
+  cases step with
+  | ordinary search events before after target raw =>
+      change search.CursorOwnership before.nextCutScope at owned
+      have removed := raw.pruned_scope_removed owned
+      cases target <;> exact removed
+  | uncaught search next events before after scope raw =>
+      change search.CursorOwnership before.nextCutScope at owned
+      exact raw.pruned_scope_removed owned
+
+/-- An already-issued absent activation cannot be resurrected by a public
+transition. -/
+theorem old_absence_preserved {start finish : State}
+    {events : List Observation} (step : Transition start events finish)
+    (scope : CutScopeId) (old : scope < start.scopeHighWater)
+    (absent : scope ∉ start.liveCursorScopes) :
+    scope ∉ finish.liveCursorScopes := by
+  cases step with
+  | ordinary search events before after target raw =>
+      have preserved := raw.old_absence_preserved scope old absent
+      cases target <;> exact preserved
+  | uncaught search next events before after escaped raw =>
+      exact raw.old_absence_preserved scope old absent
+
+/-- One public transition reports pairwise-distinct pruned activations. -/
+theorem prunedScopes_nodup {start finish : State}
+    {events : List Observation} (step : Transition start events finish)
+    (owned : start.CursorOwned) : (prunedScopes events).Nodup := by
+  cases step with
+  | ordinary search events before after target raw =>
+      change search.CursorOwnership before.nextCutScope at owned
+      exact raw.prunedScopes_nodup owned
+  | uncaught search next events before after scope raw =>
+      change search.CursorOwnership before.nextCutScope at owned
+      exact raw.prunedScopes_nodup owned
+
+/-- A pruned activation is necessarily older than the source allocator
+high-water. -/
+theorem pruned_scope_lt_highWater {start finish : State}
+    {events : List Observation} (step : Transition start events finish)
+    (owned : start.CursorOwned) (scope : CutScopeId)
+    (pruned : scope ∈ prunedScopes events) :
+    scope < start.scopeHighWater := by
+  cases step with
+  | ordinary search events before after target raw =>
+      change search.CursorOwnership before.nextCutScope at owned
+      exact owned.2 scope (raw.pruned_scope_origin scope pruned)
+  | uncaught search next events before after escaped raw =>
+      change search.CursorOwnership before.nextCutScope at owned
+      exact owned.2 scope (raw.pruned_scope_origin scope pruned)
+
+/-- Public subject reduction for the combined scope and cursor invariant. -/
+theorem preserves_wellFormed {start finish : State}
+    {events : List Observation} (step : Transition start events finish)
+    (wellFormed : start.WellFormed) : finish.WellFormed :=
+  ⟨step.preserves_rooted wellFormed.1,
+    step.preserves_cursorOwned wellFormed.2⟩
+
 end Transition
 
 /-- A finite exact observation prefix. -/
@@ -1123,6 +1690,91 @@ theorem preserves_rooted {count : Nat} {start finish : State}
       inductionHypothesis =>
       exact inductionHypothesis (head.preserves_rooted rooted)
 
+/-- Every exact finite prefix preserves linear cursor ownership. -/
+theorem preserves_cursorOwned {count : Nat} {start finish : State}
+    {events : List Observation} (execution : StepsN count start events finish)
+    (owned : start.CursorOwned) : finish.CursorOwned := by
+  induction execution with
+  | zero state => exact owned
+  | succ count start middle finish first rest head tail
+      inductionHypothesis =>
+      exact inductionHypothesis (head.preserves_cursorOwned owned)
+
+/-- Every exact finite prefix preserves the combined public invariant. -/
+theorem preserves_wellFormed {count : Nat} {start finish : State}
+    {events : List Observation} (execution : StepsN count start events finish)
+    (wellFormed : start.WellFormed) : finish.WellFormed :=
+  ⟨execution.preserves_rooted wellFormed.1,
+    execution.preserves_cursorOwned wellFormed.2⟩
+
+/-- Finite execution never rewinds the predicate-activation allocator. -/
+theorem scopeHighWater_mono {count : Nat} {start finish : State}
+    {events : List Observation} (execution : StepsN count start events finish) :
+    start.scopeHighWater ≤ finish.scopeHighWater := by
+  induction execution with
+  | zero state => exact Nat.le_refl _
+  | succ count start middle finish first rest head tail
+      inductionHypothesis =>
+      exact Nat.le_trans head.scopeHighWater_mono inductionHypothesis
+
+/-- An absent already-issued activation remains absent through every finite
+execution prefix. -/
+theorem old_absence_preserved {count : Nat} {start finish : State}
+    {events : List Observation} (execution : StepsN count start events finish)
+    (scope : CutScopeId) (old : scope < start.scopeHighWater)
+    (absent : scope ∉ start.liveCursorScopes) :
+    scope ∉ finish.liveCursorScopes := by
+  induction execution with
+  | zero state => exact absent
+  | succ count start middle finish first rest head tail
+      inductionHypothesis =>
+      have middleAbsent := head.old_absence_preserved scope old absent
+      have middleOld := Nat.lt_of_lt_of_le old head.scopeHighWater_mono
+      exact inductionHypothesis middleOld middleAbsent
+
+/-- An absent already-issued activation cannot appear in any later prune
+observation, because every prune must originate from a live cursor. -/
+theorem old_absence_no_prune {count : Nat} {start finish : State}
+    {events : List Observation} (execution : StepsN count start events finish)
+    (scope : CutScopeId) (old : scope < start.scopeHighWater)
+    (absent : scope ∉ start.liveCursorScopes) :
+    scope ∉ prunedScopes events := by
+  induction execution with
+  | zero state => simp [prunedScopes]
+  | succ count start middle finish first rest head tail
+      inductionHypothesis =>
+      rw [prunedScopes_append]
+      simp only [List.mem_append]
+      intro member
+      rcases member with headPrune | tailPrune
+      · exact absent (head.pruned_scope_origin scope headPrune)
+      · have middleAbsent := head.old_absence_preserved scope old absent
+        have middleOld := Nat.lt_of_lt_of_le old head.scopeHighWater_mono
+        exact (inductionHypothesis middleOld middleAbsent) tailPrune
+
+/-- Across a whole well-owned finite execution, each activation is reported
+as pruned at most once.  This is the trace-level resource-linearity theorem:
+one-step pruning removes the cursor, old identities cannot be resurrected,
+and later prune events must originate from a live cursor. -/
+theorem prunedScopes_nodup {count : Nat} {start finish : State}
+    {events : List Observation} (execution : StepsN count start events finish)
+    (owned : start.CursorOwned) : (prunedScopes events).Nodup := by
+  induction execution with
+  | zero state => simp [prunedScopes]
+  | succ count start middle finish first rest head tail
+      inductionHypothesis =>
+      have middleOwned := head.preserves_cursorOwned owned
+      have headNodup := head.prunedScopes_nodup owned
+      have tailNodup := inductionHypothesis middleOwned
+      rw [prunedScopes_append, List.nodup_append]
+      refine ⟨headNodup, tailNodup, ?_⟩
+      intro cursor headPrune later laterPrune equal
+      subst later
+      have old := head.pruned_scope_lt_highWater owned cursor headPrune
+      have removed := head.pruned_scope_removed owned cursor headPrune
+      have middleOld := Nat.lt_of_lt_of_le old head.scopeHighWater_mono
+      exact (tail.old_absence_no_prune cursor middleOld removed) laterPrune
+
 end StepsN
 
 /-- Root execution starts inside cut scope zero.  All recursive predicate
@@ -1138,6 +1790,19 @@ def initialState (resolverSession : LocalSession) (goals : List Goal) : State :=
 theorem initialState_rooted (resolverSession : LocalSession)
     (goals : List Goal) : (initialState resolverSession goals).Rooted := by
   exact .running _ _ (.task 0 goals [])
+
+/-- An initialized query owns no cursor before its first local call opens. -/
+theorem initialState_cursorOwned (resolverSession : LocalSession)
+    (goals : List Goal) : (initialState resolverSession goals).CursorOwned := by
+  simp [initialState, State.CursorOwned, Search.CursorOwnership,
+    Search.liveCursorScopes]
+
+/-- Every initialized query satisfies the complete public structural
+invariant. -/
+theorem initialState_wellFormed (resolverSession : LocalSession)
+    (goals : List Goal) : (initialState resolverSession goals).WellFormed :=
+  ⟨initialState_rooted resolverSession goals,
+    initialState_cursorOwned resolverSession goals⟩
 
 /-! ## Concrete left-recursive program
 
@@ -1590,12 +2255,43 @@ theorem cut_prunes_later_clauses (scope : CutScopeId)
         (.choice scope
           (.task scope [.cut] bindings)
           (.clauses scope cursor)))
-      [.pruned cursor] .none session
+      [.pruned { scope := scope, cursor := cursor }] .none session
       (.running
         (.cutBoundary scope (.task scope [] bindings))) := by
-  exact .cutBoundaryCatch scope _ _ [.pruned cursor] session session
+  exact .cutBoundaryCatch scope _ _
+    [.pruned { scope := scope, cursor := cursor }] session session
     (.choiceCommitHere scope _ _ _ [] session session
       (.taskCut scope [] bindings session))
+
+/-- Anti-vacuity witness: structural scope well-formedness alone would permit
+two copies of the same cursor activation, but linear ownership rejects it. -/
+theorem duplicated_cursor_activation_rejected (scope highWater : CutScopeId)
+    (cursor : PreparedCursor) :
+    ¬ (Search.choice scope
+        (.clauses scope cursor)
+        (.clauses scope cursor)).CursorOwnership highWater := by
+  simp [Search.CursorOwnership, Search.liveCursorScopes]
+
+/-- Anti-vacuity witness: a search cannot forge the allocator's next, not-yet
+issued activation identity. -/
+theorem future_cursor_activation_rejected (highWater : CutScopeId)
+    (cursor : PreparedCursor) :
+    ¬ (Search.clauses highWater cursor).CursorOwnership highWater := by
+  simp [Search.CursorOwnership, Search.liveCursorScopes]
+
+/-- Snapshot equality is deliberately not cursor identity.  Two independent
+activations may carry the same prepared value and remain valid resources when
+their certified activation scopes are distinct. -/
+theorem equal_snapshots_distinct_activations_owned
+    (outer first second highWater : CutScopeId) (cursor : PreparedCursor)
+    (different : first ≠ second) (firstBound : first < highWater)
+    (secondBound : second < highWater) :
+    (Search.choice outer
+      (.cutBoundary first (.clauses first cursor))
+      (.cutBoundary second (.clauses second cursor))).CursorOwnership
+        highWater := by
+  simp [Search.CursorOwnership, Search.liveCursorScopes, different,
+    firstBound, secondBound]
 
 /-- The smallest successful query demonstrates the answer/completion split:
 the answer is observed first and whole-search exhaustion is a later event. -/
