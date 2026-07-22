@@ -30,6 +30,7 @@ import PLeaTTa.PeTTaSpec.OpenOrdered
 import PLeaTTa.SubstEngine
 import PLeaTTa.HostMachine
 import PLeaTTa.HostReplay
+import PLeaTTa.Proofs.CompilerAliasFinalizationAdequacy
 
 #print axioms PLeaTTa.machineMirrorsSpecTotal_proved
 #print axioms PLeaTTa.localGetTypeExtensionAlts_below
@@ -150,8 +151,18 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_complete
 #print axioms PLeaTTa.CompilerAdequacy.GoalsAgree.flatWidth
 #print axioms PLeaTTa.CompilerAdequacy.compileBranch_normalized_sound
+#print axioms PLeaTTa.CompilerAdequacy.AliasLedgerAgrees.append
+#print axioms PLeaTTa.CompilerAdequacy.AliasLedgerAgrees.collect_eq
+#print axioms PLeaTTa.CompilerAdequacy.compileSuperposeBranch_normalized_sound
+#print axioms PLeaTTa.CompilerAdequacy.compileSuperposeBranchesFuel_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.GoalsAgree.conditionThen
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.BuildsBranchNormalized.aliasGoalsFor
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.TranslatesSuperposeBranches.aliasGoalsFor
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.unifies_empty_distinct_alias_output
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.RootUnifies.deterministic
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.Unifies.deterministic
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.ResolvesAliasGoals.deterministic
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.aliasGoalsFor_resolvesFromEmpty
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.empty_distinct_variables_not_identical
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.singleton_alias_makes_variables_identical
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.explicit_alias_prefix_equivalent_to_shared
@@ -179,6 +190,11 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenSubstitution.StateAgrees.identical_iff
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.Runs.forward
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.RunsAll.forward
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.resolvesAliasGoals_runsAll_iff
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.aliasFinalizationBisimulation
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.noCallsAliasFinalizationBisimulation
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.translatesSuperposeBranches_aliasFinalization
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.OpenOrdered.translatesSuperposeBranches_noCallsAliasFinalization
 #print axioms PLeaTTa.isTrimRoot_ite_then_eq_left
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_translates
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_compiles
@@ -273,6 +289,11 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.TypedSharedResult.two_unary_partial_branches_resolve
 #print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.unifyTopExact_fresh_variable
 #print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.unifyTopExact_unary_partial_alias
+#print axioms PLeaTTa.unifyTopExact_var_self
+#print axioms PLeaTTa.CompilerAliasFinalizationAdequacy.resolveCompileAliases_aliasPairs
+#print axioms PLeaTTa.CompilerAliasFinalizationAdequacy.AliasLedgerAgrees.resolveReference
+#print axioms PLeaTTa.CompilerAliasFinalizationAdequacy.AliasLedgerAgrees.resolveBoth
+#print axioms PLeaTTa.CompilerAliasFinalizationAdequacy.compileSuperposeBranches_alias_resolution_sound
 #print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.bindTypedSharedResult_after_unary_partial
 #print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.bindTypedSharedResult_fresh_initial
 #print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.foldlM_bindTypedSharedResult_two_unary_partial

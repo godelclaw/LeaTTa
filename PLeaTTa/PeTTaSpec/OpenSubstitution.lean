@@ -3,7 +3,8 @@ Module: PLeaTTa.PeTTaSpec.OpenSubstitution
 Purpose: Independent open-term substitution semantics for translation-time
   Prolog variable sharing and its explicit-equality normalization.
 Trusted boundary: none
-Main exports: Substitution, Unifies, ContinuationRespectsInstantiation,
+Main exports: Substitution, Unifies, ResolvesAliasGoals,
+  ContinuationRespectsInstantiation,
   explicit_alias_prefix_equivalent_to_shared
 -/
 import PLeaTTa.PeTTaSpec.PrologCore
@@ -434,6 +435,160 @@ inductive Unifies : Substitution → Term → Term → Substitution → Prop whe
       (root : RootUnifies (bindings.applyTerm left)
         (bindings.applyTerm right) extension) :
       Unifies bindings left right (extension ++ bindings)
+
+/-- The independently specified root fragment has a unique ordered
+extension.  In particular, variable-variable equations always use the
+left-elimination clause unless the two normalized terms are already equal. -/
+theorem RootUnifies.deterministic {left right : Term}
+    {first second : Substitution}
+    (one : RootUnifies left right first)
+    (two : RootUnifies left right second) : first = second := by
+  cases one <;> cases two
+  all_goals simp_all
+
+/-- Applying the current state before root unification preserves the root
+fragment's determinism. -/
+theorem Unifies.deterministic {bindings : Substitution} {left right : Term}
+    {first second : Substitution}
+    (one : Unifies bindings left right first)
+    (two : Unifies bindings left right second) : first = second := by
+  cases one with
+  | normalize firstExtension _ _ firstRoot =>
+      cases two with
+      | normalize secondExtension _ _ secondRoot =>
+          rw [firstRoot.deterministic secondRoot]
+
+/-- Independent left-to-right resolution of a prefix consisting solely of
+explicit unification goals.  This is the semantic counterpart of the aliases
+which pinned `build_branch/4` creates by Prolog-variable sharing; it is not
+defined through PLeaTTa's compiler metadata or executable unifier.
+[SPEC translator.pl:394-397] -/
+inductive ResolvesAliasGoals : Substitution → List Goal →
+    Substitution → Prop where
+  | nil (bindings : Substitution) : ResolvesAliasGoals bindings [] bindings
+  | cons (bindings middle result : Substitution) (left right : Term)
+      (goals : List Goal)
+      (head : Unifies bindings left right middle)
+      (tail : ResolvesAliasGoals middle goals result) :
+      ResolvesAliasGoals bindings (.unify left right :: goals) result
+
+/-- An independently resolved alias prefix has one result substitution. -/
+theorem ResolvesAliasGoals.deterministic
+    {bindings : Substitution} {goals : List Goal}
+    {first second : Substitution}
+    (one : ResolvesAliasGoals bindings goals first)
+    (two : ResolvesAliasGoals bindings goals second) : first = second := by
+  induction one with
+  | nil bindings =>
+      cases two
+      rfl
+  | cons bindings middle result left right goals head tail induction =>
+      cases two with
+      | cons _ secondMiddle _ _ _ _ secondHead secondTail =>
+          have middleEquality := head.deterministic secondHead
+          subst secondMiddle
+          exact induction secondTail
+
+/-- Invariant of a ledger which aliases zero or more logical identities to
+one shared target: the target remains open, and every logical variable is
+either unchanged or denotes that target.  Repeated sources are permitted. -/
+def AliasStateFor (target : LogicVar) (bindings : Substitution) : Prop :=
+  bindings.applyTerm (.variable target) = .variable target ∧
+    ∀ source,
+      bindings.applyTerm (.variable source) = .variable source ∨
+      bindings.applyTerm (.variable source) = .variable target
+
+/-- The empty state is the initial invariant for every shared target. -/
+theorem aliasStateFor_empty (target : LogicVar) : AliasStateFor target [] := by
+  constructor
+  · rfl
+  · intro source
+    exact Or.inl rfl
+
+/-- Resolving one source-to-target equation adds its binding, or takes the
+deterministic reflexive case when the source is the target or appeared
+earlier.  Every path preserves the shared-target invariant. -/
+theorem AliasStateFor.unifySource
+    {target source : LogicVar} {bindings : Substitution}
+    (state : AliasStateFor target bindings) :
+    ∃ result,
+      Unifies bindings (.variable source) (.variable target) result ∧
+      AliasStateFor target result := by
+  by_cases same : source = target
+  · subst source
+    refine ⟨bindings, ?_, state⟩
+    apply Unifies.normalize bindings [] (.variable target) (.variable target)
+    simpa [state.1] using (RootUnifies.reflexive (.variable target))
+  rcases state with ⟨targetFixed, variableShape⟩
+  rcases variableShape source with sourceFixed | sourceTarget
+  · let extension : Substitution := [(source, .variable target)]
+    let result := extension ++ bindings
+    have unification :
+        Unifies bindings (.variable source) (.variable target) result := by
+      apply Unifies.normalize bindings extension
+        (.variable source) (.variable target)
+      rw [sourceFixed, targetFixed]
+      exact .bindLeft source (.variable target)
+        (by simpa using Ne.symm same)
+        (by simp [Term.occurs, Ne.symm same])
+    refine ⟨result, unification, ?_⟩
+    constructor
+    · change Term.instantiateOne source (.variable target)
+          (bindings.applyTerm (.variable target)) = .variable target
+      rw [targetFixed]
+      simp [Term.instantiateOne, Ne.symm same]
+    · intro identity
+      rcases variableShape identity with identityFixed | identityTarget
+      · by_cases same : identity = source
+        · subst identity
+          exact Or.inr (by
+            change Term.instantiateOne source (.variable target)
+                (bindings.applyTerm (.variable source)) = .variable target
+            rw [sourceFixed]
+            simp [Term.instantiateOne])
+        · exact Or.inl (by
+            change Term.instantiateOne source (.variable target)
+                (bindings.applyTerm (.variable identity)) = .variable identity
+            rw [identityFixed]
+            simp [Term.instantiateOne, same])
+      · exact Or.inr (by
+          change Term.instantiateOne source (.variable target)
+              (bindings.applyTerm (.variable identity)) = .variable target
+          rw [identityTarget]
+          simp [Term.instantiateOne, Ne.symm same])
+  · refine ⟨bindings, ?_, ⟨targetFixed, variableShape⟩⟩
+    apply Unifies.normalize bindings [] (.variable source) (.variable target)
+    simpa [sourceTarget, targetFixed] using
+      (RootUnifies.reflexive (.variable target))
+
+/-- Every well-shaped shared-output ledger resolves from any state satisfying
+the shared-target invariant.  Reflexive and duplicate aliases are handled by
+`AliasStateFor.unifySource` rather than excluded. -/
+theorem aliasGoalsFor_resolveFrom
+    {target : LogicVar} {goals : List Goal} {bindings : Substitution}
+    (shape : AliasGoalsFor (.variable target) goals)
+    (state : AliasStateFor target bindings) :
+    ∃ result,
+      ResolvesAliasGoals bindings goals result ∧
+      AliasStateFor target result := by
+  induction shape generalizing bindings with
+  | nil => exact ⟨bindings, .nil bindings, state⟩
+  | @cons source tailGoals tail induction =>
+      obtain ⟨middle, head, middleState⟩ :=
+        state.unifySource
+      obtain ⟨result, tailResolution, resultState⟩ :=
+        induction middleState
+      exact ⟨result, .cons bindings middle result
+        (.variable source) (.variable target) tailGoals head tailResolution,
+        resultState⟩
+
+/-- Empty-state specialization used by source-facing alias finalization. -/
+theorem aliasGoalsFor_resolvesFromEmpty
+    {target : LogicVar} {goals : List Goal}
+    (shape : AliasGoalsFor (.variable target) goals) :
+    ∃ result, ResolvesAliasGoals [] goals result ∧
+      AliasStateFor target result :=
+  aliasGoalsFor_resolveFrom shape (aliasStateFor_empty target)
 
 /-- A distinct fresh-variable alias from the empty substitution has exactly
 the singleton substitution required by the explicit equality normalization. -/

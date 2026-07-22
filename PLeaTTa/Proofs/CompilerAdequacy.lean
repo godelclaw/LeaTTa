@@ -881,6 +881,95 @@ inductive GoalsAgree : List PeTTaSpec.PrologCore.Goal → List PLeaTTa.Goal →
 
 end
 
+/-- Ordered agreement specialized to compiler-only alias metadata.  Unlike
+`GoalsAgree`, this relation excludes the runtime `.eq` representation: its
+executable side must be a `Goal.compileAlias`, so collection and erasure can
+be proved rather than inferred from a broader goal relation. -/
+inductive AliasLedgerAgrees (target : LogicVar) (targetName : String) :
+    List LogicVar → List String →
+      List PeTTaSpec.PrologCore.Goal → List PLeaTTa.Goal → Prop where
+  | nil : AliasLedgerAgrees target targetName [] [] [] []
+  | cons {source : LogicVar} {sourceName : String}
+      {sources : List LogicVar} {sourceNames : List String}
+      {referenceGoals : List PeTTaSpec.PrologCore.Goal}
+      {executableGoals : List PLeaTTa.Goal}
+      (sourceAgreement :
+        TermAgrees (.variable source) (.var sourceName))
+      (tail : AliasLedgerAgrees target targetName sources sourceNames
+        referenceGoals executableGoals) :
+      AliasLedgerAgrees target targetName (source :: sources)
+        (sourceName :: sourceNames)
+        (.unify (.variable source) (.variable target) :: referenceGoals)
+        (.compileAlias (.var sourceName) (.var targetName) :: executableGoals)
+
+/-- Concatenating metadata ledgers preserves both source orders and the exact
+compiler-only representation. -/
+theorem AliasLedgerAgrees.append
+    {target : LogicVar} {targetName : String}
+    {leftSources rightSources : List LogicVar}
+    {leftNames rightNames : List String}
+    {leftReference rightReference : List PeTTaSpec.PrologCore.Goal}
+    {leftExecutable rightExecutable : List PLeaTTa.Goal}
+    (left : AliasLedgerAgrees target targetName leftSources leftNames
+      leftReference leftExecutable)
+    (right : AliasLedgerAgrees target targetName rightSources rightNames
+      rightReference rightExecutable) :
+    AliasLedgerAgrees target targetName (leftSources ++ rightSources)
+      (leftNames ++ rightNames) (leftReference ++ rightReference)
+      (leftExecutable ++ rightExecutable) := by
+  induction left with
+  | nil => exact right
+  | cons sourceAgreement _ induction =>
+      exact .cons sourceAgreement induction
+
+/-- The independent side of a related alias ledger has exactly the ordinary
+unification shape required by the independent resolver. -/
+theorem AliasLedgerAgrees.referenceShape
+    {target : LogicVar} {targetName : String}
+    {sources : List LogicVar} {sourceNames : List String}
+    {referenceGoals : List PeTTaSpec.PrologCore.Goal}
+    {executableGoals : List PLeaTTa.Goal}
+    (agreement : AliasLedgerAgrees target targetName sources sourceNames
+      referenceGoals executableGoals) :
+    AliasGoalsFor (.variable target) referenceGoals := by
+  induction agreement with
+  | nil => exact .nil
+  | cons _ _ induction => exact .cons _ induction
+
+/-- Forgetting the metadata-specific restriction yields ordinary ordered
+compiler-goal agreement. -/
+theorem AliasLedgerAgrees.goalsAgree
+    {target : LogicVar} {targetName : String}
+    {sources : List LogicVar} {sourceNames : List String}
+    {referenceGoals : List PeTTaSpec.PrologCore.Goal}
+    {executableGoals : List PLeaTTa.Goal}
+    (agreement : AliasLedgerAgrees target targetName sources sourceNames
+      referenceGoals executableGoals)
+    (targetAgreement :
+      TermAgrees (.variable target) (.var targetName)) :
+    GoalsAgree referenceGoals executableGoals := by
+  induction agreement with
+  | nil => exact .nil
+  | cons sourceAgreement _ induction =>
+      exact .cons (.compileAlias sourceAgreement targetAgreement) induction
+
+/-- The executable metadata collector returns precisely the ordered pair
+ledger represented by `sourceNames`; neither nesting nor a runtime equality
+can disappear behind this statement. -/
+theorem AliasLedgerAgrees.collect_eq
+    {target : LogicVar} {targetName : String}
+    {sources : List LogicVar} {sourceNames : List String}
+    {referenceGoals : List PeTTaSpec.PrologCore.Goal}
+    {executableGoals : List PLeaTTa.Goal}
+    (agreement : AliasLedgerAgrees target targetName sources sourceNames
+      referenceGoals executableGoals) :
+    collectCompileAliasesGoals executableGoals =
+      sourceNames.map (fun source => (.var source, .var targetName)) := by
+  induction agreement with
+  | nil => rfl
+  | cons _ _ induction =>
+      simp [collectCompileAliasesGoals, collectCompileAliasesGoal, induction]
+
 /-- Every single related independent goal contributes one executable
 top-level goal. Conjunction wrappers are handled by `GoalsAgree` below. -/
 theorem GoalAgrees.flatWidth {reference : PeTTaSpec.PrologCore.Goal}
@@ -1003,11 +1092,12 @@ theorem compileSuperposeBranch_normalized_sound {outputIndex : Nat}
     (native : BuildsBranchNormalized
       (.variable (.generated outputIndex)) referenceValue referenceGoals
       referenceAliases referenceTemplate referenceBranch) :
-    ∃ executableAliases executableBranch,
+    ∃ aliasSources aliasNames executableAliases executableBranch,
       compileSuperposeBranch (.var s!"_q{outputIndex}")
           (executableValue, executableGoals) =
         (executableAliases, executableBranch) ∧
-      GoalsAgree referenceAliases executableAliases ∧
+      AliasLedgerAgrees (.generated outputIndex) s!"_q{outputIndex}"
+        aliasSources aliasNames referenceAliases executableAliases ∧
       SuperposeBranchAgrees (.variable (.generated outputIndex))
         (.var s!"_q{outputIndex}") referenceBranch executableBranch := by
   let outputAgreement :
@@ -1020,7 +1110,7 @@ theorem compileSuperposeBranch_normalized_sound {outputIndex : Nat}
       have executableEmpty : executableGoals = [] :=
         List.eq_nil_of_length_eq_zero lengthZero
       subst executableGoals
-      refine ⟨[], (executableValue, []), ?_, .nil,
+      refine ⟨[], [], [], (executableValue, []), ?_, .nil,
         .empty valueAgreement outputAgreement⟩
       simp [compileSuperposeBranch]
   | aliasVariable identity goals nonempty =>
@@ -1034,18 +1124,19 @@ theorem compileSuperposeBranch_normalized_sound {outputIndex : Nat}
         List.exists_cons_of_ne_nil executableNonempty
       cases valueAgreement with
       | sourceVariable name =>
-          refine ⟨[PLeaTTa.Goal.compileAlias (.var name)
+          refine ⟨[.source name], [name],
+            [PLeaTTa.Goal.compileAlias (.var name)
               (.var s!"_q{outputIndex}")],
             (.var s!"_q{outputIndex}", goal :: goals), ?_,
-            .cons (.compileAlias (.sourceVariable name) outputAgreement) .nil,
+            .cons (.sourceVariable name) .nil,
             .aliased outputAgreement goalsAgreement (by simp)⟩
           simp [compileSuperposeBranch, compileBranch, BEq.beq, Atom.beq]
       | generatedVariable index =>
-          refine ⟨[PLeaTTa.Goal.compileAlias (.var s!"_q{index}")
+          refine ⟨[.generated index], [s!"_q{index}"],
+            [PLeaTTa.Goal.compileAlias (.var s!"_q{index}")
               (.var s!"_q{outputIndex}")],
             (.var s!"_q{outputIndex}", goal :: goals), ?_,
-            .cons (.compileAlias (.generatedVariable index) outputAgreement)
-              .nil,
+            .cons (.generatedVariable index) .nil,
             .aliased outputAgreement goalsAgreement (by simp)⟩
           simp [compileSuperposeBranch, compileBranch, BEq.beq, Atom.beq]
   | nonVariable value goals nonempty notVariable =>
@@ -1057,7 +1148,7 @@ theorem compileSuperposeBranch_normalized_sound {outputIndex : Nat}
         subst executableGoals
         simp at width
         omega
-      refine ⟨[],
+      refine ⟨[], [], [],
         (.var s!"_q{outputIndex}",
           PLeaTTa.Goal.eq executableValue (.var s!"_q{outputIndex}") ::
             executableGoals), ?_, .nil,
@@ -2085,8 +2176,8 @@ theorem compileExprFuel_initial_sound {state : TranslatorState} (env : CEnv)
       · simp only [Atom.size, List.map, List.sum_cons] at branchBound ⊢
         omega
       · intro extraFuel
-        obtain ⟨rawBranches, executableAliases, executableBranches,
-            branchesCompiled, normalized, aliasesAgreement,
+        obtain ⟨rawBranches, aliasSources, aliasNames, executableAliases,
+            executableBranches, branchesCompiled, normalized, aliasLedger,
             branchesAgreement⟩ := branchesCompile extraFuel []
         have compiled : compileAmbBranchesWith
             (fun next expression =>
@@ -2103,7 +2194,7 @@ theorem compileExprFuel_initial_sound {state : TranslatorState} (env : CEnv)
             counter branchCounter first sources rawBranches
             executableBranches executableAliases
             (agreement.notContains notShadowed) compiled normalized
-        · exact aliasesAgreement.append
+        · exact (aliasLedger.goalsAgree outputAgreement).append
             (.cons (.builtAmb branchesAgreement) .nil)
   | letBind notShadowed patternTranslation valueTranslation bodyTranslation =>
       obtain ⟨patternFuel, patternPositive, patternBound, patternCompiles⟩ :=
@@ -2691,7 +2782,8 @@ theorem compileSuperposeBranchesFuel_initial_sound
       0 < baseFuel ∧
       baseFuel < 8 * ((sources.map Atom.size).sum + 1) ∧
       ∀ extraFuel accumulator,
-        ∃ rawBranches executableAliases executableBranches,
+        ∃ rawBranches aliasSources aliasNames executableAliases
+            executableBranches,
           List.foldlM
             (fun (acc : List (Atom × List PLeaTTa.Goal) × Nat)
                 expression => do
@@ -2702,7 +2794,8 @@ theorem compileSuperposeBranchesFuel_initial_sound
               .ok (accumulator ++ rawBranches, nextCounter) ∧
           compileSuperposeBranches (.var s!"_q{outputIndex}") rawBranches =
             (executableAliases, executableBranches) ∧
-          GoalsAgree referenceAliases executableAliases ∧
+          AliasLedgerAgrees (.generated outputIndex) s!"_q{outputIndex}"
+            aliasSources aliasNames referenceAliases executableAliases ∧
           SuperposeBranchesAgree (.variable (.generated outputIndex))
             (.var s!"_q{outputIndex}") referenceBranches
             executableBranches := by
@@ -2710,7 +2803,7 @@ theorem compileSuperposeBranchesFuel_initial_sound
   | nil =>
       refine ⟨1, by omega, by simp, ?_⟩
       intro extraFuel accumulator
-      refine ⟨[], [], [], ?_, rfl, .nil, .nil⟩
+      refine ⟨[], [], [], [], [], ?_, rfl, .nil, .nil⟩
       simp only [List.foldlM_nil, List.append_nil, Pure.pure, Except.pure]
   | cons head built tail =>
       rename_i middleCounter source sources value template sourceGoals
@@ -2740,12 +2833,14 @@ theorem compileSuperposeBranchesFuel_initial_sound
           exact ⟨jointFuel + extraFuel - tailFuel, by omega⟩
         obtain ⟨headInternal, headExecutableGoals, headCompiled,
             headAgreement, headGoalsAgreement⟩ := headCompiles headExtra
-        obtain ⟨tailRawBranches, tailExecutableAliases,
+        obtain ⟨tailRawBranches, tailAliasSources, tailAliasNames,
+            tailExecutableAliases,
             tailExecutableBranches, tailCompiled, tailNormalized,
             tailAliasesAgreement, tailBranchesAgreement⟩ :=
           tailCompiles tailExtra
             (accumulator ++ [(headInternal, headExecutableGoals)])
-        obtain ⟨headExecutableAliases, headExecutableBranch,
+        obtain ⟨headAliasSources, headAliasNames, headExecutableAliases,
+            headExecutableBranch,
             headNormalized, headAliasesAgreement, headBranchAgreement⟩ :=
           compileSuperposeBranch_normalized_sound headAgreement
             headGoalsAgreement built
@@ -2767,6 +2862,8 @@ theorem compileSuperposeBranchesFuel_initial_sound
                   tailRawBranches, nextCounter) := by
           simpa [tailFuelEq] using tailCompiled
         refine ⟨(headInternal, headExecutableGoals) :: tailRawBranches,
+          headAliasSources ++ tailAliasSources,
+          headAliasNames ++ tailAliasNames,
           headExecutableAliases ++ tailExecutableAliases,
           headExecutableBranch :: tailExecutableBranches, ?_, ?_,
           headAliasesAgreement.append tailAliasesAgreement,

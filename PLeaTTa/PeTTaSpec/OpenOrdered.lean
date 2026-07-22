@@ -3,7 +3,8 @@ Module: PLeaTTa.PeTTaSpec.OpenOrdered
 Purpose: Independent left-to-right ordered semantics over open substitutions
   for the first pinned Prolog control fragment.
 Trusted boundary: none
-Main exports: Runs, RunsAll, alias_then_identity_succeeds,
+Main exports: Runs, RunsAll, AliasFinalizationBisimulation,
+  aliasFinalizationBisimulation, alias_then_identity_succeeds,
   if_before_alias_fails, if_after_alias_succeeds
 -/
 import PLeaTTa.PeTTaSpec.OpenSubstitution
@@ -1358,6 +1359,160 @@ theorem noCallsGoalsInstantiationBisimulation
     (states : StateAgrees initial carried instantiated) :
     GoalsInstantiationBisimulation NoCalls initial carried instantiated goals :=
   goalsInstantiationBisimulation (.noCalls initial) states
+
+/-! ### Whole-prefix alias finalization
+
+Pinned `build_branch/4` performs variable sharing while translating the
+surrounding construct.  `ResolvesAliasGoals` describes that ordered prefix
+independently.  The following lemmas first show that the prefix has exactly
+the resolved runtime state, then use the substitution bisimulation above to
+move that state through the complete continuation syntax.
+-/
+
+/-- A successfully resolved alias prefix can be prepended to any continuation
+execution.  The prefix has one answer at every step, so no order or
+multiplicity choice is introduced. -/
+theorem resolvesAliasGoals_runPrefixThen
+    {calls : CallSemantics} {initial resolved : Substitution}
+    {aliases continuation : List Goal} {answers : List Substitution}
+    (resolution : ResolvesAliasGoals initial aliases resolved)
+    (continuationRun : RunsAll calls resolved continuation answers) :
+    RunsAll calls initial (aliases ++ continuation) answers := by
+  induction resolution with
+  | nil bindings => simpa using continuationRun
+  | cons bindings middle result left right goals head tail induction =>
+      have tailRun : RunsAll calls middle (goals ++ continuation) answers :=
+        induction continuationRun
+      refine .cons bindings (.unify left right) (goals ++ continuation)
+        [middle] answers (.unifySuccess bindings middle left right head) ?_
+      simpa using RunsMany.cons middle [] (goals ++ continuation)
+        answers [] tailRun (.nil (goals ++ continuation))
+
+/-- Conversely, any execution of a resolvable alias prefix must pass through
+the uniquely resolved state before executing the continuation. -/
+theorem resolvesAliasGoals_stripPrefix
+    {calls : CallSemantics} {initial resolved : Substitution}
+    {aliases continuation : List Goal} {answers : List Substitution}
+    (resolution : ResolvesAliasGoals initial aliases resolved)
+    (execution : RunsAll calls initial (aliases ++ continuation) answers) :
+    RunsAll calls resolved continuation answers := by
+  induction resolution generalizing answers with
+  | nil bindings => simpa using execution
+  | cons bindings middle result left right goals head tail induction =>
+      cases execution with
+      | cons _ _ _ headAnswers answers headRun tailRun =>
+          cases headRun with
+          | unifySuccess _ actualMiddle _ _ actual =>
+              have middleEquality := head.deterministic actual
+              subst actualMiddle
+              cases tailRun with
+              | cons _ remaining _ tailAnswers remainingAnswers
+                  continuationRun remainingRun =>
+                  cases remainingRun
+                  simpa using induction continuationRun
+          | unifyFailure _ _ _ failure =>
+              exact False.elim (failure middle head)
+
+/-- A resolved alias prefix and direct execution from its result state have
+identical ordered answer bags. -/
+theorem resolvesAliasGoals_runsAll_iff
+    {calls : CallSemantics} {initial resolved : Substitution}
+    {aliases continuation : List Goal} {answers : List Substitution}
+    (resolution : ResolvesAliasGoals initial aliases resolved) :
+    RunsAll calls initial (aliases ++ continuation) answers ↔
+      RunsAll calls resolved continuation answers := by
+  constructor
+  · exact resolvesAliasGoals_stripPrefix resolution
+  · exact resolvesAliasGoals_runPrefixThen resolution
+
+/-- Bidirectional ordered semantics of global alias finalization.  The left
+side executes the independent explicit-equality prefix.  The right side starts
+from an empty state after applying the independently resolved substitution to
+the continuation.  `AnswerBagsAgree` relates answers pointwise, preserving
+their order and multiplicity without identifying distinct substitution
+representations by definition. -/
+structure AliasFinalizationBisimulation (calls : CallSemantics)
+    (initial : Substitution) (aliases : List Goal) (resolved : Substitution)
+    (continuation : List Goal) : Prop where
+  forward : ∀ {explicitAnswers},
+    RunsAll calls initial (aliases ++ continuation) explicitAnswers →
+      ∃ finalizedAnswers,
+        RunsAll calls [] (resolved.applyGoals continuation)
+          finalizedAnswers ∧
+        AnswerBagsAgree resolved explicitAnswers finalizedAnswers
+  backward : ∀ {finalizedAnswers},
+    RunsAll calls [] (resolved.applyGoals continuation) finalizedAnswers →
+      ∃ explicitAnswers,
+        RunsAll calls initial (aliases ++ continuation) explicitAnswers ∧
+        AnswerBagsAgree resolved explicitAnswers finalizedAnswers
+
+/-- Universal alias-finalization theorem for every continuation whose
+primitive calls respect substitution. -/
+theorem aliasFinalizationBisimulation
+    {calls : CallSemantics} {initial resolved : Substitution}
+    {aliases continuation : List Goal}
+    (resolution : ResolvesAliasGoals initial aliases resolved)
+    (primitives : PrimitiveBisimulation calls resolved) :
+    AliasFinalizationBisimulation calls initial aliases resolved continuation
+    where
+  forward := by
+    intro explicitAnswers execution
+    have continuationRun :=
+      resolvesAliasGoals_stripPrefix resolution execution
+    exact continuationRun.forward primitives (StateAgrees.initial resolved)
+  backward := by
+    intro finalizedAnswers execution
+    obtain ⟨explicitAnswers, continuationRun, answersAgree⟩ :=
+      execution.backward primitives (StateAgrees.initial resolved)
+    exact ⟨explicitAnswers,
+      resolvesAliasGoals_runPrefixThen resolution continuationRun,
+      answersAgree⟩
+
+/-- Concrete call-free instance with no remaining primitive premise. -/
+theorem noCallsAliasFinalizationBisimulation
+    {initial resolved : Substitution} {aliases continuation : List Goal}
+    (resolution : ResolvesAliasGoals initial aliases resolved) :
+    AliasFinalizationBisimulation NoCalls initial aliases resolved
+      continuation :=
+  aliasFinalizationBisimulation resolution (.noCalls resolved)
+
+/-- Universal independent alias-finalization theorem specialized to the
+ledger produced by pinned `build_superpose_branches/3`.  The translator
+relation proves the ledger shape, and the abstract call semantics must respect
+the resolved substitution.  Executable name-encoding injectivity remains a
+separate compiler-bridge obligation rather than being smuggled into this
+independent theorem. -/
+theorem translatesSuperposeBranches_aliasFinalization
+    {calls : CallSemantics} {state : TranslatorState} {target : LogicVar}
+    {counter nextCounter : Nat} {sources : List Metta.Atom}
+    {aliases branches : List Goal}
+    (translation : TranslatesSuperposeBranches state (.variable target)
+      counter sources aliases branches nextCounter)
+    (primitives : ∀ resolved, AliasStateFor target resolved →
+      PrimitiveBisimulation calls resolved) :
+    ∃ resolved,
+      AliasStateFor target resolved ∧
+      AliasFinalizationBisimulation calls [] aliases resolved
+        [.disjunction branches] := by
+  obtain ⟨resolved, resolution, stateInvariant⟩ :=
+    aliasGoalsFor_resolvesFromEmpty translation.aliasGoalsFor
+  exact ⟨resolved, stateInvariant,
+    aliasFinalizationBisimulation resolution
+      (primitives resolved stateInvariant)⟩
+
+/-- Call-free specialization with no abstract primitive premise. -/
+theorem translatesSuperposeBranches_noCallsAliasFinalization
+    {state : TranslatorState} {target : LogicVar}
+    {counter nextCounter : Nat} {sources : List Metta.Atom}
+    {aliases branches : List Goal}
+    (translation : TranslatesSuperposeBranches state (.variable target)
+      counter sources aliases branches nextCounter) :
+    ∃ resolved,
+      AliasStateFor target resolved ∧
+      AliasFinalizationBisimulation NoCalls [] aliases resolved
+        [.disjunction branches] := by
+  exact translatesSuperposeBranches_aliasFinalization translation
+    (fun resolved _ => .noCalls resolved)
 
 /-- Executing the explicit alias equality yields a state whose call-free
 continuation is bisimilar to applying the alias throughout the continuation

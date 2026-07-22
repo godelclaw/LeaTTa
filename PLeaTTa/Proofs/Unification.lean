@@ -1021,6 +1021,23 @@ theorem unifyTopExact_of_underlying_exact (left right : Atom)
   rw [exact, pettaUnifyCompatible_self]
   rfl
 
+/-- A reflexive executable variable equation succeeds with the empty exact
+unifier.  Alias-ledger resolution uses this case for repeated sources after
+the current substitution has already identified both sides. -/
+theorem unifyTopExact_var_self (name : String) :
+    unifyTopExact (.var name) (.var name) = some [] := by
+  apply unifyTopExact_of_underlying_exact (.var name) (.var name) []
+  · have positive :
+        0 < Atom.size (.var name) + Atom.size (.var name) := by
+      simp [Atom.size]
+    obtain ⟨fuel, fuelEquation⟩ :=
+      Nat.exists_eq_succ_of_ne_zero (Nat.ne_of_gt positive)
+    unfold Metta.Unify.unifyTop
+    rw [fuelEquation]
+    simp [Metta.Unify.unifyRounds, Metta.Unify.decomposeAll,
+      Metta.Unify.decomposeEq]
+  · rfl
+
 /-- Unification under an existing binding carries only variables already
 present in that binding or in the two source atoms. -/
 theorem unifyB_substVars_origin (binding : Subst) (left right : Atom)

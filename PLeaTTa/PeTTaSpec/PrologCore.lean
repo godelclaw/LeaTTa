@@ -246,6 +246,42 @@ inductive BuildsBranchNormalized (output : Term) :
       BuildsBranchNormalized output value goals [] value
         (.conjunction (.unify value output :: goals))
 
+/-- Syntactic shape of the translation-time sharing ledger created for one
+shared output.  It is deliberately independent of executable
+`Goal.compileAlias`: each entry is an ordinary Prolog unification from one
+logical-variable identity to the shared target. [SPEC translator.pl:394-397]
+-/
+inductive AliasGoalsFor (output : Term) : List Goal → Prop where
+  | nil : AliasGoalsFor output []
+  | cons (source : LogicVar) {goals : List Goal}
+      (tail : AliasGoalsFor output goals) :
+      AliasGoalsFor output
+        (.unify (.variable source) output :: goals)
+
+/-- Concatenating two ledgers for the same shared output preserves their
+source order and shape. -/
+theorem AliasGoalsFor.append {output : Term} {left right : List Goal}
+    (first : AliasGoalsFor output left)
+    (second : AliasGoalsFor output right) :
+    AliasGoalsFor output (left ++ right) := by
+  induction first with
+  | nil => exact second
+  | cons source tail induction =>
+      exact .cons source induction
+
+/-- Every `build_branch/4` priority case emits an alias ledger of the exact
+independent shape above; the empty and non-variable cases emit none. -/
+theorem BuildsBranchNormalized.aliasGoalsFor
+    {output value template : Term} {goals aliases : List Goal}
+    {branch : Goal}
+    (translation :
+      BuildsBranchNormalized output value goals aliases template branch) :
+    AliasGoalsFor output aliases := by
+  cases translation with
+  | empty => exact .nil
+  | aliasVariable source => exact .cons source .nil
+  | nonVariable => exact .nil
+
 /-- Pinned `translate_expr_to_conj/3` uses the atom `true` for an empty goal
 sequence.  The `if` clauses omit that empty conjunction and otherwise schedule
 the condition conjunction before the identity test.
@@ -572,6 +608,20 @@ inductive TranslatesSuperposeBranches : TranslatorState → Term → Nat →
         (headAliases ++ tailAliases) (branch :: branches) nextCounter
 
 end
+
+/-- The complete alias prefix extracted by the independent superpose
+traversal is a source-ordered ledger for its one shared output. -/
+theorem TranslatesSuperposeBranches.aliasGoalsFor
+    {state : TranslatorState} {output : Term}
+    {counter nextCounter : Nat} {sources : List Atom}
+    {aliases branches : List Goal}
+    (translation : TranslatesSuperposeBranches state output counter sources
+      aliases branches nextCounter) :
+    AliasGoalsFor output aliases :=
+  match translation with
+  | .nil => .nil
+  | .cons _ built tail =>
+      built.aliasGoalsFor.append tail.aliasGoalsFor
 
 /-- Independent translation failures of the currently supported pinned
 fragment.  These constructors describe native clause failure, not PLeaTTa's
