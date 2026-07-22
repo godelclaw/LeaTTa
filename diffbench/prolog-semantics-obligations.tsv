@@ -5,6 +5,7 @@
 # local_resolver_sha256=e75938ed1fb73a79e6d62516871e8250fd2c0d511e6397e0f10e187aea538c63
 # prolog_copy_sha256=850a556e4b955fe947eed5b9b4f18ca58cc25229abe94f87500a3bf58906ef91
 # goal_semantics_sha256=b85ef6ce1f736d06df61d40af381daba290e4de61218c4e7b4668f12dfa190fa
+# demand_driven_step_sha256=90d648be6d4c85493dca08d30a518e833ed63ed7c5210516f5ffac6257cccf59
 # status: PASS=proved-property-of-the-independent-model GAP=open-reference-or-adequacy-proof FAIL=known-implementation/reference-mismatch BOUNDARY=permanent-explicit-trusted-boundary
 # proof: SC=sound-complete W=witness/inversion theorem SH=shape-only N=none
 # native_source: T=src/translator.pl M=src/metta.pl SWI=official SWI-Prolog manual ISO=ISO Prolog working documents -=independent infrastructure
@@ -56,6 +57,8 @@ RESOLVER.body_execution	M251-256	resolver	EnteredClause;LocalPull.reply_body_con
 EXTERNAL.imported_swi	M271-280	boundary	OrderedCallProtocol	N	BOUNDARY	exact typed trace is trusted and replay-policed; SWI implementation is never counted as certified core
 EXTERNAL.current_worker	M271-280	boundary	pleatta-prolog-worker.py	N	FAIL	worker exposes findall only as a blocking completed-bag response and therefore cannot expose finite pre-exhaustion generator prefixes or demand-time pruning
 PROJECTION.complete_answer_list	-	projection	Ordered.Runs	N	GAP	terminating trace-to-list projection theorem open; list semantics may not be primary equivalence
-BISIM.machine_step	-	composition	Trace.RawStep;PLeaTTa.Step	N	GAP	finite-prefix bisimulation with executable Step not begun
+BISIM.nested_macro_prefix	-	composition	PLeaTTa.Step.findall;DemandDrivenStep.sealed_findall_step_has_terminal_subrun;GoalSemantics.findall_answer_then_loop_arbitrarily_long_open_prefix	W	FAIL	current sealed findall is an atomic terminating-subrun macro and has no entry or nonterminal generator-prefix state, while the independent semantics proves source-shaped arbitrarily long open prefixes; exact divergence-sensitive bisimulation requires the fine-grained executable lane rather than stuttering or answer-list equivalence
+BISIM.findall_open_lane	-	composition	DemandDrivenStep.Persistent;DemandDrivenStep.Control;DemandDrivenStep.Step;DemandDrivenStep.StepsN	W	PASS	additive fine-grained lane structurally keeps world and global high-water outside typed backtrackable frames, transfers rather than duplicates alternatives, forces findall entry, counts every private generator answer as one suppressed step, preserves inner world/high-water on exit, and expands terminating flat collectors into entry plus every inner step plus exit; executable function, nested collectors, catch/softcut/transaction frames, Search correspondence, and CLI migration remain open
+BISIM.machine_step	-	composition	Trace.RawStep;GoalSemantics.RawStep;DemandDrivenStep.Step;PLeaTTa.Step	N	GAP	fine-grained migration begun for findall; exact Search-to-open-machine finite-prefix bisimulation, remaining typed nested frames, executable step function, and terminating-run collapse/converse remain open
 COMPOSE.source_observation	-	composition	SupportedSource	N	GAP	bytes-to-AST-to-program-to-exact-trace theorem open
 PETTACLAW.bounded_turn	-	instantiation	SupportedSource	N	GAP	content-bound source graph certificate and theorem instantiation open

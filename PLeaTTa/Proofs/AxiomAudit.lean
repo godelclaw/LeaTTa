@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: Apache-2.0
 
 import PLeaTTa.Proofs.StepCases
+import PLeaTTa.Proofs.DemandDrivenStep
 import PLeaTTa.Proofs.BarrierCache
 import PLeaTTa.Proofs.Specialize
 import PLeaTTa.Proofs.Unification
@@ -986,3 +987,13 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.Step.preserves_barrierCacheCoherent
 #print axioms PLeaTTa.StepStar.preserves_barrierCacheCoherent
 #print axioms PLeaTTa.Raises.preserves_barrierCacheCoherent
+#print axioms PLeaTTa.DemandDrivenStep.control_toConf
+#print axioms PLeaTTa.DemandDrivenStep.enterFindall_transfers_alts
+#print axioms PLeaTTa.DemandDrivenStep.resumeFindall_transfers_alts
+#print axioms PLeaTTa.DemandDrivenStep.FlatStepsN.lift
+#print axioms PLeaTTa.DemandDrivenStep.findall_prefix_lifts
+#print axioms PLeaTTa.DemandDrivenStep.findall_macro_expands
+#print axioms PLeaTTa.DemandDrivenStep.findall_step_forces_entry
+#print axioms PLeaTTa.DemandDrivenStep.nested_answer_is_one_private_step
+#print axioms PLeaTTa.DemandDrivenStep.findall_exit_keeps_inner_world_and_highWater
+#print axioms PLeaTTa.DemandDrivenStep.sealed_findall_step_has_terminal_subrun

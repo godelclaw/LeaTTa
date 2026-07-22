@@ -18,6 +18,7 @@ ORDERED_MGU = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologMgu.lean"
 LOCAL_RESOLVER = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologResolver.lean"
 PROLOG_COPY = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologCopy.lean"
 GOAL_SEMANTICS = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologGoalSemantics.lean"
+DEMAND_DRIVEN_STEP = ROOT / "PLeaTTa" / "Proofs" / "DemandDrivenStep.lean"
 PINNED_PETTA_REVISION = "6b7f52f064bdbc82fabd0a0998404121fb01d52e"
 FIELDS = ["id", "native_source", "layer", "reference", "proof", "status", "finding"]
 LAYERS = {"trace", "control", "collection", "exception", "world", "boundary",
@@ -69,6 +70,7 @@ def check() -> list[str]:
         "local_resolver_sha256": digest(LOCAL_RESOLVER),
         "prolog_copy_sha256": digest(PROLOG_COPY),
         "goal_semantics_sha256": digest(GOAL_SEMANTICS),
+        "demand_driven_step_sha256": digest(DEMAND_DRIVEN_STEP),
     }
     for key, expected in expected_metadata.items():
         actual = metadata.get(key)
