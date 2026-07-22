@@ -38,6 +38,7 @@ than an infinite inductive value.
 -/
 
 abbrev CutScopeId := Trace.CutScopeId
+abbrev ExceptionScopeId := Trace.ExceptionScopeId
 
 /-- Identity-bearing handle for one live local predicate cursor.
 
@@ -55,6 +56,23 @@ slot is intentional for this first core: world actions receive a distinct
 typed extension rather than being smuggled through a clause reply. -/
 abbrev Observation :=
   Trace.Observation CallRequest CursorToken Substitution Empty Term
+
+/-- Internal evidence retained while a finite-tree exception unwinds.
+
+`ball` is the copied exception term visible to catchers and eventual external
+observers.  `throwBindings` is the protected goal's substitution at the throw
+point.  SWI-Prolog deliberately tests a catcher against that still-bound
+environment before unwinding; if selected, recovery is then reconstructed in
+the entry environment.  Keeping this evidence internal preserves the public
+exception observation as the ball alone.
+
+The future source-level `throw/1` specialization must prove that `ball` is the
+correct fresh finite-tree copy.  Rational trees and attributed variables stay
+outside this first local fragment. -/
+structure RaisedException where
+  ball : Term
+  throwBindings : Substitution
+deriving Repr, Inhabited
 
 /-- Activation identities explicitly reported as pruned by an event batch. -/
 def prunedScopes : List Observation → List CutScopeId
@@ -78,12 +96,12 @@ def prunedScopes : List Observation → List CutScopeId
       simp [prunedScopes, inductionHypothesis]
 
 /-- Non-backtrackable state.  The local database and fresh-name high-water
-remain outside the search tree; cut-scope identities use a separate monotone
-allocator.  Exception and collection delimiters will use distinct types and
-allocators when those constructs are added. -/
+remain outside the search tree.  Cut and exception identities have separate
+nominal types and separate monotone allocators; neither is backtracked. -/
 structure Session where
   resolver : LocalSession := {}
   nextCutScope : Nat := 1
+  nextExceptionScope : Nat := 1
 deriving Repr, Inhabited
 
 /-- The complete result of opening one locally owned call. -/
@@ -93,15 +111,36 @@ structure OpenedCall where
   session : Session
 deriving Repr, Inhabited
 
+/-- Fresh, nominally distinct delimiters allocated when entering `catch/3`.
+The exception identity cannot be supplied where a cut identity is required;
+both high-waters advance before the protected goal starts. -/
+structure OpenedCatch where
+  cutScope : CutScopeId
+  handlerScope : ExceptionScopeId
+  session : Session
+deriving Repr
+
 /-- Allocate a fresh predicate cut scope and prepare the call-start clause
-snapshot.  Both monotone allocators advance before any clause body runs. -/
+snapshot.  The fresh-name and cut-scope allocators advance before any clause
+body runs; the independent exception allocator is preserved. -/
 def openLocalCall (session : Session) (request : CallRequest) : OpenedCall :=
   let prepared := prepareCall session.resolver request
   { scope := session.nextCutScope
     cursor := prepared.1
     session :=
-      { resolver := prepared.2
+      { session with
+        resolver := prepared.2
         nextCutScope := session.nextCutScope + 1 } }
+
+/-- Allocate the independent cut and exception delimiters for one `catch/3`
+activation.  The resolver and its fresh-name/database state are unchanged. -/
+def openCatch (session : Session) : OpenedCatch :=
+  { cutScope := session.nextCutScope
+    handlerScope := { index := session.nextExceptionScope }
+    session :=
+      { session with
+        nextCutScope := session.nextCutScope + 1
+        nextExceptionScope := session.nextExceptionScope + 1 } }
 
 @[simp] theorem openLocalCall_scope (session : Session)
     (request : CallRequest) :
@@ -124,6 +163,28 @@ theorem openLocalCall_nextFresh_mono (session : Session)
     (openLocalCall session request).session.nextCutScope =
       session.nextCutScope + 1 := rfl
 
+@[simp] theorem openLocalCall_nextExceptionScope (session : Session)
+    (request : CallRequest) :
+    (openLocalCall session request).session.nextExceptionScope =
+      session.nextExceptionScope := rfl
+
+@[simp] theorem openCatch_cutScope (session : Session) :
+    (openCatch session).cutScope = session.nextCutScope := rfl
+
+@[simp] theorem openCatch_handlerScope (session : Session) :
+    (openCatch session).handlerScope =
+      ({ index := session.nextExceptionScope } : ExceptionScopeId) := rfl
+
+@[simp] theorem openCatch_resolver (session : Session) :
+    (openCatch session).session.resolver = session.resolver := rfl
+
+@[simp] theorem openCatch_nextCutScope (session : Session) :
+    (openCatch session).session.nextCutScope = session.nextCutScope + 1 := rfl
+
+@[simp] theorem openCatch_nextExceptionScope (session : Session) :
+    (openCatch session).session.nextExceptionScope =
+      session.nextExceptionScope + 1 := rfl
+
 /-- A finite local search state.
 
 `task` carries raw residual goals and their cumulative substitution.
@@ -136,9 +197,12 @@ inductive Search where
   | task (scope : CutScopeId) (goals : List Goal)
       (bindings : Substitution)
   | clauses (scope : CutScopeId) (cursor : PreparedCursor)
-  | raise (exception : Term)
+  | raise (exception : RaisedException)
   | choice (scope : CutScopeId) (left right : Search)
   | cutBoundary (scope : CutScopeId) (body : Search)
+  | catchBoundary (handlerScope : ExceptionScopeId)
+      (cutScope : CutScopeId) (body : Search) (catcher : Term)
+      (handler : Goal) (entryBindings : Substitution)
   | product (scope : CutScopeId) (head : Search) (tail : List Goal)
 deriving Repr, Inhabited
 
@@ -155,6 +219,7 @@ def liveCursors : Search → List CursorToken
   | .raise _ => []
   | .choice _ left right => left.liveCursors ++ right.liveCursors
   | .cutBoundary _ body => body.liveCursors
+  | .catchBoundary _ _ body _ _ _ => body.liveCursors
   | .product _ head _ => head.liveCursors
 
 /-- Activation identities of all live cursors, preserving structural order. -/
@@ -165,6 +230,7 @@ def liveCursorScopes : Search → List CutScopeId
   | .raise _ => []
   | .choice _ left right => left.liveCursorScopes ++ right.liveCursorScopes
   | .cutBoundary _ body => body.liveCursorScopes
+  | .catchBoundary _ _ body _ _ _ => body.liveCursorScopes
   | .product _ head _ => head.liveCursorScopes
 
 theorem liveCursorScopes_eq_map (search : Search) :
@@ -228,7 +294,7 @@ inductive WellScoped : CutScopeId → Search → Prop where
       (bindings : Substitution) : WellScoped scope (.task scope goals bindings)
   | clauses (scope : CutScopeId) (cursor : PreparedCursor) :
       WellScoped scope (.clauses scope cursor)
-  | raise (active : CutScopeId) (exception : Term) :
+  | raise (active : CutScopeId) (exception : RaisedException) :
       WellScoped active (.raise exception)
   | choice (scope : CutScopeId) (left right : Search)
       (leftScoped : WellScoped scope left)
@@ -237,6 +303,11 @@ inductive WellScoped : CutScopeId → Search → Prop where
   | cutBoundary (active scope : CutScopeId) (body : Search)
       (bodyScoped : WellScoped scope body) :
       WellScoped active (.cutBoundary scope body)
+  | catchBoundary (scope : CutScopeId) (handlerScope : ExceptionScopeId)
+      (body : Search) (catcher : Term) (handler : Goal)
+      (entryBindings : Substitution) (bodyScoped : WellScoped scope body) :
+      WellScoped scope
+        (.catchBoundary handlerScope scope body catcher handler entryBindings)
   | product (scope : CutScopeId) (head : Search) (tail : List Goal)
       (headScoped : WellScoped scope head) :
       WellScoped scope (.product scope head tail)
@@ -284,10 +355,61 @@ theorem UnifyResolution.deterministic {bindings : Substitution}
   exact congrArg (fun extension => extension ++ bindings)
     (firstMgu.unique secondMgu)
 
+/-- SWI's pre-unwind catcher-selection test for the supported finite-tree
+fragment.  Unlike ISO's abstract account, SWI tests the catcher while bindings
+made by the protected goal are still present.  The copied ball itself is not
+reinterpreted through those bindings.
+
+[SPEC SWI-Prolog manual 4.10, delayed backtracking during exception search] -/
+def CatchSelection (raised : RaisedException) (catcher : Term) : Prop :=
+  ∃ extension,
+    ComputesDenotationalMgu
+      [(raised.throwBindings.applyTerm catcher, raised.ball)] extension
+
+/-- Exact recovery matching performed after a selected `catch/3` has unwound.
+Only bindings present on entry survive the unwind; the copied ball is unified
+again with the catcher by the same canonical ordered MGU used for primitive
+equality.  This second match reconstructs precisely the bindings visible to
+the recovery goal.
+
+This is the independent local counterpart of SWI's
+`catch(Goal, Catcher, Recovery)` recovery step for the supported finite-tree
+fragment.  Rational-tree/cyclic matching and attributed variables remain open
+adequacy obligations.
+
+[SPEC translator.pl:300-308] -/
+def CatchResolution (entryBindings : Substitution) (catcher exception : Term)
+    (result : Substitution) : Prop :=
+  UnifyResolution entryBindings catcher exception result
+
+theorem CatchResolution.deterministic {entryBindings : Substitution}
+    {catcher exception : Term} {first second : Substitution}
+    (one : CatchResolution entryBindings catcher exception first)
+    (two : CatchResolution entryBindings catcher exception second) :
+    first = second :=
+  UnifyResolution.deterministic one two
+
+/-- Internal terminal state.  The throw-time substitution remains available
+to enclosing catchers until the exception escapes the local machine. -/
+inductive RawTerminal where
+  | completed
+  | raised (exception : RaisedException)
+deriving Repr, Inhabited
+
+namespace RawTerminal
+
+/-- Erase internal selection evidence only at the public terminal boundary. -/
+def toTerminal : RawTerminal → Trace.Terminal Term
+  | .completed => .completed
+  | .raised exception => .raised exception.ball
+
+end RawTerminal
+
 /-- One raw transition target.  Successful search exhaustion and an exception
-remain distinct terminal tags. -/
+remain distinct terminal tags, while internal exceptions retain the evidence
+needed by an enclosing SWI-style catcher. -/
 inductive RawTarget where
-  | terminal (tag : Trace.Terminal Term)
+  | terminal (tag : RawTerminal)
   | running (search : Search)
 deriving Inhabited
 
@@ -408,13 +530,27 @@ inductive RawStep : Session → Search → List Observation → Trace.CutSignal 
                 (openedFor session predicate arguments bindings).scope
                 (openedFor session predicate arguments bindings).cursor))
             rest))
+  | taskCatch (scope : CutScopeId) (protectedGoal : Goal) (catcher : Term)
+      (handler : Goal) (rest : List Goal) (bindings : Substitution)
+      (session : Session) :
+      RawStep session
+        (.task scope (.catch protectedGoal catcher handler :: rest) bindings)
+        [] .none (openCatch session).session
+        (.running
+          (.product scope
+            (.cutBoundary (openCatch session).cutScope
+              (.catchBoundary (openCatch session).handlerScope
+                (openCatch session).cutScope
+                (.task (openCatch session).cutScope [protectedGoal] bindings)
+                catcher handler bindings))
+            rest))
   | clausesPull (scope : CutScopeId) (cursor : PreparedCursor)
       (outcome : LocalOutcome) (session : Session)
       (pulled : LocalPull cursor outcome) :
       RawStep session (.clauses scope cursor) (localPullEvents outcome) .none
         session (localPullTarget scope outcome)
-  | raise (exception : Term) (session : Session) :
-      RawStep session (.raise exception) [.raised exception] .none session
+  | raise (exception : RaisedException) (session : Session) :
+      RawStep session (.raise exception) [.raised exception.ball] .none session
         (.terminal (.raised exception))
   | choiceProgress (scope : CutScopeId) (left right next : Search)
       (events : List Observation) (before after : Session)
@@ -428,7 +564,7 @@ inductive RawStep : Session → Search → List Observation → Trace.CutSignal 
       RawStep before (.choice scope left right) [] .none after
         (.running right)
   | choiceRaised (scope : CutScopeId) (left right : Search)
-      (exception : Term) (events : List Observation)
+      (exception : RaisedException) (events : List Observation)
       (before after : Session)
       (step : RawStep before left events .none after
         (.terminal (.raised exception))) :
@@ -462,7 +598,7 @@ inductive RawStep : Session → Search → List Observation → Trace.CutSignal 
       RawStep before (.cutBoundary scope body) [.completed] .none after
         (.terminal .completed)
   | cutBoundaryRaised (scope : CutScopeId) (body : Search)
-      (exception : Term) (events : List Observation)
+      (exception : RaisedException) (events : List Observation)
       (before after : Session)
       (step : RawStep before body events .none after
         (.terminal (.raised exception))) :
@@ -481,6 +617,50 @@ inductive RawStep : Session → Search → List Observation → Trace.CutSignal 
         (.running next)) :
       RawStep before (.cutBoundary scope body) events (.commit other) after
         (.running (.cutBoundary scope next))
+  | catchProgress (handlerScope : ExceptionScopeId) (scope : CutScopeId)
+      (body next : Search) (catcher : Term) (handler : Goal)
+      (entryBindings : Substitution) (events : List Observation)
+      (signal : Trace.CutSignal) (before after : Session)
+      (step : RawStep before body events signal after (.running next)) :
+      RawStep before
+        (.catchBoundary handlerScope scope body catcher handler entryBindings)
+        events signal after
+        (.running
+          (.catchBoundary handlerScope scope next catcher handler
+            entryBindings))
+  | catchComplete (handlerScope : ExceptionScopeId) (scope : CutScopeId)
+      (body : Search) (catcher : Term) (handler : Goal)
+      (entryBindings : Substitution) (before after : Session)
+      (step : RawStep before body [.completed] .none after
+        (.terminal .completed)) :
+      RawStep before
+        (.catchBoundary handlerScope scope body catcher handler entryBindings)
+        [.completed] .none after (.terminal .completed)
+  | catchHandled (handlerScope : ExceptionScopeId) (scope : CutScopeId)
+      (body : Search) (catcher : Term) (exception : RaisedException)
+      (handler : Goal)
+      (entryBindings result : Substitution) (cleanup : List Observation)
+      (before after : Session)
+      (step : RawStep before body (.raised exception.ball :: cleanup) .none after
+        (.terminal (.raised exception)))
+      (selected : CatchSelection exception catcher)
+      (resolved : CatchResolution entryBindings catcher exception.ball result) :
+      RawStep before
+        (.catchBoundary handlerScope scope body catcher handler entryBindings)
+        cleanup .none after
+        (.running (.task scope [handler] result))
+  | catchUnmatched (handlerScope : ExceptionScopeId) (scope : CutScopeId)
+      (body : Search) (catcher : Term) (exception : RaisedException)
+      (handler : Goal)
+      (entryBindings : Substitution) (cleanup : List Observation)
+      (before after : Session)
+      (step : RawStep before body (.raised exception.ball :: cleanup) .none after
+        (.terminal (.raised exception)))
+      (unmatched : ¬ CatchSelection exception catcher) :
+      RawStep before
+        (.catchBoundary handlerScope scope body catcher handler entryBindings)
+        (.raised exception.ball :: cleanup) .none after
+        (.terminal (.raised exception))
   | productAnswer (scope : CutScopeId) (head next : Search)
       (tail : List Goal) (bindings : Substitution)
       (before after : Session)
@@ -505,7 +685,8 @@ inductive RawStep : Session → Search → List Observation → Trace.CutSignal 
       RawStep before (.product scope head tail) events .none after
         (.terminal .completed)
   | productRaised (scope : CutScopeId) (head : Search)
-      (tail : List Goal) (exception : Term) (events : List Observation)
+      (tail : List Goal) (exception : RaisedException)
+      (events : List Observation)
       (before after : Session)
       (step : RawStep before head events .none after
         (.terminal (.raised exception)))
@@ -880,6 +1061,13 @@ theorem preserves_wellScoped_target {active : CutScopeId}
           (.clauses
             (openedFor session predicate arguments bindings).scope
             (openedFor session predicate arguments bindings).cursor))
+  | taskCatch scope protectedGoal catcher handler rest bindings session =>
+      cases wellFormed
+      exact .product scope _ rest
+        (.cutBoundary scope (openCatch session).cutScope _
+          (.catchBoundary (openCatch session).cutScope
+            (openCatch session).handlerScope _ catcher handler bindings
+            (.task (openCatch session).cutScope [protectedGoal] bindings)))
   | clausesPull scope cursor outcome session pulled =>
       cases wellFormed
       exact localPullTarget_wellScoped scope outcome
@@ -930,6 +1118,23 @@ theorem preserves_wellScoped_target {active : CutScopeId}
       | cutBoundary active _ _ bodyScoped =>
           exact .cutBoundary active scope next
             (inductionHypothesis bodyScoped)
+  | catchProgress handlerScope scope body next catcher handler entryBindings
+      events signal before after step inductionHypothesis =>
+      cases wellFormed with
+      | catchBoundary _ _ _ _ _ _ bodyScoped =>
+          exact .catchBoundary scope handlerScope next catcher handler
+            entryBindings (inductionHypothesis bodyScoped)
+  | catchComplete handlerScope scope body catcher handler entryBindings before
+      after step inductionHypothesis =>
+      exact True.intro
+  | catchHandled handlerScope scope body catcher exception handler
+      entryBindings result cleanup before after step resolved
+      inductionHypothesis =>
+      cases wellFormed
+      exact .task scope [handler] result
+  | catchUnmatched handlerScope scope body catcher exception handler
+      entryBindings cleanup before after step unmatched inductionHypothesis =>
+      exact True.intro
   | productAnswer scope head next tail bindings before after step
       inductionHypothesis =>
       cases wellFormed with
@@ -991,7 +1196,7 @@ left-to-right order.  Unlike the generic imported-provider protocol, no
 external cursor resource remains to close: a `PreparedCursor` is an immutable
 finite snapshot value. -/
 theorem choice_raised_prunes_right_cursors {scope : CutScopeId}
-    {left right : Search} {exception : Term}
+    {left right : Search} {exception : RaisedException}
     {events : List Observation} {before after : Session}
     (step : RawStep before (.choice scope left right) events .none after
       (.terminal (.raised exception))) :
@@ -1029,6 +1234,23 @@ theorem nextCutScope_mono {before after : Session} {search : Search}
   induction step <;> try exact Nat.le_refl _
   case taskCall scope predicate arguments rest bindings session =>
     simp only [openedFor, openLocalCall_nextCutScope]
+    omega
+  case taskCatch scope protectedGoal catcher handler rest bindings session =>
+    simp only [openCatch_nextCutScope]
+    omega
+  all_goals assumption
+
+/-- Exception-handler identities use their own non-backtrackable allocator.
+Ordinary calls leave it unchanged; entering `catch/3` advances it exactly
+once, and every structural wrapper inherits the child's monotonicity. -/
+theorem nextExceptionScope_mono {before after : Session} {search : Search}
+    {events : List Observation} {signal : Trace.CutSignal}
+    {target : RawTarget}
+    (step : RawStep before search events signal after target) :
+    before.nextExceptionScope ≤ after.nextExceptionScope := by
+  induction step <;> try exact Nat.le_refl _
+  case taskCatch scope protectedGoal catcher handler rest bindings session =>
+    simp only [openCatch_nextExceptionScope]
     omega
   all_goals assumption
 
@@ -1314,6 +1536,65 @@ theorem deterministic {before : Session} {search : Search}
             cases eventsEq <;> cases signalEq <;> cases afterEq <;>
             cases targetEq <;>
             simp_all
+  | catchBoundary handlerScope scope body catcher handler entryBindings
+      inductionHypothesis =>
+      have compareStep :
+          ∀ {firstEvents : List Observation}
+            {firstSignal : Trace.CutSignal} {firstAfter : Session}
+            {firstTarget : RawTarget},
+            RawStep before body firstEvents firstSignal firstAfter
+              firstTarget →
+            ∀ {secondEvents : List Observation}
+              {secondSignal : Trace.CutSignal} {secondAfter : Session}
+              {secondTarget : RawTarget},
+              RawStep before body secondEvents secondSignal secondAfter
+                secondTarget →
+              firstEvents = secondEvents ∧ firstSignal = secondSignal ∧
+                firstAfter = secondAfter ∧ firstTarget = secondTarget := by
+        intro firstEvents firstSignal firstAfter firstTarget firstStep
+          secondEvents secondSignal secondAfter secondTarget secondStep
+        exact inductionHypothesis firstStep secondStep
+      cases first with
+      | catchProgress _ _ _ _ _ _ _ _ _ _ _ firstStep =>
+          have compare := @compareStep _ _ _ _ firstStep
+          clear firstStep
+          cases second <;>
+            have inner := compare (by assumption) <;>
+            clear compare compareStep inductionHypothesis <;>
+            rcases inner with ⟨eventsEq, signalEq, afterEq, targetEq⟩ <;>
+            cases eventsEq <;> cases signalEq <;> cases afterEq <;>
+            cases targetEq <;>
+            simp_all
+      | catchComplete _ _ _ _ _ _ _ _ firstStep =>
+          have compare := @compareStep _ _ _ _ firstStep
+          clear firstStep
+          cases second <;>
+            have inner := compare (by assumption) <;>
+            clear compare compareStep inductionHypothesis <;>
+            rcases inner with ⟨eventsEq, signalEq, afterEq, targetEq⟩ <;>
+            cases eventsEq <;> cases signalEq <;> cases afterEq <;>
+            cases targetEq <;>
+            simp_all
+      | catchHandled _ _ _ _ _ _ _ _ _ _ _ firstStep firstSelected
+          firstResolved =>
+          have compare := @compareStep _ _ _ _ firstStep
+          clear firstStep
+          cases second <;>
+            have inner := compare (by assumption) <;>
+            rcases inner with ⟨eventsEq, signalEq, afterEq, targetEq⟩ <;>
+            cases targetEq <;> cases eventsEq <;> cases signalEq <;>
+            cases afterEq <;>
+            simp_all <;>
+            exact CatchResolution.deterministic firstResolved (by assumption)
+      | catchUnmatched _ _ _ _ _ _ _ _ _ _ firstStep firstUnmatched =>
+          have compare := @compareStep _ _ _ _ firstStep
+          clear firstStep
+          cases second <;>
+            have inner := compare (by assumption) <;>
+            rcases inner with ⟨eventsEq, signalEq, afterEq, targetEq⟩ <;>
+            cases targetEq <;> cases eventsEq <;> cases signalEq <;>
+            cases afterEq <;>
+            simp_all
   | product scope head tail inductionHypothesis =>
       have compareStep :
           ∀ {firstEvents : List Observation}
@@ -1411,6 +1692,14 @@ def scopeHighWater : State → Nat
   | .running session _ => session.nextCutScope
   | .uncaughtCut session _ _ => session.nextCutScope
 
+/-- Exception-handler high-water carried by every public state.  Exception
+identities are allocated independently of cut scopes and are not rewound by
+failure, exception recovery, or backtracking. -/
+def exceptionHighWater : State → Nat
+  | .terminal session _ => session.nextExceptionScope
+  | .running session _ => session.nextExceptionScope
+  | .uncaughtCut session _ _ => session.nextExceptionScope
+
 /-- Live cursor activations carried by every public state. -/
 def liveCursorScopes : State → List CutScopeId
   | .terminal _ _ => []
@@ -1423,7 +1712,7 @@ def WellFormed (state : State) : Prop := state.Rooted ∧ state.CursorOwned
 end State
 
 private def RawTarget.toState (session : Session) : RawTarget → State
-  | .terminal tag => .terminal session tag
+  | .terminal tag => .terminal session tag.toTerminal
   | .running search => .running session search
 
 /-- One public transition of the local goal machine. -/
@@ -1531,6 +1820,18 @@ theorem scopeHighWater_mono {start finish : State}
         exact raw.nextCutScope_mono
   | uncaught search next events before after scope raw =>
       exact raw.nextCutScope_mono
+
+/-- Public transitions never rewind the independently allocated exception-
+handler identities. -/
+theorem exceptionHighWater_mono {start finish : State}
+    {events : List Observation} (step : Transition start events finish) :
+    start.exceptionHighWater ≤ finish.exceptionHighWater := by
+  cases step with
+  | ordinary search events before after target raw =>
+      cases target <;>
+        exact raw.nextExceptionScope_mono
+  | uncaught search next events before after scope raw =>
+      exact raw.nextExceptionScope_mono
 
 /-- Every public prune event names a cursor live in the source state. -/
 theorem pruned_scope_origin {start finish : State}
@@ -1716,6 +2017,16 @@ theorem scopeHighWater_mono {count : Nat} {start finish : State}
   | succ count start middle finish first rest head tail
       inductionHypothesis =>
       exact Nat.le_trans head.scopeHighWater_mono inductionHypothesis
+
+/-- Finite execution never rewinds the exception-handler allocator. -/
+theorem exceptionHighWater_mono {count : Nat} {start finish : State}
+    {events : List Observation} (execution : StepsN count start events finish) :
+    start.exceptionHighWater ≤ finish.exceptionHighWater := by
+  induction execution with
+  | zero state => exact Nat.le_refl _
+  | succ count start middle finish first rest head tail
+      inductionHypothesis =>
+      exact Nat.le_trans head.exceptionHighWater_mono inductionHypothesis
 
 /-- An absent already-issued activation remains absent through every finite
 execution prefix. -/
@@ -2262,6 +2573,188 @@ theorem cut_prunes_later_clauses (scope : CutScopeId)
     [.pruned { scope := scope, cursor := cursor }] session session
     (.choiceCommitHere scope _ _ _ [] session session
       (.taskCut scope [] bindings session))
+
+/-! ## Local `catch/3` specialization witnesses -/
+
+private def catchWitnessVariable : LogicVar := .source "$catcher"
+private def catchWitnessException : Term := .atom "$boom"
+private def catchWitnessBinding : Substitution :=
+  [(catchWitnessVariable, catchWitnessException)]
+private def catchWitnessRaised : RaisedException :=
+  { ball := catchWitnessException, throwBindings := [] }
+private def catchWitnessBoundRaised : RaisedException :=
+  { ball := catchWitnessException
+    throwBindings := [(catchWitnessVariable, .atom "$body")] }
+
+private theorem catchWitness_resolves :
+    CatchResolution [] (.variable catchWitnessVariable)
+      catchWitnessException catchWitnessBinding := by
+  refine ⟨catchWitnessBinding, ?_, by simp [catchWitnessBinding]⟩
+  simpa [catchWitnessVariable, catchWitnessException, catchWitnessBinding,
+      TreeSubstitution.reify, Tree.reify, Term.denote]
+    using
+      (computes_singleton_left_variable catchWitnessVariable
+        catchWitnessException (by
+          intro equality
+          cases equality) (by rfl))
+
+private theorem catchWitness_selects :
+    CatchSelection catchWitnessRaised (.variable catchWitnessVariable) := by
+  rcases catchWitness_resolves with ⟨extension, computed, resultEq⟩
+  exact ⟨extension, by
+    simpa [catchWitnessRaised] using computed⟩
+
+/-- Entering `catch/3` allocates independent cut and exception identities,
+keeps the caller tail outside the opaque cut barrier, and starts the protected
+goal with exactly the entry substitution.  No external provider participates
+in this transition.
+
+[SPEC translator.pl:300-308] -/
+theorem catch_enters_distinct_delimiters (scope : CutScopeId)
+    (protectedGoal : Goal) (catcher : Term) (handler : Goal)
+    (rest : List Goal) (bindings : Substitution) (session : Session) :
+    RawStep session
+      (.task scope (.catch protectedGoal catcher handler :: rest) bindings)
+      [] .none (openCatch session).session
+      (.running
+        (.product scope
+          (.cutBoundary (openCatch session).cutScope
+            (.catchBoundary (openCatch session).handlerScope
+              (openCatch session).cutScope
+              (.task (openCatch session).cutScope [protectedGoal] bindings)
+              catcher handler bindings))
+          rest)) := by
+  exact .taskCatch scope protectedGoal catcher handler rest bindings session
+
+/-- A matching catcher consumes only the raised marker and starts recovery
+with the canonical catcher binding.  The exception is not reclassified as
+failure or completion. -/
+theorem variable_catcher_handles (scope : CutScopeId)
+    (handlerScope : ExceptionScopeId) (handler : Goal) (session : Session) :
+    RawStep session
+      (.catchBoundary handlerScope scope (.raise catchWitnessRaised)
+        (.variable catchWitnessVariable) handler [])
+      [] .none session
+      (.running (.task scope [handler] catchWitnessBinding)) := by
+  exact .catchHandled handlerScope scope (.raise catchWitnessRaised)
+    (.variable catchWitnessVariable) catchWitnessRaised handler []
+    catchWitnessBinding [] session session
+    (.raise catchWitnessRaised session) catchWitness_selects
+    catchWitness_resolves
+
+/-- Distinct rigid exception terms do not match.  The exact raised marker and
+terminal tag escape unchanged, establishing that the handler relation is not
+an always-successful oracle. -/
+theorem rigid_catcher_mismatch_escapes (scope : CutScopeId)
+    (handlerScope : ExceptionScopeId) (handler : Goal) (session : Session) :
+    let raised : RaisedException :=
+      { ball := .atom "$actual", throwBindings := [] }
+    RawStep session
+      (.catchBoundary handlerScope scope (.raise raised)
+        (.atom "$expected") handler [])
+      [.raised (.atom "$actual")] .none session
+      (.terminal (.raised raised)) := by
+  dsimp only
+  let raised : RaisedException :=
+    { ball := .atom "$actual", throwBindings := [] }
+  apply RawStep.catchUnmatched handlerScope scope (.raise raised)
+    (.atom "$expected") raised handler [] [] session session
+    (.raise raised session)
+  rintro ⟨extension, computed⟩
+  have mostGeneral := computed.isMostGeneral
+  have unifies : DenotationalUnifier extension
+      (.atom "$expected") (.atom "$actual") :=
+    by
+      have raw := mostGeneral.1
+        (raised.throwBindings.applyTerm (.atom "$expected"), raised.ball)
+        (by simp)
+      simpa [raised] using raw
+  exact distinct_atoms_have_no_denotational_unifier "$expected" "$actual"
+    (by decide) ⟨extension, unifies⟩
+
+/-- SWI selects a catcher before unwinding the protected goal.  Therefore a
+catcher variable bound to a distinct atom at the throw point rejects the ball,
+even though the same variable would match after restoring the empty entry
+substitution.  This is the anti-vacuity witness that distinguishes SWI's
+documented delayed-backtracking behavior from entry-only ISO matching. -/
+theorem throw_time_catcher_binding_can_reject (scope : CutScopeId)
+    (handlerScope : ExceptionScopeId) (handler : Goal) (session : Session) :
+    CatchResolution [] (.variable catchWitnessVariable)
+        catchWitnessException catchWitnessBinding ∧
+      RawStep session
+        (.catchBoundary handlerScope scope (.raise catchWitnessBoundRaised)
+          (.variable catchWitnessVariable) handler [])
+        [.raised catchWitnessException] .none session
+        (.terminal (.raised catchWitnessBoundRaised)) := by
+  refine ⟨catchWitness_resolves, ?_⟩
+  apply RawStep.catchUnmatched handlerScope scope
+    (.raise catchWitnessBoundRaised) (.variable catchWitnessVariable)
+    catchWitnessBoundRaised handler [] [] session session
+    (.raise catchWitnessBoundRaised session)
+  rintro ⟨extension, computed⟩
+  have mostGeneral := computed.isMostGeneral
+  have unifies : DenotationalUnifier extension
+      (.atom "$body") catchWitnessException := by
+    have raw := mostGeneral.1
+      (catchWitnessBoundRaised.throwBindings.applyTerm
+        (.variable catchWitnessVariable), catchWitnessBoundRaised.ball)
+      (by simp)
+    simpa [catchWitnessBoundRaised, catchWitnessVariable,
+      catchWitnessException, TreeSubstitution.reify, Tree.reify,
+      Term.denote, Term.instantiateOne] using raw
+  exact distinct_atoms_have_no_denotational_unifier "$body" "$boom"
+    (by decide) ⟨extension, unifies⟩
+
+/-- The exception boundary is cut-transparent, while its enclosing cut
+barrier catches the protected goal's commit.  Therefore a cut inside catch
+cannot discard an alternative owned by the caller's outer scope. -/
+theorem catch_cut_preserves_outer_choice (outer inner : CutScopeId)
+    (handlerScope : ExceptionScopeId) (bindings : Substitution)
+    (catcher : Term) (handler : Goal) (outside : Search)
+    (session : Session) :
+    RawStep session
+      (.choice outer
+        (.cutBoundary inner
+          (.catchBoundary handlerScope inner
+            (.task inner [.cut] bindings) catcher handler bindings))
+        outside)
+      [] .none session
+      (.running
+        (.choice outer
+          (.cutBoundary inner
+            (.catchBoundary handlerScope inner
+              (.task inner [] bindings) catcher handler bindings))
+          outside)) := by
+  apply RawStep.choiceProgress
+  apply RawStep.cutBoundaryCatch
+  exact .catchProgress handlerScope inner _ _ catcher handler bindings []
+    (.commit inner) session session (.taskCut inner [] bindings session)
+
+/-- Any step that leaves a catch boundary directly in recovery must have
+passed both phases of SWI matching: selection under the throw-time bindings,
+then canonical reconstruction from the bindings saved on catch entry.  This
+inversion prevents either an entry-only false selection or a body-local
+binding leak into recovery. -/
+theorem catch_recovery_uses_two_phase_matching
+    {handlerScope : ExceptionScopeId} {scope : CutScopeId} {body : Search}
+    {catcher : Term} {exception : RaisedException} {handler : Goal}
+    {entryBindings result : Substitution} {cleanup : List Observation}
+    {before after : Session}
+    (step : RawStep before
+      (.catchBoundary handlerScope scope body catcher handler entryBindings)
+      cleanup .none after (.running (.task scope [handler] result)))
+    (bodyRaised : RawStep before body (.raised exception.ball :: cleanup) .none
+      after (.terminal (.raised exception))) :
+    CatchSelection exception catcher ∧
+      CatchResolution entryBindings catcher exception.ball result := by
+  cases step with
+  | catchHandled _ _ _ _ caught _ _ _ _ _ _ child selected resolved =>
+      have comparison := RawStep.deterministic child bodyRaised
+      rcases comparison with ⟨eventsEq, signalEq, afterEq, targetEq⟩
+      cases targetEq
+      cases eventsEq
+      exact ⟨selected, resolved⟩
+
 
 /-- Anti-vacuity witness: structural scope well-formedness alone would permit
 two copies of the same cursor activation, but linear ownership rejects it. -/
