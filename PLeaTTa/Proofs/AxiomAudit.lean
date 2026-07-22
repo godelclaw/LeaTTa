@@ -20,6 +20,7 @@ import PLeaTTa.Proofs.CompilerTypedSharedResultAdequacy
 import PLeaTTa.Proofs.CompilerCounter
 import PLeaTTa.Proofs.CompilerFuel
 import PLeaTTa.Proofs.CompilerGeneratedNames
+import PLeaTTa.Proofs.CompilerFinalization
 import PLeaTTa.Proofs.OpenOrderedStep
 import PLeaTTa.Proofs.ReaderAdequacy
 import PLeaTTa.Proofs.PettaClawHistory
@@ -69,6 +70,14 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.ReaderAdequacy.readsFile_deterministic
 #print axioms PLeaTTa.ReaderAdequacy.parseFile_rejected_iff_no_read
 #print axioms PLeaTTa.CompilerAdequacy.compileExprFuel_initial_sound
+#print axioms PLeaTTa.eraseCompileAliasesGoal_aliasFree
+#print axioms PLeaTTa.eraseCompileAliasesGoals_aliasFree
+#print axioms PLeaTTa.substCompiledGoal_aliasFree
+#print axioms PLeaTTa.substCompiledGoals_aliasFree
+#print axioms PLeaTTa.finalizeCompiledExpression_aliasFree
+#print axioms PLeaTTa.finalizeCompiledClause_aliasFree
+#print axioms PLeaTTa.compileExprFresh_aliasFree
+#print axioms PLeaTTa.compileRuleFresh_aliasFree
 #print axioms PLeaTTa.compilerFuelStepAt
 #print axioms PLeaTTa.compileExprFuel_mono
 #print axioms PLeaTTa.compileExprFuel_mono_of_le
@@ -173,6 +182,7 @@ import PLeaTTa.HostReplay
 #print axioms PLeaTTa.isTrimRoot_ite_then_eq_left
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_translates
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_compiles
+#print axioms PLeaTTa.OpenOrderedStep.aliasIf_finalizes
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_compiles_fresh
 #print axioms PLeaTTa.OpenOrderedStep.aliasIf_compiler_agrees
 #print axioms PLeaTTa.OpenBindingAgreement.source_generated_pair_not_injective

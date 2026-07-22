@@ -3,13 +3,15 @@ Module: PLeaTTa.Proofs.OpenOrderedStep
 Purpose: First concrete source-to-observation witness connecting the
   independent ordered open-substitution semantics to the sealed machine.
 Trusted boundary: none
-Main exports: aliasIf_translates, aliasIf_compiles,
+Main exports: aliasIf_translates, aliasIf_compiles, aliasIf_finalizes,
+  aliasIf_compiles_fresh,
   aliasIf_reference_runs, aliasIf_executable_steps,
   aliasIf_source_to_observation
 -/
 import PLeaTTa.PeTTaSpec.OpenOrdered
 import PLeaTTa.Proofs.PrologCoreAdequacy
 import PLeaTTa.Proofs.CompilerFreshness
+import PLeaTTa.Proofs.CompilerTypedSharedResultAdequacy
 
 namespace PLeaTTa.OpenOrderedStep
 
@@ -58,11 +60,20 @@ def aliasIfReferenceAnswer (value : Int) : Substitution :=
 /-- Executable result variable allocated for `aliasIfSource`. -/
 def aliasIfExecutableQuery : Atom := .var "_q0"
 
-private def aliasIfThenGoals (value : Int) : List PLeaTTa.Goal :=
+private def aliasIfRawThenGoals (value : Int) : List PLeaTTa.Goal :=
   [PLeaTTa.Goal.eq (.var "x") (.gnd (.int value))]
+
+private def aliasIfThenGoals (value : Int) : List PLeaTTa.Goal :=
+  [PLeaTTa.Goal.eq aliasIfExecutableQuery (.gnd (.int value))]
 
 private def aliasIfElseGoals : List PLeaTTa.Goal :=
   [PLeaTTa.Goal.eq (.sym "True") (.sym "False")]
+
+private def aliasIfRawConditional (value : Int) : PLeaTTa.Goal :=
+  PLeaTTa.Goal.ite (.sym "True")
+    (aliasIfExecutableQuery, aliasIfRawThenGoals value)
+    (aliasIfExecutableQuery, aliasIfElseGoals)
+    aliasIfExecutableQuery
 
 private def aliasIfConditional (value : Int) : PLeaTTa.Goal :=
   PLeaTTa.Goal.ite (.sym "True")
@@ -75,7 +86,12 @@ private def aliasIfTail (value : Int) : List PLeaTTa.Goal :=
 
 /-- Exact executable goal stream produced by the public compiler. -/
 def aliasIfExecutableGoals (value : Int) : List PLeaTTa.Goal :=
-  PLeaTTa.Goal.eq (.var "x") aliasIfExecutableQuery :: aliasIfTail value
+  aliasIfTail value
+
+/-- Raw proof-surface goals before source-facing alias finalization. -/
+def aliasIfRawExecutableGoals (value : Int) : List PLeaTTa.Goal :=
+  PLeaTTa.Goal.compileAlias (.var "x") aliasIfExecutableQuery ::
+    [aliasIfRawConditional value]
 
 /-- The independent pinned translator relation derives the normalized alias
 prefix and ordered conditional body. -/
@@ -88,11 +104,12 @@ theorem aliasIf_translates (value : Int) :
       (by simp [emptyTranslatorState])
       (by simp [emptyTranslatorState]))
 
-/-- The public executable compiler produces the exact goal stream related by
-`aliasIf_translates`; this is not a proof-only compiler. -/
+/-- The raw executable compiler proof surface produces the exact pre-finalizer
+goal stream related by `aliasIf_translates`; this is not a proof-only
+compiler. -/
 theorem aliasIf_compiles (value : Int) :
     compileExpr emptyCompilerEnv 0 (aliasIfSource value) =
-      .ok (aliasIfExecutableQuery, aliasIfExecutableGoals value, 1) := by
+      .ok (aliasIfExecutableQuery, aliasIfRawExecutableGoals value, 1) := by
   unfold compileExpr
   have fuelEq : compilerFuel (aliasIfSource value) + 64 = 640 := by
     simp [compilerFuel, aliasIfSource, Atom.size]
@@ -117,29 +134,65 @@ theorem aliasIf_compiles (value : Int) :
   have letCompiled :
       compileExprFuel 637 emptyCompilerEnv 0
           (.expr [.sym "let", .var "x", .gnd (.int value), .var "x"]) =
-        .ok (.var "x", aliasIfThenGoals value, 0) := by
+        .ok (.var "x", aliasIfRawThenGoals value, 0) := by
     exact compileExprFuel_let_eq 634 emptyCompilerEnv 0
       (.var "x") (.gnd (.int value)) (.var "x")
       (.var "x") (.gnd (.int value)) (.var "x")
       [] [] [] 0 0 0 (by rfl) patternCompiled valueCompiled bodyCompiled
   have branchCompiled :
-      compileBranch aliasIfExecutableQuery (.var "x", aliasIfThenGoals value) =
-        ([PLeaTTa.Goal.eq (.var "x") aliasIfExecutableQuery],
-         (aliasIfExecutableQuery, aliasIfThenGoals value)) := by
+      compileBranch aliasIfExecutableQuery
+          (.var "x", aliasIfRawThenGoals value) =
+        ([PLeaTTa.Goal.compileAlias (.var "x") aliasIfExecutableQuery],
+         (aliasIfExecutableQuery, aliasIfRawThenGoals value)) := by
     rfl
   have compiled := compileExprFuel_ifThen_eq 637 emptyCompilerEnv 0
     (.gnd (.bool true))
     (.expr [.sym "let", .var "x", .gnd (.int value), .var "x"])
-    (.sym "True") (.var "x") [] (aliasIfThenGoals value)
-    [PLeaTTa.Goal.eq (.var "x") aliasIfExecutableQuery]
-    0 0 (aliasIfExecutableQuery, aliasIfThenGoals value)
+    (.sym "True") (.var "x") [] (aliasIfRawThenGoals value)
+    [PLeaTTa.Goal.compileAlias (.var "x") aliasIfExecutableQuery]
+    0 0 (aliasIfExecutableQuery, aliasIfRawThenGoals value)
     (by rfl) conditionCompiled letCompiled branchCompiled
   change compileExprFuel 640 emptyCompilerEnv 0 (aliasIfSource value) =
-    .ok (aliasIfExecutableQuery, aliasIfExecutableGoals value, 1) at compiled
+    .ok (aliasIfExecutableQuery, aliasIfRawExecutableGoals value, 1) at compiled
   exact compiled
 
+/-- Translation-time sharing is solved globally and its marker is erased
+before the source-facing compiler exposes executable goals. -/
+theorem aliasIf_finalizes (value : Int) :
+    finalizeCompiledExpression aliasIfExecutableQuery
+        (aliasIfRawExecutableGoals value) 1 =
+      .ok (aliasIfExecutableQuery, aliasIfExecutableGoals value, 1) := by
+  have aliasExact :
+      unifyTopExact (.var "x") aliasIfExecutableQuery =
+        some [("x", aliasIfExecutableQuery)] :=
+    PLeaTTa.CompilerTypedSharedResultAdequacy.unifyTopExact_fresh_variable
+      "x" aliasIfExecutableQuery
+      (by simp [aliasIfExecutableQuery, Metta.Subst.occurs])
+  unfold finalizeCompiledExpression
+  simp only [aliasIfRawExecutableGoals, collectCompileAliasesGoals,
+    collectCompileAliasesGoal]
+  rw [show collectCompileAliasesGoal (aliasIfRawConditional value) = [] by
+    rfl]
+  simp only [List.append_nil]
+  unfold resolveCompileAliases
+  simp only [List.foldlM_cons, subst_nil]
+  rw [aliasExact]
+  change Except.ok
+    (subst [("x", aliasIfExecutableQuery)] aliasIfExecutableQuery,
+      substCompiledGoals [("x", aliasIfExecutableQuery)]
+        (eraseCompileAliasesGoals
+          [.compileAlias (.var "x") aliasIfExecutableQuery,
+            aliasIfRawConditional value]),
+      1) =
+        .ok (aliasIfExecutableQuery, aliasIfExecutableGoals value, 1)
+  simp [eraseCompileAliasesGoals, eraseCompileAliasesGoal,
+    aliasIfRawConditional, aliasIfRawThenGoals, aliasIfExecutableGoals,
+    aliasIfTail, aliasIfConditional, aliasIfThenGoals, aliasIfExecutableQuery,
+    aliasIfElseGoals, substCompiledGoals, substCompiledGoal,
+    Metta.Subst.lookup, subst, substN]
+
 /-- The source-facing compiler wrapper used by executable loaders produces
-the same exact stream for this non-colliding family. -/
+the finalized alias-free stream for this non-colliding family. -/
 theorem aliasIf_compiles_fresh (value : Int) :
     compileExprFresh emptyCompilerEnv 0 (aliasIfSource value) =
       .ok (aliasIfExecutableQuery, aliasIfExecutableGoals value, 1) := by
@@ -148,14 +201,19 @@ theorem aliasIf_compiles_fresh (value : Int) :
     simp [compilerFreshCounterForAtom, compilerSeedHighWaterAtom,
       compilerSeedHighWaterNames, compilerSeedHighWaterName,
       compilerGeneratedIndex?, aliasIfSource, Atom.vars]]
-  exact aliasIf_compiles value
+  rw [aliasIf_compiles value]
+  change finalizeCompiledExpression aliasIfExecutableQuery
+      (aliasIfRawExecutableGoals value) 1 =
+    .ok (aliasIfExecutableQuery, aliasIfExecutableGoals value, 1)
+  exact aliasIf_finalizes value
 
 /-- The independent result and ordered goal stream are related to the exact
-public compiler output by the general adequacy relations. -/
+raw compiler output by the general adequacy relations.  `aliasIf_finalizes`
+separately connects that raw stream to the public source-facing output. -/
 theorem aliasIf_compiler_agrees (value : Int) :
     TermAgrees aliasIfReferenceQuery aliasIfExecutableQuery ∧
     GoalsAgree (aliasIfReferenceGoals value)
-      (aliasIfExecutableGoals value) := by
+      (aliasIfRawExecutableGoals value) := by
   have environmentAgreement :
       EnvAgrees emptyTranslatorState emptyCompilerEnv := by
     refine ⟨?_⟩
@@ -167,7 +225,7 @@ theorem aliasIf_compiler_agrees (value : Int) :
       (aliasIf_translates value)
   have resultEquality :
       (internal, executableGoals, 1) =
-        (aliasIfExecutableQuery, aliasIfExecutableGoals value, 1) :=
+        (aliasIfExecutableQuery, aliasIfRawExecutableGoals value, 1) :=
     Except.ok.inj (compiled.symm.trans (aliasIf_compiles value))
   cases resultEquality
   exact ⟨termAgreement, goalsAgreement⟩
@@ -256,11 +314,8 @@ def aliasIfExecutableInitial (world : PWorld) (value : Int) : Conf :=
     counter := 1
     qterm := aliasIfExecutableQuery }
 
-private def aliasBinding : Subst := [("x", aliasIfExecutableQuery)]
-
 private def resolvedBinding (value : Int) : Subst :=
-  [("x", .gnd (.int value)),
-   ("_q0", .gnd (.int value))]
+  [("_q0", .gnd (.int value))]
 
 /-- The independent answer substitution and executable resolved binding agree
 on both variables used by the translated source. -/
@@ -274,13 +329,9 @@ theorem aliasIf_resolved_bindings_agree (value : Int) :
 private def finalBinding (value : Int) : Subst :=
   trimFor [] aliasIfExecutableQuery (resolvedBinding value)
 
-private def afterAlias (world : PWorld) (value : Int) : Conf :=
-  { aliasIfExecutableInitial world value with
-    cur := some (aliasIfTail value, aliasBinding) }
-
 private def afterChoice (world : PWorld) (value : Int) : Conf :=
-  { afterAlias world value with
-    cur := some (aliasIfThenGoals value, aliasBinding) }
+  { aliasIfExecutableInitial world value with
+    cur := some (aliasIfThenGoals value, []) }
 
 private def beforeAnswer (world : PWorld) (value : Int) : Conf :=
   { afterChoice world value with
@@ -301,26 +352,6 @@ private def answered (world : PWorld) (value : Int) : Conf :=
 private def terminal (world : PWorld) (value : Int) : Conf :=
   pull (answered world value)
 
-private theorem unify_alias :
-    unifyB [] (.var "x") aliasIfExecutableQuery = some aliasBinding := by
-  simpa [aliasBinding, aliasIfExecutableQuery, Metta.Subst.compose] using
-    (unifyB_fresh_capture [] "x" (.var "_q0")
-      (by simp [Metta.Subst.lookup])
-      (by simp [Atom.vars]))
-
-private theorem trim_alias (value : Int) :
-    trimFor (aliasIfTail value) aliasIfExecutableQuery aliasBinding =
-      aliasBinding := by
-  apply trimFor_eq_self_of_root_keys
-  · intro name atom hmem
-    simp only [aliasBinding, List.mem_singleton, Prod.mk.injEq] at hmem
-    rcases hmem with ⟨rfl, rfl⟩
-    exact isTrimRoot_ite_then_eq_left
-      (.sym "True") aliasIfExecutableQuery aliasIfExecutableQuery
-      aliasIfExecutableQuery (.gnd (.int value)) "x" []
-      (aliasIfExecutableQuery, aliasIfElseGoals)
-  · simp [aliasBinding]
-
 private theorem chosen_branch (value : Int) :
     iteBranchGoals aliasIfExecutableQuery
         (aliasIfExecutableQuery, aliasIfThenGoals value) =
@@ -332,38 +363,24 @@ private theorem chosen_branch (value : Int) :
       aliasIfThenGoals value) = aliasIfThenGoals value
   rw [if_pos (by decide)]
 
-private theorem unify_alias_value (value : Int) :
-    unifyB aliasBinding (.var "x") (.gnd (.int value)) =
+private theorem unify_result_value (value : Int) :
+    unifyB [] aliasIfExecutableQuery (.gnd (.int value)) =
       some (resolvedBinding value) := by
-  let aliasState : Subst := [("x", .var "_q0")]
-  change unifyB aliasState (.var "x") (.gnd (.int value)) =
-    some [("x", .gnd (.int value)),
-      ("_q0", .gnd (.int value))]
-  have resultLookup : Metta.Subst.lookup aliasState "_q0" = none := by
-    simp [aliasState, Metta.Subst.lookup]
+  change unifyB [] (.var "_q0") (.gnd (.int value)) =
+    some [("_q0", .gnd (.int value))]
+  have resultLookup : Metta.Subst.lookup [] "_q0" = none := by
+    simp [Metta.Subst.lookup]
   have resultFresh :
-      "_q0" ∉ (subst aliasState (.gnd (.int value))).vars := by
+      "_q0" ∉ (subst [] (.gnd (.int value))).vars := by
     simp [Atom.vars]
-  have capture := unifyB_fresh_capture aliasState "_q0"
+  have capture := unifyB_fresh_capture [] "_q0"
     (.gnd (.int value)) resultLookup resultFresh
-  have sourceValue : subst aliasState (.var "x") = .var "_q0" := by
-    simp [aliasState, subst, substN, Metta.Subst.lookup]
-  unfold unifyB at capture ⊢
-  rw [sourceValue]
-  simpa [aliasState, Metta.Subst.compose, Metta.Subst.apply,
-    Metta.Subst.lookup] using capture
-
-private def aliasTopological : SubstTopological aliasBinding :=
-  SubstTopological.cons_of_fresh [] emptySubstTopological
-    "x" (.var "_q0")
-    (by simp [Metta.Subst.lookup])
-    (by simp [Atom.vars])
-    (by simp [AtomAvoids, Metta.Subst.lookup])
+  simpa [resolvedBinding, Metta.Subst.compose] using capture
 
 private def resolvedTopological (value : Int) :
     SubstTopological (resolvedBinding value) :=
-  unifyB_topological aliasBinding (.var "x") (.gnd (.int value))
-    (resolvedBinding value) aliasTopological (unify_alias_value value)
+  unifyB_topological [] aliasIfExecutableQuery (.gnd (.int value))
+    (resolvedBinding value) emptySubstTopological (unify_result_value value)
 
 private theorem final_query_value (value : Int) :
     subst (finalBinding value) aliasIfExecutableQuery =
@@ -384,27 +401,18 @@ private theorem final_query_value (value : Int) :
     · simp [Atom.vars]
   exact preserved.trans resolved
 
-private theorem alias_step (program : Prog) (grounding : GroundingTable)
-    (world : PWorld) (value : Int) :
-    Step program grounding (aliasIfExecutableInitial world value)
-      (afterAlias world value) := by
-  have step := Step.eq_ok (prog := program) (gt := grounding)
-    (aliasIfExecutableInitial world value)
-    (.var "x") aliasIfExecutableQuery (aliasIfTail value)
-    [] aliasBinding (by rfl) unify_alias
-  simpa [afterAlias, aliasIfExecutableInitial, trim_alias] using step
-
 private theorem choice_step (program : Prog) (grounding : GroundingTable)
     (world : PWorld) (value : Int) :
-    Step program grounding (afterAlias world value)
+    Step program grounding (aliasIfExecutableInitial world value)
       (afterChoice world value) := by
   have step := Step.ite_true (prog := program) (gt := grounding)
-    (afterAlias world value) (.sym "True")
+    (aliasIfExecutableInitial world value) (.sym "True")
     (aliasIfExecutableQuery, aliasIfThenGoals value)
     (aliasIfExecutableQuery, aliasIfElseGoals)
-    aliasIfExecutableQuery [] aliasBinding (by rfl) (by simp)
+    aliasIfExecutableQuery [] [] (by rfl) (by simp)
   rw [chosen_branch] at step
-  simpa [afterChoice, afterAlias, aliasIfExecutableInitial, aliasIfTail,
+  simpa [afterChoice, aliasIfExecutableInitial, aliasIfExecutableGoals,
+    aliasIfTail,
     aliasIfConditional] using step
 
 private theorem value_step (program : Prog) (grounding : GroundingTable)
@@ -412,9 +420,9 @@ private theorem value_step (program : Prog) (grounding : GroundingTable)
     Step program grounding (afterChoice world value)
       (beforeAnswer world value) := by
   have step := Step.eq_ok (prog := program) (gt := grounding)
-    (afterChoice world value) (.var "x") (.gnd (.int value)) []
-    aliasBinding (resolvedBinding value) (by rfl) (unify_alias_value value)
-  simpa [beforeAnswer, afterChoice, afterAlias, aliasIfExecutableInitial,
+    (afterChoice world value) aliasIfExecutableQuery (.gnd (.int value)) []
+    [] (resolvedBinding value) (by rfl) (unify_result_value value)
+  simpa [beforeAnswer, afterChoice, aliasIfExecutableInitial,
     finalBinding] using step
 
 private theorem answer_step (program : Prog) (grounding : GroundingTable)
@@ -423,23 +431,23 @@ private theorem answer_step (program : Prog) (grounding : GroundingTable)
       (terminal world value) := by
   have step := Step.answer (prog := program) (gt := grounding)
     (beforeAnswer world value) (finalBinding value) (by rfl)
-  simpa [terminal, answered, beforeAnswer, afterChoice, afterAlias,
+  simpa [terminal, answered, beforeAnswer, afterChoice,
     aliasIfExecutableInitial] using step
 
 private theorem terminal_is_terminal (world : PWorld) (value : Int) :
     Terminal (terminal world value) := by
-  simp [Terminal, terminal, answered, beforeAnswer, afterChoice, afterAlias,
+  simp [Terminal, terminal, answered, beforeAnswer, afterChoice,
     aliasIfExecutableInitial, pull, pullAuxTracked, pullAux]
 
 private theorem terminal_answer_values (world : PWorld) (value : Int) :
     (terminal world value).answerValues = [.gnd (.int value)] := by
   rw [terminal, pull_answerValues]
-  simp [answered, beforeAnswer, afterChoice, afterAlias,
+  simp [answered, beforeAnswer, afterChoice,
     aliasIfExecutableInitial, Conf.answerValues, final_query_value]
 
-/-- The sealed executable machine follows the normalized alias prefix, takes
-the true branch, and publishes exactly the selected integer.  Program and
-grounding parameters are arbitrary because this call-free trace cannot
+/-- The sealed executable machine follows the alias-finalized conditional,
+takes the true branch, and publishes exactly the selected integer.  Program
+and grounding parameters are arbitrary because this call-free trace cannot
 consult either oracle. -/
 theorem aliasIf_executable_steps (program : Prog)
     (grounding : GroundingTable) (world : PWorld) (value : Int) :
@@ -450,11 +458,10 @@ theorem aliasIf_executable_steps (program : Prog)
       final.answerValues = [.gnd (.int value)] := by
   refine ⟨terminal world value, ?_, terminal_is_terminal world value,
     terminal_answer_values world value⟩
-  exact .tail _ _ _ (alias_step program grounding world value)
-    (.tail _ _ _ (choice_step program grounding world value)
-      (.tail _ _ _ (value_step program grounding world value)
-        (.tail _ _ _ (answer_step program grounding world value)
-          (.refl _))))
+  exact .tail _ _ _ (choice_step program grounding world value)
+    (.tail _ _ _ (value_step program grounding world value)
+      (.tail _ _ _ (answer_step program grounding world value)
+        (.refl _)))
 
 /-- First concrete composition witness across the independent translator,
 the public executable compiler, ordered open-substitution execution, and the
@@ -468,7 +475,10 @@ theorem aliasIf_source_to_observation (program : Prog)
         .ok (aliasIfExecutableQuery, aliasIfExecutableGoals value, 1) ∧
     TermAgrees aliasIfReferenceQuery aliasIfExecutableQuery ∧
     GoalsAgree (aliasIfReferenceGoals value)
-        (aliasIfExecutableGoals value) ∧
+        (aliasIfRawExecutableGoals value) ∧
+    finalizeCompiledExpression aliasIfExecutableQuery
+        (aliasIfRawExecutableGoals value) 1 =
+      .ok (aliasIfExecutableQuery, aliasIfExecutableGoals value, 1) ∧
     EncodingInjectiveOn [.source "x", .generated 0] ∧
     BindingsAgreeOn (aliasIfReferenceAnswer value)
         (resolvedExecutableBinding "x" 0 value)
@@ -486,6 +496,7 @@ theorem aliasIf_source_to_observation (program : Prog)
   refine ⟨aliasIf_translates value, aliasIf_compiles_fresh value,
     (aliasIf_compiler_agrees value).1,
     (aliasIf_compiler_agrees value).2,
+    aliasIf_finalizes value,
     aliasIf_variable_encoding_injective,
     aliasIf_resolved_bindings_agree value,
     aliasIf_reference_runs value, ?_,

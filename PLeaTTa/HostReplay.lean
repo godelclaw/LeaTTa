@@ -731,6 +731,12 @@ theorem recordedStepWith_replay (engine : SubstEngine) (prog : Prog)
                       cursor (engine.stepCleanWith prog gt fuel core)
                     simpa [recordedStepWith, HostMachine.stepWith, hdone, hcur,
                       fromCore, HostMachine.fromCoreOutcome] using aligned
+                | compileAlias left right =>
+                    have aligned := completeRecordedStep_fromCore_aligned engine
+                      prog gt transcript (fuel + 1) core frames liveTranscript
+                      cursor (engine.stepCleanWith prog gt fuel core)
+                    simpa [recordedStepWith, HostMachine.stepWith, hdone, hcur,
+                      fromCore, HostMachine.fromCoreOutcome] using aligned
                 | cut =>
                     have aligned := completeRecordedStep_fromCore_aligned engine
                       prog gt transcript (fuel + 1) core frames liveTranscript

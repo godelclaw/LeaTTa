@@ -154,6 +154,7 @@ private def goalSummary : Goal → String
   | .catchg _ _ _ => "catch"
   | .softcut _ _ _ _ => "softcut"
   | .eq _ _ => "unify"
+  | .compileAlias _ _ => "compiler-alias"
   | .cut => "cut"
   | .cutAt _ => "cut-at"
   | .findall _ _ _ => "findall"

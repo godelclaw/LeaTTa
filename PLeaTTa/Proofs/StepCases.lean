@@ -32,6 +32,26 @@ theorem step_eq (c : Conf) (x y : Atom) (rest : List Goal) (b : Subst)
         unfold step; rw [h]; simp only [hu]
       rw [this]; exact Step.eq_fail c x y rest b h hu
 
+/-- Defensive correspondence for compiler alias metadata. Source-facing
+compilation erases these markers; raw proof-surface execution is nevertheless
+licensed as the equality the marker denotes. -/
+theorem step_compileAlias (c : Conf) (x y : Atom) (rest : List Goal)
+    (b : Subst)
+    (h : c.cur = some (Goal.compileAlias x y :: rest, b)) :
+    Step prog gt c (step prog gt fuel c) := by
+  cases hu : unifyB b x y with
+  | some b' =>
+      have : step prog gt fuel c =
+          { c with cur := some (rest, trimFor rest c.qterm b') } := by
+        unfold step; rw [h]; simp only [hu]
+      rw [this]
+      exact Step.compileAlias_ok c x y rest b b' h hu
+  | none =>
+      have : step prog gt fuel c = pull { c with cur := none } := by
+        unfold step; rw [h]; simp only [hu]
+      rw [this]
+      exact Step.compileAlias_fail c x y rest b h hu
+
 theorem step_pull (c : Conf) (h : c.cur = none) (hne : c.alts ≠ []) :
     Step prog gt c (step prog gt fuel c) := by
   have : step prog gt fuel c = pull c := by unfold step; rw [h]
@@ -69,7 +89,8 @@ theorem step_amb (c : Conf) (branches : List (Atom × List Goal)) (res : Atom)
   have : step prog gt fuel c
       = pull { c with cur := none,
                       alts := branches.map (fun (t, gs) =>
-                        Alt.br (gs ++ [Goal.eq res t] ++ rest) b) ++ c.alts } := by
+                        Alt.br (ambBranchGoals res (t, gs) ++ rest) b) ++
+                        c.alts } := by
     unfold step; rw [h]
   rw [this]; exact Step.amb c branches res rest b h
 
@@ -698,6 +719,8 @@ theorem machineMirrorsSpec_proved : machineMirrorsSpec := by
   | some ([], b) => exact Or.inl (step_answer prog gt fuel c b hcur)
   | some (Goal.eq x y :: rest, b) =>
       exact Or.inl (step_eq prog gt fuel c x y rest b hcur)
+  | some (Goal.compileAlias x y :: rest, b) =>
+      exact Or.inl (step_compileAlias prog gt fuel c x y rest b hcur)
   | some (Goal.cut :: rest, b) =>
       exact Or.inl (step_cut prog gt fuel c rest b hcur)
   | some (Goal.cutAt k :: rest, b) =>
@@ -1159,6 +1182,13 @@ theorem clean_sound_fuel (prog : Prog) (gt : GroundingTable) :
                     have hs := step_eq prog gt fuel c x y rest b hcur
                     rw [hstepEq] at hs
                     exact hs
+                | compileAlias x y =>
+                    have hstepEq : step prog gt fuel c = c' := by
+                      simpa [stepClean, hcur] using hprog
+                    have hs :=
+                      step_compileAlias prog gt fuel c x y rest b hcur
+                    rw [hstepEq] at hs
+                    exact hs
                 | cut =>
                     have hstepEq : step prog gt fuel c = c' := by
                       simpa [stepClean, hcur] using hprog
@@ -1379,6 +1409,7 @@ theorem clean_sound_fuel (prog : Prog) (gt : GroundingTable) :
                             cases hout
                             exact Raises.bin c op args res rest b err hcur hcatch
                 | eq x y => simp [stepClean, hcur] at herror
+                | compileAlias x y => simp [stepClean, hcur] at herror
                 | cut => simp [stepClean, hcur] at herror
                 | cutAt k => simp [stepClean, hcur] at herror
                 | callDyn hd args res => simp [stepClean, hcur] at herror

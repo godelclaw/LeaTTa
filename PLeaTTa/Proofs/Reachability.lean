@@ -369,6 +369,24 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
       · intro goals branchSubst hcur
         simp at hcur
       · exact htop.2
+  | compileAlias_ok c x y rest b b' h hu =>
+      have hb := htop.active h
+      rcases hb with ⟨topological⟩
+      have hnext : HasTopologicalSubst (trimFor rest c.qterm b') := by
+        exact ⟨SubstTopological.trimFor rest c.qterm b'
+          (unifyB_topological b x y b' topological hu)⟩
+      constructor
+      · intro goals branchSubst hcur
+        simp only [Option.some.injEq, Prod.mk.injEq] at hcur
+        rcases hcur with ⟨rfl, rfl⟩
+        exact hnext
+      · exact htop.2
+  | compileAlias_fail c x y rest b h hu =>
+      apply ConfTopological.pull
+      constructor
+      · intro goals branchSubst hcur
+        simp at hcur
+      · exact htop.2
   | cut_at c k rest b h =>
       have hb := htop.active h
       constructor
@@ -495,7 +513,7 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
   | amb c branches res rest b h =>
       have hb := htop.active h
       have hnew := (altsTopological_map_branch branches
-        (fun branch => branch.2 ++ [Goal.eq res branch.1] ++ rest) b hb)
+        (fun branch => ambBranchGoals res branch ++ rest) b hb)
         |>.append htop.2
       apply ConfTopological.pull
       constructor

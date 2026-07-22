@@ -46,6 +46,17 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (h : c.cur = some (Goal.eq x y :: rest, b))
       (hu : unifyB b x y = none) :
       Step prog gt c (pull { c with cur := none })
+  /-- Defensive semantics for raw compiler metadata. Source-facing entry
+      points erase `compileAlias`; if one reaches the machine it remains the
+      exact equality it denotes rather than becoming an unlicensed step. -/
+  | compileAlias_ok (c : Conf) (x y : Atom) (rest : List Goal) (b b' : Subst)
+      (h : c.cur = some (Goal.compileAlias x y :: rest, b))
+      (hu : unifyB b x y = some b') :
+      Step prog gt c { c with cur := some (rest, trimFor rest c.qterm b') }
+  | compileAlias_fail (c : Conf) (x y : Atom) (rest : List Goal) (b : Subst)
+      (h : c.cur = some (Goal.compileAlias x y :: rest, b))
+      (hu : unifyB b x y = none) :
+      Step prog gt c (pull { c with cur := none })
   | cut_at (c : Conf) (k : Nat) (rest : List Goal) (b : Subst)
       (h : c.cur = some (Goal.cutAt k :: rest, b)) :
       Step prog gt c
@@ -316,7 +327,7 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       Step prog gt c
         (pull { c with cur := none,
                        alts := branches.map (fun (t, gs) =>
-                         Alt.br (gs ++ [Goal.eq res t] ++ rest) b)
+                         Alt.br (ambBranchGoals res (t, gs) ++ rest) b)
                          ++ c.alts })
   | smatch (c : Conf) (pat : Atom) (rest : List Goal) (b : Subst)
       (alts : List Alt) (counter' : Nat)

@@ -112,6 +112,7 @@ partial def projGoal (g : Goal) : StateM PJ (List WAtom) := do
   | .call f args res => pure [⟨"u_" ++ f, args ++ [res]⟩]
   | .bin op args res => pure [⟨binRel op, args ++ [res]⟩]
   | .eq a b => pure [⟨"ueq", [a, b]⟩]
+  | .compileAlias a b => pure [⟨"ueq", [a, b]⟩]
   | .cut => pure []          -- guard-erased
   | .cutAt _ => pure []      -- guard-erased
   | .smatch pat =>
@@ -214,7 +215,7 @@ partial def varsOfGoal (g : Goal) : List String :=
   | .catchg t sub r => varsOfAtom t ++ sub.flatMap varsOfGoal ++ varsOfAtom r
   | .softcut t sub thn els =>
       varsOfAtom t ++ (sub ++ thn ++ els).flatMap varsOfGoal
-  | .eq a b => varsOfAtom a ++ varsOfAtom b
+  | .eq a b | .compileAlias a b => varsOfAtom a ++ varsOfAtom b
   | .cut => [] | .cutAt _ => []
   | .findall t sub r => varsOfAtom t ++ sub.flatMap varsOfGoal ++ varsOfAtom r
   | .onceg t sub r => varsOfAtom t ++ sub.flatMap varsOfGoal ++ varsOfAtom r

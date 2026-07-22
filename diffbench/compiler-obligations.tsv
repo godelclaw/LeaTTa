@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=4d69f62a731e741e5b84a9af3e97e021e07c9c53d129172febeb580862994625
+# compiler_sha256=a4746e61d863b31aaf149acb26b558eb6babdcb9e7f76a77fd6612716a093b6f
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -62,7 +62,8 @@ APP.let_star	T189-190,T384-386	X	TranslatesLetStar	SC	PASS	well-formed-nonempty-
 APP.case	T163-176,T399-406	S	-	N	GAP	order-failure-binding-proof-missing
 APP.collapse	T115-116	X	TranslatesExpr.collapse	SC	PASS	covered
 APP.once	T127-128	S	TranslatesOnce.wrap	SH	GAP	fresh-capture-equivalence-unproved
-APP.superpose_literal	T112-114,T419-422	X	TranslatesExpr.superposeLiterals+RejectsExpr.emptySuperpose	SC	GAP	nonempty-literal-and-empty-rejection-fragments-sound-complete; effectful-build_branch-alias-order-open
+APP.superpose_literal	T112-114,T419-422	X	TranslatesExpr.superposeLiterals+RejectsExpr.emptySuperpose	SC	PASS	nonempty-literal-and-empty-rejection-fragments-sound-complete
+APP.superpose_general	T112-114,T394-397,T414-422	X	TranslatesExpr.superposeBranches+TranslatesSuperposeBranches+BuildsBranchNormalized	SC	GAP	local-branch-relation-sound-complete; whole-expression-alias-finalization-behavior-agrees; independent-finalization-theorem-open
 APP.unify_self	HE24-31	L	-	N	GAP	specialized-library-definition
 APP.unify_general	HE32-35	L	-	N	GAP	specialized-library-definition
 APP.succeedsPredicate	LS15-20	L	-	N	FAIL	incorrectly-restricted-to-space-shape

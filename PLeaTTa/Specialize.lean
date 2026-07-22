@@ -271,6 +271,8 @@ def proofGoalEq : Goal → Goal → Bool
       proofAtomEq tmpl tmpl' && proofGoalsEq sub sub' &&
         proofGoalsEq thn thn' && proofGoalsEq els els'
   | .eq a b, .eq a' b' => proofAtomEq a a' && proofAtomEq b b'
+  | .compileAlias a b, .compileAlias a' b' =>
+      proofAtomEq a a' && proofAtomEq b b'
   | .cut, .cut => true
   | .cutAt n, .cutAt m => n == m
   | .findall tmpl sub res, .findall tmpl' sub' res'
@@ -779,7 +781,7 @@ def specializationGoalVars : Goal → List String
   | .softcut tmpl sub thn els =>
       tmpl.vars ++ specializationGoalsVars sub ++
         specializationGoalsVars thn ++ specializationGoalsVars els
-  | .eq left right => left.vars ++ right.vars
+  | .eq left right | .compileAlias left right => left.vars ++ right.vars
   | .cut | .cutAt _ => []
   | .transactiong tmpl sub => tmpl.vars ++ specializationGoalsVars sub
   | .amb branches res => specializationBranchVars branches ++ res.vars

@@ -361,6 +361,12 @@ theorem resolutionSeedHighWaterGoal_renameCompact_le
       simp only [renameGoalSuffix, specializationGoalVars,
         resolutionSeedHighWaterNames_append]
       omega
+  | compileAlias left right =>
+      have hleft := resolutionSeedHighWaterAtom_renameCompact_le left seed
+      have hright := resolutionSeedHighWaterAtom_renameCompact_le right seed
+      simp only [renameGoalSuffix, specializationGoalVars,
+        resolutionSeedHighWaterNames_append]
+      omega
   | cut => simp [renameGoalSuffix, specializationGoalVars,
       resolutionSeedHighWaterNames]
   | cutAt index => simp [renameGoalSuffix, specializationGoalVars,
@@ -1269,7 +1275,7 @@ theorem ambAlts_below (branches : List (Atom × List Goal))
       counter) :
     resolutionSeedHighWaterNames
       ((branches.map (fun branch =>
-        Alt.br (branch.2 ++ [Goal.eq res branch.1] ++ rest)
+        Alt.br (ambBranchGoals res branch ++ rest)
           binding)).flatMap resolutionAltVars) ≤ counter := by
   rw [PersistentSubst.resolutionSeedHighWaterNames_le_iff]
   intro name member
@@ -1283,18 +1289,23 @@ theorem ambAlts_below (branches : List (Atom × List Goal))
   rcases List.mem_append.mp halt with hsequence | hbinding
   · rw [specializationGoalsVars_append] at hsequence
     rcases List.mem_append.mp hsequence with hprefix | hrest
-    · rw [specializationGoalsVars_append] at hprefix
-      rcases List.mem_append.mp hprefix with hgoals | heq
+    · unfold ambBranchGoals at hprefix
+      split at hprefix
       · have hbranchVar := specializationBranchVars_of_mem branches template
-          goals hbranch name (by simp [hgoals])
+          goals hbranch name (by simp [hprefix])
         exact sourceBound name (by simp [hbranchVar])
-      · have heq' : name ∈ res.vars ∨ name ∈ template.vars := by
-          simpa [specializationGoalsVars, specializationGoalVars] using heq
-        rcases heq' with hres | htemplate
-        · exact sourceBound name (by simp [hres])
+      · rw [specializationGoalsVars_append] at hprefix
+        rcases List.mem_append.mp hprefix with hgoals | heq
         · have hbranchVar := specializationBranchVars_of_mem branches template
-            goals hbranch name (by simp [htemplate])
+            goals hbranch name (by simp [hgoals])
           exact sourceBound name (by simp [hbranchVar])
+        · have heq' : name ∈ res.vars ∨ name ∈ template.vars := by
+            simpa [specializationGoalsVars, specializationGoalVars] using heq
+          rcases heq' with hres | htemplate
+          · exact sourceBound name (by simp [hres])
+          · have hbranchVar := specializationBranchVars_of_mem branches
+              template goals hbranch name (by simp [htemplate])
+            exact sourceBound name (by simp [hbranchVar])
     · exact sourceBound name (by simp [hrest])
   · exact sourceBound name (by simp [hbinding])
 
@@ -1543,6 +1554,9 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
   case eq_fail =>
     intro c x y rest binding hcur hunify below
     exact below.clearActive.pull
+  case compileAlias_fail =>
+    intro c x y rest binding hcur hunify below
+    exact below.clearActive.pull
   case cut_untagged =>
     intro c rest binding hcur below
     exact below.clearActive.pull
@@ -1567,6 +1581,22 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
   case eq_ok =>
     intro c left right rest binding result hcur hunify below
     apply below.replaceActive (Goal.eq left right :: rest) binding hcur rest
+      (trimFor rest c.qterm result)
+    intro name member
+    simp only [specializationGoalsVars, specializationGoalVars,
+      List.mem_append] at member ⊢
+    rcases member with hrest | htrim
+    · exact Or.inl (Or.inr hrest)
+    · have hresult := trimFor_substVars_origin rest c.qterm result name htrim
+      rcases unifyB_substVars_origin binding left right result hunify name
+          hresult with hbinding | hleft | hright
+      · exact Or.inr hbinding
+      · exact Or.inl (Or.inl (Or.inl hleft))
+      · exact Or.inl (Or.inl (Or.inr hright))
+  case compileAlias_ok =>
+    intro c left right rest binding result hcur hunify below
+    apply below.replaceActive
+      (Goal.compileAlias left right :: rest) binding hcur rest
       (trimFor rest c.qterm result)
     intro name member
     simp only [specializationGoalsVars, specializationGoalVars,

@@ -1288,6 +1288,9 @@ theorem checked_stepWith_simulation (engine : SubstEngine) (prog : Prog)
             | eq left right =>
               simpa [stepWith, source, mapState, SubstEngine.mapConf] using
                 checked_fromCoreOutcome_step_simulation engine prog gt fuel source
+            | compileAlias left right =>
+              simpa [stepWith, source, mapState, SubstEngine.mapConf] using
+                checked_fromCoreOutcome_step_simulation engine prog gt fuel source
             | cut =>
               simpa [stepWith, source, mapState, SubstEngine.mapConf] using
                 checked_fromCoreOutcome_step_simulation engine prog gt fuel source

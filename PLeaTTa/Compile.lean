@@ -299,9 +299,40 @@ def compileBranch (out : Atom) :
   | (Atom.var name, goals) =>
       if goals.isEmpty then ([], (Atom.var name, goals))
       else
-        ([Goal.eq (Atom.var name) out],
+        ([Goal.compileAlias (Atom.var name) out],
           (out, goals))
   | branch => ([], branch)
+
+/-- Normalize one syntactic `superpose` branch after the enclosing output is
+known.  Empty branches retain the compact `(value, [])` representation: the
+ordinary `amb` result equality is their complete branch.  A nonempty variable
+branch lifts `build_branch/4`'s translation-time alias before the disjunction;
+a nonvariable branch embeds its value equality before its body goals.  Every
+nonempty normalized branch uses `out` as its template, marking that its exact
+result constraint is already present in the branch body.
+[SPEC translator.pl:112-114,394-397,414-416] -/
+def compileSuperposeBranch (out : Atom)
+    (branch : Atom × List Goal) : List Goal × (Atom × List Goal) :=
+  if branch.2.isEmpty then
+    ([], branch)
+  else
+    let normalized := compileBranch out branch
+    let goals :=
+      if normalized.2.1 == out then normalized.2.2
+      else Goal.eq normalized.2.1 out :: normalized.2.2
+    (normalized.1, (out, goals))
+
+/-- Normalize syntactic `superpose` branches in source order, concatenating
+the explicit aliases that native Prolog creates while translating the branch
+list.  Those aliases execute once, before any alternative is selected.
+[SPEC translator.pl:112-114,394-397,414-416] -/
+def compileSuperposeBranches (out : Atom) :
+    List (Atom × List Goal) → List Goal × List (Atom × List Goal)
+  | [] => ([], [])
+  | branch :: rest =>
+      let head := compileSuperposeBranch out branch
+      let tail := compileSuperposeBranches out rest
+      (head.1 ++ tail.1, head.2 :: tail.2)
 
 /-- [SPEC translator.pl:384-386] A pinned `let*` contains one or more
 well-formed `(pattern value)` pairs and becomes source-ordered nested `let`s.
@@ -555,6 +586,8 @@ def substCompiledGoal (binding : Subst) : Goal → Goal
         (substCompiledGoals binding thenGoals)
         (substCompiledGoals binding elseGoals)
   | .eq left right => .eq (subst binding left) (subst binding right)
+  | .compileAlias left right =>
+      .compileAlias (subst binding left) (subst binding right)
   | .cut => .cut
   | .cutAt barrier => .cutAt barrier
   | .findall template goals result =>
@@ -598,6 +631,139 @@ def substCompiledBranches (binding : Subst) :
         substCompiledBranches binding branches
 
 end
+
+/-! ## Translation-time alias finalization
+
+Pinned Prolog performs the variable case of `build_branch/4` while translating
+the whole surrounding expression.  Consequently that sharing can affect goals
+which the enclosing construct schedules before the child branch.  A runtime
+equality inside the child is therefore not compositional.  The raw compiler
+keeps these equalities as explicit `Goal.compileAlias` metadata; source-facing
+entry points collect them through the complete goal tree, solve them once, and
+apply the resulting substitution everywhere before execution.
+-/
+
+mutual
+
+/-- Translation-time aliases contained in one raw compiled goal, in the same
+left-to-right order in which its nested source expressions were translated. -/
+def collectCompileAliasesGoal : Goal → List (Atom × Atom)
+  | .call _ _ _ | .bin _ _ _ | .callDyn _ _ _ | .evalg _ _
+  | .eq _ _ | .cut | .cutAt _ | .spread _ _ | .smatch _ | .wact _ _ _ => []
+  | .compileAlias left right => [(left, right)]
+  | .catchg _ goals _ => collectCompileAliasesGoals goals
+  | .softcut _ condition thenGoals elseGoals =>
+      collectCompileAliasesGoals condition ++
+        collectCompileAliasesGoals thenGoals ++
+        collectCompileAliasesGoals elseGoals
+  | .findall _ goals _ | .onceg _ goals _ | .transactiong _ goals =>
+      collectCompileAliasesGoals goals
+  | .amb branches _ => collectCompileAliasesBranches branches
+  | .ite _ thenBranch elseBranch _ =>
+      collectCompileAliasesGoals thenBranch.2 ++
+        collectCompileAliasesGoals elseBranch.2
+
+/-- Translation-time aliases in an ordered raw goal sequence. -/
+def collectCompileAliasesGoals : List Goal → List (Atom × Atom)
+  | [] => []
+  | goal :: goals =>
+      collectCompileAliasesGoal goal ++ collectCompileAliasesGoals goals
+
+/-- Translation-time aliases in source-ordered nondeterministic branches. -/
+def collectCompileAliasesBranches : List (Atom × List Goal) →
+    List (Atom × Atom)
+  | [] => []
+  | branch :: branches =>
+      collectCompileAliasesGoals branch.2 ++
+        collectCompileAliasesBranches branches
+
+end
+
+mutual
+
+/-- Erase one compiler-only alias marker while recursively preserving every
+runtime goal and every source-order boundary. -/
+def eraseCompileAliasesGoal : Goal → Option Goal
+  | .compileAlias _ _ => none
+  | .call head arguments result => some (.call head arguments result)
+  | .bin operation arguments result => some (.bin operation arguments result)
+  | .callDyn head arguments result => some (.callDyn head arguments result)
+  | .evalg value result => some (.evalg value result)
+  | .catchg template goals result =>
+      some (.catchg template (eraseCompileAliasesGoals goals) result)
+  | .softcut template condition thenGoals elseGoals =>
+      some (.softcut template
+        (eraseCompileAliasesGoals condition)
+        (eraseCompileAliasesGoals thenGoals)
+        (eraseCompileAliasesGoals elseGoals))
+  | .eq left right => some (.eq left right)
+  | .cut => some .cut
+  | .cutAt barrier => some (.cutAt barrier)
+  | .findall template goals result =>
+      some (.findall template (eraseCompileAliasesGoals goals) result)
+  | .onceg template goals result =>
+      some (.onceg template (eraseCompileAliasesGoals goals) result)
+  | .transactiong template goals =>
+      some (.transactiong template (eraseCompileAliasesGoals goals))
+  | .amb branches result =>
+      some (.amb (eraseCompileAliasesBranches branches) result)
+  | .spread value result => some (.spread value result)
+  | .ite condition thenBranch elseBranch result =>
+      some (.ite condition
+        (thenBranch.1, eraseCompileAliasesGoals thenBranch.2)
+        (elseBranch.1, eraseCompileAliasesGoals elseBranch.2) result)
+  | .smatch pattern => some (.smatch pattern)
+  | .wact operation arguments result =>
+      some (.wact operation arguments result)
+
+/-- Remove compiler-only alias markers from an ordered goal sequence. -/
+def eraseCompileAliasesGoals : List Goal → List Goal
+  | [] => []
+  | goal :: goals =>
+      match eraseCompileAliasesGoal goal with
+      | some runtimeGoal => runtimeGoal :: eraseCompileAliasesGoals goals
+      | none => eraseCompileAliasesGoals goals
+
+/-- Remove compiler-only alias markers from every ordered branch. -/
+def eraseCompileAliasesBranches : List (Atom × List Goal) →
+    List (Atom × List Goal)
+  | [] => []
+  | branch :: branches =>
+      (branch.1, eraseCompileAliasesGoals branch.2) ::
+        eraseCompileAliasesBranches branches
+
+end
+
+
+/-- Solve the ordered translation-time alias ledger.  Every marker emitted by
+`compileBranch` relates variables, but using the exact compiler unifier keeps
+chains and future extensions honest and turns an impossible inconsistency into
+an explicit compilation error. -/
+def resolveCompileAliases (aliases : List (Atom × Atom)) : CompileM Subst :=
+  aliases.foldlM (fun binding alias =>
+    match unifyTopExact (subst binding alias.1) (subst binding alias.2) with
+    | some generated => .ok (Metta.Subst.compose generated binding)
+    | none => .error "compiler aliases: incompatible translation-time sharing")
+    []
+
+/-- Finalize a raw expression result by applying every translation-time alias
+to the result and entire runtime goal tree, then erase the metadata. -/
+def finalizeCompiledExpression (term : Atom) (goals : List Goal)
+    (nextCounter : Nat) : CompileM (Atom × List Goal × Nat) := do
+  let binding ← resolveCompileAliases (collectCompileAliasesGoals goals)
+  let runtimeGoals := eraseCompileAliasesGoals goals
+  .ok (subst binding term, substCompiledGoals binding runtimeGoals, nextCounter)
+
+/-- Clause-level counterpart of `finalizeCompiledExpression`.  RHS aliases
+also apply to head parameters and pattern goals because native Prolog created
+that sharing before the clause can run. -/
+def finalizeCompiledClause (clause : Clause) : CompileM Clause := do
+  let binding ← resolveCompileAliases
+    (collectCompileAliasesGoals clause.body)
+  let runtimeBody := eraseCompileAliasesGoals clause.body
+  .ok { params := clause.params.map (subst binding)
+        result := subst binding clause.result
+        body := substCompiledGoals binding runtimeBody }
 
 /-- Add the constraint contributed by one raw typed branch to the single
 shared result variable used by pinned `maplist/2`.  A complete branch returns
@@ -1092,7 +1258,8 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
             (fun counter expression =>
               compileExprFuel fuel env counter expression) n es
           let (r, n2) := fresh n1
-          .ok (r, [Goal.amb branches r], n2)
+          let normalized := compileSuperposeBranches r branches
+          .ok (r, normalized.1 ++ [Goal.amb normalized.2 r], n2)
     | .hUnify, [Atom.sym "&self", pat, thn, els] => do
         if !env.defined.contains "unify" then do
           let (ts, gs, n1) ← compileListFuel fuel env n [Atom.sym "&self", pat, thn, els]
@@ -2148,22 +2315,27 @@ set_option maxHeartbeats 2000000 in
 /-- Exact executable shape for a nonempty syntactic `superpose` once its
 ordered branches have been compiled. -/
 theorem compileExprFuel_superpose_eq (branchFuel : Nat) (env : CEnv)
-    (counter : Nat) (first : Atom) (sources : List Atom)
-    (branches : List (Atom × List Goal))
+    (counter branchCounter : Nat) (first : Atom) (sources : List Atom)
+    (branches normalizedBranches : List (Atom × List Goal))
+    (aliases : List Goal)
     (noHook : env.translatorRules.contains "superpose" = false)
     (compiled : compileAmbBranchesWith
       (fun next expression => compileExprFuel branchFuel env next expression)
-      counter (first :: sources) = .ok (branches, counter)) :
+      counter (first :: sources) = .ok (branches, branchCounter))
+    (normalized : compileSuperposeBranches (.var s!"_q{branchCounter}") branches =
+      (aliases, normalizedBranches)) :
     compileExprFuel (branchFuel + 3) env counter
         (.expr [.sym "superpose", .expr (first :: sources)]) =
-      .ok (.var s!"_q{counter}",
-        [Goal.amb branches (.var s!"_q{counter}")], counter + 1) := by
+      .ok (.var s!"_q{branchCounter}",
+        aliases ++ [Goal.amb normalizedBranches
+          (.var s!"_q{branchCounter}")], branchCounter + 1) := by
   rw [show branchFuel + 3 = (branchFuel + 1) + 2 by omega]
   rw [compileExprFuel_unshadowed_app_eq (branchFuel + 1) env counter
     "superpose" [.expr (first :: sources)] (by rfl) (by simp) noHook]
   simp only [compileAppCoreFuel, classifyAppCoreHead, List.isEmpty_cons]
   rw [compiled]
-  rfl
+  simp only [Bool.false_eq_true, if_false, Bind.bind, Except.bind, fresh]
+  rw [normalized]
 
 /-- Exact executable rejection corresponding to pinned `disj_list/2` having
 no empty clause.  Translator-rule priority remains explicit. -/
@@ -3141,15 +3313,20 @@ def compileRule (env : CEnv) (n : Nat) (params : List Atom) (rhs : Atom) :
 counter-parametric proof surface; executable callers use this wrapper so a
 legal source variable such as `$_q25` cannot alias generated `_q25`. -/
 def compileExprFresh (env : CEnv) (counter : Nat) (source : Atom) :
-    CompileM (Atom × List Goal × Nat) :=
-  compileExpr env (compilerFreshCounterForAtom counter source) source
+    CompileM (Atom × List Goal × Nat) := do
+  let (term, goals, nextCounter) ←
+    compileExpr env (compilerFreshCounterForAtom counter source) source
+  finalizeCompiledExpression term goals nextCounter
 
 /-- Source-facing rule compiler, seeded beyond variables in both the head
 patterns and body before pattern compilation allocates any temporaries. -/
 def compileRuleFresh (env : CEnv) (counter : Nat) (params : List Atom)
-    (rhs : Atom) : CompileM (Clause × Nat) :=
-  compileRule env (compilerFreshCounterForAtoms counter (rhs :: params))
-    params rhs
+    (rhs : Atom) : CompileM (Clause × Nat) := do
+  let (clause, nextCounter) ←
+    compileRule env (compilerFreshCounterForAtoms counter (rhs :: params))
+      params rhs
+  let finalized ← finalizeCompiledClause clause
+  .ok (finalized, nextCounter)
 
 /-- Surface desugaring: HE-style binder forms become synthesized rules plus
     the function-value form —

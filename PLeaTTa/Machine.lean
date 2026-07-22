@@ -1205,6 +1205,7 @@ private def goalAlphaAtom : Goal → Atom
       Atom.expr [Atom.sym "goal.softcut", tmpl, goalsAlphaAtom sub,
         goalsAlphaAtom thn, goalsAlphaAtom els]
   | .eq a b => Atom.expr [Atom.sym "goal.eq", a, b]
+  | .compileAlias a b => Atom.expr [Atom.sym "goal.compileAlias", a, b]
   | .cut => Atom.expr [Atom.sym "goal.cut"]
   | .cutAt n =>
       Atom.expr [Atom.sym "goal.cutAt", Atom.gnd (Metta.Ground.int n)]
@@ -2102,6 +2103,7 @@ private def goalVarsFuel : Nat → Goal → VarSet → VarSet
       goalsVarsFuel k els (goalsVarsFuel k thn
         (goalsVarsFuel k sub (addAtomVars acc t)))
   | _ + 1, .eq a b, acc => addAtomVars (addAtomVars acc a) b
+  | _ + 1, .compileAlias a b, acc => addAtomVars (addAtomVars acc a) b
   | _ + 1, .cut, acc => acc
   | _ + 1, .cutAt _, acc => acc
   | k + 1, .findall t sub r, acc =>
@@ -2142,6 +2144,7 @@ private def goalFuel : Goal → Nat
   | .softcut _ sub thn els =>
       Nat.max (goalsFuel sub) (Nat.max (goalsFuel thn) (goalsFuel els)) + 1
   | .eq _ _ => 1
+  | .compileAlias _ _ => 1
   | .cut => 1
   | .cutAt _ => 1
   | .findall _ sub _ => goalsFuel sub + 1
@@ -2719,7 +2722,7 @@ private theorem goalVarsFuel_preserves_contains (fuel : Nat)
             (goalsVarsFuel_preserves_contains fuel tracked thn _
               (goalsVarsFuel_preserves_contains fuel tracked sub _
                 (addAtomVars_preserves_contains tracked acc h tmpl)))
-      | eq left right =>
+      | eq left right | compileAlias left right =>
           exact addAtomVars_preserves_contains tracked _
             (addAtomVars_preserves_contains tracked acc h left) right
       | cut | cutAt _ => exact h
@@ -3507,6 +3510,39 @@ def iteBranchGoals (res : Atom) (branch : Atom × List Goal) : List Goal :=
   if branch.1 == res then branch.2
   else Goal.eq branch.1 res :: branch.2
 
+/-- Execute an `amb` branch in its stored order.  Ordinary distinct-template
+branches run their body and then bind the selected value, matching
+`hyperpose`.  A nonempty branch whose template is already the enclosing result
+records translation-time sharing: either normalized syntactic `superpose`, or
+typed dispatch after its shared-result substitution.  Its result constraint
+is already represented by the stored goals/substitution, so appending
+`res = res` would add a spurious machine step.  Empty branches deliberately
+retain that equality; in syntactic `superpose` it is their complete pinned
+`build_branch/4` goal.
+[SPEC translator.pl:112-114,129-135,394-397] -/
+def ambBranchGoals (res : Atom) (branch : Atom × List Goal) : List Goal :=
+  if branch.1 == res && !branch.2.isEmpty then branch.2
+  else branch.2 ++ [Goal.eq res branch.1]
+
+/-- An empty branch consists solely of its result equality, even when its
+stored template is the enclosing result.  This is the `build_branch(true, …)`
+case and prevents the normalized representation from turning an empty branch
+into an unconditional success. -/
+@[simp] theorem ambBranchGoals_empty (res value : Atom) :
+    ambBranchGoals res (value, []) = [Goal.eq res value] := by
+  simp [ambBranchGoals]
+
+/-- A normalized nonempty syntactic-superpose branch has a generated-variable
+template equal to the enclosing result.  Its exact result constraint is
+already the first goal, so execution exposes precisely the stored goal order.
+The variable specialization is intentional: executable `BEq Atom` is not
+reflexive for every host ground value (notably IEEE NaN), while compiler
+outputs here are generated variables. -/
+@[simp] theorem ambBranchGoals_generated_nonempty (name : String)
+    (goal : Goal) (goals : List Goal) :
+    ambBranchGoals (.var name) (.var name, goal :: goals) = goal :: goals := by
+  simp [ambBranchGoals, BEq.beq, Atom.beq]
+
 def PersistentSubst.Scoped.trimFor (state : PersistentSubst.Scoped)
     (goals : List Goal) (qterm : Atom) : PersistentSubst.Scoped :=
   state.trimWith (trimRoots goals qterm) (PLeaTTa.trimFor goals qterm)
@@ -4131,6 +4167,7 @@ def tagCutsGoal (bc : Nat) : Goal → Goal
   | .softcut t sub thn els =>
       .softcut t (tagCutsGoals bc sub) (tagCutsGoals bc thn) (tagCutsGoals bc els)
   | .eq a b => .eq a b
+  | .compileAlias a b => .compileAlias a b
   | .cut => .cutAt bc
   | .cutAt n => .cutAt n
   | .findall t sub r => .findall t (tagCutsGoals bc sub) r
@@ -4324,6 +4361,9 @@ def renameGoalSuffix (suffix : String) (bc : Nat) : Goal → Goal
         (renameGoalsSuffix suffix bc els)
   | .eq left right =>
       .eq (renameAtomSuffix suffix left) (renameAtomSuffix suffix right)
+  | .compileAlias left right =>
+      .compileAlias (renameAtomSuffix suffix left)
+        (renameAtomSuffix suffix right)
   | .cut => .cutAt bc
   | .cutAt n => .cutAt n
   | .findall tmpl sub res =>
@@ -5499,7 +5539,7 @@ def step (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf) : Conf :=
           rw [c.answerKeys_sound] }
   | some (g :: rest, b) =>
     match g with
-    | .eq x y =>
+    | .eq x y | .compileAlias x y =>
         match unifyB b x y with
         | some b' => { c with cur := some (rest, trimFor rest c.qterm b') }
         | none => pull { c with cur := none }
@@ -5697,7 +5737,7 @@ def step (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf) : Conf :=
           { c with cur := some (iteBranchGoals res els ++ rest, b) }
     | .amb branches res =>
         let alts := branches.map (fun (t, gs) =>
-          Alt.br (gs ++ [Goal.eq res t] ++ rest) b)
+          Alt.br (ambBranchGoals res (t, gs) ++ rest) b)
         pull { c with cur := none, alts := alts ++ c.alts }
     | .spread v res =>
         let vv := subst b v

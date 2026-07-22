@@ -2467,7 +2467,7 @@ def stepWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable)
           rw [c.answerKeys_sound] }
   | some (g :: rest, state) =>
     match g with
-    | .eq x y =>
+    | .eq x y | .compileAlias x y =>
         match engine.unify state x y with
         | some next =>
             { c with cur := some (rest,
@@ -2620,7 +2620,7 @@ def stepWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable)
             cur := some (iteBranchGoals res els ++ rest, next) }
     | .amb branches res =>
         let alts := branches.map (fun branch =>
-          Alt.br (branch.2 ++ [Goal.eq res branch.1] ++ rest) state)
+          Alt.br (ambBranchGoals res branch ++ rest) state)
         pull { c with cur := none, alts := alts ++ c.alts }
     | .spread value res =>
         let valueResult := engine.subst state value
@@ -3062,6 +3062,26 @@ theorem erase_stepWith_of_run (engine : SubstEngine) (prog : Prog)
       | cons goal rest =>
           cases goal with
           | eq left right =>
+              have hunify := engine.unify_denote state left right stateValid
+              cases result : engine.unify state left right with
+              | none =>
+                  simp only [result, Option.map_none] at hunify
+                  simp only [stepWith, result, erase]
+                  rw [mapConf_pull]
+                  simp [mapConf]
+                  rw [← hunify]
+                  rfl
+              | some next =>
+                  have nextValid := engine.unify_valid state left right
+                    stateValid next result
+                  have htrim := engine.trim_denote next rest qterm
+                  simp only [result, Option.map_some] at hunify
+                  simp only [stepWith, result, erase]
+                  simp [mapConf]
+                  rw [← hunify]
+                  simp [htrim]
+                  rfl
+          | compileAlias left right =>
               have hunify := engine.unify_denote state left right stateValid
               cases result : engine.unify state left right with
               | none =>
@@ -4088,6 +4108,20 @@ theorem checked_clean_run_step_simulation (engine : SubstEngine) (prog : Prog)
                     simpa [stepCleanWith, erase, mapConf] using
                       rawProgressed
                         ({ cur := some (Goal.eq left right :: rest, state)
+                           alts := alts
+                           world := world
+                           counter := counter
+                           qterm := qterm
+                           answers := answers
+                           answerKeys := answerKeys
+                           answerKeys_sound := answerKeys_sound
+                           barriers := barriers } :
+                          Conf (checked engine).State)
+                | compileAlias left right =>
+                    simpa [stepCleanWith, erase, mapConf] using
+                      rawProgressed
+                        ({ cur := some
+                            (Goal.compileAlias left right :: rest, state)
                            alts := alts
                            world := world
                            counter := counter

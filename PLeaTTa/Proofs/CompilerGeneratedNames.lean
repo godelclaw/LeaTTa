@@ -914,6 +914,16 @@ theorem compilerGoalNamesAllowed_eq {external : String → Prop}
     left.vars right.vars).2
   exact ⟨leftAllowed, rightAllowed⟩
 
+theorem compilerGoalNamesAllowed_compileAlias {external : String → Prop}
+    {origin limit : Nat} {left right : Atom}
+    (leftAllowed : CompilerAtomNamesAllowed external origin limit left)
+    (rightAllowed : CompilerAtomNamesAllowed external origin limit right) :
+    CompilerGoalNamesAllowed external origin limit
+      (.compileAlias left right) := by
+  apply (compilerNamesAllowed_append_iff external origin limit
+    left.vars right.vars).2
+  exact ⟨leftAllowed, rightAllowed⟩
+
 theorem compileBranch_namesAllowed {external : String → Prop}
     {origin limit : Nat} {out term : Atom} {goals aliases : List Goal}
     {branch : Atom × List Goal}
@@ -940,7 +950,7 @@ theorem compileBranch_namesAllowed {external : String → Prop}
         constructor
         · simp only [compilerGoalsNamesAllowed_cons_iff,
             compilerGoalsNamesAllowed_nil, and_true]
-          exact compilerGoalNamesAllowed_eq termAllowed outAllowed
+          exact compilerGoalNamesAllowed_compileAlias termAllowed outAllowed
         · exact ⟨outAllowed, goalsAllowed⟩
 
 theorem compilerGoalNamesAllowed_softcut {external : String → Prop}
@@ -1193,6 +1203,15 @@ theorem compilerGoalNamesAllowed_substCompiled
       have parts := (compilerNamesAllowed_append_iff external origin limit
         left.vars right.vars).mp allowed
       exact compilerGoalNamesAllowed_eq
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.1)
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.2)
+  case compileAlias left right =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (left.vars ++ right.vars) at allowed
+      have parts := (compilerNamesAllowed_append_iff external origin limit
+        left.vars right.vars).mp allowed
+      exact compilerGoalNamesAllowed_compileAlias
         (CompilerAtomNamesAllowed.subst bindingAllowed parts.1)
         (CompilerAtomNamesAllowed.subst bindingAllowed parts.2)
   case cut => simp [substCompiledGoal, specializationGoalVars,
@@ -4085,6 +4104,104 @@ theorem compileExprThenTwoFresh_generatedNames (fuel : Nat)
           (expressionNames.2.mono (by omega)) intermediateAllowed
           resultAllowed⟩
 
+/-- Syntactic-`superpose` branch normalization introduces only the enclosing
+generated output and equalities between already-allowed atoms. -/
+theorem compileSuperposeBranch_generatedNames
+    (external : String → Prop) (origin limit outputIndex : Nat)
+    (branch : Atom × List Goal)
+    (branchTermAllowed :
+      CompilerAtomNamesAllowed external origin limit branch.1)
+    (branchGoalsAllowed :
+      CompilerGoalsNamesAllowed external origin limit branch.2)
+    (outputAllowed : CompilerAtomNamesAllowed external origin limit
+      (.var (compilerGeneratedName outputIndex))) :
+    CompilerGoalsNamesAllowed external origin limit
+        (compileSuperposeBranch (.var (compilerGeneratedName outputIndex))
+          branch).1 ∧
+      CompilerAtomNamesAllowed external origin limit
+        (compileSuperposeBranch (.var (compilerGeneratedName outputIndex))
+          branch).2.1 ∧
+      CompilerGoalsNamesAllowed external origin limit
+        (compileSuperposeBranch (.var (compilerGeneratedName outputIndex))
+          branch).2.2 := by
+  rcases branch with ⟨term, goals⟩
+  cases goals with
+  | nil =>
+      simpa [compileSuperposeBranch] using
+        And.intro (compilerGoalsNamesAllowed_nil external origin limit)
+          (And.intro branchTermAllowed branchGoalsAllowed)
+  | cons goal goals =>
+      have equalityAllowed : CompilerGoalNamesAllowed external origin limit
+          (.eq term (.var (compilerGeneratedName outputIndex))) :=
+        compilerGoalNamesAllowed_eq branchTermAllowed outputAllowed
+      have aliasAllowed : CompilerGoalNamesAllowed external origin limit
+          (.compileAlias term (.var (compilerGeneratedName outputIndex))) :=
+        compilerGoalNamesAllowed_compileAlias branchTermAllowed outputAllowed
+      cases term with
+      | var name =>
+          simpa [compileSuperposeBranch, compileBranch, BEq.beq, Atom.beq]
+            using And.intro
+              (show CompilerGoalsNamesAllowed external origin limit
+                [.compileAlias (.var name)
+                  (.var (compilerGeneratedName outputIndex))]
+                from (compilerGoalsNamesAllowed_cons_iff external origin limit
+                  _ _).2 ⟨aliasAllowed,
+                    compilerGoalsNamesAllowed_nil external origin limit⟩)
+              (And.intro outputAllowed branchGoalsAllowed)
+      | sym name =>
+          simpa [compileSuperposeBranch, compileBranch, BEq.beq, Atom.beq]
+            using And.intro
+              (compilerGoalsNamesAllowed_nil external origin limit)
+              (And.intro outputAllowed
+                ((compilerGoalsNamesAllowed_cons_iff external origin limit
+                  _ _).2 ⟨equalityAllowed, branchGoalsAllowed⟩))
+      | gnd value =>
+          simpa [compileSuperposeBranch, compileBranch, BEq.beq, Atom.beq]
+            using And.intro
+              (compilerGoalsNamesAllowed_nil external origin limit)
+              (And.intro outputAllowed
+                ((compilerGoalsNamesAllowed_cons_iff external origin limit
+                  _ _).2 ⟨equalityAllowed, branchGoalsAllowed⟩))
+      | expr values =>
+          simpa [compileSuperposeBranch, compileBranch, BEq.beq, Atom.beq]
+            using And.intro
+              (compilerGoalsNamesAllowed_nil external origin limit)
+              (And.intro outputAllowed
+                ((compilerGoalsNamesAllowed_cons_iff external origin limit
+                  _ _).2 ⟨equalityAllowed, branchGoalsAllowed⟩))
+
+/-- Ordered branch-list normalization preserves the generated-name
+classification for both the lifted alias prefix and every normalized branch. -/
+theorem compileSuperposeBranches_generatedNames
+    (external : String → Prop) (origin limit outputIndex : Nat)
+    (branches : List (Atom × List Goal))
+    (branchesAllowed :
+      CompilerBranchesNamesAllowed external origin limit branches)
+    (outputAllowed : CompilerAtomNamesAllowed external origin limit
+      (.var (compilerGeneratedName outputIndex))) :
+    CompilerGoalsNamesAllowed external origin limit
+        (compileSuperposeBranches (.var (compilerGeneratedName outputIndex))
+          branches).1 ∧
+      CompilerBranchesNamesAllowed external origin limit
+        (compileSuperposeBranches (.var (compilerGeneratedName outputIndex))
+          branches).2 := by
+  induction branches with
+  | nil => simp [compileSuperposeBranches]
+  | cons branch rest inductionHypothesis =>
+      rcases branch with ⟨term, goals⟩
+      have allowed :=
+        (compilerBranchesNamesAllowed_cons_iff external origin limit term
+          goals rest).1 branchesAllowed
+      have headAllowed := compileSuperposeBranch_generatedNames external origin
+        limit outputIndex (term, goals) allowed.1 allowed.2.1 outputAllowed
+      have tailAllowed := inductionHypothesis allowed.2.2
+      simp only [compileSuperposeBranches]
+      apply And.intro
+      · exact (compilerGoalsNamesAllowed_append_iff external origin limit _ _).2
+          ⟨headAllowed.1, tailAllowed.1⟩
+      · exact (compilerBranchesNamesAllowed_cons_iff external origin limit
+          _ _ _).2 ⟨headAllowed.2.1, headAllowed.2.2, tailAllowed.2⟩
+
 theorem compileAmbThenFresh_generatedNames (fuel : Nat)
     (ih : CompilerGeneratedNamesAt fuel)
     (external : String → Prop) (origin : Nat) (env : CEnv) (start : Nat)
@@ -4183,6 +4300,94 @@ theorem compileNonemptyAmbThenFresh_generatedNames (fuel : Nat)
     exact compileAmbThenFresh_generatedNames fuel ih external origin env start
       expressions term goals next originStart envAllowed expressionsAllowed
       compiled
+
+/-- Generated-name preservation for the guarded syntactic-`superpose` path,
+including its lifted alias prefix and normalized equality-before-body
+branches. -/
+theorem compileNonemptySuperposeThenFresh_generatedNames (fuel : Nat)
+    (ih : CompilerGeneratedNamesAt fuel)
+    (external : String → Prop) (origin : Nat) (env : CEnv) (start : Nat)
+    (expressions : List Atom) (term : Atom) (goals : List Goal) (next : Nat)
+    (originStart : origin ≤ start)
+    (envAllowed : CompilerEnvNamesAllowed external origin start env)
+    (expressionsAllowed :
+      CompilerAtomsNamesAllowed external origin start expressions)
+    (compiled :
+      (if expressions.isEmpty then
+        .error "superpose: empty"
+      else do
+        let (branches, middle) ← compileAmbBranchesWith
+          (fun counter expression =>
+            compileExprFuel fuel env counter expression) start expressions
+        let (result, finalCounter) := fresh middle
+        let normalized := compileSuperposeBranches result branches
+        .ok (result,
+          normalized.1 ++ [Goal.amb normalized.2 result], finalCounter)) =
+        .ok (term, goals, next)) :
+    CompilerAtomNamesAllowed external origin next term ∧
+    CompilerGoalsNamesAllowed external origin next goals := by
+  by_cases empty : expressions.isEmpty = true
+  · simp only [empty, if_true] at compiled
+    contradiction
+  · have nonempty : expressions.isEmpty = false := Bool.eq_false_iff.mpr empty
+    simp only [nonempty, Bool.false_eq_true, if_false, Bind.bind, Except.bind]
+      at compiled
+    cases branchesEq : compileAmbBranchesWith
+        (fun counter expression => compileExprFuel fuel env counter expression)
+        start expressions with
+    | error message =>
+        simp only [branchesEq] at compiled
+        contradiction
+    | ok branchResult =>
+        simp only [branchesEq, fresh] at compiled
+        rcases Except.ok.inj compiled with ⟨rfl, rfl, rfl⟩
+        have branchCounter := compileAmbBranchesWith_counter _ start
+          expressions branchResult branchesEq (by
+            intro counter expression branchTerm branchGoals branchNext
+              branchCompiled
+            exact (compilerCounterAt fuel).expr env counter expression
+              branchTerm branchGoals branchNext branchCompiled)
+        have nestedBranchNames := compileAmbBranchesWith_generatedNames
+          (fun counter expression =>
+            compileExprFuel fuel env counter expression)
+          (CompilerNameAllowed external origin start) start start expressions
+          branchResult (Nat.le_refl start) expressionsAllowed.nest
+          (by
+            intro counter expression branchTerm branchGoals branchNext
+              branchCompiled
+            exact (compilerCounterAt fuel).expr env counter expression
+              branchTerm branchGoals branchNext branchCompiled)
+          (by
+            intro counter expression branchTerm branchGoals branchNext
+              startCounter expressionAllowed branchCompiled
+            exact ih.expr (CompilerNameAllowed external origin start) start env
+              counter expression branchTerm branchGoals branchNext startCounter
+              (envAllowed.nest.mono startCounter) expressionAllowed
+              branchCompiled)
+          branchesEq
+        have branchNames : CompilerBranchesNamesAllowed external origin
+            branchResult.2 branchResult.1 :=
+          CompilerNamesAllowed.flatten originStart branchCounter
+            nestedBranchNames
+        have resultAllowed : CompilerAtomNamesAllowed external origin
+            (branchResult.2 + 1)
+            (Atom.var (compilerGeneratedName branchResult.2)) := by
+          simp only [compilerAtomNamesAllowed_var_iff]
+          exact .generated (Nat.le_trans originStart branchCounter) (by omega)
+        have normalizedNames := compileSuperposeBranches_generatedNames
+          external origin (branchResult.2 + 1) branchResult.2 branchResult.1
+          (branchNames.mono (by omega)) resultAllowed
+        constructor
+        · exact resultAllowed
+        · apply (compilerGoalsNamesAllowed_append_iff external origin
+            (branchResult.2 + 1) _ _).2
+          constructor
+          · exact normalizedNames.1
+          · exact (compilerGoalsNamesAllowed_cons_iff external origin
+              (branchResult.2 + 1) _ _).2
+                ⟨compilerGoalNamesAllowed_amb normalizedNames.2 resultAllowed,
+                  compilerGoalsNamesAllowed_nil external origin
+                    (branchResult.2 + 1)⟩
 
 theorem compileExprFreshExprFresh_generatedNames (fuel : Nat)
     (ih : CompilerGeneratedNamesAt fuel)
@@ -6330,7 +6535,8 @@ private theorem compileAppCoreFuel_hSuperpose_generatedNames (fuel : Nat)
       origin env start head _ term goals next originStart envAllowed
       argumentsAllowed compiled
   all_goals try
-    exact compileNonemptyAmbThenFresh_generatedNames fuel ih external origin env
+    exact compileNonemptySuperposeThenFresh_generatedNames fuel ih external
+      origin env
       start
       _ term goals next originStart envAllowed
       (by simpa [CompilerNamesAllowed, Atom.vars] using argumentsAllowed)

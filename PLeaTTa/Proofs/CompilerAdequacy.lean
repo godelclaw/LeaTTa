@@ -602,6 +602,23 @@ inductive LiteralAmbBranchesAgree (referenceOutput : Term)
         (.unify referenceValue referenceOutput :: referenceBranches)
         ((executableValue, []) :: executableBranches)
 
+/-- Literal branches are the priority-one `build_branch/4` case, so the
+general syntactic-`superpose` normalizer is definitionally the identity on
+their executable representation and contributes no alias prefix. -/
+theorem LiteralAmbBranchesAgree.compileSuperposeBranches_eq
+    {referenceOutput : Term} {executableOutput : Atom}
+    {referenceBranches : List PeTTaSpec.PrologCore.Goal}
+    {executableBranches : List (Atom × List PLeaTTa.Goal)}
+    (agreement : LiteralAmbBranchesAgree referenceOutput executableOutput
+      referenceBranches executableBranches) :
+    compileSuperposeBranches executableOutput executableBranches =
+      ([], executableBranches) := by
+  induction agreement with
+  | nil => rfl
+  | cons _ _ _ inductionHypothesis =>
+      simp [compileSuperposeBranches, compileSuperposeBranch,
+        inductionHypothesis]
+
 mutual
 
 /-- Cross-representation agreement for the independent and executable goal
@@ -614,6 +631,12 @@ inductive GoalAgrees : PeTTaSpec.PrologCore.Goal → PLeaTTa.Goal → Prop where
       (right : TermAgrees referenceRight executableRight) :
       GoalAgrees (.unify referenceLeft referenceRight)
         (.eq executableLeft executableRight)
+  | compileAlias {referenceLeft referenceRight : Term}
+      {executableLeft executableRight : Atom}
+      (left : TermAgrees referenceLeft executableLeft)
+      (right : TermAgrees referenceRight executableRight) :
+      GoalAgrees (.unify referenceLeft referenceRight)
+        (.compileAlias executableLeft executableRight)
   | cut : GoalAgrees .cut .cut
   | builtin {predicate : String} {referenceArguments : List Term}
       {referenceResult : Term} {executableArguments : List Atom}
@@ -718,6 +741,13 @@ inductive GoalAgrees : PeTTaSpec.PrologCore.Goal → PLeaTTa.Goal → Prop where
         referenceBranches executableBranches) :
       GoalAgrees (.disjunction referenceBranches)
         (.amb executableBranches executableOutput)
+  | builtAmb {referenceOutput : Term} {executableOutput : Atom}
+      {referenceBranches : List PeTTaSpec.PrologCore.Goal}
+      {executableBranches : List (Atom × List PLeaTTa.Goal)}
+      (branches : SuperposeBranchesAgree referenceOutput executableOutput
+        referenceBranches executableBranches) :
+      GoalAgrees (.disjunction referenceBranches)
+        (.amb executableBranches executableOutput)
   | spread {referenceValue referenceOutput : Term}
       {executableValue executableOutput : Atom}
       (value : TermAgrees referenceValue executableValue)
@@ -775,6 +805,61 @@ inductive IfBranchAgrees : Term → Atom → PeTTaSpec.PrologCore.Goal →
       IfBranchAgrees referenceOutput executableOutput .fail
         (executableOutput,
           [PLeaTTa.Goal.eq (.sym "True") (.sym "False")])
+
+/-- Agreement for a normalized syntactic-`superpose` branch.  This relation
+describes the branch as `ambBranchGoals` executes it, not merely the stored
+pair: empty branches retain their trailing output/value equality, while
+nonempty branches carry the exact pinned goal sequence and use the enclosing
+output as a marker template. -/
+inductive SuperposeBranchAgrees : Term → Atom →
+    PeTTaSpec.PrologCore.Goal → Atom × List PLeaTTa.Goal → Prop where
+  | empty {referenceOutput referenceValue : Term}
+      {executableOutput executableValue : Atom}
+      (value : TermAgrees referenceValue executableValue)
+      (output : TermAgrees referenceOutput executableOutput) :
+      SuperposeBranchAgrees referenceOutput executableOutput
+        (.unify referenceValue referenceOutput) (executableValue, [])
+  | aliased {referenceOutput : Term} {executableOutput : Atom}
+      {referenceGoals : List PeTTaSpec.PrologCore.Goal}
+      {executableGoals : List PLeaTTa.Goal}
+      (output : TermAgrees referenceOutput executableOutput)
+      (goals : GoalsAgree referenceGoals executableGoals)
+      (nonempty : executableGoals ≠ []) :
+      SuperposeBranchAgrees referenceOutput executableOutput
+        (.conjunction referenceGoals) (executableOutput, executableGoals)
+  | nonvariable {referenceOutput referenceValue : Term}
+      {executableOutput executableValue : Atom}
+      {referenceGoals : List PeTTaSpec.PrologCore.Goal}
+      {executableGoals : List PLeaTTa.Goal}
+      (value : TermAgrees referenceValue executableValue)
+      (output : TermAgrees referenceOutput executableOutput)
+      (goals : GoalsAgree referenceGoals executableGoals) :
+      SuperposeBranchAgrees referenceOutput executableOutput
+        (.conjunction (.unify referenceValue referenceOutput ::
+          referenceGoals))
+        (executableOutput,
+          PLeaTTa.Goal.eq executableValue executableOutput :: executableGoals)
+
+/-- Source-ordered pointwise agreement for the alternatives emitted by
+`build_superpose_branches/3`.  No permutation or duplicate elimination is
+admitted by the constructors. -/
+inductive SuperposeBranchesAgree : Term → Atom →
+    List PeTTaSpec.PrologCore.Goal →
+    List (Atom × List PLeaTTa.Goal) → Prop where
+  | nil {referenceOutput : Term} {executableOutput : Atom} :
+      SuperposeBranchesAgree referenceOutput executableOutput [] []
+  | cons {referenceOutput : Term} {executableOutput : Atom}
+      {referenceBranch : PeTTaSpec.PrologCore.Goal}
+      {executableBranch : Atom × List PLeaTTa.Goal}
+      {referenceBranches : List PeTTaSpec.PrologCore.Goal}
+      {executableBranches : List (Atom × List PLeaTTa.Goal)}
+      (head : SuperposeBranchAgrees referenceOutput executableOutput
+        referenceBranch executableBranch)
+      (tail : SuperposeBranchesAgree referenceOutput executableOutput
+        referenceBranches executableBranches) :
+      SuperposeBranchesAgree referenceOutput executableOutput
+        (referenceBranch :: referenceBranches)
+        (executableBranch :: executableBranches)
 
 /-- Ordered pointwise goal-list agreement. -/
 inductive GoalsAgree : List PeTTaSpec.PrologCore.Goal → List PLeaTTa.Goal →
@@ -879,15 +964,17 @@ theorem compileBranch_normalized_sound {referenceOutput referenceValue : Term}
       obtain ⟨goal, goals, rfl⟩ := List.exists_cons_of_ne_nil executableNonempty
       cases valueAgreement with
       | sourceVariable name =>
-          refine ⟨[PLeaTTa.Goal.eq (.var name) executableOutput],
+          refine ⟨[PLeaTTa.Goal.compileAlias (.var name) executableOutput],
             (executableOutput, goal :: goals), ?_,
-            .cons (.unify (.sourceVariable name) outputAgreement) .nil,
+            .cons (.compileAlias (.sourceVariable name) outputAgreement) .nil,
             .aliased outputAgreement goalsAgreement⟩
           simp [compileBranch]
       | generatedVariable index =>
-          refine ⟨[PLeaTTa.Goal.eq (.var s!"_q{index}") executableOutput],
+          refine ⟨[PLeaTTa.Goal.compileAlias (.var s!"_q{index}")
+              executableOutput],
             (executableOutput, goal :: goals), ?_,
-            .cons (.unify (.generatedVariable index) outputAgreement) .nil,
+            .cons (.compileAlias (.generatedVariable index) outputAgreement)
+              .nil,
             .aliased outputAgreement goalsAgreement⟩
           simp [compileBranch]
   | nonVariable value goals nonempty notVariable =>
@@ -900,6 +987,92 @@ theorem compileBranch_normalized_sound {referenceOutput referenceValue : Term}
       | sym name => simp [compileBranch]
       | gnd value => simp [compileBranch]
       | expr values => simp [compileBranch]
+
+/-- The executable syntactic-`superpose` normalizer implements all three
+pinned `build_branch/4` priority cases.  The enclosing output is specialized
+to the compiler's generated variable because that fact is what makes the
+nonvariable branch's marker template syntactically distinct before it is
+replaced by the shared output. -/
+theorem compileSuperposeBranch_normalized_sound {outputIndex : Nat}
+    {referenceValue : Term}
+    {referenceGoals referenceAliases : List PeTTaSpec.PrologCore.Goal}
+    {referenceTemplate : Term} {referenceBranch : PeTTaSpec.PrologCore.Goal}
+    {executableValue : Atom} {executableGoals : List PLeaTTa.Goal}
+    (valueAgreement : TermAgrees referenceValue executableValue)
+    (goalsAgreement : GoalsAgree referenceGoals executableGoals)
+    (native : BuildsBranchNormalized
+      (.variable (.generated outputIndex)) referenceValue referenceGoals
+      referenceAliases referenceTemplate referenceBranch) :
+    ∃ executableAliases executableBranch,
+      compileSuperposeBranch (.var s!"_q{outputIndex}")
+          (executableValue, executableGoals) =
+        (executableAliases, executableBranch) ∧
+      GoalsAgree referenceAliases executableAliases ∧
+      SuperposeBranchAgrees (.variable (.generated outputIndex))
+        (.var s!"_q{outputIndex}") referenceBranch executableBranch := by
+  let outputAgreement :
+      TermAgrees (.variable (.generated outputIndex))
+        (.var s!"_q{outputIndex}") := .generatedVariable outputIndex
+  cases native with
+  | empty _ _ empty =>
+      have width := goalsAgreement.flatWidth
+      have lengthZero : executableGoals.length = 0 := by omega
+      have executableEmpty : executableGoals = [] :=
+        List.eq_nil_of_length_eq_zero lengthZero
+      subst executableGoals
+      refine ⟨[], (executableValue, []), ?_, .nil,
+        .empty valueAgreement outputAgreement⟩
+      simp [compileSuperposeBranch]
+  | aliasVariable identity goals nonempty =>
+      have width := goalsAgreement.flatWidth
+      have executableNonempty : executableGoals ≠ [] := by
+        intro empty
+        subst executableGoals
+        simp at width
+        omega
+      obtain ⟨goal, goals, rfl⟩ :=
+        List.exists_cons_of_ne_nil executableNonempty
+      cases valueAgreement with
+      | sourceVariable name =>
+          refine ⟨[PLeaTTa.Goal.compileAlias (.var name)
+              (.var s!"_q{outputIndex}")],
+            (.var s!"_q{outputIndex}", goal :: goals), ?_,
+            .cons (.compileAlias (.sourceVariable name) outputAgreement) .nil,
+            .aliased outputAgreement goalsAgreement (by simp)⟩
+          simp [compileSuperposeBranch, compileBranch, BEq.beq, Atom.beq]
+      | generatedVariable index =>
+          refine ⟨[PLeaTTa.Goal.compileAlias (.var s!"_q{index}")
+              (.var s!"_q{outputIndex}")],
+            (.var s!"_q{outputIndex}", goal :: goals), ?_,
+            .cons (.compileAlias (.generatedVariable index) outputAgreement)
+              .nil,
+            .aliased outputAgreement goalsAgreement (by simp)⟩
+          simp [compileSuperposeBranch, compileBranch, BEq.beq, Atom.beq]
+  | nonVariable value goals nonempty notVariable =>
+      have executableNotVariable :=
+        valueAgreement.executable_not_variable notVariable
+      have width := goalsAgreement.flatWidth
+      have executableNonempty : executableGoals ≠ [] := by
+        intro empty
+        subst executableGoals
+        simp at width
+        omega
+      refine ⟨[],
+        (.var s!"_q{outputIndex}",
+          PLeaTTa.Goal.eq executableValue (.var s!"_q{outputIndex}") ::
+            executableGoals), ?_, .nil,
+        .nonvariable valueAgreement outputAgreement goalsAgreement⟩
+      cases executableValue with
+      | var name => exact False.elim (executableNotVariable name rfl)
+      | sym name =>
+          simp [compileSuperposeBranch, compileBranch, executableNonempty,
+            BEq.beq, Atom.beq]
+      | gnd value =>
+          simp [compileSuperposeBranch, compileBranch, executableNonempty,
+            BEq.beq, Atom.beq]
+      | expr values =>
+          simp [compileSuperposeBranch, compileBranch, executableNonempty,
+            BEq.beq, Atom.beq]
 
 /-- The independent condition-conjunction normalization agrees with the
 flat executable prefix, including the pinned `true`/empty optimization. -/
@@ -1896,9 +2069,42 @@ theorem compileExprFuel_initial_sound {state : TranslatorState} (env : CEnv)
         refine ⟨output, [PLeaTTa.Goal.amb executableBranches output], ?_,
           outputAgreement, .cons (.literalAmb branchesAgreement) .nil⟩
         simpa [output, Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using
-          compileExprFuel_superpose_eq (extraFuel + 1) env counter
-            first sources executableBranches
+          compileExprFuel_superpose_eq (extraFuel + 1) env counter counter
+            first sources executableBranches executableBranches []
             (agreement.notContains notShadowed) branchesCompiled
+            branchesAgreement.compileSuperposeBranches_eq
+  | superposeBranches notShadowed translated =>
+      rename_i branchCounter first sources referenceAliases referenceBranches
+      let output := Atom.var s!"_q{branchCounter}"
+      have outputAgreement :
+          TermAgrees (.variable (.generated branchCounter)) output :=
+        .generatedVariable branchCounter
+      obtain ⟨branchFuel, branchPositive, branchBound, branchesCompile⟩ :=
+        compileSuperposeBranchesFuel_initial_sound env agreement translated
+      refine ⟨branchFuel + 3, by omega, ?_, ?_⟩
+      · simp only [Atom.size, List.map, List.sum_cons] at branchBound ⊢
+        omega
+      · intro extraFuel
+        obtain ⟨rawBranches, executableAliases, executableBranches,
+            branchesCompiled, normalized, aliasesAgreement,
+            branchesAgreement⟩ := branchesCompile extraFuel []
+        have compiled : compileAmbBranchesWith
+            (fun next expression =>
+              compileExprFuel (branchFuel + extraFuel) env next expression)
+            counter (first :: sources) =
+              .ok (rawBranches, branchCounter) := by
+          simpa [compileAmbBranchesWith] using branchesCompiled
+        refine ⟨output,
+          executableAliases ++ [PLeaTTa.Goal.amb executableBranches output],
+          ?_, outputAgreement, ?_⟩
+        · rw [show (branchFuel + 3) + extraFuel =
+            (branchFuel + extraFuel) + 3 by omega]
+          exact compileExprFuel_superpose_eq (branchFuel + extraFuel) env
+            counter branchCounter first sources rawBranches
+            executableBranches executableAliases
+            (agreement.notContains notShadowed) compiled normalized
+        · exact aliasesAgreement.append
+            (.cons (.builtAmb branchesAgreement) .nil)
   | letBind notShadowed patternTranslation valueTranslation bodyTranslation =>
       obtain ⟨patternFuel, patternPositive, patternBound, patternCompiles⟩ :=
         compileExprFuel_initial_sound env agreement patternTranslation
@@ -2468,6 +2674,110 @@ theorem compileSeqFuel_initial_sound {state : TranslatorState} (env : CEnv)
         · obtain ⟨tailHead, tailRest, rfl⟩ :=
             List.exists_cons_of_ne_nil tailInternalsNonempty
           simpa [List.getLast!] using tailLastAgreement
+
+/-- Every independent `build_superpose_branches/3` traversal compiles with a
+shared branch fuel, threads counters left-to-right, and then normalizes to the
+same ordered alias prefix and branch list.  The accumulator-general fold
+statement matches the executable `foldlM` without assuming an empty prefix. -/
+theorem compileSuperposeBranchesFuel_initial_sound
+    {state : TranslatorState} (env : CEnv) (agreement : EnvAgrees state env)
+    {outputIndex counter nextCounter : Nat} {sources : List Atom}
+    {referenceAliases referenceBranches :
+      List PeTTaSpec.PrologCore.Goal}
+    (native : TranslatesSuperposeBranches state
+      (.variable (.generated outputIndex)) counter sources referenceAliases
+      referenceBranches nextCounter) :
+    ∃ baseFuel,
+      0 < baseFuel ∧
+      baseFuel < 8 * ((sources.map Atom.size).sum + 1) ∧
+      ∀ extraFuel accumulator,
+        ∃ rawBranches executableAliases executableBranches,
+          List.foldlM
+            (fun (acc : List (Atom × List PLeaTTa.Goal) × Nat)
+                expression => do
+              let (term, goals, next) ←
+                compileExprFuel (baseFuel + extraFuel) env acc.2 expression
+              .ok (acc.1 ++ [(term, goals)], next))
+            (accumulator, counter) sources =
+              .ok (accumulator ++ rawBranches, nextCounter) ∧
+          compileSuperposeBranches (.var s!"_q{outputIndex}") rawBranches =
+            (executableAliases, executableBranches) ∧
+          GoalsAgree referenceAliases executableAliases ∧
+          SuperposeBranchesAgree (.variable (.generated outputIndex))
+            (.var s!"_q{outputIndex}") referenceBranches
+            executableBranches := by
+  cases native with
+  | nil =>
+      refine ⟨1, by omega, by simp, ?_⟩
+      intro extraFuel accumulator
+      refine ⟨[], [], [], ?_, rfl, .nil, .nil⟩
+      simp only [List.foldlM_nil, List.append_nil, Pure.pure, Except.pure]
+  | cons head built tail =>
+      rename_i middleCounter source sources value template sourceGoals
+        headAliases tailAliases branch branches
+      obtain ⟨headFuel, headPositive, headBound, headCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement head
+      obtain ⟨tailFuel, tailPositive, tailBound, tailCompiles⟩ :=
+        compileSuperposeBranchesFuel_initial_sound env agreement tail
+      let jointFuel := Nat.max headFuel tailFuel
+      have headLeJoint : headFuel ≤ jointFuel := Nat.le_max_left _ _
+      have tailLeJoint : tailFuel ≤ jointFuel := Nat.le_max_right _ _
+      refine ⟨jointFuel, by omega, ?_, ?_⟩
+      · simp only [List.map, List.sum_cons] at tailBound ⊢
+        have headLe : headFuel <
+            8 * (source.size + (sources.map Atom.size).sum + 1) := by
+          omega
+        have tailLe : tailFuel <
+            8 * (source.size + (sources.map Atom.size).sum + 1) := by
+          omega
+        exact (Nat.max_lt).2 ⟨headLe, tailLe⟩
+      · intro extraFuel accumulator
+        obtain ⟨headExtra, headFuelEq⟩ :
+            ∃ headExtra, jointFuel + extraFuel = headFuel + headExtra := by
+          exact ⟨jointFuel + extraFuel - headFuel, by omega⟩
+        obtain ⟨tailExtra, tailFuelEq⟩ :
+            ∃ tailExtra, jointFuel + extraFuel = tailFuel + tailExtra := by
+          exact ⟨jointFuel + extraFuel - tailFuel, by omega⟩
+        obtain ⟨headInternal, headExecutableGoals, headCompiled,
+            headAgreement, headGoalsAgreement⟩ := headCompiles headExtra
+        obtain ⟨tailRawBranches, tailExecutableAliases,
+            tailExecutableBranches, tailCompiled, tailNormalized,
+            tailAliasesAgreement, tailBranchesAgreement⟩ :=
+          tailCompiles tailExtra
+            (accumulator ++ [(headInternal, headExecutableGoals)])
+        obtain ⟨headExecutableAliases, headExecutableBranch,
+            headNormalized, headAliasesAgreement, headBranchAgreement⟩ :=
+          compileSuperposeBranch_normalized_sound headAgreement
+            headGoalsAgreement built
+        have headCompiledAt :
+            compileExprFuel (jointFuel + extraFuel) env counter source =
+              .ok (headInternal, headExecutableGoals, middleCounter) := by
+          simpa [headFuelEq] using headCompiled
+        have tailCompiledAt :
+            List.foldlM
+              (fun (acc : List (Atom × List PLeaTTa.Goal) × Nat)
+                  expression => do
+                let (term, goals, next) ←
+                  compileExprFuel (jointFuel + extraFuel) env acc.2 expression
+                .ok (acc.1 ++ [(term, goals)], next))
+              (accumulator ++ [(headInternal, headExecutableGoals)],
+                middleCounter) sources =
+              .ok
+                ((accumulator ++ [(headInternal, headExecutableGoals)]) ++
+                  tailRawBranches, nextCounter) := by
+          simpa [tailFuelEq] using tailCompiled
+        refine ⟨(headInternal, headExecutableGoals) :: tailRawBranches,
+          headExecutableAliases ++ tailExecutableAliases,
+          headExecutableBranch :: tailExecutableBranches, ?_, ?_,
+          headAliasesAgreement.append tailAliasesAgreement,
+          .cons headBranchAgreement tailBranchesAgreement⟩
+        · rw [List.foldlM_cons]
+          simp only [headCompiledAt, Bind.bind, Except.bind]
+          dsimp only [Bind.bind, Monad.toBind, Except.instMonad, Except.bind]
+            at tailCompiledAt ⊢
+          simpa [List.append_assoc] using tailCompiledAt
+        · simp only [compileSuperposeBranches]
+          rw [headNormalized, tailNormalized]
 
 end
 

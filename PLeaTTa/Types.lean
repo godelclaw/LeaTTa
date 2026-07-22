@@ -56,6 +56,12 @@ inductive Goal where
             (els : List Goal)
   /-- Unification. -/
   | eq (a b : Atom)
+  /-- Translation-time variable sharing emitted by pinned `build_branch/4`.
+      Source-facing compiler entry points solve and erase every such marker
+      over the whole expression or clause before execution.  Raw compiler
+      proof surfaces retain it so the distinction from runtime unification is
+      explicit; the machine treats an accidental leak as ordinary equality. -/
+  | compileAlias (a b : Atom)
   /-- Committed choice, untagged (as compiled). -/
   | cut
   /-- Committed choice, tagged with the clause-entry barrier index. -/
@@ -109,6 +115,8 @@ def instantiateGoal (s : Subst) : Goal → Goal
       .softcut (Metta.Subst.apply s tmpl) (instantiateGoals s sub)
         (instantiateGoals s thn) (instantiateGoals s els)
   | .eq a b => .eq (Metta.Subst.apply s a) (Metta.Subst.apply s b)
+  | .compileAlias a b =>
+      .compileAlias (Metta.Subst.apply s a) (Metta.Subst.apply s b)
   | .cut => .cut
   | .cutAt n => .cutAt n
   | .findall tmpl sub res =>

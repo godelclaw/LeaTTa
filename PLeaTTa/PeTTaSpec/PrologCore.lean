@@ -348,6 +348,25 @@ inductive TranslatesExpr : TranslatorState → Nat → Atom → Term → List Go
         (.expr [.sym "superpose", .expr (first :: sources)])
         (.variable (.generated counter)) [.disjunction branches]
         (counter + 1)
+  /-- General nonempty syntactic `superpose`.  Branch expressions translate
+  left-to-right, the enclosing output is allocated after that traversal, and
+  every native `build_branch/4` alias is visible before the disjunction.
+  Unlike `superposeLiterals`, this constructor includes effectful and
+  variable-valued branches and pins their equality-before-body order.
+  [SPEC translator.pl:112-114,394-397,414-422] -/
+  | superposeBranches {state : TranslatorState}
+      {counter branchCounter : Nat}
+      {first : Atom} {sources : List Atom}
+      {aliases branches : List Goal}
+      (notShadowed : ¬ state.hasRule "superpose")
+      (translated :
+        TranslatesSuperposeBranches state
+          (.variable (.generated branchCounter)) counter (first :: sources)
+          aliases branches branchCounter) :
+      TranslatesExpr state counter
+        (.expr [.sym "superpose", .expr (first :: sources)])
+        (.variable (.generated branchCounter))
+        (aliases ++ [.disjunction branches]) (branchCounter + 1)
   -- [SPEC translator.pl:185-188] Translation traverses pattern, value, and
   -- body in that order, but the generated goal order begins with unification.
   | letBind {state : TranslatorState}
@@ -524,6 +543,33 @@ inductive TranslatesSeq : TranslatorState → Nat → List Atom → Term → Ter
         nextCounter) :
       TranslatesSeq state counter (source :: sources) headTerm last
         (headGoals ++ tailGoals) nextCounter
+
+/-- Independent ordered traversal for pinned `build_superpose_branches/3`.
+Each element is translated at the counter left by its predecessor and then
+normalized by the independent `build_branch/4` relation.  Alias goals are
+concatenated in translation order and remain outside the branch disjunction,
+matching native Prolog variable sharing.
+[SPEC translator.pl:112-114,394-397,414-416] -/
+inductive TranslatesSuperposeBranches : TranslatorState → Term → Nat →
+    List Atom → List Goal → List Goal → Nat → Prop where
+  | nil {state : TranslatorState} {output : Term} {counter : Nat} :
+      TranslatesSuperposeBranches state output counter [] [] [] counter
+  | cons {state : TranslatorState} {output : Term}
+      {counter middleCounter nextCounter : Nat}
+      {source : Atom} {sources : List Atom}
+      {value template : Term}
+      {sourceGoals headAliases tailAliases : List Goal}
+      {branch : Goal} {branches : List Goal}
+      (head :
+        TranslatesExpr state counter source value sourceGoals middleCounter)
+      (built :
+        BuildsBranchNormalized output value sourceGoals headAliases template
+          branch)
+      (tail :
+        TranslatesSuperposeBranches state output middleCounter sources
+          tailAliases branches nextCounter) :
+      TranslatesSuperposeBranches state output counter (source :: sources)
+        (headAliases ++ tailAliases) (branch :: branches) nextCounter
 
 end
 
