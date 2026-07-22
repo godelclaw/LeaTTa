@@ -324,6 +324,10 @@ import PLeaTTa.PeTTaSpec.PrologTraceSemantics
 #print axioms PLeaTTa.CompilerTranslationSupportAdequacy.compileSuperposeBranches_alias_supported_finalization_from_contract
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.Observation.answers_append
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.StepsN.toSteps
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.RawStep.preserves_wellScoped_target
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.RawStep.preserves_wellScoped
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.RawStep.signal_matches_active
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.RawStep.no_foreign_commit
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.orderedPair_steps
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.answer_order_observable
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.answer_multiplicity_observable

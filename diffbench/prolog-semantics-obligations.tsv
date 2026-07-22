@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# trace_semantics_sha256=8513a31012063cbef24c57d340395106ef06ce6b11161af808f3017b0acd23a8
+# trace_semantics_sha256=2fa7198cc04c521098e12140a086682af6995abc982c40654ec04c65ab85384d
 # status: PASS=proved-property-of-the-independent-model GAP=open-reference-or-adequacy-proof FAIL=known-implementation/reference-mismatch BOUNDARY=permanent-explicit-trusted-boundary
 # proof: SC=sound-complete W=witness/inversion theorem SH=shape-only N=none
 # native_source: T=src/translator.pl M=src/metta.pl SWI=official SWI-Prolog manual ISO=ISO Prolog working documents -=independent infrastructure
@@ -11,7 +11,8 @@ TRACE.exception_tag	T300-308	trace	Observation;RawStep	W	PASS	raised and complet
 TRACE.open_continuation	-	trace	State;StepsN	W	PASS	running continuation is distinct from halted completion
 TRACE.answer_then_diverge	-	trace	oneThenLoopProtocol	W	PASS	first answer plus exact arbitrarily-long silent prefixes; every finite suffix stays open and fabricated exhaustion is impossible
 CONTROL.leftmost_dfs	SWI:metacall	control	Process;RawStep	SH	GAP	left-biased constructors present; generic determinism and Goal specialization open
-CONTROL.well_scoped	SWI:metacall	control	WellScoped	SH	GAP	structural cut-scope judgment present and malformed outer-commit witness rejected; preservation and compiler discharge open
+CONTROL.well_scoped_preservation	SWI:metacall	control	WellScoped;RawStep	W	PASS	malformed outer commit rejected; running steps preserve scope discipline; any emitted commit matches the active scope
+CONTROL.specialization_well_scoped	SWI:metacall	control	WellScoped	SH	GAP	Goal specialization must produce well-scoped processes with fresh opaque boundaries
 CONTROL.bind	SWI:metacall	control	Process.bind;RawStep.bind*	SH	GAP	answer-at-a-time conjunction rule present; substitution-specialized adequacy open
 CUT.typed_scope	T117-118	control	CutScopeId;Process.cutBoundary	SH	PASS	cut delimiter is typed separately from future exception and collection delimiters
 CUT.same_scope	T117-118	control	RawStep.choiceCommitHere	W	PASS	matching-scope alternative is pruned before later answer or effect

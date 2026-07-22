@@ -237,6 +237,11 @@ inductive CutSignal where
   | commit (scope : CutScopeId)
 deriving DecidableEq
 
+/-- A cut signal, if present, names the currently active cut scope. -/
+def SignalMatches (active : CutScopeId) : CutSignal → Prop
+  | .none => True
+  | .commit scope => scope = active
+
 /-- Target of one raw process step. -/
 inductive RawTarget (Request Token Answer Effect Exception : Type) where
   | halted
@@ -384,6 +389,150 @@ inductive RawStep
       (step : RawStep protocol head events .none .halted)
       (answerFree : AnswerFree events) :
       RawStep protocol (.bind scope head tail) events .none .halted
+
+namespace RawStep
+
+/-- Target-indexed subject reduction for the structural cut-scope discipline. -/
+theorem preserves_wellScoped_target
+    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    {active : CutScopeId}
+    {process : Process Request Token Answer Effect Exception}
+    {events : List (Observation Request Token Answer Effect Exception)}
+    {signal : CutSignal}
+    {target : RawTarget Request Token Answer Effect Exception}
+    (step : RawStep protocol process events signal target)
+    (wellFormed : WellScoped active process) :
+    match target with
+    | .halted => True
+    | .running next => WellScoped active next := by
+  induction step generalizing active with
+  | done => exact True.intro
+  | yield value next =>
+      cases wellFormed with
+      | yield _ _ _ nextScoped => exact nextScoped
+  | delay next =>
+      cases wellFormed with
+      | delay _ _ nextScoped => exact nextScoped
+  | emit value next =>
+      cases wellFormed with
+      | emit _ _ _ nextScoped => exact nextScoped
+  | raise exception => exact True.intro
+  | commit scope next =>
+      cases wellFormed with
+      | commit _ _ nextScoped => exact nextScoped
+  | openCall request cursor next opened =>
+      cases wellFormed with
+      | openCall _ _ _ nextScoped => exact nextScoped cursor
+  | suspendSilent cursor next pulled => exact .suspend active next
+  | suspendAnswer cursor next answer pulled => exact .suspend active next
+  | suspendEffect cursor next effect pulled => exact .suspend active next
+  | suspendExhausted cursor pulled => exact True.intro
+  | suspendRaised cursor exception pulled => exact True.intro
+  | choiceProgress scope left right next events step inductionHypothesis =>
+      cases wellFormed with
+      | choice _ _ _ leftScoped rightScoped =>
+          exact .choice scope next right
+            (inductionHypothesis leftScoped) rightScoped
+  | choiceComplete scope left right step inductionHypothesis =>
+      cases wellFormed with
+      | choice _ _ _ leftScoped rightScoped => exact rightScoped
+  | choiceRaised scope left right exception step inductionHypothesis =>
+      exact True.intro
+  | choiceCommitHere scope left right next events step prunable
+      inductionHypothesis =>
+      cases wellFormed with
+      | choice _ _ _ leftScoped rightScoped =>
+          exact inductionHypothesis leftScoped
+  | choiceCommitOutside scope other different left right next events step
+      inductionHypothesis =>
+      cases wellFormed with
+      | choice _ _ _ leftScoped rightScoped =>
+          exact .choice scope next right
+            (inductionHypothesis leftScoped) rightScoped
+  | cutBoundaryProgress scope body next events step inductionHypothesis =>
+      cases wellFormed with
+      | cutBoundary active _ _ bodyScoped =>
+          exact .cutBoundary active scope next
+            (inductionHypothesis bodyScoped)
+  | cutBoundaryComplete scope body step inductionHypothesis =>
+      exact True.intro
+  | cutBoundaryRaised scope body exception step inductionHypothesis =>
+      exact True.intro
+  | cutBoundaryCatch scope body next events step inductionHypothesis =>
+      cases wellFormed with
+      | cutBoundary active _ _ bodyScoped =>
+          exact .cutBoundary active scope next
+            (inductionHypothesis bodyScoped)
+  | cutBoundaryPass scope other different body next events step
+      inductionHypothesis =>
+      cases wellFormed with
+      | cutBoundary active _ _ bodyScoped =>
+          exact .cutBoundary active scope next
+            (inductionHypothesis bodyScoped)
+  | bindAnswer scope head next tail answer step inductionHypothesis =>
+      cases wellFormed with
+      | bind _ _ _ headScoped tailScoped =>
+          exact .choice scope (tail answer) (.bind scope next tail)
+            (tailScoped answer)
+            (.bind scope next tail
+              (inductionHypothesis headScoped) tailScoped)
+  | bindProgress scope head next tail events signal step answerFree
+      inductionHypothesis =>
+      cases wellFormed with
+      | bind _ _ _ headScoped tailScoped =>
+          exact .bind scope next tail
+            (inductionHypothesis headScoped) tailScoped
+  | bindHalt scope head tail events step answerFree inductionHypothesis =>
+      exact True.intro
+
+/-- Any running successor of a well-scoped process is well-scoped at the same
+enclosing scope.  The raw relation therefore cannot manufacture the malformed
+outer-commit-under-inner-boundary shape after entry. -/
+theorem preserves_wellScoped
+    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    {active : CutScopeId}
+    {process next : Process Request Token Answer Effect Exception}
+    {events : List (Observation Request Token Answer Effect Exception)}
+    {signal : CutSignal}
+    (step : RawStep protocol process events signal (.running next))
+    (wellFormed : WellScoped active process) :
+    WellScoped active next :=
+  preserves_wellScoped_target protocol step wellFormed
+
+/-- A well-scoped process can emit only a commit for its currently active cut
+scope.  In particular, the `choiceCommitOutside` and `cutBoundaryPass` rules
+remain available for raw diagnostic inputs but are unreachable from a
+well-scoped process. -/
+theorem signal_matches_active
+    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    {active : CutScopeId}
+    {process : Process Request Token Answer Effect Exception}
+    {events : List (Observation Request Token Answer Effect Exception)}
+    {signal : CutSignal}
+    {target : RawTarget Request Token Answer Effect Exception}
+    (step : RawStep protocol process events signal target)
+    (wellFormed : WellScoped active process) :
+    SignalMatches active signal := by
+  induction step generalizing active <;> cases wellFormed <;>
+    simp_all (config := { failIfUnchanged := false }) [SignalMatches]
+  case choiceCommitOutside.choice => solve_by_elim
+  case cutBoundaryPass.cutBoundary =>
+    exfalso
+    solve_by_elim
+
+/-- Convenient negative form of `signal_matches_active`. -/
+theorem no_foreign_commit
+    (protocol : OrderedCallProtocol Request Token Answer Effect Exception)
+    {active other : CutScopeId}
+    {process : Process Request Token Answer Effect Exception}
+    {events : List (Observation Request Token Answer Effect Exception)}
+    {target : RawTarget Request Token Answer Effect Exception}
+    (step : RawStep protocol process events (.commit other) target)
+    (wellFormed : WellScoped active process)
+    (different : other ≠ active) : False :=
+  different (signal_matches_active protocol step wellFormed)
+
+end RawStep
 
 /-- Public machine state.  An escaped cut is recorded rather than silently
 treated as failure; well-scoped compiled calls must surround execution with the
