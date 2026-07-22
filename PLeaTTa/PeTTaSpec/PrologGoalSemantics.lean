@@ -355,6 +355,156 @@ theorem UnifyResolution.deterministic {bindings : Substitution}
   exact congrArg (fun extension => extension ++ bindings)
     (firstMgu.unique secondMgu)
 
+/-- A cumulative substitution descends from an earlier binding state when it
+is obtained solely by prepending a finite extension.  This is the exact shape
+produced by primitive unification and clause-head resolution; the direction
+is deliberately explicit because newer bindings live at the list head. -/
+def BindingLineage (entry current : Substitution) : Prop :=
+  ∃ extension, current = extension ++ entry
+
+namespace BindingLineage
+
+theorem refl (bindings : Substitution) : BindingLineage bindings bindings := by
+  exact ⟨[], rfl⟩
+
+theorem prepend (extension bindings : Substitution) :
+    BindingLineage bindings (extension ++ bindings) := by
+  exact ⟨extension, rfl⟩
+
+theorem trans {entry middle current : Substitution}
+    (first : BindingLineage entry middle)
+    (second : BindingLineage middle current) :
+    BindingLineage entry current := by
+  rcases first with ⟨firstExtension, rfl⟩
+  rcases second with ⟨secondExtension, rfl⟩
+  exact ⟨secondExtension ++ firstExtension, by simp [List.append_assoc]⟩
+
+end BindingLineage
+
+theorem UnifyResolution.bindingLineage {bindings result : Substitution}
+    {left right : Term}
+    (resolved : UnifyResolution bindings left right result) :
+    BindingLineage bindings result := by
+  rcases resolved with ⟨extension, computed, rfl⟩
+  exact BindingLineage.prepend extension bindings
+
+namespace RaisedException
+
+/-- The throw-time binding state is a cumulative descendant of the bindings
+saved when an enclosing catch was entered. -/
+def ExtendsEntry (exception : RaisedException)
+    (entryBindings : Substitution) : Prop :=
+  BindingLineage entryBindings exception.throwBindings
+
+/-- A copied exception ball is independent of the throw-time substitution.
+This is the finite-tree freshness fact needed to transport SWI's pre-unwind
+selection back to the catch-entry environment.  A future source-level
+`throw/1` specialization must establish it from the copy operation. -/
+def BallStable (exception : RaisedException) : Prop :=
+  exception.throwBindings.applyTerm exception.ball = exception.ball
+
+end RaisedException
+
+/-- Binding-lineage obligations carried by a finite search tree relative to
+an enclosing entry state.  Every executable task and frozen call cursor must
+descend by prepending extensions; every raised packet additionally carries a
+copied ball stable under its throw-time state.  Nested catch entries remain
+descendants of the same outer state. -/
+def Search.BindingLineageFrom (entryBindings : Substitution) : Search → Prop
+  | .done => True
+  | .task _ _ current => BindingLineage entryBindings current
+  | .clauses _ cursor =>
+      cursor.BindingsAligned ∧
+        BindingLineage entryBindings cursor.bindings
+  | .raise exception =>
+      exception.ExtendsEntry entryBindings ∧ exception.BallStable
+  | .choice _ left right =>
+      left.BindingLineageFrom entryBindings ∧
+        right.BindingLineageFrom entryBindings
+  | .cutBoundary _ body => body.BindingLineageFrom entryBindings
+  | .catchBoundary _ _ body _ _ nestedEntry =>
+      BindingLineage entryBindings nestedEntry ∧
+        body.BindingLineageFrom nestedEntry
+  | .product _ head _ => head.BindingLineageFrom entryBindings
+
+/-- Every branch of a source-order disjunction inherits the same cumulative
+substitution lineage as its surrounding task. -/
+theorem Search.disjoin_bindingLineageFrom
+    {entryBindings bindings : Substitution}
+    (lineage : BindingLineage entryBindings bindings)
+    (scope : CutScopeId) (branches tail : List Goal) :
+    (Search.disjoin scope branches tail bindings).BindingLineageFrom
+      entryBindings := by
+  induction branches with
+  | nil => exact True.intro
+  | cons branch rest inductionHypothesis =>
+      cases rest with
+      | nil => exact lineage
+      | cons next remaining =>
+          exact ⟨lineage, inductionHypothesis⟩
+
+/-- Per-event binding lineage.  Only answers carry substitutions; internal
+replies are unobservable and every other public event is lineage-neutral. -/
+def ObservationBindingLineage (entryBindings : Substitution) :
+    Observation → Prop
+  | .answer bindings => BindingLineage entryBindings bindings
+  | .opened _ | .effect _ | .pruned _ | .raised _ | .completed => True
+
+/-- Every observable answer in one emitted batch descends from the enclosing
+entry substitution. -/
+def EventsBindingLineage (entryBindings : Substitution)
+    (events : List Observation) : Prop :=
+  ∀ event ∈ events, ObservationBindingLineage entryBindings event
+
+@[simp] theorem EventsBindingLineage.nil (entryBindings : Substitution) :
+    EventsBindingLineage entryBindings [] := by
+  simp [EventsBindingLineage]
+
+theorem EventsBindingLineage.cons {entryBindings : Substitution}
+    {event : Observation} {events : List Observation}
+    (head : ObservationBindingLineage entryBindings event)
+    (tail : EventsBindingLineage entryBindings events) :
+    EventsBindingLineage entryBindings (event :: events) := by
+  intro candidate member
+  rcases List.mem_cons.mp member with rfl | later
+  · exact head
+  · exact tail candidate later
+
+theorem EventsBindingLineage.append {entryBindings : Substitution}
+    {left right : List Observation}
+    (leftLineage : EventsBindingLineage entryBindings left)
+    (rightLineage : EventsBindingLineage entryBindings right) :
+    EventsBindingLineage entryBindings (left ++ right) := by
+  intro event member
+  rcases List.mem_append.mp member with leftMember | rightMember
+  · exact leftLineage event leftMember
+  · exact rightLineage event rightMember
+
+/-- Answer lineage weakens transitively from a nested entry state to any
+enclosing ancestor. -/
+theorem EventsBindingLineage.mono {outerEntry nestedEntry : Substitution}
+    {events : List Observation}
+    (nestedLineage : BindingLineage outerEntry nestedEntry)
+    (eventLineage : EventsBindingLineage nestedEntry events) :
+    EventsBindingLineage outerEntry events := by
+  intro event member
+  have inner := eventLineage event member
+  cases event with
+  | answer bindings =>
+      exact BindingLineage.trans nestedLineage inner
+  | opened request | effect value | pruned cursor | raised exception |
+      completed =>
+      trivial
+
+@[simp] theorem EventsBindingLineage.pruned
+    (entryBindings : Substitution) (cursors : List CursorToken) :
+    EventsBindingLineage entryBindings
+      (cursors.map Trace.Observation.pruned) := by
+  intro event member
+  simp only [List.mem_map] at member
+  rcases member with ⟨cursor, _, rfl⟩
+  trivial
+
 /-- SWI's pre-unwind catcher-selection test for the supported finite-tree
 fragment.  Unlike ISO's abstract account, SWI tests the catcher while bindings
 made by the protected goal are still present.  The copied ball itself is not
@@ -389,6 +539,78 @@ theorem CatchResolution.deterministic {entryBindings : Substitution}
     first = second :=
   UnifyResolution.deterministic one two
 
+theorem CatchResolution.bindingLineage
+    {entryBindings result : Substitution} {catcher exception : Term}
+    (resolved : CatchResolution entryBindings catcher exception result) :
+    BindingLineage entryBindings result :=
+  UnifyResolution.bindingLineage resolved
+
+/-- Successful SWI pre-unwind selection can always be reconstructed after
+unwind when the throw state extends the catch-entry state and the copied ball
+is stable under that throw state.  The witness is not postulated: the
+selection MGU composed with the intervening binding extension is a unifier of
+the entry-normalized equation, so completeness of the canonical ordered MGU
+algorithm computes the unique recovery extension. -/
+theorem CatchSelection.exists_resolution_of_lineage
+    {raised : RaisedException} {catcher : Term}
+    {entryBindings : Substitution}
+    (lineage : raised.ExtendsEntry entryBindings)
+    (ballStable : raised.BallStable)
+    (selected : CatchSelection raised catcher) :
+    ∃ result, CatchResolution entryBindings catcher raised.ball result := by
+  rcases lineage with ⟨intervening, throwBindingsEq⟩
+  rcases selected with ⟨selection, computed⟩
+  have selectedUnifies : DenotationalUnifier selection
+      (raised.throwBindings.applyTerm catcher) raised.ball :=
+    computed.isMostGeneral.1
+      (raised.throwBindings.applyTerm catcher, raised.ball) (by simp)
+  have candidateUnifier : DenotationalUnifier (selection ++ intervening)
+      (entryBindings.applyTerm catcher)
+      (entryBindings.applyTerm raised.ball) := by
+    unfold DenotationalUnifier at selectedUnifies ⊢
+    calc
+      TreeSubstitution.apply
+          (Canonical.Substitution.denote (selection ++ intervening))
+          (Term.denote (entryBindings.applyTerm catcher)) =
+        TreeSubstitution.apply (Canonical.Substitution.denote selection)
+          (TreeSubstitution.apply
+            (Canonical.Substitution.denote intervening)
+            (Term.denote (entryBindings.applyTerm catcher))) := by
+              rw [Canonical.Substitution.denote_append,
+                TreeSubstitution.apply_append]
+      _ = TreeSubstitution.apply (Canonical.Substitution.denote selection)
+          (Term.denote (raised.throwBindings.applyTerm catcher)) := by
+            rw [throwBindingsEq, Substitution.applyTerm_append]
+            simp only [Canonical.Substitution.denote_applyTerm]
+      _ = TreeSubstitution.apply (Canonical.Substitution.denote selection)
+          (Term.denote raised.ball) := selectedUnifies
+      _ = TreeSubstitution.apply (Canonical.Substitution.denote selection)
+          (Term.denote (raised.throwBindings.applyTerm raised.ball)) := by
+            rw [ballStable]
+      _ = TreeSubstitution.apply (Canonical.Substitution.denote selection)
+          (TreeSubstitution.apply
+            (Canonical.Substitution.denote intervening)
+            (Term.denote (entryBindings.applyTerm raised.ball))) := by
+            rw [throwBindingsEq, Substitution.applyTerm_append]
+            simp only [Canonical.Substitution.denote_applyTerm]
+      _ = TreeSubstitution.apply
+          (Canonical.Substitution.denote (selection ++ intervening))
+          (Term.denote (entryBindings.applyTerm raised.ball)) := by
+            rw [Canonical.Substitution.denote_append,
+              TreeSubstitution.apply_append]
+  have candidateUnifies : DenotationalUnifiesEquations
+      (selection ++ intervening)
+      [(entryBindings.applyTerm catcher,
+        entryBindings.applyTerm raised.ball)] := by
+    intro equation member
+    simp only [List.mem_singleton] at member
+    subst equation
+    exact candidateUnifier
+  rcases ComputesDenotationalMgu.exists_of_unifier
+      (selection ++ intervening) candidateUnifies with
+    ⟨extension, recovery⟩
+  exact ⟨extension ++ entryBindings, extension, recovery, rfl⟩
+
 /-- Internal terminal state.  The throw-time substitution remains available
 to enclosing catchers until the exception escapes the local machine. -/
 inductive RawTerminal where
@@ -402,6 +624,13 @@ namespace RawTerminal
 def toTerminal : RawTerminal → Trace.Terminal Term
   | .completed => .completed
   | .raised exception => .raised exception.ball
+
+/-- Internal terminal packets preserve the same binding-lineage evidence as
+the search that produced them. -/
+def BindingLineageFrom (entryBindings : Substitution) : RawTerminal → Prop
+  | .completed => True
+  | .raised exception =>
+      exception.ExtendsEntry entryBindings ∧ exception.BallStable
 
 end RawTerminal
 
@@ -425,6 +654,12 @@ same linear ownership invariant as a search state. -/
 def CursorOwnership (nextCutScope : Nat) : RawTarget → Prop
   | .terminal _ => True
   | .running search => search.CursorOwnership nextCutScope
+
+/-- A terminal packet or running successor retains the enclosing cumulative
+substitution lineage. -/
+def BindingLineageFrom (entryBindings : Substitution) : RawTarget → Prop
+  | .terminal tag => tag.BindingLineageFrom entryBindings
+  | .running search => search.BindingLineageFrom entryBindings
 
 end RawTarget
 
@@ -459,6 +694,38 @@ def localPullTarget (scope : CutScopeId) : LocalOutcome → RawTarget
   | .effect effect _ => nomatch effect
   | .exhausted => .terminal .completed
   | .raised exception => nomatch exception
+
+/-- The certified clause splice preserves cumulative substitution lineage.
+An entered body extends the cursor's call-entry bindings by exactly its head
+MGU, while the retained cursor keeps the unchanged entry state and alignment.
+-/
+theorem localPullTarget_bindingLineageFrom
+    {entryBindings : Substitution} (scope : CutScopeId)
+    {cursor : PreparedCursor} {outcome : LocalOutcome}
+    (aligned : cursor.BindingsAligned)
+    (cursorLineage : BindingLineage entryBindings cursor.bindings)
+    (pulled : LocalPull cursor outcome) :
+    (localPullTarget scope outcome).BindingLineageFrom entryBindings := by
+  cases pulled with
+  | matched branch rest result remaining resolved =>
+      have branchAligned : branch.bindings = cursor.bindings := by
+        apply aligned branch
+        rw [remaining]
+        simp
+      have enteredLineage : BindingLineage entryBindings result := by
+        apply BindingLineage.trans cursorLineage
+        rw [← branchAligned]
+        rcases resolved with ⟨extension, computed, resultEq⟩
+        exact ⟨extension, resultEq⟩
+      have nextAligned :=
+        PreparedCursor.advance_bindingsAligned aligned remaining
+      exact ⟨enteredLineage, nextAligned, cursorLineage⟩
+  | rejected branch rest remaining clash =>
+      have nextAligned :=
+        PreparedCursor.advance_bindingsAligned aligned remaining
+      exact ⟨nextAligned, cursorLineage⟩
+  | exhausted done =>
+      exact True.intro
 
 /-- One certified local search transition.
 
@@ -1013,6 +1280,129 @@ theorem localPullTarget_wellScoped (scope : CutScopeId)
   | effect effect next => exact Empty.elim effect
   | exhausted => exact True.intro
   | raised exception => exact Empty.elim exception
+
+/-- Coupled substitution-lineage subject reduction.  Every answer emitted by
+one raw step descends from the enclosing entry substitution, and every
+running or raised successor retains the same invariant.  This is deliberately
+stronger than a theorem about final answers: product splicing and exception
+unwind consume the event and terminal components internally. -/
+theorem preserves_bindingLineage_target {entryBindings : Substitution}
+    {search : Search} {events : List Observation}
+    {signal : Trace.CutSignal} {before after : Session}
+    {target : RawTarget}
+    (step : RawStep before search events signal after target)
+    (lineage : search.BindingLineageFrom entryBindings) :
+    EventsBindingLineage entryBindings events ∧
+      target.BindingLineageFrom entryBindings := by
+  induction step generalizing entryBindings <;>
+    simp_all (config := { failIfUnchanged := false })
+      [EventsBindingLineage, ObservationBindingLineage,
+        RawTarget.BindingLineageFrom, RawTerminal.BindingLineageFrom,
+        Search.BindingLineageFrom, localPullEvents, localPullTarget]
+  case taskUnifySuccess =>
+    apply BindingLineage.trans lineage
+    exact UnifyResolution.bindingLineage (by assumption)
+  case taskDisjunction =>
+    exact Search.disjoin_bindingLineageFrom lineage _ _ _
+  case taskCall =>
+    constructor
+    · exact prepareCall_bindingsAligned _ _
+    · exact lineage
+  case taskCatch =>
+    exact BindingLineage.refl _
+  case clausesPull scope cursor outcome session pulled =>
+    constructor
+    · cases outcome with
+      | silent next => simp
+      | reply entered next => simp
+      | effect effect next => exact Empty.elim effect
+      | exhausted => simp
+      | raised exception => exact Empty.elim exception
+    · exact localPullTarget_bindingLineageFrom scope lineage.1 lineage.2 pulled
+  case choiceRaised scope left right exception events before after child
+      inductionHypothesis =>
+    have childLineage := inductionHypothesis lineage.1
+    constructor
+    · simpa only [EventsBindingLineage, ObservationBindingLineage,
+          List.mem_append, List.mem_map, eq_comm] using
+        (EventsBindingLineage.append childLineage.1
+          (EventsBindingLineage.pruned entryBindings right.liveCursors))
+    · exact childLineage.2.2
+  case choiceCommitHere scope left right next events before after child
+      inductionHypothesis =>
+    have childLineage := inductionHypothesis lineage.1
+    simpa only [EventsBindingLineage, ObservationBindingLineage,
+        List.mem_append, List.mem_map, eq_comm] using
+      (EventsBindingLineage.append childLineage.1
+        (EventsBindingLineage.pruned entryBindings right.liveCursors))
+  case cutBoundaryRaised scope body exception events before after child
+      inductionHypothesis =>
+    exact (inductionHypothesis lineage).2.2
+  case catchProgress handlerScope scope body next catcher handler nestedEntry
+      events signal before after child inductionHypothesis =>
+    have childLineage := inductionHypothesis lineage.2
+    simpa only [EventsBindingLineage, ObservationBindingLineage] using
+      (EventsBindingLineage.mono lineage.1 childLineage.1)
+  case catchHandled handlerScope scope body catcher exception handler
+      nestedEntry result cleanup before after child selected resolved
+      inductionHypothesis =>
+    have childLineage := inductionHypothesis lineage.2
+    constructor
+    · simpa only [EventsBindingLineage, ObservationBindingLineage] using
+        (EventsBindingLineage.mono lineage.1 childLineage.1)
+    · exact BindingLineage.trans lineage.1 resolved.bindingLineage
+  case catchUnmatched handlerScope scope body catcher exception handler
+      nestedEntry cleanup before after child unmatched inductionHypothesis =>
+    have childLineage := inductionHypothesis lineage.2
+    constructor
+    · simpa only [EventsBindingLineage, ObservationBindingLineage] using
+        (EventsBindingLineage.mono lineage.1 childLineage.1)
+    · exact ⟨BindingLineage.trans lineage.1 childLineage.2.1,
+        childLineage.2.2⟩
+  case productRaised scope head tail exception events before after child
+      answerFree inductionHypothesis =>
+    exact (inductionHypothesis lineage).2.2
+
+/-- Running successors and their emitted answer batches preserve cumulative
+substitution lineage. -/
+theorem preserves_bindingLineage {entryBindings : Substitution}
+    {search next : Search} {events : List Observation}
+    {signal : Trace.CutSignal} {before after : Session}
+    (step : RawStep before search events signal after (.running next))
+    (lineage : search.BindingLineageFrom entryBindings) :
+    EventsBindingLineage entryBindings events ∧
+      next.BindingLineageFrom entryBindings :=
+  preserves_bindingLineage_target step lineage
+
+/-- A well-lineaged protected search cannot leave `catch/3` stuck after an
+exception.  Canonical selection either fails, in which case the exact packet
+escapes, or succeeds, in which case binding lineage plus copied-ball stability
+computes a recovery substitution and the handler starts. -/
+theorem catch_raised_progress
+    {handlerScope : ExceptionScopeId} {scope : CutScopeId}
+    {body : Search} {catcher : Term} {exception : RaisedException}
+    {handler : Goal} {entryBindings : Substitution}
+    {cleanup : List Observation} {before after : Session}
+    (bodyLineage : body.BindingLineageFrom entryBindings)
+    (child : RawStep before body
+      (.raised exception.ball :: cleanup) .none after
+      (.terminal (.raised exception))) :
+    ∃ emitted target,
+      RawStep before
+        (.catchBoundary handlerScope scope body catcher handler entryBindings)
+        emitted .none after target := by
+  have packetLineage :=
+    (preserves_bindingLineage_target child bodyLineage).2
+  by_cases selected : CatchSelection exception catcher
+  · rcases selected.exists_resolution_of_lineage packetLineage.1
+      packetLineage.2 with ⟨result, resolved⟩
+    exact ⟨cleanup, .running (.task scope [handler] result),
+      .catchHandled handlerScope scope body catcher exception handler
+        entryBindings result cleanup before after child selected resolved⟩
+  · exact ⟨.raised exception.ball :: cleanup,
+      .terminal (.raised exception),
+      .catchUnmatched handlerScope scope body catcher exception handler
+        entryBindings cleanup before after child selected⟩
 
 /-- Target-indexed subject reduction for the local search machine's cut-scope
 discipline.  This includes the load-bearing clause splice: entering a clause
@@ -1709,6 +2099,16 @@ def liveCursorScopes : State → List CutScopeId
 /-- Complete public structural invariant used by reachability theorems. -/
 def WellFormed (state : State) : Prop := state.Rooted ∧ state.CursorOwned
 
+/-- Public running and diagnostic states retain cumulative substitution
+lineage.  Public terminals have already erased the internal exception packet,
+so this invariant is intentionally about the states from which further local
+control can execute. -/
+def BindingLineageFrom (entryBindings : Substitution) : State → Prop
+  | .terminal _ _ => True
+  | .running _ search => search.BindingLineageFrom entryBindings
+  | .uncaughtCut _ _ continuation =>
+      continuation.BindingLineageFrom entryBindings
+
 end State
 
 private def RawTarget.toState (session : Session) : RawTarget → State
@@ -1905,6 +2305,26 @@ theorem preserves_wellFormed {start finish : State}
   ⟨step.preserves_rooted wellFormed.1,
     step.preserves_cursorOwned wellFormed.2⟩
 
+/-- Public one-step subject reduction for cumulative bindings.  The ordered
+event batch is covered simultaneously so a product cannot consume an answer
+whose substitution escaped the invariant. -/
+theorem preserves_bindingLineage {entryBindings : Substitution}
+    {start finish : State} {events : List Observation}
+    (step : Transition start events finish)
+    (lineage : start.BindingLineageFrom entryBindings) :
+    EventsBindingLineage entryBindings events ∧
+      finish.BindingLineageFrom entryBindings := by
+  cases step with
+  | ordinary search events before after target raw =>
+      have preserved := raw.preserves_bindingLineage_target lineage
+      constructor
+      · exact preserved.1
+      · cases target with
+        | terminal tag => exact True.intro
+        | running search => exact preserved.2
+  | uncaught search next events before after scope raw =>
+      exact raw.preserves_bindingLineage_target lineage
+
 end Transition
 
 /-- A finite exact observation prefix. -/
@@ -1926,6 +2346,23 @@ inductive StepsN : Nat → State → List Observation → State → Prop where
       StepsN (count + 1) start (first ++ rest) finish
 
 namespace StepsN
+
+/-- Cumulative binding lineage and answer lineage hold over every finite
+exact execution prefix. -/
+theorem preserves_bindingLineage {count : Nat} {start finish : State}
+    {events : List Observation} {entryBindings : Substitution}
+    (execution : StepsN count start events finish)
+    (lineage : start.BindingLineageFrom entryBindings) :
+    EventsBindingLineage entryBindings events ∧
+      finish.BindingLineageFrom entryBindings := by
+  induction execution with
+  | zero state => exact ⟨EventsBindingLineage.nil entryBindings, lineage⟩
+  | succ count start middle finish first rest head tail
+      inductionHypothesis =>
+      have firstLineage := head.preserves_bindingLineage lineage
+      have restLineage := inductionHypothesis firstLineage.2
+      exact ⟨EventsBindingLineage.append firstLineage.1 restLineage.1,
+        restLineage.2⟩
 
 theorem toSteps {count : Nat} {start finish : State}
     {events : List Observation}
@@ -2114,6 +2551,13 @@ theorem initialState_wellFormed (resolverSession : LocalSession)
     (goals : List Goal) : (initialState resolverSession goals).WellFormed :=
   ⟨initialState_rooted resolverSession goals,
     initialState_cursorOwned resolverSession goals⟩
+
+/-- Root execution starts with the empty substitution, and therefore enters
+the cumulative binding-lineage invariant without an assumption. -/
+theorem initialState_bindingLineage (resolverSession : LocalSession)
+    (goals : List Goal) :
+    (initialState resolverSession goals).BindingLineageFrom [] := by
+  exact BindingLineage.refl []
 
 /-! ## Concrete left-recursive program
 
@@ -2586,6 +3030,17 @@ private def catchWitnessBoundRaised : RaisedException :=
   { ball := catchWitnessException
     throwBindings := [(catchWitnessVariable, .atom "$body")] }
 
+private def unstableBallVariable : LogicVar := .source "$unstable_ball"
+private def unstableBallValue : Term :=
+  .compound "$f" [.atom "$a"]
+private def unstableBallCatcher : Term :=
+  .variable unstableBallVariable
+private def unstableBall : Term :=
+  .compound "$f" [.variable unstableBallVariable]
+private def unstableRaised : RaisedException :=
+  { ball := unstableBall
+    throwBindings := [(unstableBallVariable, unstableBallValue)] }
+
 private theorem catchWitness_resolves :
     CatchResolution [] (.variable catchWitnessVariable)
       catchWitnessException catchWitnessBinding := by
@@ -2704,6 +3159,59 @@ theorem throw_time_catcher_binding_can_reject (scope : CutScopeId)
       Term.denote, Term.instantiateOne] using raw
   exact distinct_atoms_have_no_denotational_unifier "$body" "$boom"
     (by decide) ⟨extension, unifies⟩
+
+/-- Binding extension alone is insufficient for two-phase catch progress.
+If a supposed copied ball aliases a variable in the throw substitution,
+pre-unwind selection can succeed even though the entry equation is the cyclic
+finite-tree equation `X = f(X)` and has no recovery MGU.  This anti-vacuity
+witness makes copied-ball stability a necessary, separately audited premise
+rather than hiding it inside the lineage name. -/
+theorem copied_ball_stability_is_necessary :
+    unstableRaised.ExtendsEntry [] ∧
+      CatchSelection unstableRaised unstableBallCatcher ∧
+      ¬ unstableRaised.BallStable ∧
+      ¬ ∃ result,
+        CatchResolution [] unstableBallCatcher unstableRaised.ball result := by
+  have lineageWitness : unstableRaised.ExtendsEntry [] := by
+    exact ⟨unstableRaised.throwBindings, by simp⟩
+  have selected : CatchSelection unstableRaised unstableBallCatcher := by
+    let candidate : Substitution :=
+      [(unstableBallVariable, .atom "$a")]
+    have unifies : DenotationalUnifiesEquations candidate
+        [(unstableRaised.throwBindings.applyTerm unstableBallCatcher,
+          unstableRaised.ball)] := by
+      intro equation member
+      simp only [List.mem_singleton] at member
+      subst equation
+      unfold DenotationalUnifier
+      rfl
+    rcases ComputesDenotationalMgu.exists_of_unifier candidate unifies with
+      ⟨binding, computed⟩
+    exact ⟨binding, computed⟩
+  have unstable : ¬ unstableRaised.BallStable := by
+    intro stable
+    simp [RaisedException.BallStable, unstableRaised, unstableBall,
+      unstableBallVariable, unstableBallValue, Term.instantiateOne,
+      Terms.instantiateOne] at stable
+  have noRecovery : ¬ ∃ result,
+      CatchResolution [] unstableBallCatcher unstableRaised.ball result := by
+    rintro ⟨result, extension, computed, resultEq⟩
+    have unifies : DenotationalUnifier extension unstableBallCatcher
+        unstableRaised.ball := by
+      have normalized := computed.isMostGeneral.1
+        (Substitution.applyTerm [] unstableBallCatcher,
+          Substitution.applyTerm [] unstableRaised.ball) (by simp)
+      simpa only [Substitution.applyTerm_nil] using normalized
+    have impossible := Tree.no_finite_unifier_of_occurs_true
+      (Canonical.Substitution.denote extension) unstableBallVariable
+      (Term.denote unstableBall)
+      (by rfl)
+      (by intro equality; cases equality)
+    apply impossible
+    unfold DenotationalUnifier at unifies
+    simpa [unstableBallCatcher, unstableRaised, unstableBall,
+      Term.denote] using unifies
+  exact ⟨lineageWitness, selected, unstable, noRecovery⟩
 
 /-- The exception boundary is cut-transparent, while its enclosing cut
 barrier catches the protected goal's commit.  Therefore a cut inside catch

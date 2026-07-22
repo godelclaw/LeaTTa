@@ -680,6 +680,24 @@ theorem reserveVisible_callGeneration (callGeneration : Generation)
       · rfl
       · exact inductionHypothesis _ later
 
+/-- Every eagerly reserved branch carries exactly the cumulative binding
+state of the call request.  Head resolution may prepend an extension only
+after that branch is pulled. -/
+theorem reserveVisible_bindings (callGeneration : Generation)
+    (arguments : List Term) (bindings : Substitution)
+    (freshSeed : Nat) (entries : List VersionedClause) :
+    ∀ branch ∈
+      (reserveVisible callGeneration arguments bindings freshSeed entries).1,
+      branch.bindings = bindings := by
+  intro branch member
+  induction entries generalizing freshSeed with
+  | nil => simp [reserveVisible] at member
+  | cons entry rest inductionHypothesis =>
+      simp only [reserveVisible] at member
+      rcases List.mem_cons.mp member with rfl | later
+      · rfl
+      · exact inductionHypothesis _ later
+
 /-- Every branch built by eager reservation carries an honest interval: its
 freshening substitution cannot contain a generated target outside it. -/
 theorem reserveVisible_freshTargetsReserved (callGeneration : Generation)
@@ -734,6 +752,13 @@ def PreparedCursor.WellFormed (cursor : PreparedCursor) : Prop :=
     ∀ branch ∈ cursor.remaining,
       branch.FreshTargetsReserved
 
+/-- Every retained branch starts from the cursor's immutable call-entry
+binding state.  This is kept separate from freshness/database well-formedness
+because it is the substitution-lineage premise consumed by the Goal machine.
+-/
+def PreparedCursor.BindingsAligned (cursor : PreparedCursor) : Prop :=
+  ∀ branch ∈ cursor.remaining, branch.bindings = cursor.bindings
+
 /-- Prepare a call and advance the global high-water past every clause copy.
 The database is not changed; its generation and visible clause list are
 captured once in the returned token. -/
@@ -777,6 +802,13 @@ theorem prepareCall_wellFormed (session : LocalSession)
     prepareCall_queryDominated session request, ?_, ?_⟩
   · exact reserveVisible_callGeneration _ _ _ _ _
   · exact reserveVisible_freshTargetsReserved _ _ _ _ _
+
+/-- The stateful call opener produces a cursor whose complete frozen branch
+list is aligned with the request substitution. -/
+theorem prepareCall_bindingsAligned (session : LocalSession)
+    (request : CallRequest) :
+    (prepareCall session request).1.BindingsAligned := by
+  exact reserveVisible_bindings _ _ _ _ _
 
 /-- Opening a local call monotonically advances the global fresh high-water.
 Since the session is stored outside backtrackable `Process`, this inequality
@@ -1271,6 +1303,19 @@ theorem PreparedCursor.advance_wellFormed
         rw [remaining]
         exact List.mem_cons_of_mem branch member
 
+/-- Consuming one branch preserves call-entry binding alignment for every
+retained alternative. -/
+theorem PreparedCursor.advance_bindingsAligned
+    {cursor : PreparedCursor} {branch : ClauseBranch}
+    {rest : List ClauseBranch}
+    (aligned : cursor.BindingsAligned)
+    (remaining : cursor.remaining = branch :: rest) :
+    (cursor.advance branch rest).BindingsAligned := by
+  intro candidate member
+  apply aligned candidate
+  rw [remaining]
+  exact List.mem_cons_of_mem branch member
+
 /-- A well-formed prepared cursor standardizes every retained clause apart
 from every generated identity already live in its request. -/
 theorem PreparedCursor.fresh_target_not_query
@@ -1308,6 +1353,44 @@ theorem LocalPull.preserves_wellFormed
   | rejected branch rest remaining clash =>
       exact cursor.advance_wellFormed wellFormed remaining
   | exhausted done => exact True.intro
+
+/-- Any nonterminal demand preserves branch/cursor binding alignment. -/
+theorem LocalPull.preserves_bindingsAligned
+    {cursor : PreparedCursor}
+    {outcome : Trace.PullResult PreparedCursor EnteredClause Empty Empty}
+    (aligned : cursor.BindingsAligned)
+    (pulled : LocalPull cursor outcome) :
+    match outcome with
+    | .reply _ next => next.BindingsAligned
+    | .silent next => next.BindingsAligned
+    | .effect _ next => next.BindingsAligned
+    | .exhausted => True
+    | .raised _ => True := by
+  cases pulled with
+  | matched branch rest result remaining resolved =>
+      exact cursor.advance_bindingsAligned aligned remaining
+  | rejected branch rest remaining clash =>
+      exact cursor.advance_bindingsAligned aligned remaining
+  | exhausted done => exact True.intro
+
+/-- A yielded clause body can only prepend its canonical head-MGU extension
+to the cursor's call-entry bindings.  This is the resolver half of the
+cross-call substitution-lineage invariant. -/
+theorem LocalPull.reply_bindings_extend_cursor
+    {cursor next : PreparedCursor} {entered : EnteredClause}
+    (aligned : cursor.BindingsAligned)
+    (pulled : LocalPull cursor (.reply entered next)) :
+    ∃ extension, entered.bindings = extension ++ cursor.bindings := by
+  cases pulled with
+  | matched branch rest result remaining resolved =>
+      have branchAligned : branch.bindings = cursor.bindings := by
+        apply aligned branch
+        rw [remaining]
+        simp
+      rcases resolved with ⟨extension, computed, resultEq⟩
+      refine ⟨extension, ?_⟩
+      change result = extension ++ cursor.bindings
+      rw [resultEq, branchAligned]
 
 /-- Certified internal stream of source-ordered clause bodies.  This is not
 the final user-answer protocol: the control layer must bind each yielded body
