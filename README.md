@@ -34,6 +34,15 @@ composition is active work. Fidelity to the remaining native PeTTa/SWI
 surface rests on source anchoring plus differential agreement, which are
 regression evidence rather than theorem substitutes.
 
+The operational Prolog frontier is tracked separately in
+`diffbench/prolog-semantics-obligations.tsv`. Its primary model is now a
+demand-driven exact trace with answer-at-a-time cursors and typed cut scopes,
+not a completed answer list. The first checkpoint proves ten narrow control
+and observability properties; 21 obligations remain open, imported SWI is one
+explicit boundary, and the current eager complete-bag worker is one known
+mismatch with the target cursor protocol. None of those rows is added to the
+corpus-coverage count or treated as source-to-observation adequacy.
+
 ## Try it
 
 ```bash

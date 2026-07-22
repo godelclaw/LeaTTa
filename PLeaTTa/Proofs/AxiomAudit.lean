@@ -34,6 +34,7 @@ import PLeaTTa.Proofs.CompilerAliasFinalizationAdequacy
 import PLeaTTa.Proofs.CompilerSubstitutionAdequacy
 import PLeaTTa.Proofs.CompilerGoalSubstitutionAdequacy
 import PLeaTTa.Proofs.CompilerTranslationSupportAdequacy
+import PLeaTTa.PeTTaSpec.PrologTraceSemantics
 
 #print axioms PLeaTTa.machineMirrorsSpecTotal_proved
 #print axioms PLeaTTa.localGetTypeExtensionAlts_below
@@ -321,6 +322,27 @@ import PLeaTTa.Proofs.CompilerTranslationSupportAdequacy
 #print axioms PLeaTTa.CompilerTranslationSupportAdequacy.compileSuperposeBranch_normalized_supported_sound
 #print axioms PLeaTTa.CompilerTranslationSupportAdequacy.compileSuperposeBranchesFuel_initial_supported_sound
 #print axioms PLeaTTa.CompilerTranslationSupportAdequacy.compileSuperposeBranches_alias_supported_finalization_from_contract
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.Observation.answers_append
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.StepsN.toSteps
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.orderedPair_steps
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.answer_order_observable
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.answer_multiplicity_observable
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.exception_is_not_completion
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.raised_cannot_complete
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.orderedPair_answer_projection
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.commitFirst_steps
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.commit_skips_later_effect
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.innerCommitWithOuterSibling_wellScoped
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.inner_cut_preserves_outer_sibling_steps
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.commit_prunes_live_cursor
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.outer_commit_under_inner_not_wellScoped
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.different_scope_is_not_pruned
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.different_scope_global_prune_impossible
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.oneThenLoop_answer_prefix
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.oneThenLoop_arbitrarily_long_open_prefix
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.oneThenLoop_cannot_complete
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.oneThenLoop_finite_prefix_stays_open
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Trace.oneThenLoop_no_finite_completion
 #print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.bindTypedSharedResult_after_unary_partial
 #print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.bindTypedSharedResult_fresh_initial
 #print axioms PLeaTTa.CompilerTypedSharedResultAdequacy.foldlM_bindTypedSharedResult_two_unary_partial

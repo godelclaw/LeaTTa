@@ -1,0 +1,40 @@
+# pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
+# trace_semantics_sha256=8513a31012063cbef24c57d340395106ef06ce6b11161af808f3017b0acd23a8
+# status: PASS=proved-property-of-the-independent-model GAP=open-reference-or-adequacy-proof FAIL=known-implementation/reference-mismatch BOUNDARY=permanent-explicit-trusted-boundary
+# proof: SC=sound-complete W=witness/inversion theorem SH=shape-only N=none
+# native_source: T=src/translator.pl M=src/metta.pl SWI=official SWI-Prolog manual ISO=ISO Prolog working documents -=independent infrastructure
+# PASS rows in this ledger do not by themselves establish PeTTa or executable adequacy; the composition rows must close separately.
+id	native_source	layer	reference	proof	status	finding
+TRACE.ordered_answers	-	trace	Observation;Steps	W	PASS	ordered-pair derivation and reversal inequality proved
+TRACE.answer_multiplicity	-	trace	Observation;Steps	W	PASS	duplicate answer remains a distinct event
+TRACE.exception_tag	T300-308	trace	Observation;RawStep	W	PASS	raised and completed are distinct; raise cannot step as completion
+TRACE.open_continuation	-	trace	State;StepsN	W	PASS	running continuation is distinct from halted completion
+TRACE.answer_then_diverge	-	trace	oneThenLoopProtocol	W	PASS	first answer plus exact arbitrarily-long silent prefixes; every finite suffix stays open and fabricated exhaustion is impossible
+CONTROL.leftmost_dfs	SWI:metacall	control	Process;RawStep	SH	GAP	left-biased constructors present; generic determinism and Goal specialization open
+CONTROL.well_scoped	SWI:metacall	control	WellScoped	SH	GAP	structural cut-scope judgment present and malformed outer-commit witness rejected; preservation and compiler discharge open
+CONTROL.bind	SWI:metacall	control	Process.bind;RawStep.bind*	SH	GAP	answer-at-a-time conjunction rule present; substitution-specialized adequacy open
+CUT.typed_scope	T117-118	control	CutScopeId;Process.cutBoundary	SH	PASS	cut delimiter is typed separately from future exception and collection delimiters
+CUT.same_scope	T117-118	control	RawStep.choiceCommitHere	W	PASS	matching-scope alternative is pruned before later answer or effect
+CUT.inner_locality	SWI:metacall	control	WellScoped;RawStep	W	PASS	well-scoped inner commit prunes its inner sibling but preserves and later observes the enclosing sibling
+CUT.live_cursor_prune	SWI:foreign-control	control	Process.liveTokens;AllPrunable	W	PASS	discarded live cursor receives an explicit prune observation
+CUT.wrong_scope	SWI:metacall	control	RawStep.choiceCommitOutside	W	PASS	raw scope discrimination on intentionally ill-scoped input; global-prune target underivable, not a compiled-reachability claim
+CUT.meta_call_transparency	SWI:metacall	control	-	N	GAP	call/1 and control-construct transparency table not specialized
+CONTROL.once	T127-128	control	-	N	GAP	demand-driven first-answer commit rule not yet added
+CONTROL.softcut	T151-183,T356-368	control	-	N	GAP	condition-commit scope and branch ordering not yet added
+COLLECT.findall	T115-122,T317-321	collection	-	N	GAP	collector delimiter, copied template, nested search, and completion/divergence behavior open
+EXCEPTION.catch	T300-308	exception	-	N	GAP	distinct exception delimiter, term matching, recovery, and propagation open
+WORLD.logical_update	SWI:update	world	-	N	GAP	call-start clause-generation snapshot not yet modeled
+WORLD.assert_retract	M277-280	world	-	N	GAP	ordered dynamic updates and visibility generations open
+WORLD.transaction	T138-139,SWI:db	world	-	N	GAP	commit/rollback, exception, and nested transaction behavior open
+CALL.cursor_protocol	SWI:foreign-control	boundary	OrderedCallProtocol	SH	GAP	open/pull/prune shape present; functional/stateful conformance contracts open
+CALL.cursor_linearity	SWI:foreign-control	boundary	Process.liveTokens	N	GAP	well-formedness must forbid forged or multiply-owned live cursors and prove prune-once preservation
+CALL.stateful_session	SWI:foreign-control	boundary	-	N	GAP	explicit provider/session-state threading and replay invariant open
+RESOLVER.clause_order	ISO:SLD	resolver	-	N	GAP	leftmost clause-ordered local resolution open
+RESOLVER.freshening	ISO:SLD	resolver	-	N	GAP	fresh clause-instance renaming and source-variable isolation open
+RESOLVER.mgu	ISO:unification	resolver	OpenSubstitution	SH	GAP	existing unification relations not yet composed into an ordered local resolver
+EXTERNAL.imported_swi	M271-280	boundary	OrderedCallProtocol	N	BOUNDARY	exact typed trace is trusted and replay-policed; SWI implementation is never counted as certified core
+EXTERNAL.current_worker	M271-280	boundary	pleatta-prolog-worker.py	N	FAIL	worker eagerly materializes a complete findall answer bag and cannot preserve answer-before-divergence or demand-time pruning
+PROJECTION.complete_answer_list	-	projection	Ordered.Runs	N	GAP	terminating trace-to-list projection theorem open; list semantics may not be primary equivalence
+BISIM.machine_step	-	composition	Trace.RawStep;PLeaTTa.Step	N	GAP	finite-prefix bisimulation with executable Step not begun
+COMPOSE.source_observation	-	composition	SupportedSource	N	GAP	bytes-to-AST-to-program-to-exact-trace theorem open
+PETTACLAW.bounded_turn	-	instantiation	SupportedSource	N	GAP	content-bound source graph certificate and theorem instantiation open

@@ -16,6 +16,7 @@ WRAP="$(mktemp)"; trap 'rm -f "$WRAP"' EXIT
 printf '#!/bin/bash\nexec "%s/.lake/build/bin/pleatta" "$@"\n' "$D" > "$WRAP"; chmod +x "$WRAP"
 python3 "$D/diffbench/prolog_worker_policy.py" || exit 1
 python3 "$D/diffbench/compiler_obligations.py" || exit 1
+python3 "$D/diffbench/prolog_semantics_obligations.py" || exit 1
 python3 "$D/diffbench/test_compiler_mismatch_witnesses.py" || exit 1
 LEATTA_BIN="$WRAP" python3 "$D/diffbench/compiler_mismatch_witnesses.py" || exit 1
 cd "$D/diffbench"
