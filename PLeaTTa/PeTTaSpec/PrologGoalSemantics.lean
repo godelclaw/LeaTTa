@@ -40,6 +40,7 @@ than an infinite inductive value.
 
 abbrev CutScopeId := Trace.CutScopeId
 abbrev ExceptionScopeId := Trace.ExceptionScopeId
+abbrev CollectionScopeId := Trace.CollectionScopeId
 
 /-- Identity-bearing handle for one live local predicate cursor.
 
@@ -97,12 +98,14 @@ def prunedScopes : List Observation → List CutScopeId
       simp [prunedScopes, inductionHypothesis]
 
 /-- Non-backtrackable state.  The local database and fresh-name high-water
-remain outside the search tree.  Cut and exception identities have separate
-nominal types and separate monotone allocators; neither is backtracked. -/
+remain outside the search tree.  Cut, exception, and collection identities
+have separate nominal types and separate monotone allocators; none is
+backtracked. -/
 structure Session where
   resolver : LocalSession := {}
   nextCutScope : Nat := 1
   nextExceptionScope : Nat := 1
+  nextCollectionScope : Nat := 1
 deriving Repr, Inhabited
 
 /-- The complete result of opening one locally owned call. -/
@@ -121,11 +124,29 @@ structure OpenedCatch where
   session : Session
 deriving Repr
 
+/-- Fresh, nominally distinct delimiters allocated when entering `findall/3`.
+The generator receives its own cut scope; the collector receives a separate
+identity that cannot be confused with either cut or exception handling. -/
+structure OpenedFindall where
+  cutScope : CutScopeId
+  collectionScope : CollectionScopeId
+  session : Session
+deriving Repr
+
 /-- One finite-tree exception copy and the non-backtrackable allocator state
 after reserving its fresh variables. -/
 structure OpenedThrow where
   prepared : PreparedTermCopy
   exception : RaisedException
+  session : Session
+deriving Repr, Inhabited
+
+/-- One copied template instance and the non-backtrackable allocator state
+after reserving its fresh variables.  The generator answer is materialized
+before copying, preserving sharing while preventing its bindings from escaping
+the collection boundary. -/
+structure CollectedTemplate where
+  prepared : PreparedTermCopy
   session : Session
 deriving Repr, Inhabited
 
@@ -151,6 +172,17 @@ def openCatch (session : Session) : OpenedCatch :=
         nextCutScope := session.nextCutScope + 1
         nextExceptionScope := session.nextExceptionScope + 1 } }
 
+/-- Allocate independent generator-cut and collection delimiters.  The
+resolver, exception allocator, and fresh-name high-water are unchanged until
+the generator runs or an answer template is copied. -/
+def openFindall (session : Session) : OpenedFindall :=
+  { cutScope := session.nextCutScope
+    collectionScope := { index := session.nextCollectionScope }
+    session :=
+      { session with
+        nextCutScope := session.nextCutScope + 1
+        nextCollectionScope := session.nextCollectionScope + 1 } }
+
 /-- Materialize and injectively alpha-copy one exception term above the
 resolver's global fresh high-water.  Only that high-water changes; database,
 cut scopes, and exception scopes are preserved. -/
@@ -162,6 +194,19 @@ def openThrow (session : Session) (raw : Term)
     exception :=
       { ball := prepared.copied
         throwBindings := bindings }
+    session :=
+      { session with
+        resolver :=
+          { session.resolver with nextFresh := prepared.nextFresh } } }
+
+/-- Materialize one successful generator's template and injectively alpha-copy
+it above the global fresh high-water.  Only the resolver's allocator advances;
+the database and all delimiter allocators are preserved. -/
+def collectTemplate (session : Session) (template : Term)
+    (answerBindings : Substitution) : CollectedTemplate :=
+  let prepared :=
+    prepareTermCopy session.resolver.nextFresh answerBindings template
+  { prepared := prepared
     session :=
       { session with
         resolver :=
@@ -193,6 +238,11 @@ theorem openLocalCall_nextFresh_mono (session : Session)
     (openLocalCall session request).session.nextExceptionScope =
       session.nextExceptionScope := rfl
 
+@[simp] theorem openLocalCall_nextCollectionScope (session : Session)
+    (request : CallRequest) :
+    (openLocalCall session request).session.nextCollectionScope =
+      session.nextCollectionScope := rfl
+
 @[simp] theorem openCatch_cutScope (session : Session) :
     (openCatch session).cutScope = session.nextCutScope := rfl
 
@@ -209,6 +259,32 @@ theorem openLocalCall_nextFresh_mono (session : Session)
 @[simp] theorem openCatch_nextExceptionScope (session : Session) :
     (openCatch session).session.nextExceptionScope =
       session.nextExceptionScope + 1 := rfl
+
+@[simp] theorem openCatch_nextCollectionScope (session : Session) :
+    (openCatch session).session.nextCollectionScope =
+      session.nextCollectionScope := rfl
+
+@[simp] theorem openFindall_cutScope (session : Session) :
+    (openFindall session).cutScope = session.nextCutScope := rfl
+
+@[simp] theorem openFindall_collectionScope (session : Session) :
+    (openFindall session).collectionScope =
+      ({ index := session.nextCollectionScope } : CollectionScopeId) := rfl
+
+@[simp] theorem openFindall_resolver (session : Session) :
+    (openFindall session).session.resolver = session.resolver := rfl
+
+@[simp] theorem openFindall_nextCutScope (session : Session) :
+    (openFindall session).session.nextCutScope =
+      session.nextCutScope + 1 := rfl
+
+@[simp] theorem openFindall_nextExceptionScope (session : Session) :
+    (openFindall session).session.nextExceptionScope =
+      session.nextExceptionScope := rfl
+
+@[simp] theorem openFindall_nextCollectionScope (session : Session) :
+    (openFindall session).session.nextCollectionScope =
+      session.nextCollectionScope + 1 := rfl
 
 @[simp] theorem openThrow_ball (session : Session) (raw : Term)
     (bindings : Substitution) :
@@ -234,6 +310,11 @@ theorem openLocalCall_nextFresh_mono (session : Session)
     (openThrow session raw bindings).session.nextExceptionScope =
       session.nextExceptionScope := rfl
 
+@[simp] theorem openThrow_nextCollectionScope (session : Session)
+    (raw : Term) (bindings : Substitution) :
+    (openThrow session raw bindings).session.nextCollectionScope =
+      session.nextCollectionScope := rfl
+
 theorem openThrow_nextFresh_mono (session : Session) (raw : Term)
     (bindings : Substitution) :
     session.resolver.nextFresh ≤
@@ -258,13 +339,68 @@ theorem openThrow_ball_stable_raw (session : Session) (raw : Term)
       (openThrow session raw bindings).exception.ball := by
   exact prepareTermCopy_stable _ _ _
 
+@[simp] theorem collectTemplate_copied (session : Session) (template : Term)
+    (answerBindings : Substitution) :
+    (collectTemplate session template answerBindings).prepared.copied =
+      Copy.copyTerm
+        (collectTemplate session template answerBindings).prepared.firstFresh
+        (answerBindings.applyTerm template) := rfl
+
+@[simp] theorem collectTemplate_database (session : Session) (template : Term)
+    (answerBindings : Substitution) :
+    (collectTemplate session template answerBindings).session.resolver.database =
+      session.resolver.database := rfl
+
+@[simp] theorem collectTemplate_nextCutScope (session : Session)
+    (template : Term) (answerBindings : Substitution) :
+    (collectTemplate session template answerBindings).session.nextCutScope =
+      session.nextCutScope := rfl
+
+@[simp] theorem collectTemplate_nextExceptionScope (session : Session)
+    (template : Term) (answerBindings : Substitution) :
+    (collectTemplate session template answerBindings).session.nextExceptionScope =
+      session.nextExceptionScope := rfl
+
+@[simp] theorem collectTemplate_nextCollectionScope (session : Session)
+    (template : Term) (answerBindings : Substitution) :
+    (collectTemplate session template answerBindings).session.nextCollectionScope =
+      session.nextCollectionScope := rfl
+
+theorem collectTemplate_nextFresh_mono (session : Session) (template : Term)
+    (answerBindings : Substitution) :
+    session.resolver.nextFresh ≤
+      (collectTemplate session template answerBindings).session.resolver.nextFresh := by
+  exact prepareTermCopy_next_ge_allocator _ _ _
+
+/-- Each collected element is an injective fresh copy of the successful
+generator's materialized template. -/
+theorem collectTemplate_isFreshCopy (session : Session) (template : Term)
+    (answerBindings : Substitution) :
+    Term.IsFreshCopy
+      (collectTemplate session template answerBindings).prepared.materialized
+      (collectTemplate session template answerBindings).prepared.copied
+      (collectTemplate session template answerBindings).prepared.firstFresh
+      (collectTemplate session template answerBindings).prepared.nextFresh := by
+  exact prepareTermCopy_isFreshCopy _ _ _
+
+/-- Generator bindings cannot rewrite the copied element accumulated by
+`findall/3`. -/
+theorem collectTemplate_stable (session : Session) (template : Term)
+    (answerBindings : Substitution) :
+    answerBindings.applyTerm
+        (collectTemplate session template answerBindings).prepared.copied =
+      (collectTemplate session template answerBindings).prepared.copied := by
+  exact prepareTermCopy_stable _ _ _
+
 /-- A finite local search state.
 
 `task` carries raw residual goals and their cumulative substitution.
 `clauses` owns a frozen prepared cursor for one predicate activation.
 `product head tail` feeds every answer substitution of `head` into the raw
 caller continuation `tail`; this is conjunction without precomputing an
-answer bag. -/
+answer bag.  `collectionBoundary` instead consumes generator answers, copies
+one template instance per answer, and resumes the caller only after generator
+exhaustion. -/
 inductive Search where
   | done
   | task (scope : CutScopeId) (goals : List Goal)
@@ -276,6 +412,10 @@ inductive Search where
   | catchBoundary (handlerScope : ExceptionScopeId)
       (cutScope : CutScopeId) (body : Search) (catcher : Term)
       (handler : Goal) (entryBindings : Substitution)
+  | collectionBoundary (collectionScope : CollectionScopeId)
+      (scope : CutScopeId) (body : Search) (template output : Term)
+      (entryBindings : Substitution) (tail : List Goal)
+      (reversed : List Term)
   | product (scope : CutScopeId) (head : Search) (tail : List Goal)
 deriving Repr, Inhabited
 
@@ -293,6 +433,7 @@ def liveCursors : Search → List CursorToken
   | .choice _ left right => left.liveCursors ++ right.liveCursors
   | .cutBoundary _ body => body.liveCursors
   | .catchBoundary _ _ body _ _ _ => body.liveCursors
+  | .collectionBoundary _ _ body _ _ _ _ _ => body.liveCursors
   | .product _ head _ => head.liveCursors
 
 /-- Activation identities of all live cursors, preserving structural order. -/
@@ -304,6 +445,7 @@ def liveCursorScopes : Search → List CutScopeId
   | .choice _ left right => left.liveCursorScopes ++ right.liveCursorScopes
   | .cutBoundary _ body => body.liveCursorScopes
   | .catchBoundary _ _ body _ _ _ => body.liveCursorScopes
+  | .collectionBoundary _ _ body _ _ _ _ _ => body.liveCursorScopes
   | .product _ head _ => head.liveCursorScopes
 
 theorem liveCursorScopes_eq_map (search : Search) :
@@ -381,6 +523,14 @@ inductive WellScoped : CutScopeId → Search → Prop where
       (entryBindings : Substitution) (bodyScoped : WellScoped scope body) :
       WellScoped scope
         (.catchBoundary handlerScope scope body catcher handler entryBindings)
+  | collectionBoundary (scope : CutScopeId)
+      (collectionScope : CollectionScopeId) (body : Search)
+      (template output : Term) (entryBindings : Substitution)
+      (tail : List Goal) (reversed : List Term)
+      (bodyScoped : WellScoped scope body) :
+      WellScoped scope
+        (.collectionBoundary collectionScope scope body template output
+          entryBindings tail reversed)
   | product (scope : CutScopeId) (head : Search) (tail : List Goal)
       (headScoped : WellScoped scope head) :
       WellScoped scope (.product scope head tail)
@@ -516,6 +666,9 @@ def Search.BindingLineageFrom (entryBindings : Substitution) : Search → Prop
         right.BindingLineageFrom entryBindings
   | .cutBoundary _ body => body.BindingLineageFrom entryBindings
   | .catchBoundary _ _ body _ _ nestedEntry =>
+      BindingLineage entryBindings nestedEntry ∧
+        body.BindingLineageFrom nestedEntry
+  | .collectionBoundary _ _ body _ _ nestedEntry _ _ =>
       BindingLineage entryBindings nestedEntry ∧
         body.BindingLineageFrom nestedEntry
   | .product _ head _ => head.BindingLineageFrom entryBindings
@@ -911,6 +1064,17 @@ inductive RawStep : Session → Search → List Observation → Trace.CutSignal 
                 (.task (openCatch session).cutScope [protectedGoal] bindings)
                 catcher handler bindings))
             rest))
+  | taskFindall (scope : CutScopeId) (template : Term) (generator : Goal)
+      (output : Term) (rest : List Goal) (bindings : Substitution)
+      (session : Session) :
+      RawStep session
+        (.task scope (.findall template generator output :: rest) bindings)
+        [] .none (openFindall session).session
+        (.running
+          (.collectionBoundary (openFindall session).collectionScope scope
+            (.cutBoundary (openFindall session).cutScope
+              (.task (openFindall session).cutScope [generator] bindings))
+            template output bindings rest []))
   | clausesPull (scope : CutScopeId) (cursor : PreparedCursor)
       (outcome : LocalOutcome) (session : Session)
       (pulled : LocalPull cursor outcome) :
@@ -1028,6 +1192,61 @@ inductive RawStep : Session → Search → List Observation → Trace.CutSignal 
         (.catchBoundary handlerScope scope body catcher handler entryBindings)
         (.raised exception.ball :: cleanup) .none after
         (.terminal (.raised exception))
+  | collectionAnswer (collectionScope : CollectionScopeId)
+      (scope : CutScopeId) (body next : Search) (template output : Term)
+      (entryBindings : Substitution) (tail : List Goal)
+      (reversed : List Term) (answerBindings : Substitution)
+      (before after : Session)
+      (step : RawStep before body [.answer answerBindings] .none after
+        (.running next)) :
+      RawStep before
+        (.collectionBoundary collectionScope scope body template output
+          entryBindings tail reversed)
+        [] .none (collectTemplate after template answerBindings).session
+        (.running
+          (.collectionBoundary collectionScope scope next template output
+            entryBindings tail
+            ((collectTemplate after template answerBindings).prepared.copied ::
+              reversed)))
+  | collectionProgress (collectionScope : CollectionScopeId)
+      (scope : CutScopeId) (body next : Search) (template output : Term)
+      (entryBindings : Substitution) (tail : List Goal)
+      (reversed : List Term) (events : List Observation)
+      (signal : Trace.CutSignal) (before after : Session)
+      (step : RawStep before body events signal after (.running next))
+      (answerFree : Trace.AnswerFree events) :
+      RawStep before
+        (.collectionBoundary collectionScope scope body template output
+          entryBindings tail reversed)
+        events signal after
+        (.running
+          (.collectionBoundary collectionScope scope next template output
+            entryBindings tail reversed))
+  | collectionComplete (collectionScope : CollectionScopeId)
+      (scope : CutScopeId) (body : Search) (template output : Term)
+      (entryBindings : Substitution) (tail : List Goal)
+      (reversed : List Term) (before after : Session)
+      (step : RawStep before body [.completed] .none after
+        (.terminal .completed)) :
+      RawStep before
+        (.collectionBoundary collectionScope scope body template output
+          entryBindings tail reversed)
+        [] .none after
+        (.running
+          (.task scope
+            (.unify output (.list reversed.reverse none) :: tail)
+            entryBindings))
+  | collectionRaised (collectionScope : CollectionScopeId)
+      (scope : CutScopeId) (body : Search) (template output : Term)
+      (entryBindings : Substitution) (tail : List Goal)
+      (reversed : List Term) (exception : RaisedException)
+      (events : List Observation) (before after : Session)
+      (step : RawStep before body events .none after
+        (.terminal (.raised exception))) :
+      RawStep before
+        (.collectionBoundary collectionScope scope body template output
+          entryBindings tail reversed)
+        events .none after (.terminal (.raised exception))
   | productAnswer (scope : CutScopeId) (head next : Search)
       (tail : List Goal) (bindings : Substitution)
       (before after : Session)
@@ -1418,6 +1637,8 @@ theorem preserves_bindingLineage_target {entryBindings : Substitution}
     · exact lineage
   case taskCatch =>
     exact BindingLineage.refl _
+  case taskFindall =>
+    exact BindingLineage.refl _
   case clausesPull scope cursor outcome session pulled =>
     constructor
     · cases outcome with
@@ -1461,6 +1682,20 @@ theorem preserves_bindingLineage_target {entryBindings : Substitution}
     · exact BindingLineage.trans lineage.1 resolved.bindingLineage
   case catchUnmatched handlerScope scope body catcher exception handler
       nestedEntry cleanup before after child unmatched inductionHypothesis =>
+    have childLineage := inductionHypothesis lineage.2
+    constructor
+    · simpa only [EventsBindingLineage, ObservationBindingLineage] using
+        (EventsBindingLineage.mono lineage.1 childLineage.1)
+    · exact ⟨BindingLineage.trans lineage.1 childLineage.2.1,
+        childLineage.2.2⟩
+  case collectionProgress collectionScope scope body next template output
+      nestedEntry tail reversed events signal before after child answerFree
+      inductionHypothesis =>
+    have childLineage := inductionHypothesis lineage.2
+    simpa only [EventsBindingLineage, ObservationBindingLineage] using
+      (EventsBindingLineage.mono lineage.1 childLineage.1)
+  case collectionRaised collectionScope scope body template output nestedEntry
+      tail reversed exception events before after child inductionHypothesis =>
     have childLineage := inductionHypothesis lineage.2
     constructor
     · simpa only [EventsBindingLineage, ObservationBindingLineage] using
@@ -1569,6 +1804,12 @@ theorem preserves_wellScoped_target {active : CutScopeId}
           (.catchBoundary (openCatch session).cutScope
             (openCatch session).handlerScope _ catcher handler bindings
             (.task (openCatch session).cutScope [protectedGoal] bindings)))
+  | taskFindall scope template generator output rest bindings session =>
+      cases wellFormed
+      exact .collectionBoundary scope
+        (openFindall session).collectionScope _ template output bindings rest []
+        (.cutBoundary scope (openFindall session).cutScope _
+          (.task (openFindall session).cutScope [generator] bindings))
   | clausesPull scope cursor outcome session pulled =>
       cases wellFormed
       exact localPullTarget_wellScoped scope outcome
@@ -1635,6 +1876,28 @@ theorem preserves_wellScoped_target {active : CutScopeId}
       exact .task scope [handler] result
   | catchUnmatched handlerScope scope body catcher exception handler
       entryBindings cleanup before after step unmatched inductionHypothesis =>
+      exact True.intro
+  | collectionAnswer collectionScope scope body next template output
+      entryBindings tail reversed answerBindings before after step
+      inductionHypothesis =>
+      cases wellFormed with
+      | collectionBoundary _ _ _ _ _ _ _ _ bodyScoped =>
+          exact .collectionBoundary scope collectionScope next template output
+            entryBindings tail _ (inductionHypothesis bodyScoped)
+  | collectionProgress collectionScope scope body next template output
+      entryBindings tail reversed events signal before after step answerFree
+      inductionHypothesis =>
+      cases wellFormed with
+      | collectionBoundary _ _ _ _ _ _ _ _ bodyScoped =>
+          exact .collectionBoundary scope collectionScope next template output
+            entryBindings tail reversed (inductionHypothesis bodyScoped)
+  | collectionComplete collectionScope scope body template output
+      entryBindings tail reversed before after step inductionHypothesis =>
+      cases wellFormed
+      exact .task scope (.unify output (.list reversed.reverse none) :: tail)
+        entryBindings
+  | collectionRaised collectionScope scope body template output entryBindings
+      tail reversed exception events before after step inductionHypothesis =>
       exact True.intro
   | productAnswer scope head next tail bindings before after step
       inductionHypothesis =>
@@ -1725,6 +1988,11 @@ theorem nextFresh_mono {before after : Session} {search : Search}
     simpa only [openedFor] using
       (openLocalCall_nextFresh_mono session
         (requestFor predicate arguments bindings))
+  case collectionAnswer collectionScope scope body next template output
+      entryBindings tail reversed answerBindings before after child
+      inductionHypothesis =>
+    exact Nat.le_trans inductionHypothesis
+      (collectTemplate_nextFresh_mono after template answerBindings)
   all_goals assumption
 
 /-- Cut-scope allocation is globally monotone and therefore cannot alias an
@@ -1741,6 +2009,13 @@ theorem nextCutScope_mono {before after : Session} {search : Search}
   case taskCatch scope protectedGoal catcher handler rest bindings session =>
     simp only [openCatch_nextCutScope]
     omega
+  case taskFindall scope template generator output rest bindings session =>
+    simp only [openFindall_nextCutScope]
+    omega
+  case collectionAnswer collectionScope scope body next template output
+      entryBindings tail reversed answerBindings before after child
+      inductionHypothesis =>
+    simpa only [collectTemplate_nextCutScope] using inductionHypothesis
   all_goals assumption
 
 /-- Exception-handler identities use their own non-backtrackable allocator.
@@ -1755,6 +2030,28 @@ theorem nextExceptionScope_mono {before after : Session} {search : Search}
   case taskCatch scope protectedGoal catcher handler rest bindings session =>
     simp only [openCatch_nextExceptionScope]
     omega
+  case collectionAnswer collectionScope scope body next template output
+      entryBindings tail reversed answerBindings before after child
+      inductionHypothesis =>
+    simpa only [collectTemplate_nextExceptionScope] using inductionHypothesis
+  all_goals assumption
+
+/-- Collection identities use their own non-backtrackable allocator.  Only
+entering `findall/3` advances it; copied elements and every other control node
+preserve it exactly. -/
+theorem nextCollectionScope_mono {before after : Session} {search : Search}
+    {events : List Observation} {signal : Trace.CutSignal}
+    {target : RawTarget}
+    (step : RawStep before search events signal after target) :
+    before.nextCollectionScope ≤ after.nextCollectionScope := by
+  induction step <;> try exact Nat.le_refl _
+  case taskFindall scope template generator output rest bindings session =>
+    simp only [openFindall_nextCollectionScope]
+    omega
+  case collectionAnswer collectionScope scope body next template output
+      entryBindings tail reversed answerBindings before after child
+      inductionHypothesis =>
+    simpa only [collectTemplate_nextCollectionScope] using inductionHypothesis
   all_goals assumption
 
 /-- Cursor ownership is subject-reduction invariant.  No transition can
@@ -2098,6 +2395,125 @@ theorem deterministic {before : Session} {search : Search}
             cases targetEq <;> cases eventsEq <;> cases signalEq <;>
             cases afterEq <;>
             simp_all
+  | collectionBoundary collectionScope scope body template output
+      entryBindings tail reversed inductionHypothesis =>
+      have compareStep :
+          ∀ {firstEvents : List Observation}
+            {firstSignal : Trace.CutSignal} {firstAfter : Session}
+            {firstTarget : RawTarget},
+            RawStep before body firstEvents firstSignal firstAfter
+              firstTarget →
+            ∀ {secondEvents : List Observation}
+              {secondSignal : Trace.CutSignal} {secondAfter : Session}
+              {secondTarget : RawTarget},
+              RawStep before body secondEvents secondSignal secondAfter
+                secondTarget →
+              firstEvents = secondEvents ∧ firstSignal = secondSignal ∧
+                firstAfter = secondAfter ∧ firstTarget = secondTarget := by
+        intro firstEvents firstSignal firstAfter firstTarget firstStep
+          secondEvents secondSignal secondAfter secondTarget secondStep
+        exact inductionHypothesis firstStep secondStep
+      cases first with
+      | collectionAnswer _ _ _ firstNext _ _ _ _ _ firstAnswer _ firstAfter
+          firstStep =>
+          cases second with
+          | collectionAnswer _ _ _ secondNext _ _ _ _ _ secondAnswer _
+              secondAfter secondStep =>
+              rcases compareStep firstStep secondStep with
+                ⟨eventsEq, _, afterEq, targetEq⟩
+              have answerEq : firstAnswer = secondAnswer := by
+                exact Trace.Observation.answer.inj
+                  (List.cons.inj eventsEq).1
+              have nextEq : firstNext = secondNext := by
+                exact RawTarget.running.inj targetEq
+              subst secondAnswer
+              subst secondNext
+              subst secondAfter
+              exact ⟨rfl, rfl, rfl, rfl⟩
+          | collectionProgress _ _ _ secondNext _ _ _ _ _ secondEvents
+              secondSignal _ secondAfter secondStep secondAnswerFree =>
+              rcases compareStep firstStep secondStep with
+                ⟨eventsEq, _, _, _⟩
+              exfalso
+              apply secondAnswerFree firstAnswer
+              rw [← eventsEq]
+              simp
+          | collectionComplete _ _ _ _ _ _ _ _ _ secondAfter secondStep =>
+              have targetEq := (compareStep firstStep secondStep).2.2.2
+              exact RawTarget.noConfusion targetEq
+          | collectionRaised _ _ _ _ _ _ _ _ _ _ _ secondAfter
+              secondStep =>
+              have targetEq := (compareStep firstStep secondStep).2.2.2
+              exact RawTarget.noConfusion targetEq
+      | collectionProgress _ _ _ firstNext _ _ _ _ _ firstEvents firstSignal
+          _ firstAfter firstStep firstAnswerFree =>
+          cases second with
+          | collectionAnswer _ _ _ secondNext _ _ _ _ _ secondAnswer _
+              secondAfter secondStep =>
+              rcases compareStep firstStep secondStep with
+                ⟨eventsEq, _, _, _⟩
+              exfalso
+              apply firstAnswerFree secondAnswer
+              rw [eventsEq]
+              simp
+          | collectionProgress _ _ _ secondNext _ _ _ _ _ secondEvents
+              secondSignal _ secondAfter secondStep secondAnswerFree =>
+              rcases compareStep firstStep secondStep with
+                ⟨eventsEq, signalEq, afterEq, targetEq⟩
+              have nextEq : firstNext = secondNext := by
+                exact RawTarget.running.inj targetEq
+              subst secondNext
+              exact ⟨eventsEq, signalEq, afterEq, rfl⟩
+          | collectionComplete _ _ _ _ _ _ _ _ _ secondAfter secondStep =>
+              have targetEq := (compareStep firstStep secondStep).2.2.2
+              exact RawTarget.noConfusion targetEq
+          | collectionRaised _ _ _ _ _ _ _ _ _ _ _ secondAfter
+              secondStep =>
+              have targetEq := (compareStep firstStep secondStep).2.2.2
+              exact RawTarget.noConfusion targetEq
+      | collectionComplete _ _ _ _ _ _ _ _ _ firstAfter firstStep =>
+          cases second with
+          | collectionAnswer _ _ _ secondNext _ _ _ _ _ secondAnswer _
+              secondAfter secondStep =>
+              have targetEq := (compareStep firstStep secondStep).2.2.2
+              exact RawTarget.noConfusion targetEq
+          | collectionProgress _ _ _ secondNext _ _ _ _ _ secondEvents
+              secondSignal _ secondAfter secondStep secondAnswerFree =>
+              have targetEq := (compareStep firstStep secondStep).2.2.2
+              exact RawTarget.noConfusion targetEq
+          | collectionComplete _ _ _ _ _ _ _ _ _ secondAfter secondStep =>
+              have afterEq := (compareStep firstStep secondStep).2.2.1
+              subst secondAfter
+              exact ⟨rfl, rfl, rfl, rfl⟩
+          | collectionRaised _ _ _ _ _ _ _ _ secondException secondEvents _
+              secondAfter secondStep =>
+              have targetEq := (compareStep firstStep secondStep).2.2.2
+              have tagEq := RawTarget.terminal.inj targetEq
+              exact RawTerminal.noConfusion tagEq
+      | collectionRaised _ _ _ _ _ _ _ _ firstException firstEvents _
+          firstAfter firstStep =>
+          cases second with
+          | collectionAnswer _ _ _ secondNext _ _ _ _ _ secondAnswer _
+              secondAfter secondStep =>
+              have targetEq := (compareStep firstStep secondStep).2.2.2
+              exact RawTarget.noConfusion targetEq
+          | collectionProgress _ _ _ secondNext _ _ _ _ _ secondEvents
+              secondSignal _ secondAfter secondStep secondAnswerFree =>
+              have targetEq := (compareStep firstStep secondStep).2.2.2
+              exact RawTarget.noConfusion targetEq
+          | collectionComplete _ _ _ _ _ _ _ _ _ secondAfter secondStep =>
+              have targetEq := (compareStep firstStep secondStep).2.2.2
+              have tagEq := RawTarget.terminal.inj targetEq
+              exact RawTerminal.noConfusion tagEq
+          | collectionRaised _ _ _ _ _ _ _ _ secondException secondEvents _
+              secondAfter secondStep =>
+              rcases compareStep firstStep secondStep with
+                ⟨eventsEq, _, afterEq, targetEq⟩
+              have exceptionEq : firstException = secondException := by
+                exact RawTerminal.raised.inj (RawTarget.terminal.inj targetEq)
+              subst secondException
+              subst secondAfter
+              exact ⟨eventsEq, rfl, rfl, rfl⟩
   | product scope head tail inductionHypothesis =>
       have compareStep :
           ∀ {firstEvents : List Observation}
@@ -2202,6 +2618,13 @@ def exceptionHighWater : State → Nat
   | .terminal session _ => session.nextExceptionScope
   | .running session _ => session.nextExceptionScope
   | .uncaughtCut session _ _ => session.nextExceptionScope
+
+/-- Answer-collection high-water carried by every public state.  Collection
+identities are nominally separate from cut and exception delimiters. -/
+def collectionHighWater : State → Nat
+  | .terminal session _ => session.nextCollectionScope
+  | .running session _ => session.nextCollectionScope
+  | .uncaughtCut session _ _ => session.nextCollectionScope
 
 /-- Live cursor activations carried by every public state. -/
 def liveCursorScopes : State → List CutScopeId
@@ -2345,6 +2768,18 @@ theorem exceptionHighWater_mono {start finish : State}
         exact raw.nextExceptionScope_mono
   | uncaught search next events before after scope raw =>
       exact raw.nextExceptionScope_mono
+
+/-- Public transitions never rewind the independently allocated collection
+identities. -/
+theorem collectionHighWater_mono {start finish : State}
+    {events : List Observation} (step : Transition start events finish) :
+    start.collectionHighWater ≤ finish.collectionHighWater := by
+  cases step with
+  | ordinary search events before after target raw =>
+      cases target <;>
+        exact raw.nextCollectionScope_mono
+  | uncaught search next events before after scope raw =>
+      exact raw.nextCollectionScope_mono
 
 /-- Every public prune event names a cursor live in the source state. -/
 theorem pruned_scope_origin {start finish : State}
@@ -2577,6 +3012,16 @@ theorem exceptionHighWater_mono {count : Nat} {start finish : State}
   | succ count start middle finish first rest head tail
       inductionHypothesis =>
       exact Nat.le_trans head.exceptionHighWater_mono inductionHypothesis
+
+/-- Finite execution never rewinds the collection-identity allocator. -/
+theorem collectionHighWater_mono {count : Nat} {start finish : State}
+    {events : List Observation} (execution : StepsN count start events finish) :
+    start.collectionHighWater ≤ finish.collectionHighWater := by
+  induction execution with
+  | zero state => exact Nat.le_refl _
+  | succ count start middle finish first rest head tail
+      inductionHypothesis =>
+      exact Nat.le_trans head.collectionHighWater_mono inductionHypothesis
 
 /-- An absent already-issued activation remains absent through every finite
 execution prefix. -/
@@ -3105,6 +3550,874 @@ theorem call_opens_finite_activation (scope : CutScopeId)
               (openedFor session predicate arguments bindings).cursor))
           rest)) := by
   exact .taskCall scope predicate arguments rest bindings session notThrow
+
+/-! ## Local `findall/3` specialization -/
+
+/-- Entering `findall/3` allocates an opaque generator cut scope and a
+nominally distinct collection scope.  The caller tail and entry substitution
+are retained by the certified collector; no provider receives the authority
+to emit the bag or schedule the generator.
+
+[SPEC SWI-Prolog manual, `findall/3` and meta-call cut opacity] -/
+theorem findall_enters_distinct_delimiters (scope : CutScopeId)
+    (template : Term) (generator : Goal) (output : Term)
+    (rest : List Goal) (bindings : Substitution) (session : Session) :
+    RawStep session
+      (.task scope (.findall template generator output :: rest) bindings)
+      [] .none (openFindall session).session
+      (.running
+        (.collectionBoundary (openFindall session).collectionScope scope
+          (.cutBoundary (openFindall session).cutScope
+            (.task (openFindall session).cutScope [generator] bindings))
+          template output bindings rest [])) := by
+  exact .taskFindall scope template generator output rest bindings session
+
+/-- One generator answer is consumed internally, materialized, injectively
+copied apart, and prepended to the private reverse accumulator.  In
+particular, the generator substitution is not an outer observable answer. -/
+theorem findall_answer_copies_silently
+    (collectionScope : CollectionScopeId) (scope : CutScopeId)
+    (body next : Search) (template output : Term)
+    (entryBindings : Substitution) (tail : List Goal)
+    (reversed : List Term) (answerBindings : Substitution)
+    (before after : Session)
+    (child : RawStep before body [.answer answerBindings] .none after
+      (.running next)) :
+    RawStep before
+      (.collectionBoundary collectionScope scope body template output
+        entryBindings tail reversed)
+      [] .none (collectTemplate after template answerBindings).session
+      (.running
+        (.collectionBoundary collectionScope scope next template output
+          entryBindings tail
+          ((collectTemplate after template answerBindings).prepared.copied ::
+            reversed))) := by
+  exact .collectionAnswer collectionScope scope body next template output
+    entryBindings tail reversed answerBindings before after child
+
+/-- Generator exhaustion is consumed, the private reverse accumulator is
+reversed exactly once, and the resulting proper list is unified against the
+caller's output under the original entry substitution.  This pins source
+order and occurrence multiplicity without exposing an intermediate bag. -/
+theorem findall_exhaustion_builds_ordered_bag
+    (collectionScope : CollectionScopeId) (scope : CutScopeId)
+    (body : Search) (template output : Term)
+    (entryBindings : Substitution) (tail : List Goal)
+    (reversed : List Term) (before after : Session)
+    (child : RawStep before body [.completed] .none after
+      (.terminal .completed)) :
+    RawStep before
+      (.collectionBoundary collectionScope scope body template output
+        entryBindings tail reversed)
+      [] .none after
+      (.running
+        (.task scope
+          (.unify output (.list reversed.reverse none) :: tail)
+          entryBindings)) := by
+  exact .collectionComplete collectionScope scope body template output
+    entryBindings tail reversed before after child
+
+/-- `findall/3` is transparent to exceptions: the exact child event batch and
+raised terminal packet escape unchanged, and no partial bag is produced. -/
+theorem findall_exception_transparent
+    (collectionScope : CollectionScopeId) (scope : CutScopeId)
+    (body : Search) (template output : Term)
+    (entryBindings : Substitution) (tail : List Goal)
+    (reversed : List Term) (exception : RaisedException)
+    (events : List Observation) (before after : Session)
+    (child : RawStep before body events .none after
+      (.terminal (.raised exception))) :
+    RawStep before
+      (.collectionBoundary collectionScope scope body template output
+        entryBindings tail reversed)
+      events .none after (.terminal (.raised exception)) := by
+  exact .collectionRaised collectionScope scope body template output
+    entryBindings tail reversed exception events before after child
+
+private def findallWitnessTemplateVar : LogicVar := .source "$findall_x"
+private def findallWitnessOutputVar : LogicVar := .source "$findall_bag"
+private def findallWitnessLeft : Term := .atom "$left"
+private def findallWitnessRight : Term := .atom "$right"
+private def findallWitnessTemplate : Term :=
+  .variable findallWitnessTemplateVar
+private def findallWitnessOutput : Term :=
+  .variable findallWitnessOutputVar
+private def findallWitnessLeftBindings : Substitution :=
+  [(findallWitnessTemplateVar, findallWitnessLeft)]
+private def findallWitnessRightBindings : Substitution :=
+  [(findallWitnessTemplateVar, findallWitnessRight)]
+private def findallWitnessBag : Term :=
+  .list [findallWitnessLeft, findallWitnessRight] none
+private def findallWitnessResult : Substitution :=
+  [(findallWitnessOutputVar,
+    Tree.reify (Term.denote findallWitnessBag))]
+private def findallWitnessGenerator : Goal :=
+  .disjunction
+    [.unify findallWitnessTemplate findallWitnessLeft,
+     .unify findallWitnessTemplate findallWitnessRight]
+
+private theorem findallWitness_left_resolves :
+    UnifyResolution [] findallWitnessTemplate findallWitnessLeft
+      findallWitnessLeftBindings := by
+  refine ⟨findallWitnessLeftBindings, ?_, by
+    simp [findallWitnessLeftBindings]⟩
+  simpa [findallWitnessTemplateVar, findallWitnessTemplate,
+      findallWitnessLeft, findallWitnessLeftBindings,
+      TreeSubstitution.reify, Tree.reify, Term.denote]
+    using
+      (computes_singleton_left_variable findallWitnessTemplateVar
+        findallWitnessLeft (by
+          intro equality
+          cases equality) (by rfl))
+
+private theorem findallWitness_right_resolves :
+    UnifyResolution [] findallWitnessTemplate findallWitnessRight
+      findallWitnessRightBindings := by
+  refine ⟨findallWitnessRightBindings, ?_, by
+    simp [findallWitnessRightBindings]⟩
+  simpa [findallWitnessTemplateVar, findallWitnessTemplate,
+      findallWitnessRight, findallWitnessRightBindings,
+      TreeSubstitution.reify, Tree.reify, Term.denote]
+    using
+      (computes_singleton_left_variable findallWitnessTemplateVar
+        findallWitnessRight (by
+          intro equality
+          cases equality) (by rfl))
+
+private theorem findallWitness_output_resolves :
+    UnifyResolution [] findallWitnessOutput findallWitnessBag
+      findallWitnessResult := by
+  refine ⟨findallWitnessResult, ?_, by
+    simp [findallWitnessResult]⟩
+  simpa [findallWitnessOutputVar, findallWitnessOutput,
+      findallWitnessBag, findallWitnessResult, findallWitnessLeft,
+      findallWitnessRight, TreeSubstitution.reify, Tree.reify, Term.denote]
+    using
+      (computes_singleton_left_variable findallWitnessOutputVar
+        findallWitnessBag (by
+          intro equality
+          cases equality) (by rfl))
+
+@[simp] private theorem findallWitness_left_copy (session : Session) :
+    (collectTemplate session findallWitnessTemplate
+      findallWitnessLeftBindings).prepared.copied = findallWitnessLeft := by
+  rfl
+
+@[simp] private theorem findallWitness_right_copy (session : Session) :
+    (collectTemplate session findallWitnessTemplate
+      findallWitnessRightBindings).prepared.copied = findallWitnessRight := by
+  rfl
+
+/-- A source-shaped local `findall/3` over two ordered generator branches
+executes entirely in the certified layer.  The two internal substitutions are
+suppressed, their copied templates retain left-to-right order and occurrence
+multiplicity, and exactly one outer answer is followed by completion.
+
+Changing the collector to a set, reversing arrival order, leaking generator
+answers, or completing before exhaustion falsifies this exact trace.
+
+[SPEC SWI-Prolog manual, `findall/3`] -/
+theorem local_findall_two_answers_exact_trace (scope : CutScopeId)
+    (session : Session) :
+    StepsN 11
+      (.running session
+        (.task scope
+          [.findall findallWitnessTemplate findallWitnessGenerator
+            findallWitnessOutput]
+          []))
+      [.answer findallWitnessResult, .completed]
+      (.terminal
+        (collectTemplate
+          (collectTemplate (openFindall session).session
+            findallWitnessTemplate findallWitnessLeftBindings).session
+          findallWitnessTemplate findallWitnessRightBindings).session
+        .completed) := by
+  let opened := openFindall session
+  let inner := opened.cutScope
+  let collection := opened.collectionScope
+  let leftGoal : Goal :=
+    .unify findallWitnessTemplate findallWitnessLeft
+  let rightGoal : Goal :=
+    .unify findallWitnessTemplate findallWitnessRight
+  let leftCopy :=
+    collectTemplate opened.session findallWitnessTemplate
+      findallWitnessLeftBindings
+  let rightCopy :=
+    collectTemplate leftCopy.session findallWitnessTemplate
+      findallWitnessRightBindings
+  let leftElement := leftCopy.prepared.copied
+  let rightElement := rightCopy.prepared.copied
+  let collectedBag : Term := .list [leftElement, rightElement] none
+  let initial : State :=
+    .running session
+      (.task scope
+        [.findall findallWitnessTemplate findallWitnessGenerator
+          findallWitnessOutput]
+        [])
+  let entered : State :=
+    .running opened.session
+      (.collectionBoundary collection scope
+        (.cutBoundary inner
+          (.task inner [findallWitnessGenerator] []))
+        findallWitnessTemplate findallWitnessOutput [] [] [])
+  let branched : State :=
+    .running opened.session
+      (.collectionBoundary collection scope
+        (.cutBoundary inner
+          (Search.disjoin inner [leftGoal, rightGoal] [] []))
+        findallWitnessTemplate findallWitnessOutput [] [] [])
+  let leftSolved : State :=
+    .running opened.session
+      (.collectionBoundary collection scope
+        (.cutBoundary inner
+          (.choice inner
+            (.task inner [] findallWitnessLeftBindings)
+            (.task inner [rightGoal] [])))
+        findallWitnessTemplate findallWitnessOutput [] [] [])
+  let leftCollected : State :=
+    .running leftCopy.session
+      (.collectionBoundary collection scope
+        (.cutBoundary inner
+          (.choice inner .done (.task inner [rightGoal] [])))
+        findallWitnessTemplate findallWitnessOutput [] []
+        [leftElement])
+  let rightPending : State :=
+    .running leftCopy.session
+      (.collectionBoundary collection scope
+        (.cutBoundary inner (.task inner [rightGoal] []))
+        findallWitnessTemplate findallWitnessOutput [] []
+        [leftElement])
+  let rightSolved : State :=
+    .running leftCopy.session
+      (.collectionBoundary collection scope
+        (.cutBoundary inner
+          (.task inner [] findallWitnessRightBindings))
+        findallWitnessTemplate findallWitnessOutput [] []
+        [leftElement])
+  let rightCollected : State :=
+    .running rightCopy.session
+      (.collectionBoundary collection scope
+        (.cutBoundary inner .done)
+        findallWitnessTemplate findallWitnessOutput [] []
+        [rightElement, leftElement])
+  let bagPending : State :=
+    .running rightCopy.session
+      (.task scope
+        [.unify findallWitnessOutput collectedBag] [])
+  let bagSolved : State :=
+    .running rightCopy.session
+      (.task scope [] findallWitnessResult)
+  let answered : State := .running rightCopy.session .done
+  let finished : State := .terminal rightCopy.session .completed
+  have leftElement_eq : leftElement = findallWitnessLeft := by
+    change
+      (collectTemplate opened.session findallWitnessTemplate
+        findallWitnessLeftBindings).prepared.copied = findallWitnessLeft
+    exact findallWitness_left_copy opened.session
+  have rightElement_eq : rightElement = findallWitnessRight := by
+    change
+      (collectTemplate leftCopy.session findallWitnessTemplate
+        findallWitnessRightBindings).prepared.copied = findallWitnessRight
+    exact findallWitness_right_copy leftCopy.session
+  have enterStep : Transition initial [] entered := by
+    dsimp [initial, entered, opened, inner, collection]
+    exact .ordinary _ _ _ _ _
+      (.taskFindall scope findallWitnessTemplate findallWitnessGenerator
+        findallWitnessOutput [] [] session)
+  have branchStep : Transition entered [] branched := by
+    have raw : RawStep opened.session
+        (.collectionBoundary collection scope
+          (.cutBoundary inner
+            (.task inner [findallWitnessGenerator] []))
+          findallWitnessTemplate findallWitnessOutput [] [] [])
+        [] .none opened.session
+        (.running
+          (.collectionBoundary collection scope
+            (.cutBoundary inner
+              (Search.disjoin inner [leftGoal, rightGoal] [] []))
+            findallWitnessTemplate findallWitnessOutput [] [] [])) := by
+      apply RawStep.collectionProgress
+      · apply RawStep.cutBoundaryProgress
+        simpa [findallWitnessGenerator, leftGoal, rightGoal] using
+          (RawStep.taskDisjunction inner [leftGoal, rightGoal] [] []
+            opened.session)
+      · simp [Trace.AnswerFree]
+    simpa [entered, branched, RawTarget.toState] using
+      (Transition.ordinary _ _ opened.session opened.session _ raw)
+  have leftStep : Transition branched [] leftSolved := by
+    have raw : RawStep opened.session
+        (.collectionBoundary collection scope
+          (.cutBoundary inner
+            (Search.disjoin inner [leftGoal, rightGoal] [] []))
+          findallWitnessTemplate findallWitnessOutput [] [] [])
+        [] .none opened.session
+        (.running
+          (.collectionBoundary collection scope
+            (.cutBoundary inner
+              (.choice inner
+                (.task inner [] findallWitnessLeftBindings)
+                (.task inner [rightGoal] [])))
+            findallWitnessTemplate findallWitnessOutput [] [] [])) := by
+      apply RawStep.collectionProgress
+      · simpa [Search.disjoin] using
+          (RawStep.cutBoundaryProgress inner _ _ [] opened.session
+            opened.session
+            (RawStep.choiceProgress inner _ _ _ [] opened.session
+              opened.session
+              (RawStep.taskUnifySuccess inner findallWitnessTemplate
+                findallWitnessLeft [] [] findallWitnessLeftBindings
+                opened.session findallWitness_left_resolves)))
+      · simp [Trace.AnswerFree]
+    simpa [branched, leftSolved, RawTarget.toState] using
+      (Transition.ordinary _ _ opened.session opened.session _ raw)
+  have collectLeftStep : Transition leftSolved [] leftCollected := by
+    dsimp [leftSolved, leftCollected, opened, inner, collection, rightGoal,
+      leftCopy, leftElement]
+    simpa [RawTarget.toState, opened, inner, collection, rightGoal, leftCopy,
+      leftElement] using
+      (Transition.ordinary _ _ _ _ _
+        (RawStep.collectionAnswer collection scope _ _
+          findallWitnessTemplate findallWitnessOutput [] [] []
+          findallWitnessLeftBindings opened.session opened.session
+          (RawStep.cutBoundaryProgress inner _ _
+            [.answer findallWitnessLeftBindings]
+            opened.session opened.session
+            (RawStep.choiceProgress inner _ _ _
+              [.answer findallWitnessLeftBindings]
+              opened.session opened.session
+              (RawStep.taskAnswer inner findallWitnessLeftBindings
+                opened.session)))))
+  have switchStep : Transition leftCollected [] rightPending := by
+    have raw : RawStep leftCopy.session
+        (.collectionBoundary collection scope
+          (.cutBoundary inner
+            (.choice inner .done (.task inner [rightGoal] [])))
+          findallWitnessTemplate findallWitnessOutput [] [] [leftElement])
+        [] .none leftCopy.session
+        (.running
+          (.collectionBoundary collection scope
+            (.cutBoundary inner (.task inner [rightGoal] []))
+            findallWitnessTemplate findallWitnessOutput [] []
+            [leftElement])) := by
+      apply RawStep.collectionProgress
+      · apply RawStep.cutBoundaryProgress
+        apply RawStep.choiceComplete
+        exact .done _
+      · simp [Trace.AnswerFree]
+    simpa [leftCollected, rightPending, RawTarget.toState] using
+      (Transition.ordinary _ _ leftCopy.session leftCopy.session _ raw)
+  have rightStep : Transition rightPending [] rightSolved := by
+    have raw : RawStep leftCopy.session
+        (.collectionBoundary collection scope
+          (.cutBoundary inner (.task inner [rightGoal] []))
+          findallWitnessTemplate findallWitnessOutput [] [] [leftElement])
+        [] .none leftCopy.session
+        (.running
+          (.collectionBoundary collection scope
+            (.cutBoundary inner
+              (.task inner [] findallWitnessRightBindings))
+            findallWitnessTemplate findallWitnessOutput [] []
+            [leftElement])) := by
+      apply RawStep.collectionProgress
+      · apply RawStep.cutBoundaryProgress
+        simpa [rightGoal] using
+          (RawStep.taskUnifySuccess inner findallWitnessTemplate
+            findallWitnessRight [] [] findallWitnessRightBindings
+            leftCopy.session findallWitness_right_resolves)
+      · simp [Trace.AnswerFree]
+    simpa [rightPending, rightSolved, RawTarget.toState] using
+      (Transition.ordinary _ _ leftCopy.session leftCopy.session _ raw)
+  have collectRightStep : Transition rightSolved [] rightCollected := by
+    have raw : RawStep leftCopy.session
+        (.collectionBoundary collection scope
+          (.cutBoundary inner
+            (.task inner [] findallWitnessRightBindings))
+          findallWitnessTemplate findallWitnessOutput [] [] [leftElement])
+        [] .none rightCopy.session
+        (.running
+          (.collectionBoundary collection scope
+            (.cutBoundary inner .done)
+            findallWitnessTemplate findallWitnessOutput [] []
+            [rightElement, leftElement])) := by
+      exact RawStep.collectionAnswer collection scope _ _
+        findallWitnessTemplate findallWitnessOutput [] [] [leftElement]
+        findallWitnessRightBindings leftCopy.session leftCopy.session
+        (RawStep.cutBoundaryProgress inner _ _
+          [.answer findallWitnessRightBindings]
+          leftCopy.session leftCopy.session
+          (RawStep.taskAnswer inner findallWitnessRightBindings
+            leftCopy.session))
+    simpa [rightSolved, rightCollected, RawTarget.toState] using
+      (Transition.ordinary _ _ leftCopy.session rightCopy.session _ raw)
+  have exhaustStep : Transition rightCollected [] bagPending := by
+    have raw : RawStep rightCopy.session
+        (.collectionBoundary collection scope
+          (.cutBoundary inner .done)
+          findallWitnessTemplate findallWitnessOutput [] []
+          [rightElement, leftElement])
+        [] .none rightCopy.session
+        (.running
+          (.task scope
+            [.unify findallWitnessOutput collectedBag] [])) := by
+      simpa [collectedBag] using
+        (RawStep.collectionComplete collection scope _
+          findallWitnessTemplate findallWitnessOutput [] []
+          [rightElement, leftElement]
+          rightCopy.session rightCopy.session
+          (RawStep.cutBoundaryComplete inner .done rightCopy.session
+            rightCopy.session (.done rightCopy.session)))
+    simpa [rightCollected, bagPending, RawTarget.toState] using
+      (Transition.ordinary _ _ rightCopy.session rightCopy.session _ raw)
+  have outputStep : Transition bagPending [] bagSolved := by
+    have resolved : UnifyResolution [] findallWitnessOutput collectedBag
+        findallWitnessResult := by
+      simpa only [collectedBag, leftElement_eq, rightElement_eq,
+        findallWitnessBag]
+        using findallWitness_output_resolves
+    have raw : RawStep rightCopy.session
+        (.task scope [.unify findallWitnessOutput collectedBag] [])
+        [] .none rightCopy.session
+        (.running (.task scope [] findallWitnessResult)) :=
+      .taskUnifySuccess scope findallWitnessOutput collectedBag [] []
+        findallWitnessResult rightCopy.session resolved
+    simpa [bagPending, bagSolved, RawTarget.toState] using
+      (Transition.ordinary _ _ rightCopy.session rightCopy.session _ raw)
+  have answerStep : Transition bagSolved [.answer findallWitnessResult]
+      answered := by
+    dsimp [bagSolved, answered, rightCopy, leftCopy, opened]
+    exact .ordinary _ _ _ _ _
+      (.taskAnswer scope findallWitnessResult _)
+  have completeStep : Transition answered [.completed] finished := by
+    dsimp [answered, finished, rightCopy, leftCopy, opened]
+    exact .ordinary _ _ _ _ _ (.done _)
+  have one {start finish : State} {events : List Observation}
+      (step : Transition start events finish) :
+      StepsN 1 start events finish := by
+    simpa using
+      (StepsN.succ 0 start finish finish events [] step (.zero finish))
+  have execution :=
+    StepsN.trans (one enterStep)
+      (StepsN.trans (one branchStep)
+        (StepsN.trans (one leftStep)
+          (StepsN.trans (one collectLeftStep)
+            (StepsN.trans (one switchStep)
+              (StepsN.trans (one rightStep)
+                (StepsN.trans (one collectRightStep)
+                  (StepsN.trans (one exhaustStep)
+                    (StepsN.trans (one outputStep)
+                      (StepsN.trans (one answerStep)
+                        (one completeStep))))))))))
+  simpa [initial, finished, opened, leftCopy, rightCopy] using execution
+
+/-! ### Answer followed by divergence
+
+The next witness distinguishes operational generator traversal from a
+blocking provider that can return only a completed finite answer list.  Its
+generator succeeds once and then enters the concrete local clause
+`loop :- loop`.  The first template is retained privately, while every later
+finite prefix remains open and contains only recursive call-open events.
+-/
+
+private def findallLoopTemplate : Term := .atom "$kept"
+private def findallLoopOutputVar : LogicVar := .source "$loop_bag"
+private def findallLoopOutput : Term := .variable findallLoopOutputVar
+private def findallLoopGenerator : Goal :=
+  .disjunction [.truth, .call leftRecursivePredicate []]
+
+/-- Collection identity zero is deliberate: opening from this session raises
+the collection high-water to one, exactly matching `leftRecursiveSession` and
+letting the previously certified recursive spine be reused without changing
+any allocator field. -/
+private def findallLoopInitialSession : Session :=
+  { resolver := leftRecursiveResolver
+    nextCutScope := 1
+    nextCollectionScope := 0 }
+
+private theorem openFindall_loop_initial :
+    openFindall findallLoopInitialSession =
+      { cutScope := 1
+        collectionScope := { index := 0 }
+        session := leftRecursiveSession 2 } := by
+  rfl
+
+private theorem findallLoop_copy_session :
+    (collectTemplate (leftRecursiveSession 2) findallLoopTemplate []).session =
+      leftRecursiveSession 2 := by
+  rfl
+
+private theorem findallLoop_copy_term :
+    (collectTemplate (leftRecursiveSession 2) findallLoopTemplate
+      []).prepared.copied = findallLoopTemplate := by
+  rfl
+
+private def findallLoopOpenState (depth : Nat) : State :=
+  .running (leftRecursiveSession (depth + 3))
+    (.collectionBoundary { index := 0 } 0
+      (.cutBoundary 1
+        (.product 1 (leftRecursiveChain depth 2) []))
+      findallLoopTemplate findallLoopOutput [] [] [findallLoopTemplate])
+
+private def findallLoopPulledState (depth : Nat) : State :=
+  .running (leftRecursiveSession (depth + 3))
+    (.collectionBoundary { index := 0 } 0
+      (.cutBoundary 1
+        (.product 1 (leftRecursivePulled depth 2) []))
+      findallLoopTemplate findallLoopOutput [] [] [findallLoopTemplate])
+
+private theorem findallLoop_pull_transition (depth : Nat) :
+    Transition (findallLoopOpenState depth) []
+      (findallLoopPulledState depth) := by
+  have inner := leftRecursiveChain_pull depth 2
+    (leftRecursiveSession (depth + 3))
+  have raw : RawStep (leftRecursiveSession (depth + 3))
+      (.collectionBoundary { index := 0 } 0
+        (.cutBoundary 1
+          (.product 1 (leftRecursiveChain depth 2) []))
+        findallLoopTemplate findallLoopOutput [] [] [findallLoopTemplate])
+      [] .none (leftRecursiveSession (depth + 3))
+      (.running
+        (.collectionBoundary { index := 0 } 0
+          (.cutBoundary 1
+            (.product 1 (leftRecursivePulled depth 2) []))
+          findallLoopTemplate findallLoopOutput [] []
+          [findallLoopTemplate])) := by
+    apply RawStep.collectionProgress
+    · apply RawStep.cutBoundaryProgress
+      apply RawStep.productProgress
+      · exact inner
+      · simp [Trace.AnswerFree]
+    · simp [Trace.AnswerFree]
+  simpa [findallLoopOpenState, findallLoopPulledState, RawTarget.toState]
+    using
+      (Transition.ordinary _ _ (leftRecursiveSession (depth + 3))
+        (leftRecursiveSession (depth + 3)) _ raw)
+
+private theorem findallLoop_open_transition (depth : Nat) :
+    Transition (findallLoopPulledState depth)
+      [.opened leftRecursiveRequest] (findallLoopOpenState (depth + 1)) := by
+  have inner :
+      RawStep (leftRecursiveSession (depth + 3))
+        (leftRecursivePulled depth 2) [.opened leftRecursiveRequest] .none
+        (leftRecursiveSession (depth + 4))
+        (.running (leftRecursiveChain (depth + 1) 2)) := by
+    simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+      (leftRecursivePulled_open depth 2)
+  have raw : RawStep (leftRecursiveSession (depth + 3))
+      (.collectionBoundary { index := 0 } 0
+        (.cutBoundary 1
+          (.product 1 (leftRecursivePulled depth 2) []))
+        findallLoopTemplate findallLoopOutput [] [] [findallLoopTemplate])
+      [.opened leftRecursiveRequest] .none
+      (leftRecursiveSession (depth + 4))
+      (.running
+        (.collectionBoundary { index := 0 } 0
+          (.cutBoundary 1
+            (.product 1 (leftRecursiveChain (depth + 1) 2) []))
+          findallLoopTemplate findallLoopOutput [] []
+          [findallLoopTemplate])) := by
+    apply RawStep.collectionProgress
+    · apply RawStep.cutBoundaryProgress
+      apply RawStep.productProgress
+      · exact inner
+      · simp [Trace.AnswerFree]
+    · simp [Trace.AnswerFree]
+  simpa [findallLoopPulledState, findallLoopOpenState, RawTarget.toState,
+      Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+    (Transition.ordinary _ _ (leftRecursiveSession (depth + 3))
+      (leftRecursiveSession (depth + 4)) _ raw)
+
+private theorem findallLoop_cycle (depth : Nat) :
+    StepsN 2 (findallLoopOpenState depth) [.opened leftRecursiveRequest]
+      (findallLoopOpenState (depth + 1)) := by
+  exact StepsN.succ 1 _ _ _ [] [.opened leftRecursiveRequest]
+    (findallLoop_pull_transition depth)
+    (StepsN.succ 0 _ _ _ [.opened leftRecursiveRequest] []
+      (findallLoop_open_transition depth) (StepsN.zero _))
+
+private theorem findallLoop_cycles (cycles : Nat) :
+    StepsN (2 * cycles) (findallLoopOpenState 0)
+      (leftRecursiveEvents cycles) (findallLoopOpenState cycles) := by
+  induction cycles with
+  | zero => exact StepsN.zero _
+  | succ cycles inductionHypothesis =>
+      simpa [leftRecursiveEvents, Nat.mul_succ] using
+        (StepsN.trans inductionHypothesis (findallLoop_cycle cycles))
+
+private def findallLoopEnteredState : State :=
+  .running (leftRecursiveSession 2)
+    (.collectionBoundary { index := 0 } 0
+      (.cutBoundary 1
+        (.task 1 [findallLoopGenerator] []))
+      findallLoopTemplate findallLoopOutput [] [] [])
+
+private def findallLoopBranchedState : State :=
+  .running (leftRecursiveSession 2)
+    (.collectionBoundary { index := 0 } 0
+      (.cutBoundary 1
+        (Search.disjoin 1
+          [.truth, .call leftRecursivePredicate []] [] []))
+      findallLoopTemplate findallLoopOutput [] [] [])
+
+private def findallLoopTruthState : State :=
+  .running (leftRecursiveSession 2)
+    (.collectionBoundary { index := 0 } 0
+      (.cutBoundary 1
+        (.choice 1
+          (.task 1 [] [])
+          (.task 1 [.call leftRecursivePredicate []] [])))
+      findallLoopTemplate findallLoopOutput [] [] [])
+
+private def findallLoopCollectedState : State :=
+  .running (leftRecursiveSession 2)
+    (.collectionBoundary { index := 0 } 0
+      (.cutBoundary 1
+        (.choice 1 .done
+          (.task 1 [.call leftRecursivePredicate []] [])))
+      findallLoopTemplate findallLoopOutput [] [] [findallLoopTemplate])
+
+private def findallLoopRightState : State :=
+  .running (leftRecursiveSession 2)
+    (.collectionBoundary { index := 0 } 0
+      (.cutBoundary 1
+        (.task 1 [.call leftRecursivePredicate []] []))
+      findallLoopTemplate findallLoopOutput [] [] [findallLoopTemplate])
+
+private theorem findallLoop_enter_transition :
+    Transition
+      (.running findallLoopInitialSession
+        (.task 0
+          [.findall findallLoopTemplate findallLoopGenerator
+            findallLoopOutput]
+          []))
+      [] findallLoopEnteredState := by
+  simpa [findallLoopEnteredState, openFindall_loop_initial,
+      RawTarget.toState] using
+    (Transition.ordinary _ _ _ _ _
+      (RawStep.taskFindall 0 findallLoopTemplate findallLoopGenerator
+        findallLoopOutput [] [] findallLoopInitialSession))
+
+private theorem findallLoop_branch_transition :
+    Transition findallLoopEnteredState [] findallLoopBranchedState := by
+  have raw : RawStep (leftRecursiveSession 2)
+      (.collectionBoundary { index := 0 } 0
+        (.cutBoundary 1
+          (.task 1 [findallLoopGenerator] []))
+        findallLoopTemplate findallLoopOutput [] [] [])
+      [] .none (leftRecursiveSession 2)
+      (.running
+        (.collectionBoundary { index := 0 } 0
+          (.cutBoundary 1
+            (Search.disjoin 1
+              [.truth, .call leftRecursivePredicate []] [] []))
+          findallLoopTemplate findallLoopOutput [] [] [])) := by
+    apply RawStep.collectionProgress
+    · apply RawStep.cutBoundaryProgress
+      exact RawStep.taskDisjunction 1
+        [.truth, .call leftRecursivePredicate []] [] []
+        (leftRecursiveSession 2)
+    · simp [Trace.AnswerFree]
+  simpa [findallLoopEnteredState, findallLoopBranchedState,
+      RawTarget.toState] using
+    (Transition.ordinary _ _ _ _ _ raw)
+
+private theorem findallLoop_truth_transition :
+    Transition findallLoopBranchedState [] findallLoopTruthState := by
+  have raw : RawStep (leftRecursiveSession 2)
+      (.collectionBoundary { index := 0 } 0
+        (.cutBoundary 1
+          (Search.disjoin 1
+            [.truth, .call leftRecursivePredicate []] [] []))
+        findallLoopTemplate findallLoopOutput [] [] [])
+      [] .none (leftRecursiveSession 2)
+      (.running
+        (.collectionBoundary { index := 0 } 0
+          (.cutBoundary 1
+            (.choice 1
+              (.task 1 [] [])
+              (.task 1 [.call leftRecursivePredicate []] [])))
+          findallLoopTemplate findallLoopOutput [] [] [])) := by
+    apply RawStep.collectionProgress
+    · apply RawStep.cutBoundaryProgress
+      simpa [Search.disjoin] using
+        (RawStep.choiceProgress 1
+          (.task 1 [.truth] [])
+          (.task 1 [.call leftRecursivePredicate []] [])
+          (.task 1 [] []) []
+          (leftRecursiveSession 2) (leftRecursiveSession 2)
+          (RawStep.taskTruth 1 [] [] (leftRecursiveSession 2)))
+    · simp [Trace.AnswerFree]
+  simpa [findallLoopBranchedState, findallLoopTruthState,
+      RawTarget.toState] using
+    (Transition.ordinary _ _ _ _ _ raw)
+
+private theorem findallLoop_collect_transition :
+    Transition findallLoopTruthState [] findallLoopCollectedState := by
+  have child : RawStep (leftRecursiveSession 2)
+      (.cutBoundary 1
+        (.choice 1
+          (.task 1 [] [])
+          (.task 1 [.call leftRecursivePredicate []] [])))
+      [.answer []] .none (leftRecursiveSession 2)
+      (.running
+        (.cutBoundary 1
+          (.choice 1 .done
+            (.task 1 [.call leftRecursivePredicate []] [])))) := by
+    exact RawStep.cutBoundaryProgress 1 _ _ [.answer []]
+      (leftRecursiveSession 2) (leftRecursiveSession 2)
+      (RawStep.choiceProgress 1 _ _ _ [.answer []]
+        (leftRecursiveSession 2) (leftRecursiveSession 2)
+        (RawStep.taskAnswer 1 [] (leftRecursiveSession 2)))
+  have raw : RawStep (leftRecursiveSession 2)
+      (.collectionBoundary { index := 0 } 0
+        (.cutBoundary 1
+          (.choice 1
+            (.task 1 [] [])
+            (.task 1 [.call leftRecursivePredicate []] [])))
+        findallLoopTemplate findallLoopOutput [] [] [])
+      [] .none (leftRecursiveSession 2)
+      (.running
+        (.collectionBoundary { index := 0 } 0
+          (.cutBoundary 1
+            (.choice 1 .done
+              (.task 1 [.call leftRecursivePredicate []] [])))
+          findallLoopTemplate findallLoopOutput [] []
+          [findallLoopTemplate])) := by
+    simpa only [findallLoop_copy_session, findallLoop_copy_term] using
+      (RawStep.collectionAnswer { index := 0 } 0 _ _
+        findallLoopTemplate findallLoopOutput [] [] [] []
+        (leftRecursiveSession 2) (leftRecursiveSession 2) child)
+  simpa [findallLoopTruthState, findallLoopCollectedState,
+      RawTarget.toState] using
+    (Transition.ordinary _ _ _ _ _ raw)
+
+private theorem findallLoop_switch_transition :
+    Transition findallLoopCollectedState [] findallLoopRightState := by
+  have raw : RawStep (leftRecursiveSession 2)
+      (.collectionBoundary { index := 0 } 0
+        (.cutBoundary 1
+          (.choice 1 .done
+            (.task 1 [.call leftRecursivePredicate []] [])))
+        findallLoopTemplate findallLoopOutput [] [] [findallLoopTemplate])
+      [] .none (leftRecursiveSession 2)
+      (.running
+        (.collectionBoundary { index := 0 } 0
+          (.cutBoundary 1
+            (.task 1 [.call leftRecursivePredicate []] []))
+          findallLoopTemplate findallLoopOutput [] []
+          [findallLoopTemplate])) := by
+    apply RawStep.collectionProgress
+    · apply RawStep.cutBoundaryProgress
+      exact RawStep.choiceComplete 1 .done
+        (.task 1 [.call leftRecursivePredicate []] [])
+        (leftRecursiveSession 2) (leftRecursiveSession 2)
+        (RawStep.done (leftRecursiveSession 2))
+    · simp [Trace.AnswerFree]
+  simpa [findallLoopCollectedState, findallLoopRightState,
+      RawTarget.toState] using
+    (Transition.ordinary _ _ _ _ _ raw)
+
+private theorem findallLoop_call_transition :
+    Transition findallLoopRightState [.opened leftRecursiveRequest]
+      (findallLoopOpenState 0) := by
+  have child : RawStep (leftRecursiveSession 2)
+      (.cutBoundary 1
+        (.task 1 [.call leftRecursivePredicate []] []))
+      [.opened leftRecursiveRequest] .none (leftRecursiveSession 3)
+      (.running
+        (.cutBoundary 1
+          (.product 1 (leftRecursiveChain 0 2) []))) := by
+    simpa [leftRecursiveRequest, leftRecursiveChain,
+        openedFor_leftRecursive, Nat.add_assoc] using
+      (RawStep.cutBoundaryProgress 1 _ _
+        [.opened leftRecursiveRequest]
+        (leftRecursiveSession 2) (leftRecursiveSession 3)
+        (RawStep.taskCall 1 leftRecursivePredicate [] [] []
+          (leftRecursiveSession 2) leftRecursive_notThrow))
+  have raw : RawStep (leftRecursiveSession 2)
+      (.collectionBoundary { index := 0 } 0
+        (.cutBoundary 1
+          (.task 1 [.call leftRecursivePredicate []] []))
+        findallLoopTemplate findallLoopOutput [] [] [findallLoopTemplate])
+      [.opened leftRecursiveRequest] .none (leftRecursiveSession 3)
+      (.running
+        (.collectionBoundary { index := 0 } 0
+          (.cutBoundary 1
+            (.product 1 (leftRecursiveChain 0 2) []))
+          findallLoopTemplate findallLoopOutput [] []
+          [findallLoopTemplate])) := by
+    exact RawStep.collectionProgress { index := 0 } 0 _ _
+      findallLoopTemplate findallLoopOutput [] [] [findallLoopTemplate]
+      [.opened leftRecursiveRequest] .none
+      (leftRecursiveSession 2) (leftRecursiveSession 3) child
+      (by simp [Trace.AnswerFree])
+  simpa [findallLoopRightState, findallLoopOpenState,
+      RawTarget.toState] using
+    (Transition.ordinary _ _ _ _ _ raw)
+
+private theorem findallLoop_initial_prefix :
+    StepsN 6
+      (.running findallLoopInitialSession
+        (.task 0
+          [.findall findallLoopTemplate findallLoopGenerator
+            findallLoopOutput]
+          []))
+      [.opened leftRecursiveRequest] (findallLoopOpenState 0) := by
+  have one {start finish : State} {events : List Observation}
+      (step : Transition start events finish) :
+      StepsN 1 start events finish := by
+    simpa using
+      (StepsN.succ 0 start finish finish events [] step (.zero finish))
+  exact StepsN.trans (one findallLoop_enter_transition)
+    (StepsN.trans (one findallLoop_branch_transition)
+      (StepsN.trans (one findallLoop_truth_transition)
+        (StepsN.trans (one findallLoop_collect_transition)
+          (StepsN.trans (one findallLoop_switch_transition)
+            (one findallLoop_call_transition)))))
+
+/-- A source-shaped local `findall/3` succeeds once and then enters the
+concrete clause `loop :- loop`.  For every requested finite depth, the one
+successful template remains private while the public trace contains only
+call-open observations and the machine remains running.  In particular no
+partial bag, generator answer, exception, or completion is fabricated before
+the generator is exhausted.
+
+The exact positive transition count prevents reflexivity from witnessing the
+claim.  Ordinary `findall/3` still collects eagerly until generator exhaustion;
+the rejected abstraction is specifically a provider protocol that erases all
+pre-exhaustion execution prefixes behind a completed-list response.
+
+[SPEC SWI-Prolog manual, `findall/3`] -/
+theorem findall_answer_then_loop_arbitrarily_long_open_prefix
+    (cycles : Nat) :
+    let events :=
+      [.opened leftRecursiveRequest] ++ leftRecursiveEvents cycles
+    events.length = cycles + 1 ∧
+      (∀ event ∈ events, event = .opened leftRecursiveRequest) ∧
+      (Trace.Observation.completed : Observation) ∉ events ∧
+      StepsN (2 * cycles + 6)
+        (.running findallLoopInitialSession
+          (.task 0
+            [.findall findallLoopTemplate findallLoopGenerator
+              findallLoopOutput]
+            []))
+        events (findallLoopOpenState cycles) := by
+  dsimp only
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · simp [leftRecursiveEvents_length]
+  · intro event member
+    rcases List.mem_append.mp member with first | rest
+    · simpa only [List.mem_singleton] using first
+    · exact leftRecursiveEvents_only_opened cycles event rest
+  · intro completedMember
+    have impossible :
+        (Trace.Observation.completed : Observation) =
+          .opened leftRecursiveRequest := by
+      rcases List.mem_append.mp completedMember with first | rest
+      · simpa only [List.mem_singleton] using first
+      · exact leftRecursiveEvents_only_opened cycles _ rest
+    cases impossible
+  · simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+      (StepsN.trans findallLoop_initial_prefix (findallLoop_cycles cycles))
 
 /-- A real local `throw/1` task performs one silent allocation step into an
 internal raised packet.  The residual conjunction is discarded rather than

@@ -455,6 +455,8 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.openLocalCall_nextFresh_mono
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.openThrow_isFreshCopy
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.openThrow_ballStable
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.collectTemplate_isFreshCopy
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.collectTemplate_stable
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.UnifyResolution.deterministic
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.CatchResolution.deterministic
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.CatchSelection.exists_resolution_of_lineage
@@ -477,6 +479,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.nextFresh_mono
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.nextCutScope_mono
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.nextExceptionScope_mono
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.nextCollectionScope_mono
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.preserves_cursorOwnership
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.database_eq
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.deterministic
@@ -485,11 +488,13 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.Transition.preserves_wellFormed
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.Transition.preserves_bindingLineage
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.Transition.exceptionHighWater_mono
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.Transition.collectionHighWater_mono
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.StepsN.deterministic
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.StepsN.preserves_rooted
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.StepsN.preserves_wellFormed
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.StepsN.preserves_bindingLineage
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.StepsN.exceptionHighWater_mono
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.StepsN.collectionHighWater_mono
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.StepsN.prunedScopes_nodup
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.initialState_rooted
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.initialState_wellFormed
@@ -497,6 +502,12 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.left_truth_cannot_emit_right_answer
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.wrong_right_first_not_reference
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.call_opens_finite_activation
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.findall_enters_distinct_delimiters
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.findall_answer_copies_silently
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.findall_exhaustion_builds_ordered_bag
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.findall_exception_transparent
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.local_findall_two_answers_exact_trace
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.findall_answer_then_loop_arbitrarily_long_open_prefix
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.throw_enters_fresh_raise
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.throw_packet_copy_contract
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.local_throw_exact_two_steps
