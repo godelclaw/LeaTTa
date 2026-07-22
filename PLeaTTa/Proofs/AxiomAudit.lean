@@ -38,6 +38,7 @@ import PLeaTTa.PeTTaSpec.PrologTraceSemantics
 import PLeaTTa.PeTTaSpec.PrologTermAlgebra
 import PLeaTTa.PeTTaSpec.PrologMgu
 import PLeaTTa.PeTTaSpec.PrologResolver
+import PLeaTTa.PeTTaSpec.PrologCopy
 import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 
 #print axioms PLeaTTa.machineMirrorsSpecTotal_proved
@@ -443,7 +444,17 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.semanticLocalClauseProtocol_pull_session
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.semanticLocalClauseProtocol_prune_session
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.semanticLocalClauseProtocol_rawStep_nextFresh_mono
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Copy.copyTerm_isFreshCopy
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Copy.prepareTermCopy_first_dominates_live
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Copy.prepareTermCopy_isFreshCopy
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Copy.prepareTermCopy_stable
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Copy.materialize_before_copy_witness
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Copy.repeated_variable_sharing_witness
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Copy.distinct_variables_separated_witness
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Copy.substitution_value_raises_copy_boundary_witness
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.openLocalCall_nextFresh_mono
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.openThrow_isFreshCopy
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.openThrow_ballStable
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.UnifyResolution.deterministic
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.CatchResolution.deterministic
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.CatchSelection.exists_resolution_of_lineage
@@ -486,10 +497,14 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.left_truth_cannot_emit_right_answer
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.wrong_right_first_not_reference
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.call_opens_finite_activation
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.throw_enters_fresh_raise
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.throw_packet_copy_contract
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.local_throw_exact_two_steps
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.matched_clause_splices_body_first
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.cut_prunes_later_clauses
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.catch_enters_distinct_delimiters
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.variable_catcher_handles
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.ground_throw_caught_exact_trace
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.rigid_catcher_mismatch_escapes
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.throw_time_catcher_binding_can_reject
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.copied_ball_stability_is_necessary

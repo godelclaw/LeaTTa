@@ -4,13 +4,14 @@ Purpose: Independent finite small-step execution of locally owned Prolog goals.
 Trusted boundary: none for the local core developed here
 Main exports: Session, Search, RawStep, Transition, StepsN
 -/
-import PLeaTTa.PeTTaSpec.PrologResolver
+import PLeaTTa.PeTTaSpec.PrologCopy
 
 namespace PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics
 
 open OpenSubstitution
 open Resolver
 open Canonical
+open Copy
 
 /-!
 `Trace.Process` deliberately contains no Prolog terms or substitutions.  That
@@ -120,6 +121,14 @@ structure OpenedCatch where
   session : Session
 deriving Repr
 
+/-- One finite-tree exception copy and the non-backtrackable allocator state
+after reserving its fresh variables. -/
+structure OpenedThrow where
+  prepared : PreparedTermCopy
+  exception : RaisedException
+  session : Session
+deriving Repr, Inhabited
+
 /-- Allocate a fresh predicate cut scope and prepare the call-start clause
 snapshot.  The fresh-name and cut-scope allocators advance before any clause
 body runs; the independent exception allocator is preserved. -/
@@ -141,6 +150,22 @@ def openCatch (session : Session) : OpenedCatch :=
       { session with
         nextCutScope := session.nextCutScope + 1
         nextExceptionScope := session.nextExceptionScope + 1 } }
+
+/-- Materialize and injectively alpha-copy one exception term above the
+resolver's global fresh high-water.  Only that high-water changes; database,
+cut scopes, and exception scopes are preserved. -/
+def openThrow (session : Session) (raw : Term)
+    (bindings : Substitution) : OpenedThrow :=
+  let prepared :=
+    prepareTermCopy session.resolver.nextFresh bindings raw
+  { prepared := prepared
+    exception :=
+      { ball := prepared.copied
+        throwBindings := bindings }
+    session :=
+      { session with
+        resolver :=
+          { session.resolver with nextFresh := prepared.nextFresh } } }
 
 @[simp] theorem openLocalCall_scope (session : Session)
     (request : CallRequest) :
@@ -184,6 +209,54 @@ theorem openLocalCall_nextFresh_mono (session : Session)
 @[simp] theorem openCatch_nextExceptionScope (session : Session) :
     (openCatch session).session.nextExceptionScope =
       session.nextExceptionScope + 1 := rfl
+
+@[simp] theorem openThrow_ball (session : Session) (raw : Term)
+    (bindings : Substitution) :
+    (openThrow session raw bindings).exception.ball =
+      (openThrow session raw bindings).prepared.copied := rfl
+
+@[simp] theorem openThrow_throwBindings (session : Session) (raw : Term)
+    (bindings : Substitution) :
+    (openThrow session raw bindings).exception.throwBindings = bindings := rfl
+
+@[simp] theorem openThrow_database (session : Session) (raw : Term)
+    (bindings : Substitution) :
+    (openThrow session raw bindings).session.resolver.database =
+      session.resolver.database := rfl
+
+@[simp] theorem openThrow_nextCutScope (session : Session) (raw : Term)
+    (bindings : Substitution) :
+    (openThrow session raw bindings).session.nextCutScope =
+      session.nextCutScope := rfl
+
+@[simp] theorem openThrow_nextExceptionScope (session : Session) (raw : Term)
+    (bindings : Substitution) :
+    (openThrow session raw bindings).session.nextExceptionScope =
+      session.nextExceptionScope := rfl
+
+theorem openThrow_nextFresh_mono (session : Session) (raw : Term)
+    (bindings : Substitution) :
+    session.resolver.nextFresh ≤
+      (openThrow session raw bindings).session.resolver.nextFresh := by
+  exact prepareTermCopy_next_ge_allocator _ _ _
+
+/-- The exception ball is an injective fresh copy of the term materialized at
+the throw point. -/
+theorem openThrow_isFreshCopy (session : Session) (raw : Term)
+    (bindings : Substitution) :
+    Term.IsFreshCopy
+      (openThrow session raw bindings).prepared.materialized
+      (openThrow session raw bindings).exception.ball
+      (openThrow session raw bindings).prepared.firstFresh
+      (openThrow session raw bindings).prepared.nextFresh := by
+  exact prepareTermCopy_isFreshCopy _ _ _
+
+/-- Throw-time bindings cannot rewrite the freshly copied exception ball. -/
+theorem openThrow_ball_stable_raw (session : Session) (raw : Term)
+    (bindings : Substitution) :
+    bindings.applyTerm (openThrow session raw bindings).exception.ball =
+      (openThrow session raw bindings).exception.ball := by
+  exact prepareTermCopy_stable _ _ _
 
 /-- A finite local search state.
 
@@ -338,6 +411,12 @@ def openedFor (session : Session) (predicate : String)
     (arguments : List Term) (bindings : Substitution) : OpenedCall :=
   openLocalCall session (requestFor predicate arguments bindings)
 
+/-- Exact built-in `throw/1` shape.  Ordinary locally owned predicate calls
+exclude this shape, so exception production and clause lookup cannot both
+step from the same task. -/
+def BuiltinThrowCall (predicate : String) (arguments : List Term) : Prop :=
+  ∃ ball, predicate = "throw" ∧ arguments = [ball]
+
 /-- One deterministic ordered-MGU extension of a primitive equality. -/
 def UnifyResolution (bindings : Substitution) (left right : Term)
     (result : Substitution) : Prop :=
@@ -404,6 +483,20 @@ def BallStable (exception : RaisedException) : Prop :=
   exception.throwBindings.applyTerm exception.ball = exception.ball
 
 end RaisedException
+
+/-- The packet produced by a real local throw starts at the task's cumulative
+binding state. -/
+theorem openThrow_extends_current (session : Session) (raw : Term)
+    (bindings : Substitution) :
+    (openThrow session raw bindings).exception.ExtendsEntry bindings := by
+  exact BindingLineage.refl bindings
+
+/-- The fresh-copy algorithm discharges the stability premise consumed by
+two-phase catch progress. -/
+theorem openThrow_ballStable (session : Session) (raw : Term)
+    (bindings : Substitution) :
+    (openThrow session raw bindings).exception.BallStable := by
+  exact openThrow_ball_stable_raw session raw bindings
 
 /-- Binding-lineage obligations carried by a finite search tree relative to
 an enclosing entry state.  Every executable task and frozen call cursor must
@@ -783,9 +876,16 @@ inductive RawStep : Session → Search → List Observation → Trace.CutSignal 
       (bindings : Substitution) (session : Session) :
       RawStep session (.task scope (.cut :: rest) bindings) [] (.commit scope)
         session (.running (.task scope rest bindings))
+  | taskThrow (scope : CutScopeId) (ball : Term) (rest : List Goal)
+      (bindings : Substitution) (session : Session) :
+      RawStep session
+        (.task scope (.call "throw" [ball] :: rest) bindings) [] .none
+        (openThrow session ball bindings).session
+        (.running (.raise (openThrow session ball bindings).exception))
   | taskCall (scope : CutScopeId) (predicate : String)
       (arguments : List Term) (rest : List Goal) (bindings : Substitution)
-      (session : Session) :
+      (session : Session)
+      (notThrow : ¬ BuiltinThrowCall predicate arguments) :
       RawStep session (.task scope (.call predicate arguments :: rest) bindings)
         [.opened (requestFor predicate arguments bindings)] .none
         (openedFor session predicate arguments bindings).session
@@ -1015,7 +1115,7 @@ theorem cursor_scope_old_or_fresh {before after : Session} {search : Search}
     · exact Or.inl (Or.inr member)
   | taskDisjunction scope branches rest bindings session =>
       simp [RawTarget.liveCursorScopes, Search.liveCursorScopes]
-  | taskCall scope predicate arguments rest bindings session =>
+  | taskCall scope predicate arguments rest bindings session notThrow =>
       simp [RawTarget.liveCursorScopes, Search.liveCursorScopes,
         openedFor, openLocalCall]
   | _ =>
@@ -1241,6 +1341,10 @@ theorem task_deterministic {before : Session} {scope : CutScopeId}
   case taskNotIdentical.taskIdentical =>
     rename_i different same
     exact False.elim (different same)
+  case taskThrow.taskCall =>
+    simp [BuiltinThrowCall] at *
+  case taskCall.taskThrow =>
+    simp [BuiltinThrowCall] at *
 
 /-- Pulling the same frozen local cursor has one exact small-step outcome.
 This lifts canonical head-MGU and `LocalPull` determinism through the search
@@ -1304,6 +1408,10 @@ theorem preserves_bindingLineage_target {entryBindings : Substitution}
     exact UnifyResolution.bindingLineage (by assumption)
   case taskDisjunction =>
     exact Search.disjoin_bindingLineageFrom lineage _ _ _
+  case taskThrow =>
+    constructor
+    · exact BindingLineage.trans lineage (openThrow_extends_current _ _ _)
+    · exact openThrow_ballStable _ _ _
   case taskCall =>
     constructor
     · exact prepareCall_bindingsAligned _ _
@@ -1443,7 +1551,10 @@ theorem preserves_wellScoped_target {active : CutScopeId}
   | taskCut scope rest bindings session =>
       cases wellFormed
       exact .task scope rest bindings
-  | taskCall scope predicate arguments rest bindings session =>
+  | taskThrow scope ball rest bindings session =>
+      cases wellFormed
+      exact .raise scope (openThrow session ball bindings).exception
+  | taskCall scope predicate arguments rest bindings session notThrow =>
       cases wellFormed
       exact .product scope _ rest
         (.cutBoundary scope
@@ -1600,15 +1711,17 @@ theorem choice_raised_prunes_right_cursors {scope : CutScopeId}
       exact ⟨leftEvents, rfl, child⟩
 
 /-- No structural search step can restore a stale fresh-name high-water.
-The only allocating rule is local-call opening; every wrapper inherits its
-child's monotonicity. -/
+Local-call opening and exception copying are the allocating rules; every
+wrapper inherits its child's monotonicity. -/
 theorem nextFresh_mono {before after : Session} {search : Search}
     {events : List Observation} {signal : Trace.CutSignal}
     {target : RawTarget}
     (step : RawStep before search events signal after target) :
     before.resolver.nextFresh ≤ after.resolver.nextFresh := by
   induction step <;> try exact Nat.le_refl _
-  case taskCall scope predicate arguments rest bindings session =>
+  case taskThrow scope ball rest bindings session =>
+    exact openThrow_nextFresh_mono session ball bindings
+  case taskCall scope predicate arguments rest bindings session notThrow =>
     simpa only [openedFor] using
       (openLocalCall_nextFresh_mono session
         (requestFor predicate arguments bindings))
@@ -1622,7 +1735,7 @@ theorem nextCutScope_mono {before after : Session} {search : Search}
     (step : RawStep before search events signal after target) :
     before.nextCutScope ≤ after.nextCutScope := by
   induction step <;> try exact Nat.le_refl _
-  case taskCall scope predicate arguments rest bindings session =>
+  case taskCall scope predicate arguments rest bindings session notThrow =>
     simp only [openedFor, openLocalCall_nextCutScope]
     omega
   case taskCatch scope protectedGoal catcher handler rest bindings session =>
@@ -2570,6 +2683,10 @@ completion. -/
 
 private def leftRecursivePredicate : String := "$pleatta_left_recursive"
 
+private theorem leftRecursive_notThrow :
+    ¬ BuiltinThrowCall leftRecursivePredicate [] := by
+  simp [BuiltinThrowCall]
+
 private def leftRecursiveClause : LocalClause :=
   { predicate := leftRecursivePredicate
     arguments := []
@@ -2684,7 +2801,7 @@ private theorem leftRecursivePulled_open (depth : Nat)
   induction depth generalizing scope with
   | zero =>
       have opened := RawStep.taskCall scope leftRecursivePredicate [] [] []
-        (leftRecursiveSession (scope + 1))
+        (leftRecursiveSession (scope + 1)) leftRecursive_notThrow
       simpa [leftRecursivePulled, leftRecursiveChain, leftRecursiveRequest,
         openedFor_leftRecursive, Nat.add_assoc] using
         (RawStep.cutBoundaryProgress scope _ _
@@ -2815,7 +2932,7 @@ private theorem leftRecursive_initial_open :
     (.cutBoundaryProgress 0 _ _ [.opened leftRecursiveRequest]
       (leftRecursiveSession 1) (leftRecursiveSession 2)
       (.taskCall 0 leftRecursivePredicate [] [] []
-        (leftRecursiveSession 1)))
+        (leftRecursiveSession 1) leftRecursive_notThrow))
 
 /-- The actual local clause `loop :- loop` has exact arbitrarily long finite
 prefixes containing only call-open observations.  After every such positive
@@ -2973,7 +3090,8 @@ body is preconstructed and the caller tail remains outside the callee's cut
 boundary under `product`. -/
 theorem call_opens_finite_activation (scope : CutScopeId)
     (predicate : String) (arguments : List Term) (rest : List Goal)
-    (bindings : Substitution) (session : Session) :
+    (bindings : Substitution) (session : Session)
+    (notThrow : ¬ BuiltinThrowCall predicate arguments) :
     RawStep session
       (.task scope (.call predicate arguments :: rest) bindings)
       [.opened (requestFor predicate arguments bindings)] .none
@@ -2986,7 +3104,61 @@ theorem call_opens_finite_activation (scope : CutScopeId)
               (openedFor session predicate arguments bindings).scope
               (openedFor session predicate arguments bindings).cursor))
           rest)) := by
-  exact .taskCall scope predicate arguments rest bindings session
+  exact .taskCall scope predicate arguments rest bindings session notThrow
+
+/-- A real local `throw/1` task performs one silent allocation step into an
+internal raised packet.  The residual conjunction is discarded rather than
+entered, and ordinary clause lookup is excluded by `BuiltinThrowCall`. -/
+theorem throw_enters_fresh_raise (scope : CutScopeId) (ball : Term)
+    (rest : List Goal) (bindings : Substitution) (session : Session) :
+    RawStep session
+      (.task scope (.call "throw" [ball] :: rest) bindings) [] .none
+      (openThrow session ball bindings).session
+      (.running (.raise (openThrow session ball bindings).exception)) := by
+  exact .taskThrow scope ball rest bindings session
+
+/-- The packet installed by `throw/1` is a certified injective alpha-copy of
+the materialized exception term and already satisfies the catch transport
+condition. -/
+theorem throw_packet_copy_contract (session : Session) (ball : Term)
+    (bindings : Substitution) :
+    Term.IsFreshCopy
+        (openThrow session ball bindings).prepared.materialized
+        (openThrow session ball bindings).exception.ball
+        (openThrow session ball bindings).prepared.firstFresh
+        (openThrow session ball bindings).prepared.nextFresh ∧
+      (openThrow session ball bindings).exception.BallStable := by
+  exact ⟨openThrow_isFreshCopy session ball bindings,
+    openThrow_ballStable session ball bindings⟩
+
+/-- Publicly, local `throw/1` has an exact two-step prefix: a silent fresh-copy
+step followed by the raised observation and raised terminal tag.  It cannot be
+misread as failure or completion. -/
+theorem local_throw_exact_two_steps (scope : CutScopeId) (ball : Term)
+    (bindings : Substitution) (session : Session) :
+    StepsN 2
+      (.running session
+        (.task scope [.call "throw" [ball]] bindings))
+      [.raised (openThrow session ball bindings).exception.ball]
+      (.terminal (openThrow session ball bindings).session
+        (.raised (openThrow session ball bindings).exception.ball)) := by
+  let opened := openThrow session ball bindings
+  let start : State :=
+    .running session (.task scope [.call "throw" [ball]] bindings)
+  let middle : State := .running opened.session (.raise opened.exception)
+  let finish : State := .terminal opened.session (.raised opened.exception.ball)
+  have first : Transition start [] middle := by
+    exact .ordinary _ _ _ _ _
+      (.taskThrow scope ball [] bindings session)
+  have second : Transition middle [.raised opened.exception.ball] finish := by
+    exact .ordinary _ _ _ _ _ (.raise opened.exception opened.session)
+  have tail : StepsN 1 middle [.raised opened.exception.ball] finish := by
+    simpa using
+      (StepsN.succ 0 middle finish finish
+        [.raised opened.exception.ball] [] second (.zero finish))
+  simpa [start, middle, finish, opened] using
+    (StepsN.succ 1 start middle finish []
+      [.raised opened.exception.ball] first tail)
 
 /-- A successful pull puts the entered raw body on the left and the frozen
 remaining clause cursor on the right, both at the predicate cut scope. -/
@@ -3059,6 +3231,11 @@ private theorem catchWitness_selects :
   exact ⟨extension, by
     simpa [catchWitnessRaised] using computed⟩
 
+private theorem openThrow_catchWitness_exception (session : Session) :
+    (openThrow session catchWitnessException []).exception =
+      catchWitnessRaised := by
+  rfl
+
 /-- Entering `catch/3` allocates independent cut and exception identities,
 keeps the caller tail outside the opaque cut barrier, and starts the protected
 goal with exactly the entry substitution.  No external provider participates
@@ -3096,6 +3273,207 @@ theorem variable_catcher_handles (scope : CutScopeId)
     catchWitnessBinding [] session session
     (.raise catchWitnessRaised session) catchWitness_selects
     catchWitness_resolves
+
+/-- The smallest real caught exception executes through the whole certified
+control stack: enter distinct delimiters, materialize and copy `throw/1`,
+perform SWI's two-phase catcher match, run the recovery goal, emit exactly one
+answer, then report completion.  The raised marker is internal to the caught
+path and therefore absent from the public trace.
+
+[SPEC translator.pl:300-308]
+[SPEC SWI-Prolog manual 4.10, `catch/3` and `throw/1`] -/
+theorem ground_throw_caught_exact_trace (scope : CutScopeId)
+    (session : Session) :
+    StepsN 8
+      (.running session
+        (.task scope
+          [.catch (.call "throw" [catchWitnessException])
+            (.variable catchWitnessVariable) .truth]
+          []))
+      [.answer catchWitnessBinding, .completed]
+      (.terminal
+        (openThrow (openCatch session).session catchWitnessException []).session
+        .completed) := by
+  let caught := openCatch session
+  let thrown := openThrow caught.session catchWitnessException []
+  let protectedGoal : Goal := .call "throw" [catchWitnessException]
+  let catcher : Term := .variable catchWitnessVariable
+  let inner := caught.cutScope
+  let handlerScope := caught.handlerScope
+  let initial : State :=
+    .running session
+      (.task scope [.catch protectedGoal catcher .truth] [])
+  let entered : State :=
+    .running caught.session
+      (.product scope
+        (.cutBoundary inner
+          (.catchBoundary handlerScope inner
+            (.task inner [protectedGoal] []) catcher .truth []))
+        [])
+  let copied : State :=
+    .running thrown.session
+      (.product scope
+        (.cutBoundary inner
+          (.catchBoundary handlerScope inner
+            (.raise thrown.exception) catcher .truth []))
+        [])
+  let recovering : State :=
+    .running thrown.session
+      (.product scope
+        (.cutBoundary inner
+          (.task inner [.truth] catchWitnessBinding))
+        [])
+  let recoveryDone : State :=
+    .running thrown.session
+      (.product scope
+        (.cutBoundary inner
+          (.task inner [] catchWitnessBinding))
+        [])
+  let callerChoice : State :=
+    .running thrown.session
+      (.choice scope
+        (.task scope [] catchWitnessBinding)
+        (.product scope (.cutBoundary inner .done) []))
+  let answerEmitted : State :=
+    .running thrown.session
+      (.choice scope .done
+        (.product scope (.cutBoundary inner .done) []))
+  let alternatives : State :=
+    .running thrown.session
+      (.product scope (.cutBoundary inner .done) [])
+  let finished : State := .terminal thrown.session .completed
+  have enterStep : Transition initial [] entered := by
+    dsimp [initial, entered, caught, protectedGoal, catcher, inner,
+      handlerScope]
+    exact .ordinary _ _ _ _ _
+      (.taskCatch scope protectedGoal catcher .truth [] [] session)
+  have copyStep : Transition entered [] copied := by
+    have raw : RawStep caught.session
+        (.product scope
+          (.cutBoundary inner
+            (.catchBoundary handlerScope inner
+              (.task inner [protectedGoal] []) catcher .truth []))
+          [])
+        [] .none thrown.session
+        (.running
+          (.product scope
+            (.cutBoundary inner
+              (.catchBoundary handlerScope inner
+                (.raise thrown.exception) catcher .truth []))
+            [])) := by
+      apply RawStep.productProgress
+      · apply RawStep.cutBoundaryProgress
+        apply RawStep.catchProgress
+        exact .taskThrow inner catchWitnessException [] [] caught.session
+      · simp [Trace.AnswerFree]
+    exact .ordinary _ _ _ _ _ raw
+  have selected : CatchSelection thrown.exception catcher := by
+    simpa [thrown, catcher, openThrow_catchWitness_exception] using
+      catchWitness_selects
+  have resolved : CatchResolution [] catcher thrown.exception.ball
+      catchWitnessBinding := by
+    simpa [thrown, catcher, openThrow_catchWitness_exception,
+      catchWitnessRaised] using
+      catchWitness_resolves
+  have handleStep : Transition copied [] recovering := by
+    have raw : RawStep thrown.session
+        (.product scope
+          (.cutBoundary inner
+            (.catchBoundary handlerScope inner
+              (.raise thrown.exception) catcher .truth []))
+          [])
+        [] .none thrown.session
+        (.running
+          (.product scope
+            (.cutBoundary inner
+              (.task inner [.truth] catchWitnessBinding))
+            [])) := by
+      apply RawStep.productProgress
+      · apply RawStep.cutBoundaryProgress
+        exact .catchHandled handlerScope inner (.raise thrown.exception)
+          catcher thrown.exception .truth [] catchWitnessBinding []
+          thrown.session thrown.session (.raise thrown.exception thrown.session)
+          selected resolved
+      · simp [Trace.AnswerFree]
+    exact .ordinary _ _ _ _ _ raw
+  have recoveryStep : Transition recovering [] recoveryDone := by
+    have raw : RawStep thrown.session
+        (.product scope
+          (.cutBoundary inner (.task inner [.truth] catchWitnessBinding)) [])
+        [] .none thrown.session
+        (.running
+          (.product scope
+            (.cutBoundary inner (.task inner [] catchWitnessBinding)) [])) := by
+      apply RawStep.productProgress
+      · apply RawStep.cutBoundaryProgress
+        exact .taskTruth inner [] catchWitnessBinding thrown.session
+      · simp [Trace.AnswerFree]
+    exact .ordinary _ _ _ _ _ raw
+  have composeStep : Transition recoveryDone [] callerChoice := by
+    have raw : RawStep thrown.session
+        (.product scope
+          (.cutBoundary inner (.task inner [] catchWitnessBinding)) [])
+        [] .none thrown.session
+        (.running
+          (.choice scope
+            (.task scope [] catchWitnessBinding)
+            (.product scope (.cutBoundary inner .done) []))) := by
+      apply RawStep.productAnswer
+      apply RawStep.cutBoundaryProgress
+      exact .taskAnswer inner catchWitnessBinding thrown.session
+    exact .ordinary _ _ _ _ _ raw
+  have answerStep : Transition callerChoice
+      [.answer catchWitnessBinding] answerEmitted := by
+    have raw : RawStep thrown.session
+        (.choice scope
+          (.task scope [] catchWitnessBinding)
+          (.product scope (.cutBoundary inner .done) []))
+        [.answer catchWitnessBinding] .none thrown.session
+        (.running
+          (.choice scope .done
+            (.product scope (.cutBoundary inner .done) []))) := by
+      apply RawStep.choiceProgress
+      exact .taskAnswer scope catchWitnessBinding thrown.session
+    exact .ordinary _ _ _ _ _ raw
+  have switchStep : Transition answerEmitted [] alternatives := by
+    have raw : RawStep thrown.session
+        (.choice scope .done
+          (.product scope (.cutBoundary inner .done) []))
+        [] .none thrown.session
+        (.running (.product scope (.cutBoundary inner .done) [])) := by
+      apply RawStep.choiceComplete
+      exact .done thrown.session
+    exact .ordinary _ _ _ _ _ raw
+  have completeStep : Transition alternatives [.completed] finished := by
+    have raw : RawStep thrown.session
+        (.product scope (.cutBoundary inner .done) [])
+        [.completed] .none thrown.session (.terminal .completed) := by
+      apply RawStep.productComplete
+      · apply RawStep.cutBoundaryComplete
+        exact .done thrown.session
+      · simp [Trace.AnswerFree]
+    exact .ordinary _ _ _ _ _ raw
+  have execution : StepsN 8 initial
+      [.answer catchWitnessBinding, .completed] finished := by
+    simpa using
+      (StepsN.succ 7 initial entered finished []
+        [.answer catchWitnessBinding, .completed] enterStep
+        (StepsN.succ 6 entered copied finished []
+          [.answer catchWitnessBinding, .completed] copyStep
+          (StepsN.succ 5 copied recovering finished []
+            [.answer catchWitnessBinding, .completed] handleStep
+            (StepsN.succ 4 recovering recoveryDone finished []
+              [.answer catchWitnessBinding, .completed] recoveryStep
+              (StepsN.succ 3 recoveryDone callerChoice finished []
+                [.answer catchWitnessBinding, .completed] composeStep
+                (StepsN.succ 2 callerChoice answerEmitted finished
+                  [.answer catchWitnessBinding] [.completed] answerStep
+                  (StepsN.succ 1 answerEmitted alternatives finished []
+                    [.completed] switchStep
+                    (StepsN.succ 0 alternatives finished finished
+                      [.completed] [] completeStep (.zero finished)))))))))
+  simpa [initial, finished, caught, thrown, protectedGoal, catcher] using
+    execution
 
 /-- Distinct rigid exception terms do not match.  The exact raised marker and
 terminal tag escape unchanged, establishing that the handler relation is not
