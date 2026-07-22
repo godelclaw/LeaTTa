@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
+# Exact expected divergences discovered while relating the independent local
+# Prolog semantics to the executable PLeaTTa machine. Values are ordered and
+# normalized by the same parser used for the corpus differential.
+case	id	fixture	mode	native_kind	native_expect	pleatta_kind	pleatta_expect	note
+findall-cross-solution-separation	BISIM.findall_copy	diffbench/host-fixtures/findall-fresh-copy.metta	expected-divergence	ok	["($v1 $v2)"]	ok	["($v1 $v1)"]	native findall copies each residual template independently; current executable reuses the source variable
+findall-intra-solution-sharing	BISIM.findall_copy	diffbench/host-fixtures/findall-intra-solution-sharing.metta	characterization	ok	["((pair $v1 $v1))"]	ok	["((pair $v1 $v1))"]	copying must preserve repeated-variable sharing within each individual solution

@@ -1006,7 +1006,9 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.DemandDrivenStep.MacroPrefixN.closedRootSteps_collapse_to_sealed
 #print axioms PLeaTTa.DemandDrivenStep.findall_nested_run_expands_and_collapses
 #print axioms PLeaTTa.DemandDrivenStep.empty_generator_findall_is_three_fine_steps
+#print axioms PLeaTTa.DemandDrivenStep.empty_generator_findall_retains_source_variable
 #print axioms PLeaTTa.DemandDrivenStep.FlatStepsN.lift
+#print axioms PLeaTTa.DemandDrivenStep.two_answer_findall_reuses_one_source_variable
 #print axioms PLeaTTa.DemandDrivenStep.findall_prefix_lifts
 #print axioms PLeaTTa.DemandDrivenStep.findall_unpaired_prefix_has_no_macro_collapse
 #print axioms PLeaTTa.DemandDrivenStep.findall_macro_expands

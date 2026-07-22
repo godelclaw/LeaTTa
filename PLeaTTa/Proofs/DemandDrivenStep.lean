@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: Apache-2.0
 
 import PLeaTTa.Semantics
+import PLeaTTa.Proofs.Unification
 
 /-!
 # Demand-driven nested execution for the sealed machine
@@ -805,6 +806,58 @@ theorem empty_generator_findall_is_three_fine_steps
     frames template [] result rest binding 1 head innerRun done
   exact ⟨inner, done, by simpa using bridge.1, bridge.2⟩
 
+/-- Concrete counterexample to treating the current sealed collector as
+SWI-compatible on residual variables.  An empty generator succeeds once, so
+its variable template is a reachable collected answer.  The current
+`findallSuccessor` places that *same caller variable* in the bag instead of a
+fresh copy: the source name remains in the collected value.  Native
+`findall/3` copies every solution template, so this theorem records the exact
+executable behavior that a future Search↔open-machine correspondence must
+reject rather than quotient away.
+
+[SPEC SWI-Prolog manual, `findall/3`: template copies are made for every
+solution] -/
+theorem empty_generator_findall_retains_source_variable
+    (prog : Prog) (gt : GroundingTable) (outer : Conf)
+    (frames : List Frame) (source : String) (result : Atom)
+    (rest : List Goal)
+    (head : outer.cur =
+      some (Goal.findall (.var source) [] result :: rest, [])) :
+    ∃ inner,
+      inner = answerSuccessor
+        (subConfOf outer [] [] (.var source)) [] ∧
+      PLeaTTa.Terminal inner ∧
+      StepsN prog gt 3 (OpenConf.ofConf outer frames)
+        (OpenConf.ofConf
+          (findallSuccessor outer inner result rest []) frames) ∧
+      PLeaTTa.Step prog gt outer
+        (findallSuccessor outer inner result rest []) ∧
+      inner.answerValues = [.var source] ∧
+      source ∈ (chainOf inner.answerValues).vars := by
+  let start := subConfOf outer [] [] (.var source)
+  let inner := answerSuccessor start []
+  have answerStep : PLeaTTa.Step prog gt start inner := by
+    exact PLeaTTa.Step.answer start [] (by rfl)
+  have notFindall : ¬ findallRunHead start := by
+    rintro ⟨otherTemplate, otherSub, otherResult, otherRest, otherBinding,
+      conflict⟩
+    simp [start, subConfOf] at conflict
+  have done : PLeaTTa.Terminal inner := by
+    cases hbarriers : outer.barriers <;>
+      simp [inner, start, answerSuccessor, subConfOf, PLeaTTa.Terminal, pull,
+        pullAuxTracked, pullAuxCached, pullAux, resetBarrierCache, hbarriers]
+  have innerRun : MacroStepsN prog gt 1 start inner := by
+    simpa using MacroStepsN.ordinary 0 start inner inner notFindall answerStep
+      (.zero inner)
+  have bridge := findall_nested_run_expands_and_collapses prog gt outer inner
+    frames (.var source) [] result rest [] 1 head innerRun done
+  have answers : inner.answerValues = [.var source] := by
+    cases hbarriers : outer.barriers <;>
+      simp [inner, start, answerSuccessor, subConfOf, Conf.answerValues, pull,
+        pullAuxTracked, pullAuxCached, pullAux, resetBarrierCache, hbarriers]
+  refine ⟨inner, rfl, done, by simpa using bridge.1, bridge.2, answers, ?_⟩
+  simp [answers, chainOf, consC, nilA, Atom.vars]
+
 /-- Sealed runs with no nested `findall` head, retaining exact step count. -/
 inductive FlatStepsN (prog : Prog) (gt : GroundingTable) :
     Nat → Conf → Conf → Prop where
@@ -823,6 +876,121 @@ theorem FlatStepsN.toStepStar {prog : Prog} {gt : GroundingTable}
   | zero state => exact .refl state
   | succ n before middle after _ step _ inductionHypothesis =>
       exact .tail before middle after step inductionHypothesis
+
+/-- The executable aliasing bug is observable with two successful generator
+branches, not merely through the spelling of one residual variable.  This is
+the sealed counterpart of the differential
+`findall-fresh-copy.metta` witness: a source-shaped two-branch `amb` reaches a
+terminal nested run whose collected value contains the *same* source variable
+twice.  Consequently its variable-occurrence list is not duplicate-free;
+alpha-renaming cannot turn it into two independently copied variables.
+
+[SPEC translator.pl:112-116; SWI-Prolog manual, `findall/3`] -/
+theorem two_answer_findall_reuses_one_source_variable
+    (prog : Prog) (gt : GroundingTable) (outer : Conf)
+    (source : String) (result : Atom) (rest : List Goal)
+    (head : outer.cur = some
+      (Goal.findall (.var source)
+        [Goal.amb [(.var source, []), (.var source, [])] (.var source)]
+        result :: rest, [])) :
+    ∃ inner,
+      FlatStepsN prog gt 5
+        (subConfOf outer
+          [Goal.amb [(.var source, []), (.var source, [])] (.var source)]
+          [] (.var source)) inner ∧
+      PLeaTTa.Terminal inner ∧
+      inner.answerValues = [.var source, .var source] ∧
+      PLeaTTa.Step prog gt outer
+        (findallSuccessor outer inner result rest []) ∧
+      (chainOf inner.answerValues).vars = [source, source] ∧
+      ¬ (chainOf inner.answerValues).vars.Nodup := by
+  let x : Atom := .var source
+  let branches : List (Atom × List Goal) := [(x, []), (x, [])]
+  let start := subConfOf outer [Goal.amb branches x] [] x
+  let afterAmb := pull
+    { start with
+      cur := none
+      alts := branches.map (fun (term, goals) =>
+        Alt.br (ambBranchGoals x (term, goals) ++ []) []) ++ start.alts }
+  let afterEq1 : Conf := { afterAmb with cur := some ([], []) }
+  let afterAnswer1 := answerSuccessor afterEq1 []
+  let afterEq2 : Conf := { afterAnswer1 with cur := some ([], []) }
+  let inner := answerSuccessor afterEq2 []
+  have afterAmbCur : afterAmb.cur =
+      some ([Goal.eq x x], []) := by
+    cases hbarriers : outer.barriers <;>
+      simp [afterAmb, start, branches, x, subConfOf, pull,
+        pullAuxTracked, pullAuxCached, pullAux, resetBarrierCache, hbarriers]
+  have afterAnswer1Cur : afterAnswer1.cur =
+      some ([Goal.eq x x], []) := by
+    cases hbarriers : outer.barriers <;>
+      simp [afterAnswer1, answerSuccessor, afterEq1, afterAmb, start, branches,
+        x, subConfOf, pull, pullAuxTracked, pullAuxCached, pullAux,
+        resetBarrierCache, hbarriers, ambBranchGoals]
+  have unifySelf : unifyB [] x x = some [] := by
+    simp [x, unifyB, unifyTopExact_var_self]
+  have trimAfterAmb : trimFor [] afterAmb.qterm [] = [] := by
+    rfl
+  have trimAfterAnswer1 : trimFor [] afterAnswer1.qterm [] = [] := by
+    rfl
+  have stepAmb : PLeaTTa.Step prog gt start afterAmb := by
+    exact PLeaTTa.Step.amb start branches x [] [] (by rfl)
+  have stepEq1 : PLeaTTa.Step prog gt afterAmb afterEq1 := by
+    simpa [afterEq1, trimAfterAmb] using
+      (PLeaTTa.Step.eq_ok afterAmb x x [] [] [] afterAmbCur unifySelf)
+  have stepAnswer1 : PLeaTTa.Step prog gt afterEq1 afterAnswer1 := by
+    exact PLeaTTa.Step.answer afterEq1 [] (by rfl)
+  have stepEq2 : PLeaTTa.Step prog gt afterAnswer1 afterEq2 := by
+    simpa [afterEq2, trimAfterAnswer1] using
+      (PLeaTTa.Step.eq_ok afterAnswer1 x x [] [] [] afterAnswer1Cur unifySelf)
+  have stepAnswer2 : PLeaTTa.Step prog gt afterEq2 inner := by
+    exact PLeaTTa.Step.answer afterEq2 [] (by rfl)
+  have notFindallStart : ¬ findallRunHead start := by
+    rintro ⟨template, sub, output, tail, binding, conflict⟩
+    simp [start, subConfOf] at conflict
+  have notFindallAfterAmb : ¬ findallRunHead afterAmb := by
+    rintro ⟨template, sub, output, tail, binding, conflict⟩
+    rw [afterAmbCur] at conflict
+    cases conflict
+  have notFindallAfterEq1 : ¬ findallRunHead afterEq1 := by
+    rintro ⟨template, sub, output, tail, binding, conflict⟩
+    simp [afterEq1] at conflict
+  have notFindallAfterAnswer1 : ¬ findallRunHead afterAnswer1 := by
+    rintro ⟨template, sub, output, tail, binding, conflict⟩
+    rw [afterAnswer1Cur] at conflict
+    cases conflict
+  have notFindallAfterEq2 : ¬ findallRunHead afterEq2 := by
+    rintro ⟨template, sub, output, tail, binding, conflict⟩
+    simp [afterEq2] at conflict
+  have run : FlatStepsN prog gt 5 start inner :=
+    .succ 4 start afterAmb inner notFindallStart stepAmb
+      (.succ 3 afterAmb afterEq1 inner notFindallAfterAmb stepEq1
+        (.succ 2 afterEq1 afterAnswer1 inner notFindallAfterEq1 stepAnswer1
+          (.succ 1 afterAnswer1 afterEq2 inner notFindallAfterAnswer1 stepEq2
+            (.succ 0 afterEq2 inner inner notFindallAfterEq2 stepAnswer2
+              (.zero inner)))))
+  have done : PLeaTTa.Terminal inner := by
+    cases hbarriers : outer.barriers <;>
+      simp [inner, afterEq2, afterAnswer1, answerSuccessor, afterEq1,
+        afterAmb, start, branches, x, subConfOf, PLeaTTa.Terminal, pull,
+        pullAuxTracked, pullAuxCached, pullAux, resetBarrierCache, hbarriers,
+        ambBranchGoals]
+  have answers : inner.answerValues = [x, x] := by
+    cases hbarriers : outer.barriers <;>
+      simp [inner, afterEq2, afterAnswer1, answerSuccessor, afterEq1,
+        afterAmb, start, branches, x, subConfOf, Conf.answerValues, pull,
+        pullAuxTracked, pullAuxCached, pullAux, resetBarrierCache, hbarriers,
+        ambBranchGoals]
+  have sealed : PLeaTTa.Step prog gt outer
+      (findallSuccessor outer inner result rest []) := by
+    exact PLeaTTa.Step.findall outer inner (.var source)
+      [Goal.amb [(.var source, []), (.var source, [])] (.var source)]
+      result rest [] head run.toStepStar done
+  refine ⟨inner, ?_, done, ?_, sealed, ?_, ?_⟩
+  · simpa [start, branches, x] using run
+  · simpa [x] using answers
+  · simp [answers, x, chainOf, consC, nilA, Atom.vars]
+  · simp [answers, x, chainOf, consC, nilA, Atom.vars]
 
 /-- Every private machine step remains one fine step under a fixed frame
 stack.  No zero-step quotient is used. -/
