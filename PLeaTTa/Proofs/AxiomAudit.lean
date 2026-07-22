@@ -38,6 +38,7 @@ import PLeaTTa.PeTTaSpec.PrologTraceSemantics
 import PLeaTTa.PeTTaSpec.PrologTermAlgebra
 import PLeaTTa.PeTTaSpec.PrologMgu
 import PLeaTTa.PeTTaSpec.PrologResolver
+import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 
 #print axioms PLeaTTa.machineMirrorsSpecTotal_proved
 #print axioms PLeaTTa.localGetTypeExtensionAlts_below
@@ -418,9 +419,36 @@ import PLeaTTa.PeTTaSpec.PrologResolver
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.semanticLocalClauseProtocol_pull_session
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.semanticLocalClauseProtocol_prune_session
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.semanticLocalClauseProtocol_rawStep_nextFresh_mono
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.openLocalCall_nextFresh_mono
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.UnifyResolution.deterministic
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.task_deterministic
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.clauses_deterministic
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.localPullTarget_wellScoped
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.preserves_wellScoped_target
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.preserves_wellScoped
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.signal_matches_active
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.no_foreign_commit
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.choice_raised_prunes_right_cursors
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.nextFresh_mono
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.nextCutScope_mono
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.database_eq
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.deterministic
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.Transition.deterministic
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.Transition.preserves_rooted
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.StepsN.deterministic
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.StepsN.preserves_rooted
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.initialState_rooted
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.left_truth_cannot_emit_right_answer
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.wrong_right_first_not_reference
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.call_opens_finite_activation
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.matched_clause_splices_body_first
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.cut_prunes_later_clauses
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.truth_exact_trace
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.left_recursive_arbitrarily_long_open_prefix
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.LocalPull.total
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.LocalPull.deterministic
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.LocalPull.reply_origin
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.LocalPull.reply_body_consistent
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.localCallProcess_wellScoped
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.localCallProcess_open_step
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.localCallProcess_reply_splice

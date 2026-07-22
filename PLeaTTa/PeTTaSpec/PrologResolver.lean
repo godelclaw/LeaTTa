@@ -1121,6 +1121,11 @@ structure EnteredClause where
   sourceId : ClauseId
   callGeneration : Generation
   bindings : Substitution
+  /-- The standardized-apart body before applying the head MGU.  The local
+  small-step machine carries raw residual goals together with a cumulative
+  substitution, so retaining this field avoids an idempotence assumption
+  when a recursive body is entered. -/
+  rawBody : List Goal
   body : List Goal
   nextFresh : Nat
 deriving Repr, Inhabited
@@ -1130,8 +1135,14 @@ def ClauseBranch.enter (branch : ClauseBranch) (bindings : Substitution) :
   { sourceId := branch.sourceId
     callGeneration := branch.callGeneration
     bindings := bindings
+    rawBody := branch.body
     body := bindings.applyGoals branch.body
     nextFresh := branch.nextFresh }
+
+@[simp] theorem ClauseBranch.enter_body (branch : ClauseBranch)
+    (bindings : Substitution) :
+    (branch.enter bindings).body =
+      bindings.applyGoals (branch.enter bindings).rawBody := rfl
 
 /-- Consume the head of a fully prepared cursor.  No fresh name is allocated
 here: the next cursor merely exposes the already-reserved tail. -/
@@ -1472,6 +1483,19 @@ theorem LocalPull.reply_origin
       exact ⟨wellFormed.2.2.1 branch member,
         wellFormed.1.member_next_le_final member,
         rfl, rfl, nextWellFormed⟩
+
+/-- Every clause reply carries a raw standardized-apart body together with
+the cumulative head-unification state that instantiates it.  This rules out a
+forged mismatch between the two redundant views and lets the small-step goal
+machine execute raw residual goals without assuming substitution
+idempotence. -/
+theorem LocalPull.reply_body_consistent
+    {cursor next : PreparedCursor} {entered : EnteredClause}
+    (pulled : LocalPull cursor (.reply entered next)) :
+    entered.body = entered.bindings.applyGoals entered.rawBody := by
+  cases pulled with
+  | matched branch rest result remaining resolved =>
+      exact ClauseBranch.enter_body branch result
 
 /-! ### MGU anti-vacuity witnesses -/
 

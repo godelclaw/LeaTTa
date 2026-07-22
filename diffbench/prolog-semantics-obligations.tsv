@@ -2,7 +2,8 @@
 # trace_semantics_sha256=b8011f7ec7077f66dac8f3a2e2e4812d235b77f326e52594c7d50a0ba876a486
 # term_algebra_sha256=fd8c5c4912379a03a4e1ed2b88dc05501eaaa2b3a5ebb43338ece4bb1f81faf0
 # ordered_mgu_sha256=75985862b874d7b9d5e686555f8058e00b08bb648777f29880d5dd54b1f17f6c
-# local_resolver_sha256=18925761dd7f34064ebba2a6d6b5ec9d93bbf2c10b1a00baee4452038f5da050
+# local_resolver_sha256=db1889d43c17f45a1975aefb51e2c75985110d250e9966c9751a944ccca59384
+# goal_semantics_sha256=2583fc75e9b2e122299c816dc1bca3784717eb7e9f20cbb91a61fd57ef81255f
 # status: PASS=proved-property-of-the-independent-model GAP=open-reference-or-adequacy-proof FAIL=known-implementation/reference-mismatch BOUNDARY=permanent-explicit-trusted-boundary
 # proof: SC=sound-complete W=witness/inversion theorem SH=shape-only N=none
 # native_source: T=src/translator.pl M=src/metta.pl SWI=official SWI-Prolog manual ISO=ISO Prolog working documents -=independent infrastructure
@@ -13,10 +14,11 @@ TRACE.answer_multiplicity	-	trace	Observation;Steps	W	PASS	duplicate answer rema
 TRACE.exception_tag	T300-308	trace	Observation;RawStep	W	PASS	raised and completed are distinct; raise cannot step as completion
 TRACE.open_continuation	-	trace	State;Terminal;StepsN	W	PASS	running continuation is distinct from completed and raised terminal states
 TRACE.answer_then_diverge	-	trace	oneThenLoopProtocol	W	PASS	first answer plus exact arbitrarily-long silent prefixes; every finite suffix stays open and fabricated exhaustion is impossible
-CONTROL.leftmost_dfs	SWI:metacall	control	Process;RawStep	SH	GAP	certified reply splice and two-clause ordered witness are proved; generic determinism and Goal specialization remain open
-CONTROL.well_scoped_preservation	SWI:metacall	control	WellScoped;RawStep	W	PASS	malformed outer commit rejected; running steps preserve scope discipline; any emitted commit matches the active scope
+CONTROL.leftmost_dfs	SWI:metacall	control	GoalSemantics.Search;GoalSemantics.RawStep;GoalSemantics.StepsN	W	PASS	finite local Goal states have only left-child progress; RawStep, public Transition, and every fixed-length trajectory are deterministic down to exact ordered events and successor state; calls splice one clause body before the retained cursor, while executable adequacy remains separate
+CONTROL.right_first_rejected	SWI:metacall	control	GoalSemantics.RawStep;GoalSemantics.WrongRightStep	W	PASS	a deliberately wrong right-first rule exposes the right answer before reducing the live left goal, while the certified relation proves that exact transition impossible
+CONTROL.well_scoped_preservation	SWI:metacall	control	Trace.WellScoped;GoalSemantics.Search.WellScoped;GoalSemantics.State.Rooted;RawStep	W	PASS	both the generic control layer and local Goal machine preserve scope discipline; public transitions and finite prefixes preserve the distinguished root boundary, the clause-body/cursor splice is well-scoped at predicate scope, and any reachable commit is caught at its active scope
 CONTROL.specialization_well_scoped	SWI:metacall	control	WellScoped	SH	GAP	Goal specialization must produce well-scoped processes with fresh opaque boundaries
-CONTROL.bind	SWI:metacall	control	Process.bind;RawStep.bind*	SH	GAP	answer-at-a-time conjunction rule present; substitution-specialized adequacy open
+CONTROL.bind	SWI:metacall	control	GoalSemantics.Search.product;GoalSemantics.RawStep.product*	SH	GAP	answer-at-a-time product deterministically feeds each cumulative substitution into the raw caller tail and retains later head answers at caller scope; executable conjunction adequacy remains open
 CUT.typed_scope	T117-118	control	CutScopeId;Process.cutBoundary	SH	PASS	cut delimiter is typed separately from future exception and collection delimiters
 CUT.same_scope	T117-118	control	RawStep.choiceCommitHere	W	PASS	matching-scope alternative is pruned before later answer or effect
 CUT.inner_locality	SWI:metacall	control	WellScoped;RawStep	W	PASS	well-scoped inner commit prunes its inner sibling but preserves and later observes the enclosing sibling
@@ -40,7 +42,8 @@ RESOLVER.freshening	ISO:SLD	resolver	reserveVisible;FreshReservation;prepareCall
 RESOLVER.mgu	ISO:unification	resolver	Canonical.TreeMgu;OrderedTreeMgu	SC	PASS	finite-tree occurs check, ordered Robinson derivation, most-generality, completeness, determinism, exact typed reification, and head-resolution uniqueness proved
 RESOLVER.mgu_executable	ISO:unification	composition	PLeaTTa.unifyTopExact	N	GAP	executable substitution orientation and exact canonical-MGU refinement remain open
 RESOLVER.float_identity	SWI:term-order	composition	Canonical.RigidSymbol.float	N	GAP	executable equality must use Float.toBits rather than IEEE equality; NaN identity must be reconciled explicitly with pinned SWI
-RESOLVER.body_execution	M251-256	resolver	EnteredClause;Trace.Process	SH	GAP	provider replies are structurally unable to emit answers, entered bodies splice before remaining clauses, and global fresh supply is non-backtrackable; recursive leftmost Goal execution and final-answer streaming remain open
+RESOLVER.recursive_prefix	M251-256	resolver	GoalSemantics.left_recursive_arbitrarily_long_open_prefix	W	PASS	a concrete local clause loop :- loop has exact arbitrarily long positive finite prefixes containing only call-open observations, with the machine still running and no fabricated answer, effect, exception, or completion
+RESOLVER.body_execution	M251-256	resolver	EnteredClause;LocalPull.reply_body_consistent;GoalSemantics.Search;GoalSemantics.RawStep	W	GAP	measure-free finite states deterministically execute truth, failure, ordered MGU, identity, conjunction, disjunction, cut, and recursive local calls; every pulled raw body is tied to its cumulative instantiation without an idempotence premise, bodies run left of retained clauses, products stream into caller tails, and concrete left recursion has exact open finite prefixes; remaining Goal constructors and executable refinement remain open
 EXTERNAL.imported_swi	M271-280	boundary	OrderedCallProtocol	N	BOUNDARY	exact typed trace is trusted and replay-policed; SWI implementation is never counted as certified core
 EXTERNAL.current_worker	M271-280	boundary	pleatta-prolog-worker.py	N	FAIL	worker eagerly materializes a complete findall answer bag and cannot preserve answer-before-divergence or demand-time pruning
 PROJECTION.complete_answer_list	-	projection	Ordered.Runs	N	GAP	terminating trace-to-list projection theorem open; list semantics may not be primary equivalence
