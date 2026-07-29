@@ -34,7 +34,7 @@ inductive RigidSymbol where
   | compound (functor : String)
   | nil
   | cons
-deriving Repr, Inhabited
+deriving Repr, Inhabited, DecidableEq
 
 /-- Canonical free first-order trees used by the resolver's unification
 specification. -/

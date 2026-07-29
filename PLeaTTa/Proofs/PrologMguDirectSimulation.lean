@@ -8,10 +8,14 @@ Trusted boundary: none
 Main exports:
   CanonicalRuntimeAgrees.occurs_eq,
   CanonicalRuntimeAgrees.instantiateOne,
-  CanonicalRuntimeAgrees.decomposeEqWith_same,
+  treeEquationsDecompose_iff_function,
+  TreeEquationsDecompose.instantiateOne_unificationEquivalent,
+  treeUnifyRounds_complete_of_unifier,
   TreeDecomposes.runtime,
   TreeEquationsDecompose.runtime,
   TreeUnifyRounds.runtime,
+  TreeUnifyRounds.isMostGeneral,
+  OrderedTreeMgu.unifyTopExact_exists_alpha_mgu,
   CanonicalRuntimeAgrees.unifyTopExact_bindLeft,
   CanonicalRuntimeAgrees.unifyTopExact_bindRight
 -/
@@ -25,6 +29,7 @@ open PeTTaSpec.PrologCore.Canonical
 open PrologMguBridge
 open PrologMguOpenAgreement
 open PrologMguExecutableOpenFactor
+open PrologMguTopology
 open PrologPrefilterBridge
 
 /-! ## Exact alpha transport of the occurs check -/
@@ -279,6 +284,347 @@ inductive TreeEquationsDecompose :
         ((left, right) :: equations)
         (headConstraints ++ tailConstraints)
 
+/-! ## Independent executable presentation of canonical decomposition -/
+
+mutual
+
+/-- Canonical-tree structural decomposition.  This function contains no
+runtime atom, ground comparator, or encoding convention; the relation above
+remains its independent specification. -/
+def canonicalDecomposeTree :
+    Tree → Tree → Option (List (LogicVar × Tree))
+  | .variable source, .variable target =>
+      if source = target then some []
+      else some [(source, .variable target)]
+  | .variable source, value =>
+      some [(source, value)]
+  | value, .variable target =>
+      some [(target, value)]
+  | .node leftSymbol leftChildren, .node rightSymbol rightChildren =>
+      if leftSymbol = rightSymbol then
+        canonicalDecomposeTrees leftChildren rightChildren
+      else none
+
+/-- Ordered-child companion to `canonicalDecomposeTree`. -/
+def canonicalDecomposeTrees :
+    List Tree → List Tree → Option (List (LogicVar × Tree))
+  | [], [] => some []
+  | left :: lefts, right :: rights =>
+      match canonicalDecomposeTree left right,
+          canonicalDecomposeTrees lefts rights with
+      | some head, some tail => some (head ++ tail)
+      | _, _ => none
+  | _, _ => none
+
+end
+
+/-- Complete ordered-equation decomposition in the canonical tree algebra. -/
+def canonicalDecomposeEquations :
+    List TreeEquation → Option (List (LogicVar × Tree))
+  | [] => some []
+  | (left, right) :: equations =>
+      match canonicalDecomposeTree left right,
+          canonicalDecomposeEquations equations with
+      | some head, some tail => some (head ++ tail)
+      | _, _ => none
+
+/-- A singleton equation decomposes exactly as its two trees. -/
+@[simp] theorem canonicalDecomposeEquations_single
+    (left right : Tree) :
+    canonicalDecomposeEquations [(left, right)] =
+      canonicalDecomposeTree left right := by
+  simp only [canonicalDecomposeEquations]
+  cases canonicalDecomposeTree left right <;> simp
+
+/-- Decomposition of concatenated equation worklists composes their ordered
+constraint results.  This is the monoidal law used to keep head-before-tail
+order visible through repeated normalization. -/
+theorem canonicalDecomposeEquations_append
+    (first second : List TreeEquation) :
+    canonicalDecomposeEquations (first ++ second) =
+      match canonicalDecomposeEquations first,
+          canonicalDecomposeEquations second with
+      | some firstConstraints, some secondConstraints =>
+          some (firstConstraints ++ secondConstraints)
+      | _, _ => none := by
+  induction first with
+  | nil =>
+      cases secondComputed :
+          canonicalDecomposeEquations second <;>
+        simp [canonicalDecomposeEquations, secondComputed]
+  | cons equation equations inductionHypothesis =>
+      rcases equation with ⟨left, right⟩
+      simp only [List.cons_append, canonicalDecomposeEquations]
+      rw [inductionHypothesis]
+      cases canonicalDecomposeTree left right <;>
+        cases canonicalDecomposeEquations equations <;>
+        cases canonicalDecomposeEquations second <;>
+        simp [List.append_assoc]
+
+mutual
+
+/-- Every relational tree decomposition computes the same canonical
+constraint list. -/
+theorem TreeDecomposes.to_function
+    {left right : Tree} {constraints : List (LogicVar × Tree)}
+    (decomposition : TreeDecomposes left right constraints) :
+    canonicalDecomposeTree left right = some constraints := by
+  cases decomposition with
+  | reflexiveVariable identity =>
+      simp [canonicalDecomposeTree]
+  | bindLeft =>
+      rename_i source different
+      cases right with
+      | «variable» identity =>
+          have unequal : source ≠ identity := by
+            intro equality
+            subst identity
+            exact different rfl
+          simp [canonicalDecomposeTree, unequal]
+      | node symbol children =>
+          simp [canonicalDecomposeTree]
+  | bindRight =>
+      rename_i target notVariable
+      cases left with
+      | «variable» identity =>
+          exact False.elim (notVariable identity rfl)
+      | node symbol children =>
+          simp [canonicalDecomposeTree]
+  | node symbol children =>
+      simp [canonicalDecomposeTree,
+        TreesDecompose.to_function children]
+
+/-- Ordered-list relational decomposition computes its canonical function. -/
+theorem TreesDecompose.to_function
+    {left right : List Tree}
+    {constraints : List (LogicVar × Tree)}
+    (decomposition : TreesDecompose left right constraints) :
+    canonicalDecomposeTrees left right = some constraints := by
+  cases decomposition with
+  | nil => rfl
+  | cons head tail =>
+      simp [canonicalDecomposeTrees,
+        TreeDecomposes.to_function head,
+        TreesDecompose.to_function tail]
+
+end
+
+/-- Complete equation-worklist relational decomposition computes its
+canonical function. -/
+theorem TreeEquationsDecompose.to_function
+    {equations : List TreeEquation}
+    {constraints : List (LogicVar × Tree)}
+    (decomposition :
+      TreeEquationsDecompose equations constraints) :
+    canonicalDecomposeEquations equations = some constraints := by
+  cases decomposition with
+  | nil => rfl
+  | cons head tail =>
+      simp [canonicalDecomposeEquations,
+        TreeDecomposes.to_function head,
+        TreeEquationsDecompose.to_function tail]
+
+mutual
+
+/-- Every successful canonical tree decomposition function result is
+licensed by the independent relation. -/
+theorem treeDecomposes_of_function :
+    ∀ {left right : Tree} {constraints : List (LogicVar × Tree)},
+      canonicalDecomposeTree left right = some constraints →
+        TreeDecomposes left right constraints
+  | .variable source, .variable target, constraints, computed => by
+      by_cases same : source = target
+      · subst target
+        simp [canonicalDecomposeTree] at computed
+        subst constraints
+        exact .reflexiveVariable source
+      · simp [canonicalDecomposeTree, same] at computed
+        subst constraints
+        exact .bindLeft source (.variable target) (by
+          intro equality
+          exact same (Tree.variable.inj equality).symm)
+  | .variable source, .node symbol children, constraints, computed => by
+      simp [canonicalDecomposeTree] at computed
+      subst constraints
+      exact .bindLeft source (.node symbol children) (by
+        simp)
+  | .node symbol children, .variable target, constraints, computed => by
+      simp [canonicalDecomposeTree] at computed
+      subst constraints
+      exact .bindRight (.node symbol children) target (by
+        intro identity equality
+        cases equality)
+  | .node leftSymbol leftChildren, .node rightSymbol rightChildren,
+      constraints, computed => by
+      by_cases same : leftSymbol = rightSymbol
+      · subst rightSymbol
+        simp [canonicalDecomposeTree] at computed
+        exact .node leftSymbol
+          (treesDecompose_of_function computed)
+      · simp [canonicalDecomposeTree, same] at computed
+
+/-- Ordered-list functional decomposition is licensed by the independent
+relation. -/
+theorem treesDecompose_of_function :
+    ∀ {left right : List Tree}
+      {constraints : List (LogicVar × Tree)},
+      canonicalDecomposeTrees left right = some constraints →
+        TreesDecompose left right constraints
+  | [], [], constraints, computed => by
+      simp [canonicalDecomposeTrees] at computed
+      subst constraints
+      exact .nil
+  | [], _ :: _, _, computed => by
+      simp [canonicalDecomposeTrees] at computed
+  | _ :: _, [], _, computed => by
+      simp [canonicalDecomposeTrees] at computed
+  | left :: lefts, right :: rights, constraints, computed => by
+      simp only [canonicalDecomposeTrees] at computed
+      cases headComputed :
+          canonicalDecomposeTree left right with
+      | none =>
+          simp [headComputed] at computed
+      | some headConstraints =>
+          cases tailComputed :
+              canonicalDecomposeTrees lefts rights with
+          | none =>
+              simp [headComputed, tailComputed] at computed
+          | some tailConstraints =>
+              simp [headComputed, tailComputed] at computed
+              subst constraints
+              exact .cons
+                (treeDecomposes_of_function headComputed)
+                (treesDecompose_of_function tailComputed)
+
+end
+
+/-- Every successful canonical equation-worklist function result is
+licensed by the independent relation. -/
+theorem treeEquationsDecompose_of_function :
+    ∀ {equations : List TreeEquation}
+      {constraints : List (LogicVar × Tree)},
+      canonicalDecomposeEquations equations = some constraints →
+        TreeEquationsDecompose equations constraints
+  | [], constraints, computed => by
+      simp [canonicalDecomposeEquations] at computed
+      subst constraints
+      exact .nil
+  | (left, right) :: equations, constraints, computed => by
+      simp only [canonicalDecomposeEquations] at computed
+      cases headComputed :
+          canonicalDecomposeTree left right with
+      | none =>
+          simp [headComputed] at computed
+      | some headConstraints =>
+          cases tailComputed :
+              canonicalDecomposeEquations equations with
+          | none =>
+              simp [headComputed, tailComputed] at computed
+          | some tailConstraints =>
+              simp [headComputed, tailComputed] at computed
+              subst constraints
+              exact .cons
+                (treeDecomposes_of_function headComputed)
+                (treeEquationsDecompose_of_function tailComputed)
+
+/-- The independent relation is exactly the graph of the independent
+canonical tree decomposition function. -/
+theorem treeDecomposes_iff_function
+    {left right : Tree} {constraints : List (LogicVar × Tree)} :
+    TreeDecomposes left right constraints ↔
+      canonicalDecomposeTree left right = some constraints :=
+  ⟨TreeDecomposes.to_function, treeDecomposes_of_function⟩
+
+/-- Ordered-child graph theorem. -/
+theorem treesDecompose_iff_function
+    {left right : List Tree}
+    {constraints : List (LogicVar × Tree)} :
+    TreesDecompose left right constraints ↔
+      canonicalDecomposeTrees left right = some constraints :=
+  ⟨TreesDecompose.to_function, treesDecompose_of_function⟩
+
+/-- Ordered-equation graph theorem. -/
+theorem treeEquationsDecompose_iff_function
+    {equations : List TreeEquation}
+    {constraints : List (LogicVar × Tree)} :
+    TreeEquationsDecompose equations constraints ↔
+      canonicalDecomposeEquations equations = some constraints :=
+  ⟨TreeEquationsDecompose.to_function,
+    treeEquationsDecompose_of_function⟩
+
+/-- Canonical tree decomposition is deterministic because the independent
+relation is exactly the graph of `canonicalDecomposeTree`. -/
+theorem TreeDecomposes.deterministic
+    {left right : Tree}
+    {first second : List (LogicVar × Tree)}
+    (one : TreeDecomposes left right first)
+    (two : TreeDecomposes left right second) :
+    first = second :=
+  Option.some.inj (one.to_function.symm.trans two.to_function)
+
+/-- Ordered child-list decomposition is deterministic. -/
+theorem TreesDecompose.deterministic
+    {left right : List Tree}
+    {first second : List (LogicVar × Tree)}
+    (one : TreesDecompose left right first)
+    (two : TreesDecompose left right second) :
+    first = second :=
+  Option.some.inj (one.to_function.symm.trans two.to_function)
+
+/-- Complete equation-worklist decomposition is deterministic. -/
+theorem TreeEquationsDecompose.deterministic
+    {equations : List TreeEquation}
+    {first second : List (LogicVar × Tree)}
+    (one : TreeEquationsDecompose equations first)
+    (two : TreeEquationsDecompose equations second) :
+    first = second :=
+  Option.some.inj (one.to_function.symm.trans two.to_function)
+
+/-- Two worklists are decomposition-equivalent when every successful
+ordered constraint result for one is exactly a result for the other.  This
+relation, rather than syntactic equation equality, is the congruence needed
+to transport Robinson rounds across structural normalization. -/
+def TreeDecompositionEquivalent
+    (first second : List TreeEquation) : Prop :=
+  ∀ constraints,
+    TreeEquationsDecompose first constraints ↔
+      TreeEquationsDecompose second constraints
+
+/-- Functional equality is an exact decision procedure for relational
+decomposition equivalence. -/
+theorem treeDecompositionEquivalent_iff_function
+    {first second : List TreeEquation} :
+    TreeDecompositionEquivalent first second ↔
+      canonicalDecomposeEquations first =
+        canonicalDecomposeEquations second := by
+  constructor
+  · intro equivalent
+    cases firstComputed :
+        canonicalDecomposeEquations first with
+    | none =>
+        cases secondComputed :
+        canonicalDecomposeEquations second with
+        | none => rfl
+        | some constraints =>
+            have secondRel :
+                TreeEquationsDecompose second constraints :=
+              treeEquationsDecompose_of_function secondComputed
+            have firstRel :=
+              (equivalent constraints).2 secondRel
+            exact False.elim (by
+              rw [firstRel.to_function] at firstComputed
+              cases firstComputed)
+    | some constraints =>
+        have firstRel :
+            TreeEquationsDecompose first constraints :=
+          treeEquationsDecompose_of_function firstComputed
+        have secondRel :=
+          (equivalent constraints).1 firstRel
+        exact secondRel.to_function.symm
+  · intro same constraints
+    rw [treeEquationsDecompose_iff_function,
+      treeEquationsDecompose_iff_function, same]
+
 /-- Successful canonical Robinson rounds, indexed by the same fuel discipline
 as the executable algorithm.  The state is an ordered substitution list;
 freshness makes canonical cons coincide with executable `Subst.extend`.
@@ -306,6 +652,48 @@ inductive TreeUnifyRounds :
           ((source, replacement) :: base) result) :
       TreeUnifyRounds (fuel + 1) equations base result
 
+/-- Decomposition-equivalent initial worklists admit exactly the same round
+derivations.  Recursive normalized worklists are unchanged; only the first
+structural-decomposition premise is transported. -/
+theorem TreeUnifyRounds.transport
+    {fuel : Nat} {first second : List TreeEquation}
+    {base result : TreeSubstitution}
+    (equivalent : TreeDecompositionEquivalent first second)
+    (rounds : TreeUnifyRounds fuel first base result) :
+    TreeUnifyRounds fuel second base result := by
+  cases rounds with
+  | done fuel decomposition =>
+      exact .done fuel ((equivalent []).1 decomposition)
+  | eliminate fuel decomposition fresh absent next =>
+      exact .eliminate fuel
+        ((equivalent _).1 decomposition) fresh absent next
+
+/-- Extra fuel cannot change or invalidate a successful independent round
+derivation. -/
+theorem TreeUnifyRounds.add_fuel
+    {fuel : Nat} {equations : List TreeEquation}
+    {base result : TreeSubstitution}
+    (rounds : TreeUnifyRounds fuel equations base result)
+    (extra : Nat) :
+    TreeUnifyRounds (fuel + extra) equations base result := by
+  induction rounds with
+  | done fuel decomposition =>
+      exact .done (fuel + extra) decomposition
+  | eliminate fuel decomposition fresh absent next inductionHypothesis =>
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+        (TreeUnifyRounds.eliminate (fuel + extra)
+          decomposition fresh absent inductionHypothesis)
+
+/-- Order-theoretic form of `TreeUnifyRounds.add_fuel`. -/
+theorem TreeUnifyRounds.mono
+    {fuel larger : Nat} {equations : List TreeEquation}
+    {base result : TreeSubstitution}
+    (rounds : TreeUnifyRounds fuel equations base result)
+    (enough : fuel ≤ larger) :
+    TreeUnifyRounds larger equations base result := by
+  obtain ⟨extra, rfl⟩ := Nat.exists_eq_add_of_le enough
+  exact rounds.add_fuel extra
+
 mutual
 
 /-- Every canonical tree decomposes reflexively to no constraints. -/
@@ -326,6 +714,1181 @@ theorem TreesDecompose.reflexive :
           (TreesDecompose.reflexive trees))
 
 end
+
+/-- Applying one singleton substitution to an equation-list cons exposes
+exactly one pair of one-pass replacements and preserves the tail worklist. -/
+@[simp] theorem applyEquations_singleton_cons
+    (source : LogicVar) (replacement left right : Tree)
+    (equations : List TreeEquation) :
+    TreeSubstitution.applyEquations [(source, replacement)]
+        ((left, right) :: equations) =
+      (Tree.instantiateOne source replacement left,
+        Tree.instantiateOne source replacement right) ::
+      TreeSubstitution.applyEquations
+        [(source, replacement)] equations :=
+  rfl
+
+private def orientationWitnessX : LogicVar := .source "$orientation_x"
+private def orientationWitnessY : LogicVar := .source "$orientation_y"
+private def orientationWitnessZ : LogicVar := .source "$orientation_z"
+
+private def orientationWitnessF (identity : LogicVar) : Tree :=
+  .node (.compound "$orientation_f") [.variable identity]
+
+/-- Exact syntactic decomposition does not commute with an earlier
+substitution: a valid right-oriented constraint reverses the later rigid
+equation.  The two residual worklists have the same unifiers, but their
+deterministic constraint spellings are `X ↦ Z` and `Z ↦ X`.  This witness
+rules out using syntactic decomposition equality to bridge the independent
+ordered MGU and the flattened executable algorithm. -/
+theorem exact_decomposition_commutation_is_false :
+    TreeEquationsDecompose
+        [(orientationWitnessF orientationWitnessX,
+          .variable orientationWitnessY)]
+        [(orientationWitnessY,
+          orientationWitnessF orientationWitnessX)] ∧
+    canonicalDecomposeEquations
+        (TreeSubstitution.applyEquations
+          [(orientationWitnessY,
+            orientationWitnessF orientationWitnessZ)]
+          [(orientationWitnessF orientationWitnessX,
+            .variable orientationWitnessY)]) =
+      some [(orientationWitnessX,
+        .variable orientationWitnessZ)] ∧
+    canonicalDecomposeEquations
+        (normalizeTreeConstraints orientationWitnessY
+          (orientationWitnessF orientationWitnessZ)
+          [(orientationWitnessY,
+            orientationWitnessF orientationWitnessX)]) =
+      some [(orientationWitnessZ,
+        .variable orientationWitnessX)] ∧
+    ([(orientationWitnessX, .variable orientationWitnessZ)] :
+        List (LogicVar × Tree)) ≠
+      [(orientationWitnessZ, .variable orientationWitnessX)] := by
+  constructor
+  · simpa [orientationWitnessF] using
+      (TreeEquationsDecompose.cons
+        (TreeDecomposes.bindRight
+          (orientationWitnessF orientationWitnessX)
+          orientationWitnessY (by
+            intro identity equality
+            cases equality))
+        TreeEquationsDecompose.nil)
+  · simp [TreeSubstitution.applyEquations, TreeSubstitution.apply,
+      Tree.instantiateOne, Trees.instantiateOne,
+      canonicalDecomposeTree,
+      canonicalDecomposeTrees, normalizeTreeConstraints,
+      orientationWitnessF, orientationWitnessX,
+      orientationWitnessY, orientationWitnessZ]
+
+/-! ## Semantic decomposition equivalence -/
+
+/-- Read flattened Robinson constraints back as ordinary oriented
+equations. -/
+def treeConstraintEquations
+    (constraints : List (LogicVar × Tree)) : List TreeEquation :=
+  constraints.map fun item => (.variable item.1, item.2)
+
+/-- Constraint normalization is exactly singleton substitution over the
+corresponding equation worklist. -/
+theorem normalizeTreeConstraints_eq_applyEquations
+    (source : LogicVar) (replacement : Tree)
+    (constraints : List (LogicVar × Tree)) :
+    normalizeTreeConstraints source replacement constraints =
+      TreeSubstitution.applyEquations [(source, replacement)]
+        (treeConstraintEquations constraints) :=
+  by
+    simp [normalizeTreeConstraints, treeConstraintEquations,
+      TreeSubstitution.applyEquations, List.map_map,
+      Function.comp_def, TreeSubstitution.apply]
+
+/-- Worklists are semantically equivalent when every finite-tree
+substitution unifies one exactly when it unifies the other. -/
+def TreeUnificationEquivalent
+    (first second : List TreeEquation) : Prop :=
+  ∀ binding,
+    TreeUnifiesEquations binding first ↔
+      TreeUnifiesEquations binding second
+
+/-- Semantic worklist equivalence transports a unifier in either direction. -/
+theorem TreeUnificationEquivalent.unifies_iff
+    {first second : List TreeEquation}
+    (equivalent : TreeUnificationEquivalent first second)
+    (binding : TreeSubstitution) :
+    TreeUnifiesEquations binding first ↔
+      TreeUnifiesEquations binding second :=
+  equivalent binding
+
+/-- Semantic worklist equivalence preserves the complete MGU property, not
+merely satisfiability. -/
+theorem TreeUnificationEquivalent.isMgu_iff
+    {first second : List TreeEquation}
+    (equivalent : TreeUnificationEquivalent first second)
+    (binding : TreeSubstitution) :
+    TreeIsMgu binding first ↔ TreeIsMgu binding second := by
+  constructor
+  · rintro ⟨unifies, mostGeneral⟩
+    refine ⟨(equivalent binding).1 unifies, ?_⟩
+    intro candidate candidateUnifies
+    exact mostGeneral candidate
+      ((equivalent candidate).2 candidateUnifies)
+  · rintro ⟨unifies, mostGeneral⟩
+    refine ⟨(equivalent binding).2 unifies, ?_⟩
+    intro candidate candidateUnifies
+    exact mostGeneral candidate
+      ((equivalent candidate).1 candidateUnifies)
+
+/-- MGUs of semantically equivalent worklists factor through each other.
+This is the orientation-insensitive invariant needed for residual aliases;
+association-list equality is deliberately not claimed. -/
+theorem TreeUnificationEquivalent.mgus_mutually_factor
+    {first second : List TreeEquation}
+    (equivalent : TreeUnificationEquivalent first second)
+    {firstMgu secondMgu : TreeSubstitution}
+    (firstMostGeneral : TreeIsMgu firstMgu first)
+    (secondMostGeneral : TreeIsMgu secondMgu second) :
+    TreeFactorsThrough secondMgu firstMgu ∧
+      TreeFactorsThrough firstMgu secondMgu := by
+  constructor
+  · exact firstMostGeneral.2 secondMgu
+      ((equivalent secondMgu).2 secondMostGeneral.1)
+  · exact secondMostGeneral.2 firstMgu
+      ((equivalent firstMgu).1 firstMostGeneral.1)
+
+/-- Pointwise unification distributes over ordered worklist append. -/
+theorem treeUnifiesEquations_append_iff
+    (binding : TreeSubstitution)
+    (first second : List TreeEquation) :
+    TreeUnifiesEquations binding (first ++ second) ↔
+      TreeUnifiesEquations binding first ∧
+        TreeUnifiesEquations binding second := by
+  constructor
+  · intro unifies
+    constructor
+    · intro equation member
+      exact unifies equation (List.mem_append_left second member)
+    · intro equation member
+      exact unifies equation (List.mem_append_right first member)
+  · rintro ⟨firstUnifies, secondUnifies⟩ equation member
+    rcases List.mem_append.mp member with member | member
+    · exact firstUnifies equation member
+    · exact secondUnifies equation member
+
+/-- Unifying an already-substituted worklist is the same as unifying its
+source with the candidate composed after that substitution. -/
+theorem treeUnifiesEquations_applyEquations_iff
+    (candidate extension : TreeSubstitution)
+    (equations : List TreeEquation) :
+    TreeUnifiesEquations candidate
+        (TreeSubstitution.applyEquations extension equations) ↔
+      TreeUnifiesEquations (candidate ++ extension) equations := by
+  constructor
+  · intro unifies equation member
+    have mappedMember :
+        (TreeSubstitution.apply extension equation.1,
+          TreeSubstitution.apply extension equation.2) ∈
+          TreeSubstitution.applyEquations extension equations := by
+      exact List.mem_map_of_mem member
+    have exactEquation := unifies _ mappedMember
+    simpa [TreeSubstitution.apply_append] using exactEquation
+  · intro unifies mapped mappedMember
+    simp only [TreeSubstitution.applyEquations, List.mem_map]
+      at mappedMember
+    obtain ⟨equation, member, rfl⟩ := mappedMember
+    have exactEquation := unifies equation member
+    simpa [TreeSubstitution.apply_append] using exactEquation
+
+mutual
+
+/-- Structural decomposition preserves exactly the finite substitutions
+that unify one tree equation.  The right-oriented constructor uses equality
+symmetry, explaining why syntactic constraint orientation cannot be the
+bridge invariant. -/
+theorem TreeDecomposes.unifies_iff
+    (binding : TreeSubstitution)
+    {left right : Tree}
+    {constraints : List (LogicVar × Tree)}
+    (decomposition : TreeDecomposes left right constraints) :
+    TreeSubstitution.apply binding left =
+        TreeSubstitution.apply binding right ↔
+      TreeUnifiesEquations binding
+        (treeConstraintEquations constraints) := by
+  cases decomposition with
+  | reflexiveVariable =>
+      simp [treeConstraintEquations, TreeUnifiesEquations]
+  | bindLeft =>
+      rename_i source different
+      simp only [treeConstraintEquations,
+        List.map_cons, List.map_nil]
+      rw [TreeUnifiesEquations.cons_iff]
+      constructor
+      · intro exactEquation
+        exact ⟨exactEquation, by
+          intro equation member
+          simp at member⟩
+      · rintro ⟨exactEquation, _⟩
+        exact exactEquation
+  | bindRight =>
+      rename_i target notVariable
+      simp only [treeConstraintEquations,
+        List.map_cons, List.map_nil]
+      rw [TreeUnifiesEquations.cons_iff]
+      constructor
+      · intro exactEquation
+        exact ⟨exactEquation.symm, by
+          intro equation member
+          simp at member⟩
+      · rintro ⟨exactEquation, _⟩
+        exact exactEquation.symm
+  | node symbol children =>
+      simpa [treeConstraintEquations,
+        TreeSubstitution.apply_node] using
+          (children.unifies_iff binding)
+
+/-- Ordered-child companion to `TreeDecomposes.unifies_iff`. -/
+theorem TreesDecompose.unifies_iff
+    (binding : TreeSubstitution)
+    {left right : List Tree}
+    {constraints : List (LogicVar × Tree)}
+    (decomposition : TreesDecompose left right constraints) :
+    TreeSubstitution.applyTrees binding left =
+        TreeSubstitution.applyTrees binding right ↔
+      TreeUnifiesEquations binding
+        (treeConstraintEquations constraints) := by
+  cases decomposition with
+  | nil =>
+      simp [treeConstraintEquations, TreeUnifiesEquations]
+  | @cons leftHead rightHead leftTail rightTail
+      headConstraints tailConstraints head tail =>
+      rw [show
+        treeConstraintEquations (headConstraints ++ tailConstraints) =
+          treeConstraintEquations headConstraints ++
+            treeConstraintEquations tailConstraints by
+              simp [treeConstraintEquations]]
+      rw [treeUnifiesEquations_append_iff,
+        ← head.unifies_iff binding,
+        ← tail.unifies_iff binding]
+      simp [TreeSubstitution.applyTrees_cons]
+
+end
+
+/-- Complete ordered structural decomposition preserves exactly the
+finite-tree unifier set of the source worklist. -/
+theorem TreeEquationsDecompose.unifies_iff
+    (binding : TreeSubstitution)
+    {equations : List TreeEquation}
+    {constraints : List (LogicVar × Tree)}
+    (decomposition :
+      TreeEquationsDecompose equations constraints) :
+    TreeUnifiesEquations binding equations ↔
+      TreeUnifiesEquations binding
+        (treeConstraintEquations constraints) := by
+  cases decomposition with
+  | nil =>
+      simp [treeConstraintEquations, TreeUnifiesEquations]
+  | @cons left right equations headConstraints tailConstraints head tail =>
+      rw [TreeUnifiesEquations.cons_iff]
+      rw [show
+        treeConstraintEquations (headConstraints ++ tailConstraints) =
+          treeConstraintEquations headConstraints ++
+            treeConstraintEquations tailConstraints by
+              simp [treeConstraintEquations]]
+      rw [treeUnifiesEquations_append_iff,
+        head.unifies_iff binding, tail.unifies_iff binding]
+
+/-- The correct commuting law: substituting before structural decomposition
+and normalizing the exposed constraints may orient residual aliases
+differently, but they preserve exactly the same unifier set. -/
+theorem TreeEquationsDecompose.instantiateOne_unificationEquivalent
+    (source : LogicVar) (replacement : Tree)
+    {equations : List TreeEquation}
+    {constraints : List (LogicVar × Tree)}
+    (decomposition :
+      TreeEquationsDecompose equations constraints) :
+    TreeUnificationEquivalent
+      (TreeSubstitution.applyEquations
+        [(source, replacement)] equations)
+      (normalizeTreeConstraints source replacement constraints) := by
+  intro binding
+  rw [normalizeTreeConstraints_eq_applyEquations,
+    treeUnifiesEquations_applyEquations_iff,
+    treeUnifiesEquations_applyEquations_iff,
+    decomposition.unifies_iff]
+
+/-! ## Constructive structural-decomposition existence -/
+
+mutual
+
+/-- Any finite substitution that identifies two canonical trees licenses a
+successful structural decomposition. -/
+theorem treeDecomposes_exists_of_unifier
+    (binding : TreeSubstitution) :
+    ∀ left right,
+      TreeSubstitution.apply binding left =
+        TreeSubstitution.apply binding right →
+      ∃ constraints, TreeDecomposes left right constraints
+  | .variable source, .variable target, exactEquation => by
+      by_cases same : source = target
+      · subst target
+        exact ⟨[], .reflexiveVariable source⟩
+      · exact ⟨[(source, .variable target)],
+          .bindLeft source (.variable target) (by
+            intro equality
+            exact same (Tree.variable.inj equality).symm)⟩
+  | .variable source, .node symbol children, _ =>
+      ⟨[(source, .node symbol children)],
+        .bindLeft source (.node symbol children) (by
+          intro equality
+          cases equality)⟩
+  | .node symbol children, .variable target, _ =>
+      ⟨[(target, .node symbol children)],
+        .bindRight (.node symbol children) target (by
+          intro identity equality
+          cases equality)⟩
+  | .node leftSymbol leftChildren,
+      .node rightSymbol rightChildren, exactEquation => by
+      simp only [TreeSubstitution.apply_node, Tree.node.injEq]
+        at exactEquation
+      rcases exactEquation with ⟨symbolExact, childrenExact⟩
+      subst rightSymbol
+      obtain ⟨constraints, children⟩ :=
+        treesDecompose_exists_of_unifier binding
+          leftChildren rightChildren childrenExact
+      exact ⟨constraints, .node leftSymbol children⟩
+
+/-- Ordered-child companion to
+`treeDecomposes_exists_of_unifier`. -/
+theorem treesDecompose_exists_of_unifier
+    (binding : TreeSubstitution) :
+    ∀ left right,
+      TreeSubstitution.applyTrees binding left =
+        TreeSubstitution.applyTrees binding right →
+      ∃ constraints, TreesDecompose left right constraints
+  | [], [], _ => ⟨[], .nil⟩
+  | [], _ :: _, exactEquation => by
+      simp at exactEquation
+  | _ :: _, [], exactEquation => by
+      simp at exactEquation
+  | left :: lefts, right :: rights, exactEquation => by
+      simp only [TreeSubstitution.applyTrees_cons, List.cons.injEq]
+        at exactEquation
+      obtain ⟨headConstraints, head⟩ :=
+        treeDecomposes_exists_of_unifier binding
+          left right exactEquation.1
+      obtain ⟨tailConstraints, tail⟩ :=
+        treesDecompose_exists_of_unifier binding
+          lefts rights exactEquation.2
+      exact ⟨headConstraints ++ tailConstraints, .cons head tail⟩
+
+end
+
+/-- Every finitely unifiable ordered equation worklist has a successful
+structural decomposition. -/
+theorem treeEquationsDecompose_exists_of_unifier
+    (binding : TreeSubstitution) :
+    ∀ equations,
+      TreeUnifiesEquations binding equations →
+      ∃ constraints, TreeEquationsDecompose equations constraints
+  | [], _ => ⟨[], .nil⟩
+  | equation :: equations, unifies => by
+      rcases equation with ⟨left, right⟩
+      have split :=
+        (TreeUnifiesEquations.cons_iff binding (left, right) equations).1
+          unifies
+      obtain ⟨headConstraints, head⟩ :=
+        treeDecomposes_exists_of_unifier binding
+          left right split.1
+      obtain ⟨tailConstraints, tail⟩ :=
+        treeEquationsDecompose_exists_of_unifier binding
+          equations split.2
+      exact ⟨headConstraints ++ tailConstraints, .cons head tail⟩
+
+/-- Every flattened constraint emitted by structural decomposition is
+non-reflexive in its stored orientation. -/
+def TreeConstraintsIrreflexive
+    (constraints : List (LogicVar × Tree)) : Prop :=
+  ∀ constraint, constraint ∈ constraints →
+    constraint.2 ≠ .variable constraint.1
+
+mutual
+
+theorem TreeDecomposes.constraints_irreflexive
+    {left right : Tree}
+    {constraints : List (LogicVar × Tree)}
+    (decomposition : TreeDecomposes left right constraints) :
+    TreeConstraintsIrreflexive constraints := by
+  cases decomposition with
+  | reflexiveVariable =>
+      intro constraint member
+      simp at member
+  | bindLeft source value different =>
+      intro constraint member
+      simp only [List.mem_singleton] at member
+      subst constraint
+      exact different
+  | bindRight value target notVariable =>
+      intro constraint member
+      simp only [List.mem_singleton] at member
+      subst constraint
+      exact notVariable target
+  | node symbol children =>
+      exact children.constraints_irreflexive
+
+theorem TreesDecompose.constraints_irreflexive
+    {left right : List Tree}
+    {constraints : List (LogicVar × Tree)}
+    (decomposition : TreesDecompose left right constraints) :
+    TreeConstraintsIrreflexive constraints := by
+  cases decomposition with
+  | nil =>
+      intro constraint member
+      simp at member
+  | @cons leftHead rightHead leftTail rightTail
+      headConstraints tailConstraints head tail =>
+      intro constraint member
+      rcases List.mem_append.mp member with member | member
+      · exact head.constraints_irreflexive constraint member
+      · exact tail.constraints_irreflexive constraint member
+
+end
+
+theorem TreeEquationsDecompose.constraints_irreflexive
+    {equations : List TreeEquation}
+    {constraints : List (LogicVar × Tree)}
+    (decomposition :
+      TreeEquationsDecompose equations constraints) :
+    TreeConstraintsIrreflexive constraints := by
+  cases decomposition with
+  | nil =>
+      intro constraint member
+      simp at member
+  | @cons left right equations headConstraints tailConstraints head tail =>
+      intro constraint member
+      rcases List.mem_append.mp member with member | member
+      · exact head.constraints_irreflexive constraint member
+      · exact tail.constraints_irreflexive constraint member
+
+/-! ## Finite support decreases across elimination -/
+
+/-- Every key and replacement variable in a flattened constraint worklist
+satisfies one support predicate. -/
+def TreeConstraintsVariablesSatisfy
+    (predicate : LogicVar → Prop)
+    (constraints : List (LogicVar × Tree)) : Prop :=
+  ∀ constraint, constraint ∈ constraints →
+    predicate constraint.1 ∧
+      TreeVariablesSatisfy predicate constraint.2
+
+mutual
+
+/-- Structural decomposition cannot invent a variable outside the supports
+of its two source trees. -/
+theorem TreeDecomposes.constraints_variablesSatisfy
+    {predicate : LogicVar → Prop}
+    {left right : Tree}
+    {constraints : List (LogicVar × Tree)}
+    (decomposition : TreeDecomposes left right constraints)
+    (leftSupported : TreeVariablesSatisfy predicate left)
+    (rightSupported : TreeVariablesSatisfy predicate right) :
+    TreeConstraintsVariablesSatisfy predicate constraints := by
+  cases decomposition with
+  | reflexiveVariable =>
+      intro constraint member
+      simp at member
+  | bindLeft source value different =>
+      intro constraint member
+      simp only [List.mem_singleton] at member
+      subst constraint
+      exact ⟨leftSupported, rightSupported⟩
+  | bindRight value target notVariable =>
+      intro constraint member
+      simp only [List.mem_singleton] at member
+      subst constraint
+      exact ⟨rightSupported, leftSupported⟩
+  | node symbol children =>
+      exact children.constraints_variablesSatisfy
+        leftSupported rightSupported
+
+/-- Ordered-child support companion. -/
+theorem TreesDecompose.constraints_variablesSatisfy
+    {predicate : LogicVar → Prop}
+    {left right : List Tree}
+    {constraints : List (LogicVar × Tree)}
+    (decomposition : TreesDecompose left right constraints)
+    (leftSupported : TreesVariablesSatisfy predicate left)
+    (rightSupported : TreesVariablesSatisfy predicate right) :
+    TreeConstraintsVariablesSatisfy predicate constraints := by
+  cases decomposition with
+  | nil =>
+      intro constraint member
+      simp at member
+  | @cons leftHead rightHead leftTail rightTail
+      headConstraints tailConstraints head tail =>
+      intro constraint member
+      rcases List.mem_append.mp member with member | member
+      · exact head.constraints_variablesSatisfy
+          leftSupported.1 rightSupported.1 constraint member
+      · exact tail.constraints_variablesSatisfy
+          leftSupported.2 rightSupported.2 constraint member
+
+end
+
+/-- Whole-worklist structural decomposition preserves finite support. -/
+theorem TreeEquationsDecompose.constraints_variablesSatisfy
+    {predicate : LogicVar → Prop}
+    {equations : List TreeEquation}
+    {constraints : List (LogicVar × Tree)}
+    (decomposition :
+      TreeEquationsDecompose equations constraints)
+    (supported :
+      TreeEquationsVariablesSatisfy predicate equations) :
+    TreeConstraintsVariablesSatisfy predicate constraints := by
+  cases decomposition with
+  | nil =>
+      intro constraint member
+      simp at member
+  | @cons left right equations headConstraints tailConstraints head tail =>
+      have headSupported := supported (left, right) (by simp)
+      have tailSupported :
+          TreeEquationsVariablesSatisfy predicate equations := by
+        intro equation member
+        exact supported equation (by simp [member])
+      intro constraint member
+      rcases List.mem_append.mp member with member | member
+      · exact head.constraints_variablesSatisfy
+          headSupported.1 headSupported.2 constraint member
+      · exact tail.constraints_variablesSatisfy
+          tailSupported constraint member
+
+/-- One occurs-safe elimination removes its source from every remaining
+normalized equation's finite support. -/
+theorem normalizeTreeConstraints_variablesSatisfy_erase
+    (allowed : List LogicVar)
+    (source : LogicVar) (replacement : Tree)
+    (rest : List (LogicVar × Tree))
+    (replacementSupported :
+      TreeVariablesSatisfy (fun identity => identity ∈ allowed)
+        replacement)
+    (absent : Tree.occurs source replacement = false)
+    (restSupported :
+      TreeConstraintsVariablesSatisfy
+        (fun identity => identity ∈ allowed) rest) :
+    TreeEquationsVariablesSatisfy
+      (fun identity => identity ∈ allowed.erase source)
+      (normalizeTreeConstraints source replacement rest) := by
+  have replacementOutside :
+      TreeVariablesSatisfy (fun identity => identity ≠ source)
+        replacement :=
+    treeVariablesSatisfy_ne_of_occurs_false source absent
+  have replacementErased :
+      TreeVariablesSatisfy
+        (fun identity => identity ∈ allowed.erase source)
+        replacement :=
+    TreeVariablesSatisfy.mono
+      (fun identity supported =>
+        (List.mem_erase_of_ne supported.2).2 supported.1)
+      (TreeVariablesSatisfy.and
+        replacementSupported replacementOutside)
+  intro equation member
+  simp only [normalizeTreeConstraints, List.mem_map] at member
+  obtain ⟨constraint, constraintMember, rfl⟩ := member
+  have constraintSupported :=
+    restSupported constraint constraintMember
+  have liftSupport :
+      ∀ {tree : Tree},
+        TreeVariablesSatisfy
+            (fun identity => identity ∈ allowed) tree →
+          TreeVariablesSatisfy
+            (fun identity =>
+              identity = source ∨ identity ∈ allowed.erase source) tree := by
+    intro tree supported
+    exact TreeVariablesSatisfy.mono
+      (fun identity identityAllowed => by
+        by_cases same : identity = source
+        · exact Or.inl same
+        · exact Or.inr
+            ((List.mem_erase_of_ne same).2 identityAllowed))
+      supported
+  constructor
+  · apply treeVariablesSatisfy_instantiateOne_eliminate source
+      replacementErased
+    exact liftSupport (tree := .variable constraint.1)
+      constraintSupported.1
+  · apply treeVariablesSatisfy_instantiateOne_eliminate source
+      replacementErased
+    exact liftSupport constraintSupported.2
+
+/-- An already-realizing finite substitution still realizes every remaining
+constraint after one occurs-safe singleton normalization. -/
+theorem treeUnifies_normalizeTreeConstraints
+    (binding : TreeSubstitution)
+    (source : LogicVar) (replacement : Tree)
+    (rest : List (LogicVar × Tree))
+    (identifies :
+      TreeSubstitution.apply binding (.variable source) =
+        TreeSubstitution.apply binding replacement)
+    (realizes :
+      TreeUnifiesEquations binding
+        (treeConstraintEquations rest)) :
+    TreeUnifiesEquations binding
+      (normalizeTreeConstraints source replacement rest) := by
+  intro equation member
+  simp only [normalizeTreeConstraints, List.mem_map] at member
+  obtain ⟨constraint, constraintMember, rfl⟩ := member
+  have exactConstraint :
+      TreeSubstitution.apply binding (.variable constraint.1) =
+        TreeSubstitution.apply binding constraint.2 :=
+    realizes (.variable constraint.1, constraint.2) (by
+      simpa [treeConstraintEquations] using constraintMember)
+  calc
+    TreeSubstitution.apply binding
+        (Tree.instantiateOne source replacement
+          (.variable constraint.1)) =
+        TreeSubstitution.apply binding (.variable constraint.1) :=
+      TreeSubstitution.apply_instantiateOne_of_unifier
+        binding source replacement identifies (.variable constraint.1)
+    _ = TreeSubstitution.apply binding constraint.2 := exactConstraint
+    _ = TreeSubstitution.apply binding
+        (Tree.instantiateOne source replacement constraint.2) :=
+      (TreeSubstitution.apply_instantiateOne_of_unifier
+        binding source replacement identifies constraint.2).symm
+
+/-- The accumulated substitution has no key still listed in the current
+finite equation support. -/
+def TreeBaseFreshFor
+    (allowed : List LogicVar) (base : TreeSubstitution) : Prop :=
+  ∀ source, source ∈ allowed → source ∉ base.map Prod.fst
+
+/-- Extending by the selected source preserves freshness for the strictly
+smaller erased support. -/
+theorem TreeBaseFreshFor.cons_erase
+    {allowed : List LogicVar} {base : TreeSubstitution}
+    (fresh : TreeBaseFreshFor allowed base)
+    (allowedNodup : allowed.Nodup)
+    (source : LogicVar) (replacement : Tree) :
+    TreeBaseFreshFor (allowed.erase source)
+      ((source, replacement) :: base) := by
+  intro identity member
+  have different : identity ≠ source :=
+    (allowedNodup.mem_erase_iff.mp member).1
+  have oldMember : identity ∈ allowed :=
+    List.mem_of_mem_erase member
+  simp only [List.map_cons, List.mem_cons, not_or]
+  exact ⟨different, fresh identity oldMember⟩
+
+mutual
+
+/-- Variable occurrences of one canonical tree, in structural order. -/
+def treeLogicVariables : Tree → List LogicVar
+  | .variable identity => [identity]
+  | .node _ children => treesLogicVariables children
+
+/-- Ordered-child variable occurrences. -/
+def treesLogicVariables : List Tree → List LogicVar
+  | [] => []
+  | tree :: trees =>
+      treeLogicVariables tree ++ treesLogicVariables trees
+
+end
+
+/-- Variable occurrences of a complete equation worklist. -/
+def treeEquationsLogicVariables :
+    List TreeEquation → List LogicVar
+  | [] => []
+  | (left, right) :: equations =>
+      treeLogicVariables left ++ treeLogicVariables right ++
+        treeEquationsLogicVariables equations
+
+mutual
+
+/-- The occurrence list of a tree supports every variable in that tree. -/
+theorem treeLogicVariables_supported :
+    ∀ tree,
+      TreeVariablesSatisfy
+        (fun identity => identity ∈ treeLogicVariables tree) tree
+  | .variable identity => by
+      simp [treeLogicVariables, TreeVariablesSatisfy]
+  | .node symbol children =>
+      treesLogicVariables_supported children
+
+/-- Ordered-child companion. -/
+theorem treesLogicVariables_supported :
+    ∀ trees,
+      TreesVariablesSatisfy
+        (fun identity => identity ∈ treesLogicVariables trees) trees
+  | [] => trivial
+  | tree :: trees => by
+      constructor
+      · exact TreeVariablesSatisfy.mono
+          (fun identity member =>
+            List.mem_append_left _ member)
+          (treeLogicVariables_supported tree)
+      · exact TreesVariablesSatisfy.mono
+          (fun identity member =>
+            List.mem_append_right _ member)
+          (treesLogicVariables_supported trees)
+
+end
+
+/-- The finite occurrence list of a worklist supports every equation. -/
+theorem treeEquationsLogicVariables_supported
+    (equations : List TreeEquation) :
+    TreeEquationsVariablesSatisfy
+      (fun identity =>
+        identity ∈ treeEquationsLogicVariables equations) equations := by
+  intro equation member
+  induction equations with
+  | nil => simp at member
+  | cons head equations inductionHypothesis =>
+      rcases head with ⟨left, right⟩
+      simp only [List.mem_cons] at member
+      rcases member with rfl | member
+      · constructor
+        · exact TreeVariablesSatisfy.mono
+            (fun identity identityMember =>
+              List.mem_append_left _
+                (List.mem_append_left _ identityMember))
+            (treeLogicVariables_supported left)
+        · exact TreeVariablesSatisfy.mono
+            (fun identity identityMember =>
+              List.mem_append_left _
+                (List.mem_append_right _ identityMember))
+            (treeLogicVariables_supported right)
+      · have tailSupported := inductionHypothesis member
+        constructor
+        · exact TreeVariablesSatisfy.mono
+            (fun identity identityMember =>
+              List.mem_append_right _ identityMember)
+            tailSupported.1
+        · exact TreeVariablesSatisfy.mono
+            (fun identity identityMember =>
+              List.mem_append_right _ identityMember)
+            tailSupported.2
+
+/-- Deduplicating the structural occurrence list gives a finite,
+duplicate-free support for the whole equation worklist. -/
+theorem treeEquationsLogicVariables_dedup_supported
+    (equations : List TreeEquation) :
+    TreeEquationsVariablesSatisfy
+      (fun identity =>
+        identity ∈
+          (treeEquationsLogicVariables equations).eraseDups)
+      equations := by
+  have supported :=
+    treeEquationsLogicVariables_supported equations
+  intro equation member
+  have equationSupported := supported equation member
+  exact
+    ⟨TreeVariablesSatisfy.mono
+        (fun identity identityMember =>
+          List.mem_eraseDups.mpr identityMember)
+        equationSupported.1,
+      TreeVariablesSatisfy.mono
+        (fun identity identityMember =>
+          List.mem_eraseDups.mpr identityMember)
+        equationSupported.2⟩
+
+/-- Deduplication of finite canonical-variable supports is genuinely
+duplicate-free. -/
+theorem logicVar_eraseDups_nodup :
+    ∀ support : List LogicVar, support.eraseDups.Nodup
+  | [] => by simp
+  | head :: tail => by
+      rw [List.eraseDups_cons, List.nodup_cons]
+      constructor
+      · intro member
+        rw [List.mem_eraseDups] at member
+        simp at member
+      · exact logicVar_eraseDups_nodup
+          (tail.filter (fun identity => !identity == head))
+termination_by support => support.length
+decreasing_by
+  have lengthBound :=
+    List.length_filter_le
+      (fun identity : LogicVar => !identity == head) tail
+  simp only [List.length_cons]
+  omega
+
+mutual
+
+/-- Variable occurrences are bounded by canonical structural weight. -/
+theorem treeLogicVariables_length_le_weight :
+    ∀ tree : Tree,
+      (treeLogicVariables tree).length ≤ tree.weight
+  | .variable identity => by
+      simp [treeLogicVariables, Tree.weight]
+  | .node symbol children => by
+      have childrenBound :=
+        treesLogicVariables_length_le_weight children
+      simp only [treeLogicVariables, Tree.weight]
+      omega
+
+/-- Ordered-child companion. -/
+theorem treesLogicVariables_length_le_weight :
+    ∀ trees : List Tree,
+      (treesLogicVariables trees).length ≤ Trees.weight trees
+  | [] => by
+      simp [treesLogicVariables, Trees.weight]
+  | tree :: trees => by
+      have headBound := treeLogicVariables_length_le_weight tree
+      have tailBound := treesLogicVariables_length_le_weight trees
+      simp only [treesLogicVariables, List.length_append,
+        Trees.weight]
+      omega
+
+end
+
+/-- Additive canonical equation weight. -/
+def treeEquationsWeight : List TreeEquation → Nat
+  | [] => 0
+  | (left, right) :: equations =>
+      left.weight + right.weight + treeEquationsWeight equations
+
+/-- Equation-variable occurrences are bounded by additive equation weight. -/
+theorem treeEquationsLogicVariables_length_le_weight :
+    ∀ equations : List TreeEquation,
+      (treeEquationsLogicVariables equations).length ≤
+        treeEquationsWeight equations
+  | [] => by
+      simp [treeEquationsLogicVariables, treeEquationsWeight]
+  | (left, right) :: equations => by
+      have leftBound := treeLogicVariables_length_le_weight left
+      have rightBound := treeLogicVariables_length_le_weight right
+      have tailBound :=
+        treeEquationsLogicVariables_length_le_weight equations
+      simp only [treeEquationsLogicVariables, List.length_append,
+        treeEquationsWeight]
+      omega
+
+/-- Deduplication cannot enlarge a finite canonical-variable support. -/
+theorem logicVar_eraseDups_length_le :
+    ∀ support : List LogicVar,
+      support.eraseDups.length ≤ support.length
+  | [] => by simp
+  | head :: tail => by
+      rw [List.eraseDups_cons]
+      have inductionHypothesis :=
+        logicVar_eraseDups_length_le
+          (tail.filter (fun identity => !identity == head))
+      have filterBound :=
+        List.length_filter_le
+          (fun identity : LogicVar => !identity == head) tail
+      simp only [List.length_cons]
+      omega
+termination_by support => support.length
+decreasing_by
+  have filterBound :=
+    List.length_filter_le
+      (fun identity : LogicVar => !identity == head) tail
+  simp only [List.length_cons]
+  omega
+
+/-- Every supported canonical tree is no larger than its executable
+encoding.  List and partial-value encodings add administrative cons cells,
+so the inequality is intentionally one-way. -/
+theorem CanonicalRuntimeAgrees.weight_le_size
+    {alpha : List (LogicVar × String)}
+    {tree : Tree} {atom : Atom}
+    (agreement : CanonicalRuntimeAgrees alpha tree atom) :
+    tree.weight ≤ atom.size := by
+  induction agreement with
+  | «variable» | atom | trueAtom | falseAtom |
+      integer | float | string | nil =>
+      simp [Tree.weight, Trees.weight, Atom.size, nilA]
+  | partialValue arguments inductionHypothesis =>
+      simp [Tree.weight, Trees.weight, Atom.size,
+        chainOf, consC, nilA] at *
+      omega
+  | cons head tail headInduction tailInduction =>
+      simp [Tree.weight, Trees.weight, Atom.size,
+        consC] at *
+      omega
+
+/-- Shared source/runtime equation agreement bounds canonical variable
+occurrences by the executable atoms' structural sizes. -/
+theorem SharedAlphaEquationsAgree.logicVariables_length_le_runtime_sizes
+    {alpha : List (LogicVar × String)}
+    {equations : List (Term × Term)}
+    {leftAtoms rightAtoms : List Atom}
+    (agreement :
+      SharedAlphaEquationsAgree alpha equations leftAtoms rightAtoms) :
+    (treeEquationsLogicVariables
+        (denoteEquations equations)).length ≤
+      (leftAtoms.map Atom.size).sum +
+        (rightAtoms.map Atom.size).sum := by
+  induction agreement with
+  | nil =>
+      simp [denoteEquations, treeEquationsLogicVariables]
+  | @cons leftTerm rightTerm leftAtom rightAtom equations
+      leftAtoms rightAtoms left right tail inductionHypothesis =>
+      have leftVariableBound :=
+        treeLogicVariables_length_le_weight
+          (Term.denote leftTerm)
+      have rightVariableBound :=
+        treeLogicVariables_length_le_weight
+          (Term.denote rightTerm)
+      have leftRuntimeBound :=
+        PLeaTTa.PrologMguDirectSimulation.CanonicalRuntimeAgrees.weight_le_size
+          (AlphaTermAgrees.canonicalRuntimeAgrees left)
+      have rightRuntimeBound :=
+        PLeaTTa.PrologMguDirectSimulation.CanonicalRuntimeAgrees.weight_le_size
+          (AlphaTermAgrees.canonicalRuntimeAgrees right)
+      have tailBound :
+          (treeEquationsLogicVariables
+            (List.map
+              (fun equation =>
+                (Term.denote equation.1, Term.denote equation.2))
+              equations)).length ≤
+            (leftAtoms.map Atom.size).sum +
+              (rightAtoms.map Atom.size).sum := by
+        simpa [denoteEquations] using inductionHypothesis
+      simp only [denoteEquations, List.map_cons,
+        treeEquationsLogicVariables, List.length_append,
+        List.sum_cons]
+      omega
+
+/-- The executable top-level fuel is at least the number of distinct
+canonical equation variables. -/
+theorem SharedAlphaEquationsAgree.canonical_fuel_le_runtime_fuel
+    {alpha : List (LogicVar × String)}
+    {equations : List (Term × Term)}
+    {leftAtoms rightAtoms : List Atom}
+    (agreement :
+      SharedAlphaEquationsAgree alpha equations leftAtoms rightAtoms) :
+    (treeEquationsLogicVariables
+        (denoteEquations equations)).eraseDups.length ≤
+      (.expr leftAtoms : Atom).size + (.expr rightAtoms : Atom).size := by
+  have dedupBound :=
+    logicVar_eraseDups_length_le
+      (treeEquationsLogicVariables (denoteEquations equations))
+  have runtimeBound :=
+    PLeaTTa.PrologMguDirectSimulation.SharedAlphaEquationsAgree.logicVariables_length_le_runtime_sizes
+      agreement
+  simp only [Atom.size]
+  omega
+
+/-- The independent flattened Robinson algorithm is constructively complete
+whenever `fuel` covers a duplicate-free finite support of all remaining
+equation variables.  No executable success result is assumed. -/
+theorem treeUnifyRounds_complete_of_unifier
+    (fuel : Nat) (allowed : List LogicVar)
+    (equations : List TreeEquation)
+    (base witness : TreeSubstitution)
+    (allowedNodup : allowed.Nodup)
+    (supported :
+      TreeEquationsVariablesSatisfy
+        (fun identity => identity ∈ allowed) equations)
+    (fuelEnough : allowed.length ≤ fuel)
+    (baseFresh : TreeBaseFreshFor allowed base)
+    (unifies : TreeUnifiesEquations witness equations) :
+    ∃ result, TreeUnifyRounds fuel equations base result := by
+  induction fuel generalizing allowed equations base with
+  | zero =>
+      have allowedEmpty : allowed = [] := by
+        exact List.eq_nil_of_length_eq_zero (by omega)
+      obtain ⟨constraints, decomposition⟩ :=
+        treeEquationsDecompose_exists_of_unifier witness equations unifies
+      have constraintsSupported :=
+        decomposition.constraints_variablesSatisfy supported
+      have constraintsEmpty : constraints = [] := by
+        cases constraints with
+        | nil => rfl
+        | cons constraint rest =>
+            have sourceAllowed :=
+              (constraintsSupported constraint (by simp)).1
+            rw [allowedEmpty] at sourceAllowed
+            contradiction
+      subst constraints
+      exact ⟨base, .done 0 decomposition⟩
+  | succ fuel inductionHypothesis =>
+      obtain ⟨constraints, decomposition⟩ :=
+        treeEquationsDecompose_exists_of_unifier witness equations unifies
+      have constraintsSupported :=
+        decomposition.constraints_variablesSatisfy supported
+      cases constraints with
+      | nil =>
+          exact ⟨base, .done (fuel + 1) decomposition⟩
+      | cons constraint rest =>
+          rcases constraint with ⟨source, replacement⟩
+          have headSupported :=
+            constraintsSupported (source, replacement) (by simp)
+          have restSupported :
+              TreeConstraintsVariablesSatisfy
+                (fun identity => identity ∈ allowed) rest := by
+            intro item member
+            exact constraintsSupported item (by simp [member])
+          have realized :
+              TreeUnifiesEquations witness
+                (treeConstraintEquations
+                  ((source, replacement) :: rest)) :=
+            (decomposition.unifies_iff witness).1 unifies
+          have realizedSplit :
+              TreeSubstitution.apply witness (.variable source) =
+                  TreeSubstitution.apply witness replacement ∧
+                TreeUnifiesEquations witness
+                  (treeConstraintEquations rest) := by
+            apply (TreeUnifiesEquations.cons_iff witness
+              (.variable source, replacement)
+              (treeConstraintEquations rest)).1
+            simpa [treeConstraintEquations] using realized
+          have different :
+              replacement ≠ .variable source :=
+            decomposition.constraints_irreflexive
+              (source, replacement) (by simp)
+          have absent : Tree.occurs source replacement = false := by
+            cases present : Tree.occurs source replacement with
+            | false => rfl
+            | true =>
+                exact False.elim
+                  ((Tree.no_finite_unifier_of_occurs_true witness
+                    source replacement present different)
+                    realizedSplit.1)
+          have sourceAllowed : source ∈ allowed := headSupported.1
+          have nextSupported :
+              TreeEquationsVariablesSatisfy
+                (fun identity => identity ∈ allowed.erase source)
+                (normalizeTreeConstraints source replacement rest) :=
+            normalizeTreeConstraints_variablesSatisfy_erase
+              allowed source replacement rest
+              headSupported.2 absent restSupported
+          have nextNodup : (allowed.erase source).Nodup :=
+            allowedNodup.erase source
+          have nextFuelEnough :
+              (allowed.erase source).length ≤ fuel := by
+            have shorter :
+                (allowed.erase source).length < allowed.length := by
+              have positive : 0 < allowed.length :=
+                List.length_pos_of_mem sourceAllowed
+              rw [List.length_erase_of_mem sourceAllowed]
+              omega
+            omega
+          have nextFresh :
+              TreeBaseFreshFor (allowed.erase source)
+                ((source, replacement) :: base) :=
+            baseFresh.cons_erase allowedNodup source replacement
+          have nextUnifies :
+              TreeUnifiesEquations witness
+                (normalizeTreeConstraints source replacement rest) :=
+            treeUnifies_normalizeTreeConstraints
+              witness source replacement rest
+              realizedSplit.1 realizedSplit.2
+          obtain ⟨result, nextRounds⟩ :=
+            inductionHypothesis
+              (allowed.erase source)
+              (normalizeTreeConstraints source replacement rest)
+              ((source, replacement) :: base)
+              nextNodup nextSupported nextFuelEnough
+              nextFresh nextUnifies
+          exact ⟨result, .eliminate fuel decomposition
+            (baseFresh source sourceAllowed) absent nextRounds⟩
+
+/-- Every finitely unifiable canonical worklist has a successful flattened
+round derivation at the exact size of its deduplicated structural variable
+support. -/
+theorem treeUnifyRounds_exists_of_unifier
+    (equations : List TreeEquation)
+    (witness : TreeSubstitution)
+    (unifies : TreeUnifiesEquations witness equations) :
+    ∃ result,
+      TreeUnifyRounds
+        (treeEquationsLogicVariables equations).eraseDups.length
+        equations [] result := by
+  let allowed :=
+    (treeEquationsLogicVariables equations).eraseDups
+  have allowedNodup : allowed.Nodup :=
+    logicVar_eraseDups_nodup _
+  have supported :
+      TreeEquationsVariablesSatisfy
+        (fun identity => identity ∈ allowed) equations := by
+    exact treeEquationsLogicVariables_dedup_supported equations
+  have baseFresh : TreeBaseFreshFor allowed [] := by
+    intro source member
+    simp
+  exact treeUnifyRounds_complete_of_unifier
+    allowed.length allowed equations [] witness
+      allowedNodup supported (Nat.le_refl _)
+      baseFresh unifies
+
+/-- In particular, every independently selected ordered canonical MGU
+constructs a successful flattened round derivation; its final spelling is
+not asserted equal to the ordered MGU because the orientation anti-witness
+above proves that claim false. -/
+theorem OrderedTreeMgu.treeUnifyRounds_exists
+    {equations : List TreeEquation}
+    {canonical : TreeSubstitution}
+    (derivation : OrderedTreeMgu equations canonical) :
+    ∃ result,
+      TreeUnifyRounds
+        (treeEquationsLogicVariables equations).eraseDups.length
+        equations [] result :=
+  treeUnifyRounds_exists_of_unifier
+    equations canonical derivation.isMostGeneral.1
+
+/-- Successful flattened rounds compute an MGU extension independently of
+their accumulated base.  The final association list is exactly that
+extension followed by the old base.  This relative form is the induction
+invariant needed by repeated elimination: the next round receives the
+previous singleton binding as accumulated state, while its newly computed
+extension remains an MGU of the normalized residual worklist. -/
+theorem TreeUnifyRounds.extension_isMostGeneral
+    {fuel : Nat} {equations : List TreeEquation}
+    {base result : TreeSubstitution}
+    (rounds : TreeUnifyRounds fuel equations base result) :
+    ∃ extension,
+      result = extension ++ base ∧
+        TreeIsMgu extension equations := by
+  induction rounds with
+  | @done fuel equations base decomposition =>
+      have equivalent :
+          TreeUnificationEquivalent equations [] := by
+        intro binding
+        simpa [treeConstraintEquations, TreeUnifiesEquations] using
+          (decomposition.unifies_iff binding)
+      refine ⟨[], by simp, ?_⟩
+      exact (equivalent.isMgu_iff []).2 tree_empty_is_mgu
+  | @eliminate fuel equations source replacement rest base result
+      decomposition fresh absent next inductionHypothesis =>
+      obtain ⟨extension, resultEq, extensionMgu⟩ :=
+        inductionHypothesis
+      have tailMgu :
+          TreeIsMgu extension
+            (TreeSubstitution.applyEquations
+              [(source, replacement)]
+              (treeConstraintEquations rest)) := by
+        rw [← normalizeTreeConstraints_eq_applyEquations]
+        exact extensionMgu
+      have constraintsMgu :
+          TreeIsMgu
+            (extension ++ [(source, replacement)])
+            (treeConstraintEquations
+              ((source, replacement) :: rest)) := by
+        simpa [treeConstraintEquations] using
+          (tree_singleton_variable_is_mgu source replacement absent).compose_append
+            tailMgu
+      have equivalent :
+          TreeUnificationEquivalent equations
+            (treeConstraintEquations
+              ((source, replacement) :: rest)) := by
+        intro binding
+        exact decomposition.unifies_iff binding
+      refine
+        ⟨extension ++ [(source, replacement)], ?_,
+          (equivalent.isMgu_iff _).2 constraintsMgu⟩
+      simpa [List.append_assoc] using resultEq
+
+/-- At the empty initial base, every successful flattened round result is a
+most-general unifier of the original ordered equation worklist. -/
+theorem TreeUnifyRounds.isMostGeneral
+    {fuel : Nat} {equations : List TreeEquation}
+    {result : TreeSubstitution}
+    (rounds : TreeUnifyRounds fuel equations [] result) :
+    TreeIsMgu result equations := by
+  obtain ⟨extension, resultEq, extensionMgu⟩ :=
+    rounds.extension_isMostGeneral
+  have exactResult : result = extension := by
+    simpa using resultEq
+  subst result
+  simpa using extensionMgu
 
 mutual
 
@@ -735,6 +2298,84 @@ theorem TreeEquationsDecompose.runtime
           simp [Metta.Unify.decomposeAllWith,
             headExact, tailExact]
 
+/-- A shared source/runtime equation family gives pointwise canonical-tree
+agreement with the executable zipped worklist. -/
+theorem SharedAlphaEquationsAgree.alphaTreeEquationsAgree_zip
+    {alpha : List (LogicVar × String)}
+    {equations : List (Term × Term)}
+    {leftAtoms rightAtoms : List Atom}
+    (agreement :
+      SharedAlphaEquationsAgree alpha equations leftAtoms rightAtoms) :
+    AlphaTreeEquationsAgree alpha
+      (denoteEquations equations) (List.zip leftAtoms rightAtoms) := by
+  induction agreement with
+  | nil =>
+      exact .nil
+  | cons left right tail inductionHypothesis =>
+      exact .cons
+        ⟨AlphaTermAgrees.canonicalRuntimeAgrees left,
+          AlphaTermAgrees.canonicalRuntimeAgrees right⟩
+        inductionHypothesis
+
+/-- A shared equation family has equal executable arities.  Keeping this
+fact attached to the source-guided relation avoids admitting the malformed
+`List.zip` truncation case at the top-level executable bridge. -/
+theorem SharedAlphaEquationsAgree.runtime_lengths
+    {alpha : List (LogicVar × String)}
+    {equations : List (Term × Term)}
+    {leftAtoms rightAtoms : List Atom}
+    (agreement :
+      SharedAlphaEquationsAgree alpha equations leftAtoms rightAtoms) :
+    leftAtoms.length = rightAtoms.length := by
+  induction agreement with
+  | nil =>
+      rfl
+  | cons left right tail inductionHypothesis =>
+      simp only [List.length_cons, Nat.succ.injEq]
+      exact inductionHypothesis
+
+/-- Zipping equal-length atom lists exposes exactly the same structural
+constraints as direct ordered-list decomposition. -/
+theorem decomposeAllWith_zip_eq_decomposeListWith
+    (groundEq : Metta.Ground → Metta.Ground → Bool) :
+    ∀ {left right : List Atom}, left.length = right.length →
+      Metta.Unify.decomposeAllWith groundEq (List.zip left right) =
+        Metta.Unify.decomposeListWith groundEq left right
+  | [], [], _ => rfl
+  | [], _ :: _, lengths => by
+      simp at lengths
+  | _ :: _, [], lengths => by
+      simp at lengths
+  | left :: lefts, right :: rights, lengths => by
+      have tailLengths : lefts.length = rights.length := by
+        simpa only [List.length_cons, Nat.succ.injEq] using lengths
+      simp only [List.zip_cons_cons, Metta.Unify.decomposeAllWith,
+        Metta.Unify.decomposeListWith]
+      rw [decomposeAllWith_zip_eq_decomposeListWith
+        groundEq tailLengths]
+
+/-- The one-expression top-level worklist and its pointwise zipped form run
+the same executable elimination loop at every fuel and base state. -/
+theorem unifyRoundsWith_expression_eq_zip
+    (groundEq : Metta.Ground → Metta.Ground → Bool)
+    (fuel : Nat) (left right : List Atom) (base : Subst)
+    (lengths : left.length = right.length) :
+    Metta.Unify.unifyRoundsWith groundEq fuel
+        [(.expr left, .expr right)] base =
+      Metta.Unify.unifyRoundsWith groundEq fuel
+        (List.zip left right) base := by
+  have decomposed :
+      Metta.Unify.decomposeAllWith groundEq
+          [(.expr left, .expr right)] =
+        Metta.Unify.decomposeAllWith groundEq
+          (List.zip left right) := by
+    simp only [Metta.Unify.decomposeAllWith,
+      Metta.Unify.decomposeEqWith]
+    rw [decomposeAllWith_zip_eq_decomposeListWith groundEq lengths]
+    cases Metta.Unify.decomposeListWith groundEq left right <;> simp
+  cases fuel <;>
+    simp [Metta.Unify.unifyRoundsWith, decomposed]
+
 /-! ## Exact repeated elimination -/
 
 /-- Canonical key freshness transports to the runtime association list.
@@ -856,6 +2497,102 @@ theorem TreeUnifyRounds.runtime
           refine ⟨runtimeResult, ?_, resultAgreement⟩
           simp [Metta.Unify.unifyRoundsWith, decomposed,
             runtimeAbsent, Metta.Subst.extend, erased, nextExact]
+
+/-- Every independently selected ordered canonical MGU forces the actual
+top-level executable unifier to succeed at its real structural fuel.  The
+returned association list agrees with a constructively produced flattened
+canonical Robinson run.  It is deliberately not asserted equal to
+`canonical`: equivalent MGU orientations can have different list spelling,
+as witnessed by `exact_decomposition_commutation_is_false`. -/
+theorem OrderedTreeMgu.unifyTopExact_exists_alpha
+    {alpha : List (LogicVar × String)}
+    {equations : List (Term × Term)}
+    {leftAtoms rightAtoms : List Atom}
+    {canonical : TreeSubstitution}
+    (shared : SharedRuntimeAlpha alpha)
+    (agreement :
+      SharedAlphaEquationsAgree alpha equations leftAtoms rightAtoms)
+    (derivation :
+      OrderedTreeMgu (denoteEquations equations) canonical) :
+    ∃ flattened runtimeResult,
+      TreeUnifyRounds
+        ((.expr leftAtoms : Atom).size +
+          (.expr rightAtoms : Atom).size)
+        (denoteEquations equations) [] flattened ∧
+      PLeaTTa.unifyTopExact
+          (.expr leftAtoms) (.expr rightAtoms) =
+        some runtimeResult ∧
+      AlphaTreeSubstitutionAgrees alpha
+        flattened runtimeResult := by
+  obtain ⟨flattened, smallRounds⟩ :=
+    PLeaTTa.PrologMguDirectSimulation.OrderedTreeMgu.treeUnifyRounds_exists
+      derivation
+  have rounds :
+      TreeUnifyRounds
+        ((.expr leftAtoms : Atom).size +
+          (.expr rightAtoms : Atom).size)
+        (denoteEquations equations) [] flattened :=
+    smallRounds.mono
+      (PLeaTTa.PrologMguDirectSimulation.SharedAlphaEquationsAgree.canonical_fuel_le_runtime_fuel
+        agreement)
+  have equationsAgreement :
+      AlphaTreeEquationsAgree alpha
+        (denoteEquations equations)
+        (List.zip leftAtoms rightAtoms) :=
+    PLeaTTa.PrologMguDirectSimulation.SharedAlphaEquationsAgree.alphaTreeEquationsAgree_zip
+      agreement
+  obtain ⟨runtimeResult, runtimeExact, runtimeAgreement⟩ :=
+    rounds.runtime shared equationsAgreement
+      (AlphaTreeSubstitutionAgrees.nil (alpha := alpha))
+  refine ⟨flattened, runtimeResult, rounds, ?_, runtimeAgreement⟩
+  unfold PLeaTTa.unifyTopExact Metta.Unify.unifyTopWith
+  rw [unifyRoundsWith_expression_eq_zip
+    PLeaTTa.prologGroundIdentical
+    ((.expr leftAtoms : Atom).size +
+      (.expr rightAtoms : Atom).size)
+    leftAtoms rightAtoms []
+    (PLeaTTa.PrologMguDirectSimulation.SharedAlphaEquationsAgree.runtime_lengths
+      agreement)]
+  exact runtimeExact
+
+/-- The executable-success bridge also exposes the semantic invariant hidden
+by association-list orientation: the independently ordered MGU and the
+flattened runtime-guiding MGU factor through each other over every canonical
+tree.  Thus residual aliases may be spelled differently without changing
+the finite-tree solution space. -/
+theorem OrderedTreeMgu.unifyTopExact_exists_alpha_mgu
+    {alpha : List (LogicVar × String)}
+    {equations : List (Term × Term)}
+    {leftAtoms rightAtoms : List Atom}
+    {canonical : TreeSubstitution}
+    (shared : SharedRuntimeAlpha alpha)
+    (agreement :
+      SharedAlphaEquationsAgree alpha equations leftAtoms rightAtoms)
+    (derivation :
+      OrderedTreeMgu (denoteEquations equations) canonical) :
+    ∃ flattened runtimeResult,
+      PLeaTTa.unifyTopExact
+          (.expr leftAtoms) (.expr rightAtoms) =
+        some runtimeResult ∧
+      AlphaTreeSubstitutionAgrees alpha
+        flattened runtimeResult ∧
+      TreeIsMgu flattened (denoteEquations equations) ∧
+      TreeFactorsThrough flattened canonical ∧
+      TreeFactorsThrough canonical flattened := by
+  obtain
+    ⟨flattened, runtimeResult, rounds, runtimeExact,
+      runtimeAgreement⟩ :=
+    PLeaTTa.PrologMguDirectSimulation.OrderedTreeMgu.unifyTopExact_exists_alpha
+      shared agreement derivation
+  have flattenedMgu : TreeIsMgu flattened (denoteEquations equations) :=
+    rounds.isMostGeneral
+  have canonicalMgu : TreeIsMgu canonical (denoteEquations equations) :=
+    derivation.isMostGeneral
+  exact
+    ⟨flattened, runtimeResult, runtimeExact, runtimeAgreement,
+      flattenedMgu,
+      canonicalMgu.2 flattened flattenedMgu.1,
+      flattenedMgu.2 canonical canonicalMgu.1⟩
 
 /-- An empty structural decomposition makes the top-level executable
 unifier return the empty substitution exactly. -/
