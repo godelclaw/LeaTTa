@@ -11,6 +11,7 @@ import PLeaTTa.Proofs.PrologPrefilterScanBridge
 import PLeaTTa.Proofs.PrologCallPayloadBridge
 import PLeaTTa.Proofs.PrologPrefilterCallBridge
 import PLeaTTa.Proofs.PrologMguBridge
+import PLeaTTa.Proofs.PrologMguValuation
 import PLeaTTa.Proofs.PrologGoalAlpha
 import PLeaTTa.Proofs.PrologActivationMacro
 import PLeaTTa.Proofs.PrologActivationBridge
@@ -912,6 +913,15 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologMguBridge.unifyB_complete_of_shared_alpha_equations
 #print axioms PLeaTTa.PrologMguBridge.FreshenedClauseAlphaAgrees.unifyB_complete
 #print axioms PLeaTTa.PrologMguBridge.repeated_variable_distinct_nan_payloads_complete
+#print axioms PLeaTTa.PrologMguValuation.OrderedTreeMgu.binding_runtimeRepresentable
+#print axioms PLeaTTa.PrologMguValuation.CanonicalRuntimeAgrees.ground_exists
+#print axioms PLeaTTa.PrologMguValuation.canonicalRuntimeAgrees_ground_apply
+#print axioms PLeaTTa.PrologMguValuation.groundedRuntime_valuation
+#print axioms PLeaTTa.PrologMguValuation.SharedAlphaEquationsAgree.deepEquivalentUnifies_of_ordered_mgu
+#print axioms PLeaTTa.PrologMguValuation.unifyTopExact_complete_of_ordered_shared_alpha
+#print axioms PLeaTTa.PrologMguValuation.unifyB_complete_of_ordered_shared_alpha
+#print axioms PLeaTTa.PrologMguValuation.FreshenedClauseAlphaAgrees.unifyB_complete_of_ordered_mgu
+#print axioms PLeaTTa.PrologMguValuation.residual_alias_grounding_is_strict
 #print axioms PLeaTTa.ClauseIndex.build_candidates
 #print axioms PLeaTTa.ClauseIndex.naiveCandidates_eq_head_filter
 #print axioms PLeaTTa.ClauseIndex.Valid.push
