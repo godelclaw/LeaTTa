@@ -12,6 +12,7 @@ import PLeaTTa.Proofs.PrologCallPayloadBridge
 import PLeaTTa.Proofs.PrologPrefilterCallBridge
 import PLeaTTa.Proofs.PrologMguBridge
 import PLeaTTa.Proofs.PrologMguValuation
+import PLeaTTa.Proofs.PrologActivationUnifierBridge
 import PLeaTTa.Proofs.PrologGoalAlpha
 import PLeaTTa.Proofs.PrologActivationMacro
 import PLeaTTa.Proofs.PrologActivationBridge
@@ -922,6 +923,9 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologMguValuation.unifyB_complete_of_ordered_shared_alpha
 #print axioms PLeaTTa.PrologMguValuation.FreshenedClauseAlphaAgrees.unifyB_complete_of_ordered_mgu
 #print axioms PLeaTTa.PrologMguValuation.residual_alias_grounding_is_strict
+#print axioms PLeaTTa.PrologActivationUnifierBridge.SupportedPreparedCandidateAgrees.unifyB_complete_of_headResolution
+#print axioms PLeaTTa.PrologActivationUnifierBridge.SupportedPreparedCandidateAgrees.unifyB_ne_none_of_headResolution
+#print axioms PLeaTTa.PrologActivationUnifierBridge.matched_clause_eq_ok_correspondence
 #print axioms PLeaTTa.ClauseIndex.build_candidates
 #print axioms PLeaTTa.ClauseIndex.naiveCandidates_eq_head_filter
 #print axioms PLeaTTa.ClauseIndex.Valid.push
@@ -1158,6 +1162,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologPrefilterScanBridge.preparedPrefilterScan
 #print axioms PLeaTTa.PrologPrefilterScanBridge.rigid_clash_filter_and_head_rejection
 #print axioms PLeaTTa.PrologCallPayloadBridge.freshCopy_prefilter_head_alpha_agrees
+#print axioms PLeaTTa.PrologCallPayloadBridge.preparedBranchOf_normalizedHeadEquations_eq
 #print axioms PLeaTTa.PrologCallPayloadBridge.supportedPreparedCandidate_normalizedHeadAgrees
 #print axioms PLeaTTa.PrologPrefilterCallBridge.reserveVisible_supported_candidates
 #print axioms PLeaTTa.PrologPrefilterCallBridge.supportedCandidates_normalizedHeads

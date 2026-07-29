@@ -244,6 +244,38 @@ structure NormalizedCallAgrees
       (cursor.bindings.applyTerms cursor.arguments)
       (argsv ++ [resv])
 
+/-- Normalizing the head equations of one concrete eagerly prepared branch
+is exactly pointwise equation construction over the two normalized argument
+lists.  The equal-length premise is explicit because `argumentEquations`
+deliberately has malformed-arity fallback cases, whereas `List.map` does not
+commute through those cases. -/
+theorem preparedBranchOf_normalizedHeadEquations_eq
+    (callGeneration : Generation) (arguments : List Term)
+    (bindings : Substitution) (freshSeed : Nat)
+    (reference : VersionedClause)
+    (lengths :
+      arguments.length =
+        (reference.clause.freshCopy freshSeed).clause.arguments.length) :
+    (preparedBranchOf callGeneration arguments bindings freshSeed reference
+        ).normalizedHeadEquations =
+      argumentEquations
+        (bindings.applyTerms arguments)
+        (bindings.applyTerms
+          (reference.clause.freshCopy freshSeed).clause.arguments) := by
+  change
+    (argumentEquations arguments
+        (reference.clause.freshCopy freshSeed).clause.arguments).map
+        (fun equation =>
+          (bindings.applyTerm equation.1,
+            bindings.applyTerm equation.2)) =
+      argumentEquations
+        (bindings.applyTerms arguments)
+        (bindings.applyTerms
+          (reference.clause.freshCopy freshSeed).clause.arguments)
+  exact map_argumentEquations_applyTerm_of_length_eq
+    bindings arguments
+      (reference.clause.freshCopy freshSeed).clause.arguments lengths
+
 /-- Supported-source strengthening of `PreparedCandidateAgrees`.  The
 executable string encoding is not globally injective, so the finite
 per-clause premise is explicit and the known source/generated collision stays
@@ -363,19 +395,9 @@ theorem supportedPreparedCandidate_normalizedHeadAgrees
               (cursor.bindings.applyTerms cursor.arguments)
               (cursor.bindings.applyTerms
                 (reference.clause.freshCopy freshSeed).clause.arguments) := by
-        change
-          (argumentEquations cursor.arguments
-              (reference.clause.freshCopy freshSeed).clause.arguments).map
-              (fun equation =>
-                (cursor.bindings.applyTerm equation.1,
-                  cursor.bindings.applyTerm equation.2)) =
-            argumentEquations
-              (cursor.bindings.applyTerms cursor.arguments)
-              (cursor.bindings.applyTerms
-                (reference.clause.freshCopy freshSeed).clause.arguments)
-        exact map_argumentEquations_applyTerm_of_length_eq
-          cursor.bindings cursor.arguments
-          (reference.clause.freshCopy freshSeed).clause.arguments rawLengths
+        exact preparedBranchOf_normalizedHeadEquations_eq
+          cursor.callGeneration cursor.arguments cursor.bindings freshSeed
+          reference rawLengths
       constructor
       · exact arity
       · rw [normalizedEquations, stable]
