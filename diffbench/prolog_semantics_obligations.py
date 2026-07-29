@@ -49,6 +49,16 @@ PROLOG_MGU_BRIDGE = ROOT / "PLeaTTa" / "Proofs" / "PrologMguBridge.lean"
 PROLOG_MGU_VALUATION = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologMguValuation.lean"
 )
+PROLOG_MGU_OPEN_AGREEMENT = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologMguOpenAgreement.lean"
+)
+PROLOG_MGU_TOPOLOGY = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologMguTopology.lean"
+)
+PROLOG_MGU_EXECUTABLE_OPEN_FACTOR = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologMguExecutableOpenFactor.lean"
+)
 PROLOG_ACTIVATION_UNIFIER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationUnifierBridge.lean"
 )
@@ -128,6 +138,11 @@ def check() -> list[str]:
             digest(PROLOG_PREFILTER_CALL_BRIDGE),
         "prolog_mgu_bridge_sha256": digest(PROLOG_MGU_BRIDGE),
         "prolog_mgu_valuation_sha256": digest(PROLOG_MGU_VALUATION),
+        "prolog_mgu_open_agreement_sha256":
+            digest(PROLOG_MGU_OPEN_AGREEMENT),
+        "prolog_mgu_topology_sha256": digest(PROLOG_MGU_TOPOLOGY),
+        "prolog_mgu_executable_open_factor_sha256":
+            digest(PROLOG_MGU_EXECUTABLE_OPEN_FACTOR),
         "prolog_activation_unifier_bridge_sha256":
             digest(PROLOG_ACTIVATION_UNIFIER_BRIDGE),
         "prolog_goal_alpha_sha256": digest(PROLOG_GOAL_ALPHA),
