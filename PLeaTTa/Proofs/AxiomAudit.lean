@@ -887,6 +887,13 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.unifyB_complete_of_prolog_equivalent_unifier
 #print axioms PLeaTTa.nan_payloads_are_prolog_equivalent
 #print axioms PLeaTTa.unifyTopExact_nan_payloads_complete
+#print axioms PLeaTTa.SubstLookupEquivalentWith.factorsThrough
+#print axioms PLeaTTa.unifyTopWith_equivalent_sound
+#print axioms PLeaTTa.unifyTopWith_lookupEquivalent_of_equivalent_unifier
+#print axioms PLeaTTa.unifyTopWith_isMgu
+#print axioms PLeaTTa.unifyTopExact_isMgu
+#print axioms PLeaTTa.unifyB_result_has_generated_mgu
+#print axioms PLeaTTa.distinct_nan_payloads_have_semantic_mgu
 #print axioms PLeaTTa.PrologMguBridge.conflicting_alpha_is_not_shared
 #print axioms PLeaTTa.PrologMguBridge.aliasing_alpha_is_not_shared
 #print axioms PLeaTTa.PrologMguBridge.AlphaForwardFunctional.append

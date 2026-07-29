@@ -3055,6 +3055,38 @@ def DeepEquivalentUnifies
     AtomEquivalentWith groundEq
       (subst binding equation.1) (subst binding equation.2)
 
+/-- One comparator-respecting valuation realizes every lookup stored by a
+runtime substitution.  This is the executable analogue of a residual
+substitution factoring through an MGU: the realizing valuation may identify
+distinct grounded payloads exactly when `groundEq` does. -/
+def SubstLookupEquivalentWith
+    (groundEq : Ground → Ground → Bool)
+    (valuation binding : Subst) : Prop :=
+  ∀ name value, Metta.Subst.lookup binding name = some value →
+    AtomEquivalentWith groundEq
+      (subst valuation (.var name)) (subst valuation value)
+
+/-- Comparator-relative semantic factorization.  The residual valuation is
+the specific substitution itself: applying the proposed general unifier
+first is observationally invisible to it. -/
+def SubstFactorsThroughWith
+    (groundEq : Ground → Ground → Bool)
+    (specific general : Subst) : Prop :=
+  ∀ atom,
+    AtomEquivalentWith groundEq
+      (subst specific (subst general atom)) (subst specific atom)
+
+/-- A returned runtime substitution is a comparator-relative MGU when it
+unifies the ordered worklist and every other unifier factors through it.
+This statement is semantic: association-list spelling and harmless grounded
+payload differences are deliberately not equated. -/
+def RuntimeIsMguWith
+    (groundEq : Ground → Ground → Bool)
+    (binding : Subst) (equations : List (Atom × Atom)) : Prop :=
+  DeepEquivalentUnifies groundEq binding equations ∧
+    ∀ candidate, DeepEquivalentUnifies groundEq candidate equations →
+      SubstFactorsThroughWith groundEq candidate binding
+
 /-- Comparator-respecting realization of a flattened variable-constraint
 worklist. -/
 private def DeepEquivalentRealizes
@@ -3132,6 +3164,178 @@ mutual
           groundSymmetric runtime name target equivalent atoms)
 
 end
+
+mutual
+
+  /-- One-pass application of a lookup-realized substitution is
+  comparator-invisible. -/
+  private theorem subst_apply_equivalent_of_lookupEquivalent
+      (groundEq : Ground → Ground → Bool)
+      (groundReflexive : ∀ ground, groundEq ground ground = true)
+      (groundSymmetric :
+        ∀ {left right : Ground}, groundEq left right = true →
+          groundEq right left = true)
+      (valuation binding : Subst)
+      (realizes :
+        SubstLookupEquivalentWith groundEq valuation binding) :
+      (atom : Atom) →
+        AtomEquivalentWith groundEq
+          (subst valuation (Metta.Subst.apply binding atom))
+          (subst valuation atom)
+    | .sym symbol => by
+        simpa [Metta.Subst.apply] using
+          (AtomEquivalentWith.symbol (groundEq := groundEq) symbol)
+    | .gnd ground => by
+        simpa [Metta.Subst.apply] using
+          (AtomEquivalentWith.ground (groundEq := groundEq)
+            (groundReflexive ground))
+    | .var name => by
+        simp only [Metta.Subst.apply]
+        cases lookup : Metta.Subst.lookup binding name with
+        | none =>
+            exact AtomEquivalentWith.refl groundReflexive
+              (subst valuation (.var name))
+        | some value =>
+            simpa using
+              (realizes name value lookup).symm groundSymmetric
+    | .expr atoms => by
+        simp only [Metta.Subst.apply, subst_expr]
+        exact .expression
+          (substs_apply_equivalent_of_lookupEquivalent
+            groundEq groundReflexive groundSymmetric valuation binding
+            realizes atoms)
+
+  /-- Ordered-list companion to
+  `subst_apply_equivalent_of_lookupEquivalent`. -/
+  private theorem substs_apply_equivalent_of_lookupEquivalent
+      (groundEq : Ground → Ground → Bool)
+      (groundReflexive : ∀ ground, groundEq ground ground = true)
+      (groundSymmetric :
+        ∀ {left right : Ground}, groundEq left right = true →
+          groundEq right left = true)
+      (valuation binding : Subst)
+      (realizes :
+        SubstLookupEquivalentWith groundEq valuation binding) :
+      (atoms : List Atom) →
+        AtomsEquivalentWith groundEq
+          ((atoms.map (Metta.Subst.apply binding)).map (subst valuation))
+          (atoms.map (subst valuation))
+    | [] => .nil
+    | atom :: atoms => .cons
+        (subst_apply_equivalent_of_lookupEquivalent
+          groundEq groundReflexive groundSymmetric valuation binding
+          realizes atom)
+        (substs_apply_equivalent_of_lookupEquivalent
+          groundEq groundReflexive groundSymmetric valuation binding
+          realizes atoms)
+
+end
+
+mutual
+
+  /-- Repeated deep application of a lookup-realized substitution remains
+  comparator-invisible. -/
+  private theorem substN_equivalent_of_lookupEquivalent
+      (groundEq : Ground → Ground → Bool)
+      (groundReflexive : ∀ ground, groundEq ground ground = true)
+      (groundSymmetric :
+        ∀ {left right : Ground}, groundEq left right = true →
+          groundEq right left = true)
+      (groundTransitive :
+        ∀ {first second third : Ground},
+          groundEq first second = true →
+          groundEq second third = true →
+          groundEq first third = true)
+      (valuation binding : Subst)
+      (realizes :
+        SubstLookupEquivalentWith groundEq valuation binding) :
+      (fuel : Nat) → (atom : Atom) →
+        AtomEquivalentWith groundEq
+          (subst valuation (substN fuel binding atom))
+          (subst valuation atom)
+    | 0, atom => by
+        simpa [substN] using
+          (AtomEquivalentWith.refl groundReflexive
+            (subst valuation atom))
+    | _ + 1, .sym symbol => by
+        simpa [substN] using
+          (AtomEquivalentWith.symbol (groundEq := groundEq) symbol)
+    | _ + 1, .gnd ground => by
+        simpa [substN] using
+          (AtomEquivalentWith.ground (groundEq := groundEq)
+            (groundReflexive ground))
+    | fuel + 1, .var name => by
+        simp only [substN]
+        cases lookup : Metta.Subst.lookup binding name with
+        | none =>
+            exact AtomEquivalentWith.refl groundReflexive
+              (subst valuation (.var name))
+        | some value =>
+            exact AtomEquivalentWith.trans (groundEq := groundEq)
+              groundTransitive
+              (substN_equivalent_of_lookupEquivalent
+                groundEq groundReflexive groundSymmetric groundTransitive
+                valuation binding realizes fuel value)
+              ((realizes name value lookup).symm groundSymmetric)
+    | fuel + 1, .expr atoms => by
+        simp only [substN, subst_expr]
+        exact .expression
+          (substsN_equivalent_of_lookupEquivalent
+            groundEq groundReflexive groundSymmetric groundTransitive
+            valuation binding realizes (fuel + 1) atoms)
+
+  /-- Ordered-list companion to
+  `substN_equivalent_of_lookupEquivalent`. -/
+  private theorem substsN_equivalent_of_lookupEquivalent
+      (groundEq : Ground → Ground → Bool)
+      (groundReflexive : ∀ ground, groundEq ground ground = true)
+      (groundSymmetric :
+        ∀ {left right : Ground}, groundEq left right = true →
+          groundEq right left = true)
+      (groundTransitive :
+        ∀ {first second third : Ground},
+          groundEq first second = true →
+          groundEq second third = true →
+          groundEq first third = true)
+      (valuation binding : Subst)
+      (realizes :
+        SubstLookupEquivalentWith groundEq valuation binding) :
+      (fuel : Nat) → (atoms : List Atom) →
+        AtomsEquivalentWith groundEq
+          ((atoms.map (substN fuel binding)).map (subst valuation))
+          (atoms.map (subst valuation))
+    | _, [] => .nil
+    | fuel, atom :: atoms => .cons
+        (substN_equivalent_of_lookupEquivalent
+          groundEq groundReflexive groundSymmetric groundTransitive
+          valuation binding realizes fuel atom)
+        (substsN_equivalent_of_lookupEquivalent
+          groundEq groundReflexive groundSymmetric groundTransitive
+          valuation binding realizes fuel atoms)
+
+end
+
+/-- Lookup realization induces semantic factorization through the complete
+deep substitution. -/
+theorem SubstLookupEquivalentWith.factorsThrough
+    {groundEq : Ground → Ground → Bool}
+    (groundReflexive : ∀ ground, groundEq ground ground = true)
+    (groundSymmetric :
+      ∀ {left right : Ground}, groundEq left right = true →
+        groundEq right left = true)
+    (groundTransitive :
+      ∀ {first second third : Ground},
+        groundEq first second = true →
+        groundEq second third = true →
+        groundEq first third = true)
+    {valuation binding : Subst}
+    (realizes :
+      SubstLookupEquivalentWith groundEq valuation binding) :
+    SubstFactorsThroughWith groundEq valuation binding := by
+  intro atom
+  exact substN_equivalent_of_lookupEquivalent
+    groundEq groundReflexive groundSymmetric groundTransitive
+    valuation binding realizes (binding.length + 1) atom
 
 mutual
 
@@ -3353,6 +3557,566 @@ private theorem decomposeAllWith_equivalentRealizes
                   (fun item itemMember =>
                     unifies item (by simp [itemMember]))
                   tailDecomposition constraint tailMember
+
+mutual
+
+  /-- Realizing every decomposed constraint reconstructs comparator-relative
+  equivalence of the original equation.  Unlike exact reconstruction, no
+  auxiliary propositional witness is needed: the runtime comparator result
+  at grounded leaves is the observation being reconstructed. -/
+  private theorem decomposeEqWith_equivalent_of_realized
+      (groundEq : Ground → Ground → Bool)
+      (groundReflexive : ∀ ground, groundEq ground ground = true)
+      (groundSymmetric :
+        ∀ {left right : Ground}, groundEq left right = true →
+          groundEq right left = true)
+      (result : Subst) (left right : Atom)
+      (constraints : List (String × Atom))
+      (decomposed :
+        Metta.Unify.decomposeEqWith groundEq left right =
+          some constraints)
+      (realizes :
+        DeepEquivalentRealizes groundEq result constraints) :
+      AtomEquivalentWith groundEq
+        (subst result left) (subst result right) := by
+    cases left with
+    | sym leftName =>
+        cases right with
+        | sym rightName =>
+            simp only [Metta.Unify.decomposeEqWith] at decomposed
+            split at decomposed
+            next same =>
+              have names : leftName = rightName := by simpa using same
+              subst rightName
+              simpa using
+                (AtomEquivalentWith.symbol (groundEq := groundEq) leftName)
+            next => contradiction
+        | var name =>
+            cases decomposed
+            exact
+              (realizes (name, .sym leftName) (by simp)).symm
+                groundSymmetric
+        | gnd ground =>
+            simp [Metta.Unify.decomposeEqWith] at decomposed
+        | expr atoms =>
+            simp [Metta.Unify.decomposeEqWith] at decomposed
+    | var name =>
+        cases right with
+        | sym rightName =>
+            cases decomposed
+            exact realizes (name, .sym rightName) (by simp)
+        | var rightName =>
+            simp only [Metta.Unify.decomposeEqWith] at decomposed
+            split at decomposed
+            next same =>
+              have names : name = rightName := by simpa using same
+              subst rightName
+              exact AtomEquivalentWith.refl groundReflexive
+                (subst result (.var name))
+            next =>
+              cases decomposed
+              exact realizes (name, .var rightName) (by simp)
+        | gnd ground =>
+            cases decomposed
+            exact realizes (name, .gnd ground) (by simp)
+        | expr atoms =>
+            cases decomposed
+            exact realizes (name, .expr atoms) (by simp)
+    | gnd leftGround =>
+        cases right with
+        | sym rightName =>
+            simp [Metta.Unify.decomposeEqWith] at decomposed
+        | var name =>
+            cases decomposed
+            exact
+              (realizes (name, .gnd leftGround) (by simp)).symm
+                groundSymmetric
+        | gnd rightGround =>
+            simp only [Metta.Unify.decomposeEqWith] at decomposed
+            split at decomposed
+            next identical =>
+              cases decomposed
+              simpa using
+                (AtomEquivalentWith.ground (groundEq := groundEq) identical)
+            next => contradiction
+        | expr atoms =>
+            simp [Metta.Unify.decomposeEqWith] at decomposed
+    | expr leftAtoms =>
+        cases right with
+        | sym rightName =>
+            simp [Metta.Unify.decomposeEqWith] at decomposed
+        | var name =>
+            cases decomposed
+            exact
+              (realizes (name, .expr leftAtoms) (by simp)).symm
+                groundSymmetric
+        | gnd ground =>
+            simp [Metta.Unify.decomposeEqWith] at decomposed
+        | expr rightAtoms =>
+            simp only [subst_expr]
+            exact .expression
+              (decomposeListWith_equivalent_of_realized
+                groundEq groundReflexive groundSymmetric result
+                leftAtoms rightAtoms
+                constraints decomposed realizes)
+
+  /-- Ordered-list counterpart of
+  `decomposeEqWith_equivalent_of_realized`. -/
+  private theorem decomposeListWith_equivalent_of_realized
+      (groundEq : Ground → Ground → Bool)
+      (groundReflexive : ∀ ground, groundEq ground ground = true)
+      (groundSymmetric :
+        ∀ {left right : Ground}, groundEq left right = true →
+          groundEq right left = true)
+      (result : Subst) (left right : List Atom)
+      (constraints : List (String × Atom))
+      (decomposed :
+        Metta.Unify.decomposeListWith groundEq left right =
+          some constraints)
+      (realizes :
+        DeepEquivalentRealizes groundEq result constraints) :
+      AtomsEquivalentWith groundEq
+        (left.map (subst result)) (right.map (subst result)) := by
+    cases left with
+    | nil =>
+        cases right with
+        | nil => exact .nil
+        | cons rightHead rightTail =>
+            simp [Metta.Unify.decomposeListWith] at decomposed
+    | cons leftHead leftTail =>
+        cases right with
+        | nil =>
+            simp [Metta.Unify.decomposeListWith] at decomposed
+        | cons rightHead rightTail =>
+            simp only [Metta.Unify.decomposeListWith] at decomposed
+            cases headDecomposition :
+                Metta.Unify.decomposeEqWith groundEq leftHead rightHead with
+            | none =>
+                simp [headDecomposition] at decomposed
+            | some headConstraints =>
+                cases tailDecomposition :
+                    Metta.Unify.decomposeListWith groundEq
+                      leftTail rightTail with
+                | none =>
+                    simp [headDecomposition, tailDecomposition] at decomposed
+                | some tailConstraints =>
+                    simp [headDecomposition, tailDecomposition] at decomposed
+                    cases decomposed
+                    have headRealizes :
+                        DeepEquivalentRealizes
+                          groundEq result headConstraints := by
+                      intro constraint member
+                      exact realizes constraint
+                        (List.mem_append_left tailConstraints member)
+                    have tailRealizes :
+                        DeepEquivalentRealizes
+                          groundEq result tailConstraints := by
+                      intro constraint member
+                      exact realizes constraint
+                        (List.mem_append_right headConstraints member)
+                    exact .cons
+                      (decomposeEqWith_equivalent_of_realized
+                        groundEq groundReflexive groundSymmetric result
+                        leftHead rightHead headConstraints headDecomposition
+                        headRealizes)
+                      (decomposeListWith_equivalent_of_realized
+                        groundEq groundReflexive groundSymmetric result
+                        leftTail rightTail tailConstraints tailDecomposition
+                        tailRealizes)
+
+end
+
+/-- Whole-worklist reconstruction from a realized flattened comparator
+constraint list. -/
+private theorem decomposeAllWith_equivalent_of_realized
+    (groundEq : Ground → Ground → Bool)
+    (groundReflexive : ∀ ground, groundEq ground ground = true)
+    (groundSymmetric :
+      ∀ {left right : Ground}, groundEq left right = true →
+        groundEq right left = true)
+    (result : Subst) (equations : List (Atom × Atom))
+    (constraints : List (String × Atom))
+    (decomposed :
+      Metta.Unify.decomposeAllWith groundEq equations =
+        some constraints)
+    (realizes :
+      DeepEquivalentRealizes groundEq result constraints) :
+    DeepEquivalentUnifies groundEq result equations := by
+  induction equations generalizing constraints with
+  | nil =>
+      intro equation member
+      simp at member
+  | cons equation rest induction =>
+      rcases equation with ⟨left, right⟩
+      simp only [Metta.Unify.decomposeAllWith] at decomposed
+      cases headDecomposition :
+          Metta.Unify.decomposeEqWith groundEq left right with
+      | none =>
+          simp [headDecomposition] at decomposed
+      | some headConstraints =>
+          cases tailDecomposition :
+              Metta.Unify.decomposeAllWith groundEq rest with
+          | none =>
+              simp [headDecomposition, tailDecomposition] at decomposed
+          | some tailConstraints =>
+              simp [headDecomposition, tailDecomposition] at decomposed
+              cases decomposed
+              have headRealizes :
+                  DeepEquivalentRealizes
+                    groundEq result headConstraints := by
+                intro constraint member
+                exact realizes constraint
+                  (List.mem_append_left tailConstraints member)
+              have tailRealizes :
+                  DeepEquivalentRealizes
+                    groundEq result tailConstraints := by
+                intro constraint member
+                exact realizes constraint
+                  (List.mem_append_right headConstraints member)
+              intro item member
+              simp only [List.mem_cons] at member
+              rcases member with rfl | member
+              · exact decomposeEqWith_equivalent_of_realized
+                  groundEq groundReflexive groundSymmetric result left right
+                  headConstraints headDecomposition headRealizes
+              · exact induction tailConstraints tailDecomposition
+                  tailRealizes item member
+
+/-- Internal evidence for comparator-relative soundness of one elimination
+run. -/
+private structure EquivalentUnifyEvidence
+    (groundEq : Ground → Ground → Bool)
+    (result base : Subst) (equations : List (Atom × Atom)) where
+  topological : SubstTopological result
+  unifies : DeepEquivalentUnifies groundEq result equations
+  lookupExtension : LookupExtends result base
+
+/-- Every successful elimination run is sound for the exact comparator it
+executes.  This is the comparator-relative counterpart of
+`unifyRoundsWith_exact_sound_of_unifier`; it needs no auxiliary exact
+witness because grounded comparator identity is retained in the conclusion. -/
+private def unifyRoundsWith_equivalent_sound
+    (groundEq : Ground → Ground → Bool)
+    (groundReflexive : ∀ ground, groundEq ground ground = true)
+    (groundSymmetric :
+      ∀ {left right : Ground}, groundEq left right = true →
+        groundEq right left = true)
+    (groundTransitive :
+      ∀ {first second third : Ground},
+        groundEq first second = true →
+        groundEq second third = true →
+        groundEq first third = true)
+    (fuel : Nat) (equations : List (Atom × Atom))
+    (base result : Subst)
+    (baseTopological : SubstTopological base)
+    (equationsAvoid : EquationsAvoid base equations)
+    (returned :
+      Metta.Unify.unifyRoundsWith groundEq fuel equations base =
+        some result) :
+    EquivalentUnifyEvidence groundEq result base equations := by
+  induction fuel generalizing equations base result with
+  | zero =>
+      simp only [Metta.Unify.unifyRoundsWith] at returned
+      cases decomposed :
+          Metta.Unify.decomposeAllWith groundEq equations with
+      | none =>
+          simp [decomposed] at returned
+      | some constraints =>
+          cases constraints with
+          | nil =>
+              simp [decomposed] at returned
+              subst result
+              have realizes :
+                  DeepEquivalentRealizes groundEq base [] := by
+                simp [DeepEquivalentRealizes]
+              exact
+                ⟨baseTopological,
+                  decomposeAllWith_equivalent_of_realized
+                    groundEq groundReflexive groundSymmetric base
+                    equations [] decomposed realizes,
+                  fun _ _ lookup => lookup⟩
+          | cons constraint rest =>
+              simp [decomposed] at returned
+  | succ fuel induction =>
+      simp only [Metta.Unify.unifyRoundsWith] at returned
+      cases decomposed :
+          Metta.Unify.decomposeAllWith groundEq equations with
+      | none =>
+          simp [decomposed] at returned
+      | some constraints =>
+          cases constraints with
+          | nil =>
+              simp [decomposed] at returned
+              subst result
+              have realizes :
+                  DeepEquivalentRealizes groundEq base [] := by
+                simp [DeepEquivalentRealizes]
+              exact
+                ⟨baseTopological,
+                  decomposeAllWith_equivalent_of_realized
+                    groundEq groundReflexive groundSymmetric base
+                    equations [] decomposed realizes,
+                  fun _ _ lookup => lookup⟩
+          | cons constraint rest =>
+              rcases constraint with ⟨name, target⟩
+              by_cases occurs : Metta.Subst.occurs name target = true
+              · simp [decomposed, occurs] at returned
+              · have occursFalse :
+                    Metta.Subst.occurs name target = false := by
+                  cases value : Metta.Subst.occurs name target with
+                  | false => rfl
+                  | true => exact False.elim (occurs value)
+                have constraintsAvoid :
+                    ConstraintsAvoid base ((name, target) :: rest) :=
+                  decomposeAllWith_avoids groundEq base equations
+                    ((name, target) :: rest) equationsAvoid decomposed
+                have headAvoid :=
+                  constraintsAvoid (name, target) (by simp)
+                have nameAbsent : name ∉ target.vars :=
+                  not_mem_vars_of_occurs_eq_false
+                    name target occursFalse
+                have extendEq :
+                    Metta.Subst.extend base name target =
+                      (name, target) :: base := by
+                  simp [Metta.Subst.extend,
+                    erase_eq_self_of_lookup_none base name headAvoid.1]
+                have nextTopological :
+                    SubstTopological ((name, target) :: base) :=
+                  SubstTopological.cons_of_fresh base baseTopological
+                    name target headAvoid.1 nameAbsent headAvoid.2
+                have restAvoid : ConstraintsAvoid base rest := by
+                  intro item member
+                  exact constraintsAvoid item (by simp [member])
+                let nextEquations := rest.map fun item =>
+                  (Metta.Subst.apply [(name, target)]
+                      (Atom.var item.1),
+                    Metta.Subst.apply [(name, target)] item.2)
+                have nextAvoid :
+                    EquationsAvoid ((name, target) :: base)
+                      nextEquations := by
+                  exact constraintMap_equationsAvoid base name target rest
+                    nameAbsent headAvoid.2 restAvoid
+                simp only [decomposed, occursFalse, Bool.false_eq_true,
+                  if_false] at returned
+                rw [extendEq] at returned
+                have recursive :=
+                  induction nextEquations ((name, target) :: base)
+                    result nextTopological nextAvoid returned
+                rcases recursive with
+                  ⟨resultTopological, resultNext, lookupNext⟩
+                have lookupHead :
+                    Metta.Subst.lookup result name = some target := by
+                  apply lookupNext name target
+                  simp [Metta.Subst.lookup]
+                have headExact :
+                    subst result (.var name) =
+                      subst result target :=
+                  resultTopological.subst_var_of_lookup
+                    result name target lookupHead
+                have headEquivalent :
+                    AtomEquivalentWith groundEq
+                      (subst result (.var name))
+                      (subst result target) :=
+                  AtomEquivalentWith.of_eq groundReflexive headExact
+                have resultConstraints :
+                    DeepEquivalentRealizes groundEq result
+                      ((name, target) :: rest) := by
+                  intro item member
+                  simp only [List.mem_cons] at member
+                  rcases member with rfl | member
+                  · exact headEquivalent
+                  · have mapped :
+                        (Metta.Subst.apply [(name, target)]
+                            (.var item.1),
+                          Metta.Subst.apply [(name, target)] item.2) ∈
+                          nextEquations := by
+                        simpa [nextEquations] using
+                          (List.mem_map_of_mem
+                            (f := fun entry : String × Atom =>
+                              (Metta.Subst.apply [(name, target)]
+                                  (.var entry.1),
+                                Metta.Subst.apply [(name, target)]
+                                  entry.2))
+                            member)
+                    have mappedEquivalent := resultNext _ mapped
+                    have leftInvisible :=
+                      subst_apply_singleton_equivalent
+                        groundEq groundReflexive groundSymmetric result
+                        name target headEquivalent (.var item.1)
+                    have rightInvisible :=
+                      subst_apply_singleton_equivalent
+                        groundEq groundReflexive groundSymmetric result
+                        name target headEquivalent item.2
+                    exact AtomEquivalentWith.trans
+                      (groundEq := groundEq) groundTransitive
+                      (leftInvisible.symm groundSymmetric)
+                      (AtomEquivalentWith.trans
+                        (groundEq := groundEq) groundTransitive
+                        mappedEquivalent rightInvisible)
+                have resultEquations :
+                    DeepEquivalentUnifies groundEq result equations :=
+                  decomposeAllWith_equivalent_of_realized
+                    groundEq groundReflexive groundSymmetric result
+                    equations ((name, target) :: rest) decomposed
+                    resultConstraints
+                have lookupBase : LookupExtends result base := by
+                  intro source value lookup
+                  apply lookupNext source value
+                  by_cases same : source = name
+                  · subst source
+                    rw [headAvoid.1] at lookup
+                    contradiction
+                  · simpa [Metta.Subst.lookup, same] using lookup
+                exact
+                  ⟨resultTopological, resultEquations, lookupBase⟩
+
+/-- Every comparator-respecting unifier realizes every lookup returned by a
+successful elimination run, provided it already realizes the incoming
+accumulator.  This is the round invariant carrying most-generality. -/
+private theorem unifyRoundsWith_lookupEquivalent_of_unifier
+    (groundEq : Ground → Ground → Bool)
+    (groundReflexive : ∀ ground, groundEq ground ground = true)
+    (groundSymmetric :
+      ∀ {left right : Ground}, groundEq left right = true →
+        groundEq right left = true)
+    (groundTransitive :
+      ∀ {first second third : Ground},
+        groundEq first second = true →
+        groundEq second third = true →
+        groundEq first third = true)
+    (fuel : Nat) (equations : List (Atom × Atom))
+    (base result candidate : Subst)
+    (baseTopological : SubstTopological base)
+    (equationsAvoid : EquationsAvoid base equations)
+    (candidateUnifies :
+      DeepEquivalentUnifies groundEq candidate equations)
+    (candidateRealizesBase :
+      SubstLookupEquivalentWith groundEq candidate base)
+    (returned :
+      Metta.Unify.unifyRoundsWith groundEq fuel equations base =
+        some result) :
+    SubstLookupEquivalentWith groundEq candidate result := by
+  induction fuel generalizing equations base result with
+  | zero =>
+      simp only [Metta.Unify.unifyRoundsWith] at returned
+      cases decomposed :
+          Metta.Unify.decomposeAllWith groundEq equations with
+      | none =>
+          simp [decomposed] at returned
+      | some constraints =>
+          cases constraints with
+          | nil =>
+              simp [decomposed] at returned
+              subst result
+              exact candidateRealizesBase
+          | cons constraint rest =>
+              simp [decomposed] at returned
+  | succ fuel induction =>
+      simp only [Metta.Unify.unifyRoundsWith] at returned
+      cases decomposed :
+          Metta.Unify.decomposeAllWith groundEq equations with
+      | none =>
+          simp [decomposed] at returned
+      | some constraints =>
+          cases constraints with
+          | nil =>
+              simp [decomposed] at returned
+              subst result
+              exact candidateRealizesBase
+          | cons constraint rest =>
+              rcases constraint with ⟨name, target⟩
+              by_cases occurs : Metta.Subst.occurs name target = true
+              · simp [decomposed, occurs] at returned
+              · have occursFalse :
+                    Metta.Subst.occurs name target = false := by
+                  cases value : Metta.Subst.occurs name target with
+                  | false => rfl
+                  | true => exact False.elim (occurs value)
+                have constraintsAvoid :
+                    ConstraintsAvoid base ((name, target) :: rest) :=
+                  decomposeAllWith_avoids groundEq base equations
+                    ((name, target) :: rest) equationsAvoid decomposed
+                have headAvoid :=
+                  constraintsAvoid (name, target) (by simp)
+                have nameAbsent : name ∉ target.vars :=
+                  not_mem_vars_of_occurs_eq_false
+                    name target occursFalse
+                have extendEq :
+                    Metta.Subst.extend base name target =
+                      (name, target) :: base := by
+                  simp [Metta.Subst.extend,
+                    erase_eq_self_of_lookup_none base name headAvoid.1]
+                have nextTopological :
+                    SubstTopological ((name, target) :: base) :=
+                  SubstTopological.cons_of_fresh base baseTopological
+                    name target headAvoid.1 nameAbsent headAvoid.2
+                have restAvoid : ConstraintsAvoid base rest := by
+                  intro item member
+                  exact constraintsAvoid item (by simp [member])
+                let nextEquations := rest.map fun item =>
+                  (Metta.Subst.apply [(name, target)]
+                      (Atom.var item.1),
+                    Metta.Subst.apply [(name, target)] item.2)
+                have nextAvoid :
+                    EquationsAvoid ((name, target) :: base)
+                      nextEquations := by
+                  exact constraintMap_equationsAvoid base name target rest
+                    nameAbsent headAvoid.2 restAvoid
+                have candidateConstraints :
+                    DeepEquivalentRealizes groundEq candidate
+                      ((name, target) :: rest) :=
+                  decomposeAllWith_equivalentRealizes
+                    groundEq groundSymmetric candidate equations
+                    ((name, target) :: rest) candidateUnifies decomposed
+                have headEquivalent :
+                    AtomEquivalentWith groundEq
+                      (subst candidate (.var name))
+                      (subst candidate target) :=
+                  candidateConstraints (name, target) (by simp)
+                have nextCandidateUnifies :
+                    DeepEquivalentUnifies groundEq candidate
+                      nextEquations := by
+                  intro equation member
+                  simp only [nextEquations, List.mem_map] at member
+                  obtain ⟨item, itemMember, rfl⟩ := member
+                  have itemEquivalent :=
+                    candidateConstraints item (by simp [itemMember])
+                  have leftInvisible :=
+                    subst_apply_singleton_equivalent
+                      groundEq groundReflexive groundSymmetric candidate
+                      name target headEquivalent (.var item.1)
+                  have rightInvisible :=
+                    subst_apply_singleton_equivalent
+                      groundEq groundReflexive groundSymmetric candidate
+                      name target headEquivalent item.2
+                  exact AtomEquivalentWith.trans
+                    (groundEq := groundEq) groundTransitive
+                    leftInvisible
+                    (AtomEquivalentWith.trans
+                      (groundEq := groundEq) groundTransitive
+                      itemEquivalent
+                      (rightInvisible.symm groundSymmetric))
+                have candidateRealizesExtended :
+                    SubstLookupEquivalentWith groundEq candidate
+                      ((name, target) :: base) := by
+                  intro source value lookup
+                  by_cases same : source = name
+                  · subst source
+                    simp only [Metta.Subst.lookup, beq_self_eq_true,
+                      if_true, Option.some.injEq] at lookup
+                    subst value
+                    exact headEquivalent
+                  · have oldLookup :
+                        Metta.Subst.lookup base source = some value := by
+                      simpa [Metta.Subst.lookup, same] using lookup
+                    exact candidateRealizesBase source value oldLookup
+                simp only [decomposed, occursFalse, Bool.false_eq_true,
+                  if_false] at returned
+                rw [extendEq] at returned
+                exact induction nextEquations
+                  ((name, target) :: base) result nextTopological
+                  nextAvoid nextCandidateUnifies
+                  candidateRealizesExtended returned
 
 mutual
 
@@ -3667,6 +4431,111 @@ theorem unifyTopWith_complete_of_equivalent_unifier
       subst equation
       exact equivalent)
 
+/-- Every successful top-level call is sound for its own ground comparator.
+Unlike exact-input soundness, this theorem covers comparator-identical
+payloads such as distinct IEEE NaN encodings without strengthening them to
+propositional equality. -/
+theorem unifyTopWith_equivalent_sound
+    (groundEq : Ground → Ground → Bool)
+    (groundReflexive : ∀ ground, groundEq ground ground = true)
+    (groundSymmetric :
+      ∀ {left right : Ground}, groundEq left right = true →
+        groundEq right left = true)
+    (groundTransitive :
+      ∀ {first second third : Ground},
+        groundEq first second = true →
+        groundEq second third = true →
+        groundEq first third = true)
+    (left right : Atom) (result : Subst)
+    (returned :
+      Metta.Unify.unifyTopWith groundEq left right = some result) :
+    AtomEquivalentWith groundEq
+      (subst result left) (subst result right) := by
+  have evidence :=
+    unifyRoundsWith_equivalent_sound
+      groundEq groundReflexive groundSymmetric groundTransitive
+      (left.size + right.size) [(left, right)] [] result
+      emptySubstTopological
+      (by
+        intro equation member
+        simp only [List.mem_singleton] at member
+        subst equation
+        constructor <;> simp [AtomAvoids, Metta.Subst.lookup])
+      (by
+        simpa [Metta.Unify.unifyTopWith] using returned)
+  exact evidence.unifies (left, right) (by simp)
+
+/-- Every comparator-respecting unifier realizes every lookup returned by
+the concrete top-level algorithm.  This is the constructive factorization
+payload behind executable most-generality. -/
+theorem unifyTopWith_lookupEquivalent_of_equivalent_unifier
+    (groundEq : Ground → Ground → Bool)
+    (groundReflexive : ∀ ground, groundEq ground ground = true)
+    (groundSymmetric :
+      ∀ {left right : Ground}, groundEq left right = true →
+        groundEq right left = true)
+    (groundTransitive :
+      ∀ {first second third : Ground},
+        groundEq first second = true →
+        groundEq second third = true →
+        groundEq first third = true)
+    (left right : Atom) (result candidate : Subst)
+    (candidateUnifies :
+      AtomEquivalentWith groundEq
+        (subst candidate left) (subst candidate right))
+    (returned :
+      Metta.Unify.unifyTopWith groundEq left right = some result) :
+    SubstLookupEquivalentWith groundEq candidate result := by
+  apply unifyRoundsWith_lookupEquivalent_of_unifier
+    groundEq groundReflexive groundSymmetric groundTransitive
+    (left.size + right.size) [(left, right)] [] result candidate
+    emptySubstTopological
+  · intro equation member
+    simp only [List.mem_singleton] at member
+    subst equation
+    constructor <;> simp [AtomAvoids, Metta.Subst.lookup]
+  · intro equation member
+    simp only [List.mem_singleton] at member
+    subst equation
+    exact candidateUnifies
+  · intro name value lookup
+    simp [Metta.Subst.lookup] at lookup
+  · simpa [Metta.Unify.unifyTopWith] using returned
+
+/-- The concrete comparator-parametric algorithm returns a genuine semantic
+MGU: it is sound, and every other comparator-respecting unifier factors
+through the returned substitution. -/
+theorem unifyTopWith_isMgu
+    (groundEq : Ground → Ground → Bool)
+    (groundReflexive : ∀ ground, groundEq ground ground = true)
+    (groundSymmetric :
+      ∀ {left right : Ground}, groundEq left right = true →
+        groundEq right left = true)
+    (groundTransitive :
+      ∀ {first second third : Ground},
+        groundEq first second = true →
+        groundEq second third = true →
+        groundEq first third = true)
+    (left right : Atom) (result : Subst)
+    (returned :
+      Metta.Unify.unifyTopWith groundEq left right = some result) :
+    RuntimeIsMguWith groundEq result [(left, right)] := by
+  constructor
+  · intro equation member
+    simp only [List.mem_singleton] at member
+    subst equation
+    exact unifyTopWith_equivalent_sound
+      groundEq groundReflexive groundSymmetric groundTransitive
+      left right result returned
+  · intro candidate candidateUnifies
+    have realizes :=
+      unifyTopWith_lookupEquivalent_of_equivalent_unifier
+        groundEq groundReflexive groundSymmetric groundTransitive
+        left right result candidate
+        (candidateUnifies (left, right) (by simp)) returned
+    exact realizes.factorsThrough
+      groundReflexive groundSymmetric groundTransitive
+
 /-- PeTTa's exact Prolog-ground specialization is complete for the actual
 SWI term-identity relation, including distinct IEEE NaN payloads that share
 the single Prolog `nan` identity. -/
@@ -3682,6 +4551,19 @@ theorem unifyTopExact_complete_of_prolog_equivalent_unifier
     (fun firstSecond secondThird =>
       prologGroundIdentical_trans firstSecond secondThird)
     left right witness equivalent
+
+/-- PeTTa's exact-ground executable entry point returns an MGU for exact
+SWI-Prolog term identity, including the single canonical NaN identity. -/
+theorem unifyTopExact_isMgu
+    (left right : Atom) (result : Subst)
+    (returned : unifyTopExact left right = some result) :
+    RuntimeIsMguWith prologGroundIdentical result [(left, right)] := by
+  exact unifyTopWith_isMgu
+    prologGroundIdentical prologGroundIdentical_self
+    (fun identical => prologGroundIdentical_symm identical)
+    (fun firstSecond secondThird =>
+      prologGroundIdentical_trans firstSecond secondThird)
+    left right result returned
 
 /-- Comparator-respecting completeness lifted through the machine's current
 binding. -/
@@ -3701,6 +4583,41 @@ theorem unifyB_complete_of_prolog_equivalent_unifier
   | cons binding rest =>
       exact ⟨Metta.Subst.compose (binding :: rest) base, by
         simp [unifyB, generatedEq]⟩
+
+/-- Every successful `unifyB` call exposes the exact generated unifier
+installed over its incoming binding, and that generated component is a
+semantic MGU of the two normalized operands.  This theorem does not yet claim
+that composition with `base` agrees with an independently represented source
+substitution; it isolates the executable payload needed for that bridge. -/
+theorem unifyB_result_has_generated_mgu
+    (base : Subst) (left right : Atom) (result : Subst)
+    (returned : unifyB base left right = some result) :
+    ∃ generated,
+      unifyTopExact (subst base left) (subst base right) =
+          some generated ∧
+        RuntimeIsMguWith prologGroundIdentical generated
+          [(subst base left, subst base right)] ∧
+        result =
+          match generated with
+          | [] => base
+          | _ :: _ => Metta.Subst.compose generated base := by
+  unfold unifyB at returned
+  cases generatedEq :
+      unifyTopExact (subst base left) (subst base right) with
+  | none =>
+      simp [generatedEq] at returned
+  | some generated =>
+      cases generated with
+      | nil =>
+          simp [generatedEq] at returned
+          subst result
+          exact ⟨[], rfl,
+            unifyTopExact_isMgu _ _ [] generatedEq, rfl⟩
+      | cons binding rest =>
+          simp [generatedEq] at returned
+          subst result
+          exact ⟨binding :: rest, rfl,
+            unifyTopExact_isMgu _ _ (binding :: rest) generatedEq, rfl⟩
 
 /-- Any two IEEE NaN payloads denote the one SWI-Prolog `nan` term.  The
 payload hypotheses are explicit because Lean's primitive `Float` operations
@@ -3731,6 +4648,28 @@ theorem unifyTopExact_nan_payloads_complete
   simpa using
     (nan_payloads_are_prolog_equivalent
       left right leftNan rightNan)
+
+/-- Anti-vacuity witness for the semantic MGU statement: two propositionally
+different runtime payloads can still have a successful MGU under their one
+SWI-Prolog NaN identity.  Thus `RuntimeIsMguWith` cannot be replaced by raw
+`Atom` equality without losing a supported case. -/
+theorem distinct_nan_payloads_have_semantic_mgu
+    (left right : Float)
+    (leftNan : left.isNaN = true)
+    (rightNan : right.isNaN = true)
+    (different :
+      (Atom.gnd (.float left) : Atom) ≠ .gnd (.float right)) :
+    ∃ result,
+      unifyTopExact (.gnd (.float left)) (.gnd (.float right)) =
+          some result ∧
+        RuntimeIsMguWith prologGroundIdentical result
+          [(.gnd (.float left), .gnd (.float right))] ∧
+        (Atom.gnd (.float left) : Atom) ≠ .gnd (.float right) := by
+  obtain ⟨result, returned⟩ :=
+    unifyTopExact_nan_payloads_complete
+      left right leftNan rightNan
+  exact ⟨result, returned,
+    unifyTopExact_isMgu _ _ result returned, different⟩
 
 /-! ## Fresh structural variants -/
 
