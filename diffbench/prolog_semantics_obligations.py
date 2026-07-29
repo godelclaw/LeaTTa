@@ -18,6 +18,7 @@ PROLOG_FLOAT = ROOT / "PLeaTTa" / "PrologFloat.lean"
 UNIFICATION_CORE = ROOT / "MettaHyperonFull" / "Core" / "Unification.lean"
 PETTA_UNIFICATION = ROOT / "PLeaTTa" / "PeTTaUnification.lean"
 UNIFICATION_PROOFS = ROOT / "PLeaTTa" / "Proofs" / "Unification.lean"
+PERSISTENT_SUBST = ROOT / "PLeaTTa" / "PersistentSubst.lean"
 ORDERED_MGU = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologMgu.lean"
 LOCAL_RESOLVER = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologResolver.lean"
 PROLOG_COPY = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologCopy.lean"
@@ -68,6 +69,9 @@ PROLOG_MGU_VARIANT = (
 )
 PROLOG_GOAL_MGU_VARIANT = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologGoalMguVariant.lean"
+)
+PROLOG_MGU_COMPOSITION = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologMguComposition.lean"
 )
 PROLOG_ACTIVATION_UNIFIER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationUnifierBridge.lean"
@@ -130,6 +134,7 @@ def check() -> list[str]:
         "unification_core_sha256": digest(UNIFICATION_CORE),
         "petta_unification_sha256": digest(PETTA_UNIFICATION),
         "unification_proofs_sha256": digest(UNIFICATION_PROOFS),
+        "persistent_subst_sha256": digest(PERSISTENT_SUBST),
         "ordered_mgu_sha256": digest(ORDERED_MGU),
         "local_resolver_sha256": digest(LOCAL_RESOLVER),
         "prolog_copy_sha256": digest(PROLOG_COPY),
@@ -158,6 +163,8 @@ def check() -> list[str]:
         "prolog_mgu_variant_sha256": digest(PROLOG_MGU_VARIANT),
         "prolog_goal_mgu_variant_sha256":
             digest(PROLOG_GOAL_MGU_VARIANT),
+        "prolog_mgu_composition_sha256":
+            digest(PROLOG_MGU_COMPOSITION),
         "prolog_activation_unifier_bridge_sha256":
             digest(PROLOG_ACTIVATION_UNIFIER_BRIDGE),
         "prolog_goal_alpha_sha256": digest(PROLOG_GOAL_ALPHA),

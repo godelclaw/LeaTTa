@@ -1987,6 +1987,63 @@ theorem subst_append_eq_compose (base generated : Subst)
       generated base name).mp hrawNone
   exact hfixed.symm.trans habsorb
 
+/-- Eager composition is observationally just the generated layer on an
+atom outside the carried base domain.
+
+The `SubstEntriesAvoid` premise is load-bearing: it says every generated
+target is outside the base domain as well, so following a generated lookup
+cannot re-enter the carried state.  This is the reusable carried-binding
+lemma needed by local Prolog activation, where a standardized-apart clause
+body is fixed by the incoming substitution. -/
+theorem subst_compose_eq_generated_of_avoids
+    (base generated : Subst)
+    (baseTopological : SubstTopological base)
+    (generatedTopological : SubstTopological generated)
+    (havoid : SubstEntriesAvoid base generated)
+    {atom : Atom} (atomAvoids : AtomAvoids base atom) :
+    subst (Metta.Subst.compose generated base) atom =
+      subst generated atom := by
+  let composed := Metta.Subst.compose generated base
+  have composedTopological : SubstTopological composed :=
+    SubstTopological.compose_of_avoids base generated
+      baseTopological generatedTopological havoid
+  have composedDenotesGenerated :
+      SubstLookupDenotes composed generated := by
+    intro name value lookup
+    have avoided :=
+      SubstEntriesAvoid.lookup base generated havoid name value lookup
+    have composedLookup :
+        Metta.Subst.lookup composed name = some value := by
+      simp [composed, PLeaTTa.lookup_compose, avoided.1, lookup]
+    exact composedTopological.subst_var_of_lookup
+      composed name value composedLookup
+  have generatedResultAvoidsBase :
+      AtomAvoids base (subst generated atom) := by
+    intro name member
+    rcases subst_vars_origin generated atom name member with
+      original | generatedRange
+    · exact atomAvoids name original
+    · simp only [List.mem_flatMap] at generatedRange
+      obtain ⟨entry, entryMember, nameMember⟩ := generatedRange
+      exact (havoid entry entryMember).2 name nameMember
+  have generatedResultOutsideComposed :
+      ∀ name, name ∈ (subst generated atom).vars →
+        Metta.Subst.lookup composed name = none := by
+    intro name member
+    have baseNone := generatedResultAvoidsBase name member
+    have generatedNone :=
+      generatedTopological.subst_resolvesDomain generated atom name member
+    simp [composed, PLeaTTa.lookup_compose, baseNone, generatedNone]
+  have fixed :
+      subst composed (subst generated atom) = subst generated atom :=
+    subst_eq_self_of_domain_free composed (subst generated atom)
+      generatedResultOutsideComposed
+  have absorbed :
+      subst composed (subst generated atom) = subst composed atom :=
+    subst_subst_of_lookupDenotes composed generated
+      composedDenotesGenerated atom
+  exact absorbed.symm.trans fixed
+
 /-- A persistent composition spine. Adding a generated unifier is O(1): the
 old state is shared, while `denote` remains exactly the existing eager list
 composition used by the semantic reference. -/

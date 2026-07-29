@@ -893,6 +893,23 @@ private theorem unifyTop_avoidsExternal (external : Subst)
     result hleft hright
   simpa [Metta.Unify.unifyTopWith_groundEquiv] using hresult
 
+/-- A successful PeTTa-exact unifier inherits the external-domain
+separation of both normalized inputs.  This public wrapper deliberately
+exposes only the proof-facing invariant, not the private round-loop
+implementation used to establish it. -/
+theorem unifyTopExact_avoidsExternal
+    (external : Subst) (left right : Atom) (result : Subst)
+    (leftAvoids : AtomAvoids external left)
+    (rightAvoids : AtomAvoids external right)
+    (exactResult : unifyTopExact left right = some result) :
+    SubstEntriesAvoid external result := by
+  have underlying :
+      Metta.Unify.unifyTopWith prologGroundIdentical left right =
+        some result :=
+    by simpa [unifyTopExact] using exactResult
+  exact unifyTopWith_avoidsExternal prologGroundIdentical external
+    left right result leftAvoids rightAvoids underlying
+
 /-- The unifier never invents variable names: every key or target variable
 in a successful result occurs in one of the two input atoms. -/
 theorem unifyTopWith_substVars_origin
