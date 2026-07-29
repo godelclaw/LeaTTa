@@ -276,10 +276,10 @@ inductive SuperposeBranchesAgreeSupported
     SuperposeBranchesAgree referenceOutput executableOutput references
       executables → Prop where
   | nil {referenceOutput executableOutput}
+      {output : TermAgrees referenceOutput executableOutput}
       (outputSupport : termVariablesIn termDomain referenceOutput) :
       SuperposeBranchesAgreeSupported termDomain typeDomain
-        (SuperposeBranchesAgree.nil (referenceOutput := referenceOutput)
-          (executableOutput := executableOutput))
+        (SuperposeBranchesAgree.nil output)
   | cons {referenceOutput executableOutput referenceBranch executableBranch
         referenceBranches executableBranches}
       {head : SuperposeBranchAgrees referenceOutput executableOutput
@@ -302,10 +302,10 @@ inductive LiteralAmbBranchesAgreeSupported
     LiteralAmbBranchesAgree referenceOutput executableOutput references
       executables → Prop where
   | nil {referenceOutput executableOutput}
+      {output : TermAgrees referenceOutput executableOutput}
       (outputSupport : termVariablesIn termDomain referenceOutput) :
       LiteralAmbBranchesAgreeSupported termDomain typeDomain
-        (LiteralAmbBranchesAgree.nil (referenceOutput := referenceOutput)
-          (executableOutput := executableOutput))
+        (LiteralAmbBranchesAgree.nil output)
   | cons {referenceOutput executableOutput referenceValue executableValue
         referenceBranches executableBranches}
       {value : TermAgrees referenceValue executableValue}
@@ -635,12 +635,10 @@ theorem SuperposeBranchesAgree.subst_of_supported
       (referenceBinding.applyGoals references)
       (substCompiledBranches executableBinding executables) := by
   cases supported with
-  | nil outputSupport =>
+  | @nil referenceOutput executableOutput output outputSupport =>
       simpa [substCompiledBranches] using
-        (SuperposeBranchesAgree.nil :
-          SuperposeBranchesAgree
-            (referenceBinding.applyTerm referenceOutput)
-            (subst executableBinding executableOutput) [] [])
+        SuperposeBranchesAgree.nil
+          (TermAgrees.subst_of_supported variableState output outputSupport)
   | @cons referenceOutput executableOutput referenceBranch executableBranch
       referenceBranches executableBranches head tail outputSupport headSupport
       tailSupport =>

@@ -3,6 +3,7 @@
 import PLeaTTa.Proofs.StepCases
 import PLeaTTa.Proofs.DemandDrivenStep
 import PLeaTTa.Proofs.PrologStateBridge
+import PLeaTTa.Proofs.PrologGoalAlpha
 import PLeaTTa.Proofs.BarrierCache
 import PLeaTTa.Proofs.Specialize
 import PLeaTTa.Proofs.Unification
@@ -1034,3 +1035,10 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologStateBridge.wrong_alpha_head_name_is_rejected
 #print axioms PLeaTTa.PrologStateBridge.colliding_clause_has_no_injective_encoding
 #print axioms PLeaTTa.PrologStateBridge.fresh_frontiers_have_different_units
+#print axioms PLeaTTa.PrologGoalAlpha.renameAtomSuffix_typeCheckBindingTemplate
+#print axioms PLeaTTa.PrologGoalAlpha.GoalAgrees.alpha_freshen_of_supported
+#print axioms PLeaTTa.PrologGoalAlpha.freshenClause_body_alpha_agrees
+#print axioms PLeaTTa.PrologGoalAlpha.wrong_alpha_hidden_branch_output_is_rejected
+#print axioms PLeaTTa.PrologGoalAlpha.wrong_empty_literal_output_is_rejected
+#print axioms PLeaTTa.PrologGoalAlpha.wrong_empty_superpose_output_is_rejected
+#print axioms PLeaTTa.PrologGoalAlpha.wrong_alpha_cut_barrier_is_rejected

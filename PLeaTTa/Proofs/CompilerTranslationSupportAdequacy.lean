@@ -944,15 +944,19 @@ theorem compileSuperposeBranchesFuel_initial_supported_sound
   | nil =>
       refine ⟨1, by omega, by simp, ?_⟩
       intro extraFuel accumulator
+      let outputAgreement :
+          TermAgrees (.variable (.generated outputIndex))
+            (.var s!"_q{outputIndex}") :=
+        .generatedVariable outputIndex
       let branchesAgreement : SuperposeBranchesAgree
           (.variable (.generated outputIndex))
-          (.var s!"_q{outputIndex}") [] [] := .nil
+          (.var s!"_q{outputIndex}") [] [] := .nil outputAgreement
       refine ⟨[], [], [], [], [], branchesAgreement, ?_, rfl, .nil, ?_⟩
       · simp only [List.foldlM_nil, List.append_nil, Pure.pure, Except.pure]
       · simpa [branchesAgreement] using
           (@SuperposeBranchesAgreeSupported.nil termDomain typeDomain
             (.variable (.generated outputIndex))
-            (.var s!"_q{outputIndex}") outputSupported)
+            (.var s!"_q{outputIndex}") outputAgreement outputSupported)
   | cons head built tail =>
       rename_i middleCounter source sources value template sourceGoals
         headAliases tailAliases branch branches

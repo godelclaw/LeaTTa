@@ -590,7 +590,8 @@ body and schedules its result equality when that branch is selected. -/
 inductive LiteralAmbBranchesAgree (referenceOutput : Term)
     (executableOutput : Atom) : List PeTTaSpec.PrologCore.Goal →
       List (Atom × List PLeaTTa.Goal) → Prop where
-  | nil : LiteralAmbBranchesAgree referenceOutput executableOutput [] []
+  | nil (output : TermAgrees referenceOutput executableOutput) :
+      LiteralAmbBranchesAgree referenceOutput executableOutput [] []
   | cons {referenceValue : Term} {executableValue : Atom}
       {referenceBranches : List PeTTaSpec.PrologCore.Goal}
       {executableBranches : List (Atom × List PLeaTTa.Goal)}
@@ -846,7 +847,8 @@ admitted by the constructors. -/
 inductive SuperposeBranchesAgree : Term → Atom →
     List PeTTaSpec.PrologCore.Goal →
     List (Atom × List PLeaTTa.Goal) → Prop where
-  | nil {referenceOutput : Term} {executableOutput : Atom} :
+  | nil {referenceOutput : Term} {executableOutput : Atom}
+      (output : TermAgrees referenceOutput executableOutput) :
       SuperposeBranchesAgree referenceOutput executableOutput [] []
   | cons {referenceOutput : Term} {executableOutput : Atom}
       {referenceBranch : PeTTaSpec.PrologCore.Goal}
@@ -1974,7 +1976,7 @@ theorem foldlM_literalAmbBranches_sound (fuel : Nat) (env : CEnv)
   induction native with
   | nil =>
       intro accumulator
-      refine ⟨[], ?_, .nil⟩
+      refine ⟨[], ?_, .nil outputAgreement⟩
       simp only [List.foldlM_nil, List.append_nil, Pure.pure,
         Except.pure]
   | @cons source term sources branches value tail inductionHypothesis =>
@@ -2803,7 +2805,8 @@ theorem compileSuperposeBranchesFuel_initial_sound
   | nil =>
       refine ⟨1, by omega, by simp, ?_⟩
       intro extraFuel accumulator
-      refine ⟨[], [], [], [], [], ?_, rfl, .nil, .nil⟩
+      refine ⟨[], [], [], [], [], ?_, rfl, .nil,
+        .nil (.generatedVariable outputIndex)⟩
       simp only [List.foldlM_nil, List.append_nil, Pure.pure, Except.pure]
   | cons head built tail =>
       rename_i middleCounter source sources value template sourceGoals

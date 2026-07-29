@@ -885,11 +885,12 @@ theorem LiteralAmbBranchesAgree.subst_of_variableStateOn
       (reference.applyGoals referenceBranches)
       (substCompiledBranches executable executableBranches) := by
   induction agreement with
-  | nil =>
+  | nil output =>
+      have output' :=
+        PLeaTTa.CompilerSubstitutionAdequacy.TermAgrees.subst_of_variableStateOn
+          variableAgreement output outputSupported
       simpa [substCompiledBranches] using
-        (LiteralAmbBranchesAgree.nil :
-          LiteralAmbBranchesAgree (reference.applyTerm referenceOutput)
-            (subst executable executableOutput) [] [])
+        LiteralAmbBranchesAgree.nil output'
   | cons value output tail induction =>
       have value' :=
         PLeaTTa.CompilerSubstitutionAdequacy.TermAgrees.subst_of_variableStateOn
@@ -967,11 +968,13 @@ theorem SuperposeBranchesAgree.subst_of_variableStateOn
       (substCompiledBranches executable executableBranches) := by
   induction referenceBranches generalizing executableBranches with
   | nil =>
-      cases agreement
-      simpa [substCompiledBranches] using
-        (SuperposeBranchesAgree.nil :
-          SuperposeBranchesAgree (reference.applyTerm referenceOutput)
-            (subst executable executableOutput) [] [])
+      cases agreement with
+      | nil output =>
+          have output' :=
+            PLeaTTa.CompilerSubstitutionAdequacy.TermAgrees.subst_of_variableStateOn
+              variableAgreement output outputSupported
+          simpa [substCompiledBranches] using
+            SuperposeBranchesAgree.nil output'
   | cons referenceBranch referenceBranches induction =>
       cases agreement with
       | cons head tail =>
