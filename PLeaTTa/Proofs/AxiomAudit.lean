@@ -869,6 +869,12 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.subst_apply_of_lookupDenotes
 #print axioms PLeaTTa.subst_subst_of_lookupDenotes
 #print axioms PLeaTTa.unifyB_exact_sound_of_exact_unifier
+#print axioms PLeaTTa.unifyTopWith_complete_of_exact_unifier
+#print axioms PLeaTTa.unifyTopExact_complete_of_exact_unifier
+#print axioms PLeaTTa.unifyB_complete_of_exact_unifier
+#print axioms PLeaTTa.unifyTopExact_repeated_nested_complete_nontrivial
+#print axioms PLeaTTa.finite_self_occurs_has_no_exact_unifier
+#print axioms PLeaTTa.unifyTopExact_self_occurs_rejected
 #print axioms PLeaTTa.ClauseIndex.build_candidates
 #print axioms PLeaTTa.ClauseIndex.naiveCandidates_eq_head_filter
 #print axioms PLeaTTa.ClauseIndex.Valid.push

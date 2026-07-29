@@ -2210,6 +2210,834 @@ theorem unifyB_exact_sound_of_exact_unifier (base : Subst)
             _ = subst composed right :=
               subst_subst_of_lookupDenotes composed base hbaseDenotes right
 
+/-! ## Exact completeness of the executable unifier -/
+
+/-- Structural recursor exposing induction hypotheses for every child of an
+    expression atom. -/
+@[elab_as_elim]
+private def unificationAtomRecAux {motive : Atom → Prop}
+    (sym : ∀ name, motive (.sym name))
+    («variable» : ∀ name, motive (.var name))
+    (ground : ∀ value, motive (.gnd value))
+    (expression :
+      ∀ atoms, (∀ atom ∈ atoms, motive atom) → motive (.expr atoms)) :
+    (atom : Atom) → motive atom
+  | .sym name => sym name
+  | .var name => «variable» name
+  | .gnd value => ground value
+  | .expr atoms =>
+      expression atoms fun atom _member =>
+        unificationAtomRecAux sym «variable» ground expression atom
+termination_by atom => atom.size
+decreasing_by
+  simp only [Atom.size]
+  have memberBound :=
+    atomSize_le_sum_of_mem_unification atoms _member
+  omega
+
+/-- Every runtime atom contains no more variable occurrences than structural
+    nodes.  Duplicate occurrences are retained on the left: this is the
+    deliberately cheap upper bound used by `unifyTopWith`'s fuel argument. -/
+private theorem atom_vars_length_le_size (atom : Atom) :
+    atom.vars.length ≤ atom.size := by
+  induction atom using unificationAtomRecAux with
+  | sym => simp [Atom.vars, Atom.size]
+  | «variable» => simp [Atom.vars, Atom.size]
+  | ground => simp [Atom.vars, Atom.size]
+  | expression atoms hypotheses =>
+      simp only [Atom.vars, Atom.size, List.length_flatten, List.map_map]
+      have sumBoundAux :
+          ∀ items : List Atom,
+            (∀ atom, atom ∈ items → atom.vars.length ≤ atom.size) →
+            (items.map (fun atom => atom.vars.length)).sum ≤
+              (items.map Atom.size).sum := by
+        intro items pointwise
+        induction items with
+        | nil => simp
+        | cons item items induction =>
+            simp only [List.map_cons, List.sum_cons]
+            exact Nat.add_le_add
+              (pointwise item (by simp))
+              (induction (fun atom member =>
+                pointwise atom (by simp [member])))
+      have sumBound :=
+        sumBoundAux atoms hypotheses
+      change
+        (atoms.map (fun atom => atom.vars.length)).sum ≤
+          1 + (atoms.map Atom.size).sum
+      omega
+
+/-- A finite deep substitution cannot erase an occurrence of a variable
+    beneath a rigid runtime node. -/
+private theorem subst_variable_size_le_of_mem_vars
+    (bindings : Subst) (source : String) :
+    (atom : Atom) → source ∈ atom.vars →
+      (subst bindings (.var source)).size ≤ (subst bindings atom).size
+  | .sym _, member => by simp [Atom.vars] at member
+  | .var name, member => by
+      simp only [Atom.vars, List.mem_singleton] at member
+      subst name
+      exact Nat.le_refl _
+  | .gnd _, member => by simp [Atom.vars] at member
+  | .expr atoms, member => by
+      simp only [Atom.vars, List.mem_flatten, List.mem_map] at member
+      obtain ⟨variableList, ⟨child, childMember, rfl⟩, sourceMember⟩ := member
+      have childBound :=
+        subst_variable_size_le_of_mem_vars bindings source child sourceMember
+      simp only [subst_expr, Atom.size]
+      have childSize :
+          (subst bindings child).size ≤
+            ((atoms.map (subst bindings)).map Atom.size).sum :=
+        atomSize_le_sum_of_mem_unification
+          (atoms.map (subst bindings))
+          (List.mem_map.mpr ⟨child, childMember, rfl⟩)
+      omega
+
+/-- A proper finite occurrence is strictly larger after every finite deep
+    substitution.  This is the runtime counterpart of the canonical
+    `Tree.no_finite_unifier_of_occurs_true` theorem. -/
+private theorem subst_variable_size_lt_of_mem_vars_of_ne
+    (bindings : Subst) (source : String) :
+    (atom : Atom) → source ∈ atom.vars → atom ≠ .var source →
+      (subst bindings (.var source)).size < (subst bindings atom).size
+  | .sym _, member, _ => by simp [Atom.vars] at member
+  | .var name, member, different => by
+      simp only [Atom.vars, List.mem_singleton] at member
+      subst name
+      exact False.elim (different rfl)
+  | .gnd _, member, _ => by simp [Atom.vars] at member
+  | .expr atoms, member, _ => by
+      simp only [Atom.vars, List.mem_flatten, List.mem_map] at member
+      obtain ⟨variableList, ⟨child, childMember, rfl⟩, sourceMember⟩ := member
+      have childBound :=
+        subst_variable_size_le_of_mem_vars bindings source child sourceMember
+      simp only [subst_expr, Atom.size]
+      have childSize :
+          (subst bindings child).size ≤
+            ((atoms.map (subst bindings)).map Atom.size).sum :=
+        atomSize_le_sum_of_mem_unification
+          (atoms.map (subst bindings))
+          (List.mem_map.mpr ⟨child, childMember, rfl⟩)
+      omega
+
+/-- Boolean occurrence is membership in the executable atom's occurrence
+    list. -/
+private theorem mem_vars_of_occurs_eq_true (source : String) :
+    (atom : Atom) → Metta.Subst.occurs source atom = true →
+      source ∈ atom.vars
+  | .sym _, present => by simp [Metta.Subst.occurs] at present
+  | .var name, present => by
+      simpa [Metta.Subst.occurs, Atom.vars] using present
+  | .gnd _, present => by simp [Metta.Subst.occurs] at present
+  | .expr atoms, present => by
+      simp only [Metta.Subst.occurs, List.any_eq_true] at present
+      obtain ⟨child, childPresent⟩ := present
+      simp only [Atom.vars, List.mem_flatten, List.mem_map]
+      exact ⟨child.val.vars, ⟨child.val, child.property, rfl⟩,
+        mem_vars_of_occurs_eq_true source child.val childPresent.2⟩
+termination_by atom => atom.size
+decreasing_by
+  simp only [Atom.size]
+  have memberBound :=
+    atomSize_le_sum_of_mem_unification atoms child.property
+  omega
+
+/-- Finite executable atoms have no cyclic exact unifier. -/
+private theorem no_exact_unifier_of_occurs_true
+    (bindings : Subst) (source : String) (atom : Atom)
+    (present : Metta.Subst.occurs source atom = true)
+    (different : atom ≠ .var source) :
+    subst bindings (.var source) ≠ subst bindings atom := by
+  intro equality
+  have member := mem_vars_of_occurs_eq_true source atom present
+  have strict :=
+    subst_variable_size_lt_of_mem_vars_of_ne bindings source atom member
+      different
+  rw [equality] at strict
+  exact Nat.lt_irrefl _ strict
+
+/-- Variables of one decomposed constraint all originate in the input
+    equation, and the constraint is never the reflexive equation it would
+    have discarded during decomposition. -/
+private def ConstraintSupported (allowed : List String)
+    (constraint : String × Atom) : Prop :=
+  constraint.1 ∈ allowed ∧
+    (∀ name, name ∈ constraint.2.vars → name ∈ allowed) ∧
+    constraint.2 ≠ .var constraint.1
+
+private def ConstraintsSupported (allowed : List String)
+    (constraints : List (String × Atom)) : Prop :=
+  ∀ constraint, constraint ∈ constraints →
+    ConstraintSupported allowed constraint
+
+private theorem ConstraintsSupported.append
+    (allowed : List String) (left right : List (String × Atom))
+    (leftSupported : ConstraintsSupported allowed left)
+    (rightSupported : ConstraintsSupported allowed right) :
+    ConstraintsSupported allowed (left ++ right) := by
+  intro constraint member
+  rcases List.mem_append.mp member with member | member
+  · exact leftSupported constraint member
+  · exact rightSupported constraint member
+
+mutual
+
+/-- Structural decomposition preserves the complete finite variable support
+    and never emits a reflexive variable constraint. -/
+private theorem decomposeEqWith_supported
+    (groundEq : Ground → Ground → Bool) (allowed : List String) :
+    ∀ (left right : Atom) (constraints : List (String × Atom)),
+      (∀ name, name ∈ left.vars → name ∈ allowed) →
+      (∀ name, name ∈ right.vars → name ∈ allowed) →
+      Metta.Unify.decomposeEqWith groundEq left right = some constraints →
+      ConstraintsSupported allowed constraints
+  | .sym leftName, .sym rightName, constraints, _, _, decomposed => by
+      simp only [Metta.Unify.decomposeEqWith] at decomposed
+      split at decomposed
+      · cases decomposed
+        simp [ConstraintsSupported]
+      · contradiction
+  | .sym leftName, .var name, constraints, _, rightSupported,
+      decomposed => by
+      cases decomposed
+      intro constraint member
+      simp only [List.mem_singleton] at member
+      subst constraint
+      refine ⟨rightSupported name (by simp [Atom.vars]), ?_, ?_⟩
+      · simp [Atom.vars]
+      · intro impossible
+        cases impossible
+  | .sym _, .gnd _, _, _, _, decomposed => by
+      simp [Metta.Unify.decomposeEqWith] at decomposed
+  | .sym _, .expr _, _, _, _, decomposed => by
+      simp [Metta.Unify.decomposeEqWith] at decomposed
+  | .var name, .sym symbol, constraints, leftSupported, _, decomposed => by
+      cases decomposed
+      intro constraint member
+      simp only [List.mem_singleton] at member
+      subst constraint
+      refine ⟨leftSupported name (by simp [Atom.vars]), ?_, ?_⟩
+      · simp [Atom.vars]
+      · intro impossible
+        cases impossible
+  | .var name, .var target, constraints, leftSupported, rightSupported,
+      decomposed => by
+      simp only [Metta.Unify.decomposeEqWith] at decomposed
+      split at decomposed
+      next same =>
+        cases decomposed
+        simp [ConstraintsSupported]
+      next different =>
+        cases decomposed
+        intro constraint member
+        simp only [List.mem_singleton] at member
+        subst constraint
+        refine ⟨leftSupported name (by simp [Atom.vars]), ?_, ?_⟩
+        · intro candidateName candidateMember
+          simp only [Atom.vars, List.mem_singleton] at candidateMember
+          subst candidateName
+          exact rightSupported target (by simp [Atom.vars])
+        · have namesDifferent : name ≠ target := by
+            intro names
+            subst target
+            exact different (by simp)
+          intro equality
+          injection equality with reversed
+          exact namesDifferent reversed.symm
+  | .var name, .gnd ground, constraints, leftSupported, _, decomposed => by
+      cases decomposed
+      intro constraint member
+      simp only [List.mem_singleton] at member
+      subst constraint
+      refine ⟨leftSupported name (by simp [Atom.vars]), ?_, ?_⟩
+      · simp [Atom.vars]
+      · intro impossible
+        cases impossible
+  | .var name, .expr atoms, constraints, leftSupported, rightSupported,
+      decomposed => by
+      cases decomposed
+      intro constraint member
+      simp only [List.mem_singleton] at member
+      subst constraint
+      refine ⟨leftSupported name (by simp [Atom.vars]), rightSupported, ?_⟩
+      intro impossible
+      cases impossible
+  | .gnd _, .sym _, _, _, _, decomposed => by
+      simp [Metta.Unify.decomposeEqWith] at decomposed
+  | .gnd ground, .var name, constraints, leftSupported, rightSupported,
+      decomposed => by
+      cases decomposed
+      intro constraint member
+      simp only [List.mem_singleton] at member
+      subst constraint
+      refine ⟨rightSupported name (by simp [Atom.vars]), ?_, ?_⟩
+      · exact leftSupported
+      · intro impossible
+        cases impossible
+  | .gnd leftGround, .gnd rightGround, constraints, _, _, decomposed => by
+      simp only [Metta.Unify.decomposeEqWith] at decomposed
+      split at decomposed
+      · cases decomposed
+        simp [ConstraintsSupported]
+      · contradiction
+  | .gnd _, .expr _, _, _, _, decomposed => by
+      simp [Metta.Unify.decomposeEqWith] at decomposed
+  | .expr _, .sym _, _, _, _, decomposed => by
+      simp [Metta.Unify.decomposeEqWith] at decomposed
+  | .expr atoms, .var name, constraints, leftSupported, rightSupported,
+      decomposed => by
+      cases decomposed
+      intro constraint member
+      simp only [List.mem_singleton] at member
+      subst constraint
+      refine ⟨rightSupported name (by simp [Atom.vars]), leftSupported, ?_⟩
+      intro impossible
+      cases impossible
+  | .expr _, .gnd _, _, _, _, decomposed => by
+      simp [Metta.Unify.decomposeEqWith] at decomposed
+  | .expr left, .expr right, constraints, leftSupported, rightSupported,
+      decomposed =>
+      decomposeListWith_supported groundEq allowed left right constraints
+        (by
+          intro atom atomMember name nameMember
+          apply leftSupported name
+          simp only [Atom.vars, List.mem_flatten, List.mem_map]
+          exact ⟨atom.vars, ⟨atom, atomMember, rfl⟩, nameMember⟩)
+        (by
+          intro atom atomMember name nameMember
+          apply rightSupported name
+          simp only [Atom.vars, List.mem_flatten, List.mem_map]
+          exact ⟨atom.vars, ⟨atom, atomMember, rfl⟩, nameMember⟩)
+        decomposed
+
+private theorem decomposeListWith_supported
+    (groundEq : Ground → Ground → Bool) (allowed : List String) :
+    ∀ (left right : List Atom) (constraints : List (String × Atom)),
+      (∀ atom, atom ∈ left →
+        ∀ name, name ∈ atom.vars → name ∈ allowed) →
+      (∀ atom, atom ∈ right →
+        ∀ name, name ∈ atom.vars → name ∈ allowed) →
+      Metta.Unify.decomposeListWith groundEq left right = some constraints →
+      ConstraintsSupported allowed constraints
+  | [], [], constraints, _, _, decomposed => by
+      cases decomposed
+      simp [ConstraintsSupported]
+  | [], _ :: _, _, _, _, decomposed => by
+      simp [Metta.Unify.decomposeListWith] at decomposed
+  | _ :: _, [], _, _, _, decomposed => by
+      simp [Metta.Unify.decomposeListWith] at decomposed
+  | leftHead :: leftTail, rightHead :: rightTail, constraints,
+      leftSupported, rightSupported, decomposed => by
+      simp only [Metta.Unify.decomposeListWith] at decomposed
+      cases headDecomposition :
+          Metta.Unify.decomposeEqWith groundEq leftHead rightHead with
+      | none => simp [headDecomposition] at decomposed
+      | some headConstraints =>
+          cases tailDecomposition :
+              Metta.Unify.decomposeListWith groundEq leftTail rightTail with
+          | none => simp [headDecomposition, tailDecomposition] at decomposed
+          | some tailConstraints =>
+              simp [headDecomposition, tailDecomposition] at decomposed
+              cases decomposed
+              exact ConstraintsSupported.append allowed headConstraints
+                tailConstraints
+                (decomposeEqWith_supported groundEq allowed leftHead rightHead
+                  headConstraints
+                  (fun name member =>
+                    leftSupported leftHead (by simp) name member)
+                  (fun name member =>
+                    rightSupported rightHead (by simp) name member)
+                  headDecomposition)
+                (decomposeListWith_supported groundEq allowed leftTail
+                  rightTail tailConstraints
+                  (fun atom member =>
+                    leftSupported atom (by simp [member]))
+                  (fun atom member =>
+                    rightSupported atom (by simp [member]))
+                  tailDecomposition)
+
+end
+
+/-- Worklist decomposition preserves the same support invariant. -/
+private theorem decomposeAllWith_supported
+    (groundEq : Ground → Ground → Bool) (allowed : List String)
+    (equations : List (Atom × Atom))
+    (constraints : List (String × Atom))
+    (supported :
+      ∀ equation, equation ∈ equations →
+        (∀ name, name ∈ equation.1.vars → name ∈ allowed) ∧
+        (∀ name, name ∈ equation.2.vars → name ∈ allowed))
+    (decomposed :
+      Metta.Unify.decomposeAllWith groundEq equations = some constraints) :
+    ConstraintsSupported allowed constraints := by
+  induction equations generalizing constraints with
+  | nil =>
+      cases decomposed
+      simp [ConstraintsSupported]
+  | cons equation rest induction =>
+      rcases equation with ⟨left, right⟩
+      simp only [Metta.Unify.decomposeAllWith] at decomposed
+      cases headDecomposition :
+          Metta.Unify.decomposeEqWith groundEq left right with
+      | none => simp [headDecomposition] at decomposed
+      | some headConstraints =>
+          cases tailDecomposition :
+              Metta.Unify.decomposeAllWith groundEq rest with
+          | none => simp [headDecomposition, tailDecomposition] at decomposed
+          | some tailConstraints =>
+              simp [headDecomposition, tailDecomposition] at decomposed
+              cases decomposed
+              exact ConstraintsSupported.append allowed headConstraints
+                tailConstraints
+                (decomposeEqWith_supported groundEq allowed left right
+                  headConstraints
+                  (supported (left, right) (by simp)).1
+                  (supported (left, right) (by simp)).2
+                  headDecomposition)
+                (induction tailConstraints
+                  (fun item member =>
+                    supported item (by simp [member]))
+                  tailDecomposition)
+
+mutual
+
+/-- A reflexive ground comparator lets every exactly unifiable finite atom
+    pair decompose; no host-numeric equivalence is used. -/
+private theorem decomposeEqWith_exists_of_exact_unifier
+    (groundEq : Ground → Ground → Bool)
+    (groundReflexive : ∀ ground, groundEq ground ground = true)
+    (witness : Subst) :
+    ∀ (left right : Atom),
+      subst witness left = subst witness right →
+      ∃ constraints,
+        Metta.Unify.decomposeEqWith groundEq left right = some constraints
+  | .sym leftName, .sym rightName, equal => by
+      have names : leftName = rightName := by simpa using equal
+      subst rightName
+      exact ⟨[], by simp [Metta.Unify.decomposeEqWith]⟩
+  | .sym leftName, .var name, _ => by
+      exact ⟨[(name, .sym leftName)], rfl⟩
+  | .sym _, .gnd _, equal => by simp at equal
+  | .sym _, .expr _, equal => by simp [subst_expr] at equal
+  | .var name, right, _ => by
+      cases right with
+      | var target =>
+          by_cases same : name = target
+          · subst target
+            exact ⟨[], by simp [Metta.Unify.decomposeEqWith]⟩
+          · exact ⟨[(name, .var target)], by
+              simp [Metta.Unify.decomposeEqWith, same]⟩
+      | sym symbol => exact ⟨[(name, .sym symbol)], rfl⟩
+      | gnd ground => exact ⟨[(name, .gnd ground)], rfl⟩
+      | expr atoms => exact ⟨[(name, .expr atoms)], rfl⟩
+  | .gnd _, .sym _, equal => by simp at equal
+  | .gnd ground, .var name, _ => by
+      exact ⟨[(name, .gnd ground)], rfl⟩
+  | .gnd leftGround, .gnd rightGround, equal => by
+      have grounds : leftGround = rightGround := by simpa using equal
+      subst rightGround
+      exact ⟨[], by
+        simp [Metta.Unify.decomposeEqWith, groundReflexive]⟩
+  | .gnd _, .expr _, equal => by simp [subst_expr] at equal
+  | .expr _, .sym _, equal => by simp [subst_expr] at equal
+  | .expr atoms, .var name, _ => by
+      exact ⟨[(name, .expr atoms)], rfl⟩
+  | .expr _, .gnd _, equal => by simp [subst_expr] at equal
+  | .expr left, .expr right, equal => by
+      simp only [subst_expr, Atom.expr.injEq] at equal
+      exact decomposeListWith_exists_of_exact_unifier groundEq
+        groundReflexive witness left right equal
+
+private theorem decomposeListWith_exists_of_exact_unifier
+    (groundEq : Ground → Ground → Bool)
+    (groundReflexive : ∀ ground, groundEq ground ground = true)
+    (witness : Subst) :
+    ∀ (left right : List Atom),
+      left.map (subst witness) = right.map (subst witness) →
+      ∃ constraints,
+        Metta.Unify.decomposeListWith groundEq left right = some constraints
+  | [], [], _ => ⟨[], rfl⟩
+  | [], _ :: _, equal => by simp at equal
+  | _ :: _, [], equal => by simp at equal
+  | leftHead :: leftTail, rightHead :: rightTail, equal => by
+      simp only [List.map_cons, List.cons.injEq] at equal
+      obtain ⟨headConstraints, headDecomposition⟩ :=
+        decomposeEqWith_exists_of_exact_unifier groundEq groundReflexive
+          witness leftHead rightHead equal.1
+      obtain ⟨tailConstraints, tailDecomposition⟩ :=
+        decomposeListWith_exists_of_exact_unifier groundEq groundReflexive
+          witness leftTail rightTail equal.2
+      exact ⟨headConstraints ++ tailConstraints, by
+        simp [Metta.Unify.decomposeListWith, headDecomposition,
+          tailDecomposition]⟩
+
+end
+
+/-- Exact unifiability makes whole-worklist decomposition total. -/
+private theorem decomposeAllWith_exists_of_exact_unifier
+    (groundEq : Ground → Ground → Bool)
+    (groundReflexive : ∀ ground, groundEq ground ground = true)
+    (witness : Subst) (equations : List (Atom × Atom))
+    (unifies : DeepUnifies witness equations) :
+    ∃ constraints,
+      Metta.Unify.decomposeAllWith groundEq equations = some constraints := by
+  induction equations with
+  | nil => exact ⟨[], rfl⟩
+  | cons equation rest induction =>
+      rcases equation with ⟨left, right⟩
+      obtain ⟨headConstraints, headDecomposition⟩ :=
+        decomposeEqWith_exists_of_exact_unifier groundEq groundReflexive
+          witness left right (unifies (left, right) (by simp))
+      obtain ⟨tailConstraints, tailDecomposition⟩ :=
+        induction (fun item member => unifies item (by simp [member]))
+      exact ⟨headConstraints ++ tailConstraints, by
+        simp [Metta.Unify.decomposeAllWith, headDecomposition,
+          tailDecomposition]⟩
+
+/-- Variables introduced by one singleton application come either from an
+    untouched source occurrence or from the replacement. -/
+private theorem mem_vars_apply_singleton
+    (source : String) (replacement : Atom) :
+    (atom : Atom) → (name : String) →
+      name ∈ (Metta.Subst.apply [(source, replacement)] atom).vars →
+      (name ∈ atom.vars ∧ name ≠ source) ∨ name ∈ replacement.vars
+  | .sym _, name, member => by simp [Metta.Subst.apply, Atom.vars] at member
+  | .var original, name, member => by
+      by_cases same : original = source
+      · subst original
+        right
+        simpa [Metta.Subst.apply, Metta.Subst.lookup] using member
+      · left
+        have nameEq : name = original := by
+          simpa [Metta.Subst.apply, Metta.Subst.lookup, same, Atom.vars]
+            using member
+        subst name
+        exact ⟨by simp [Atom.vars], same⟩
+  | .gnd _, name, member => by simp [Metta.Subst.apply, Atom.vars] at member
+  | .expr atoms, name, member => by
+      simp only [Metta.Subst.apply, Atom.vars, List.mem_flatten] at member
+      obtain ⟨variableList, variableListMember, nameMember⟩ := member
+      obtain ⟨appliedChild, appliedChildMember, rfl⟩ :=
+        List.mem_map.mp variableListMember
+      obtain ⟨child, childMember, rfl⟩ :=
+        List.mem_map.mp appliedChildMember
+      rcases mem_vars_apply_singleton source replacement child name
+          nameMember with original | replacementMember
+      · left
+        exact ⟨by
+          simp only [Atom.vars, List.mem_flatten, List.mem_map]
+          exact ⟨child.vars, ⟨child, childMember, rfl⟩, original.1⟩,
+          original.2⟩
+      · exact Or.inr replacementMember
+
+/-- Applying an acyclic supported replacement removes the selected variable
+    while preserving every other variable inside the old finite support. -/
+private theorem apply_singleton_vars_within_erase
+    (allowed : List String) (source : String) (replacement atom : Atom)
+    (replacementAllowed :
+      ∀ name, name ∈ replacement.vars → name ∈ allowed)
+    (sourceAbsent : source ∉ replacement.vars)
+    (atomAllowed : ∀ name, name ∈ atom.vars → name ∈ allowed) :
+    ∀ name,
+      name ∈ (Metta.Subst.apply [(source, replacement)] atom).vars →
+        name ∈ allowed.erase source := by
+  intro name member
+  rcases mem_vars_apply_singleton source replacement atom name member with
+    original | replacementMember
+  · exact (List.mem_erase_of_ne original.2).2
+      (atomAllowed name original.1)
+  · have different : name ≠ source := by
+      intro same
+      subst name
+      exact sourceAbsent replacementMember
+    exact (List.mem_erase_of_ne different).2
+      (replacementAllowed name replacementMember)
+
+/-- One list of distinct variable names supports every equation in a
+    unification worklist. -/
+private def EquationsSupported (allowed : List String)
+    (equations : List (Atom × Atom)) : Prop :=
+  ∀ equation, equation ∈ equations →
+    (∀ name, name ∈ equation.1.vars → name ∈ allowed) ∧
+    (∀ name, name ∈ equation.2.vars → name ∈ allowed)
+
+/-- Every variable in the singleton-substituted residual worklist lies in
+    the old support with the eliminated source removed. -/
+private theorem constraintMap_supported_after_erase
+    (allowed : List String) (source : String) (replacement : Atom)
+    (rest : List (String × Atom))
+    (headSupported : ConstraintSupported allowed (source, replacement))
+    (sourceAbsent : source ∉ replacement.vars)
+    (restSupported : ConstraintsSupported allowed rest) :
+    EquationsSupported (allowed.erase source)
+      (rest.map fun item =>
+        (Metta.Subst.apply [(source, replacement)] (.var item.1),
+          Metta.Subst.apply [(source, replacement)] item.2)) := by
+  intro equation member
+  simp only [List.mem_map] at member
+  obtain ⟨constraint, constraintMember, rfl⟩ := member
+  have supported := restSupported constraint constraintMember
+  constructor
+  · exact apply_singleton_vars_within_erase allowed source replacement
+      (.var constraint.1) headSupported.2.1
+      sourceAbsent
+      (by
+        intro name nameMember
+        simp only [Atom.vars, List.mem_singleton] at nameMember
+        subst name
+        exact supported.1)
+  · exact apply_singleton_vars_within_erase allowed source replacement
+      constraint.2 headSupported.2.1
+      sourceAbsent
+      supported.2.1
+
+/-- Erasing a member of a duplicate-free support strictly lowers its
+    cardinality. -/
+private theorem length_erase_lt_of_mem_nodup
+    {name : String} {names : List String}
+    (member : name ∈ names) (_nodup : names.Nodup) :
+    (names.erase name).length < names.length := by
+  have lengthEq := List.length_erase_add_one member
+  omega
+
+/-- The actual fuel-bounded elimination loop succeeds whenever a finite exact
+    unifier exists and `fuel` covers a duplicate-free support for every
+    remaining variable.  This is a verified algorithm theorem: neither
+    success nor a result substitution is assumed. -/
+private theorem unifyRoundsWith_complete_of_exact_unifier
+    (groundEq : Ground → Ground → Bool)
+    (groundReflexive : ∀ ground, groundEq ground ground = true)
+    (fuel : Nat) (allowed : List String) (equations : List (Atom × Atom))
+    (base witness : Subst)
+    (allowedNodup : allowed.Nodup)
+    (supported : EquationsSupported allowed equations)
+    (fuelEnough : allowed.length ≤ fuel)
+    (unifies : DeepUnifies witness equations) :
+    ∃ result,
+      Metta.Unify.unifyRoundsWith groundEq fuel equations base =
+        some result := by
+  induction fuel generalizing allowed equations base with
+  | zero =>
+      have allowedEmpty : allowed = [] := by
+        exact List.eq_nil_of_length_eq_zero (by omega)
+      obtain ⟨constraints, decomposed⟩ :=
+        decomposeAllWith_exists_of_exact_unifier groundEq groundReflexive
+          witness equations unifies
+      have constraintsSupported :=
+        decomposeAllWith_supported groundEq allowed equations constraints
+          supported decomposed
+      have constraintsEmpty : constraints = [] := by
+        cases constraints with
+        | nil => rfl
+        | cons constraint rest =>
+            have sourceAllowed :=
+              (constraintsSupported constraint (by simp)).1
+            rw [allowedEmpty] at sourceAllowed
+            contradiction
+      subst constraints
+      exact ⟨base, by
+        simp [Metta.Unify.unifyRoundsWith, decomposed]⟩
+  | succ fuel induction =>
+      obtain ⟨constraints, decomposed⟩ :=
+        decomposeAllWith_exists_of_exact_unifier groundEq groundReflexive
+          witness equations unifies
+      have constraintsSupported :=
+        decomposeAllWith_supported groundEq allowed equations constraints
+          supported decomposed
+      cases constraints with
+      | nil =>
+          exact ⟨base, by
+            simp [Metta.Unify.unifyRoundsWith, decomposed]⟩
+      | cons constraint rest =>
+          rcases constraint with ⟨source, replacement⟩
+          have headSupported :=
+            constraintsSupported (source, replacement) (by simp)
+          have restSupported : ConstraintsSupported allowed rest := by
+            intro item member
+            exact constraintsSupported item (by simp [member])
+          have realized :=
+            decomposeAllWith_deepRealizes groundEq witness equations
+              ((source, replacement) :: rest) unifies decomposed
+          have headExact :
+              subst witness (.var source) = subst witness replacement :=
+            realized (source, replacement) (by simp)
+          have occursFalse :
+              Metta.Subst.occurs source replacement = false := by
+            cases occurs : Metta.Subst.occurs source replacement with
+            | false => rfl
+            | true =>
+                exact False.elim
+                  ((no_exact_unifier_of_occurs_true witness source replacement
+                    occurs headSupported.2.2) headExact)
+          let nextEquations := rest.map fun item =>
+            (Metta.Subst.apply [(source, replacement)] (.var item.1),
+              Metta.Subst.apply [(source, replacement)] item.2)
+          have nextSupported :
+              EquationsSupported (allowed.erase source) nextEquations := by
+            exact constraintMap_supported_after_erase allowed source
+              replacement rest headSupported
+              (not_mem_vars_of_occurs_eq_false source replacement occursFalse)
+              restSupported
+          have nextNodup : (allowed.erase source).Nodup :=
+            allowedNodup.erase source
+          have nextFuelEnough :
+              (allowed.erase source).length ≤ fuel := by
+            have sourceAllowed : source ∈ allowed := headSupported.1
+            have shorter : (allowed.erase source).length < allowed.length :=
+              length_erase_lt_of_mem_nodup sourceAllowed allowedNodup
+            omega
+          have nextUnifies : DeepUnifies witness nextEquations := by
+            intro equation equationMember
+            simp only [nextEquations, List.mem_map] at equationMember
+            obtain ⟨item, itemMember, rfl⟩ := equationMember
+            have itemExact := realized item (by simp [itemMember])
+            calc
+              subst witness
+                  (Metta.Subst.apply [(source, replacement)]
+                    (.var item.1)) =
+                  subst witness (.var item.1) :=
+                subst_apply_singleton_of_eq witness source replacement
+                  headExact (.var item.1)
+              _ = subst witness item.2 := itemExact
+              _ = subst witness
+                  (Metta.Subst.apply [(source, replacement)] item.2) :=
+                (subst_apply_singleton_of_eq witness source replacement
+                  headExact item.2).symm
+          obtain ⟨result, resultEq⟩ :=
+            induction (allowed.erase source) nextEquations
+              (Metta.Subst.extend base source replacement)
+              nextNodup nextSupported nextFuelEnough nextUnifies
+          exact ⟨result, by
+            simpa [Metta.Unify.unifyRoundsWith, decomposed, occursFalse,
+              nextEquations] using resultEq⟩
+
+/-- The concrete executable first-order algorithm is complete on every
+    finitely exactly unifiable input when its ground comparator is reflexive.
+    In particular, fuel exhaustion cannot turn a genuine unifier into
+    failure. -/
+theorem unifyTopWith_complete_of_exact_unifier
+    (groundEq : Ground → Ground → Bool)
+    (groundReflexive : ∀ ground, groundEq ground ground = true)
+    (left right : Atom) (witness : Subst)
+    (exact : subst witness left = subst witness right) :
+    ∃ result,
+      Metta.Unify.unifyTopWith groundEq left right = some result := by
+  let allowed := (left.vars ++ right.vars).dedup
+  have allowedNodup : allowed.Nodup := List.nodup_dedup _
+  have supported : EquationsSupported allowed [(left, right)] := by
+    intro equation member
+    simp only [List.mem_singleton] at member
+    subst equation
+    constructor
+    · intro name nameMember
+      exact List.mem_dedup.mpr
+        (List.mem_append_left right.vars nameMember)
+    · intro name nameMember
+      exact List.mem_dedup.mpr
+        (List.mem_append_right left.vars nameMember)
+  have fuelEnough :
+      allowed.length ≤ left.size + right.size := by
+    have dedupBound : allowed.length ≤ (left.vars ++ right.vars).length :=
+      List.Sublist.length_le (List.dedup_sublist _)
+    simp only [List.length_append] at dedupBound
+    exact Nat.le_trans dedupBound
+      (Nat.add_le_add (atom_vars_length_le_size left)
+        (atom_vars_length_le_size right))
+  unfold Metta.Unify.unifyTopWith
+  exact unifyRoundsWith_complete_of_exact_unifier groundEq groundReflexive
+    (left.size + right.size) allowed [(left, right)] [] witness
+    allowedNodup supported fuelEnough (by
+      intro equation member
+      simp only [List.mem_singleton] at member
+      subst equation
+      exact exact)
+
+/-- PeTTa's exact-ground specialization inherits constructive completeness,
+    including reflexive NaN identity and finite occurs-check rejection. -/
+theorem unifyTopExact_complete_of_exact_unifier
+    (left right : Atom) (witness : Subst)
+    (exact : subst witness left = subst witness right) :
+    ∃ result, unifyTopExact left right = some result := by
+  exact unifyTopWith_complete_of_exact_unifier prologGroundIdentical
+    prologGroundIdentical_self left right witness exact
+
+/-- Completeness lifted through the current binding: a finite exact witness
+    for the normalized pair constructs an actual `unifyB` successor. -/
+theorem unifyB_complete_of_exact_unifier
+    (base : Subst) (left right : Atom) (witness : Subst)
+    (exact :
+      subst witness (subst base left) = subst witness (subst base right)) :
+    ∃ result, unifyB base left right = some result := by
+  obtain ⟨generated, generatedEq⟩ :=
+    unifyTopExact_complete_of_exact_unifier
+      (subst base left) (subst base right) witness exact
+  cases generated with
+  | nil =>
+      exact ⟨base, by simp [unifyB, generatedEq]⟩
+  | cons binding rest =>
+      exact ⟨Metta.Subst.compose (binding :: rest) base, by
+        simp [unifyB, generatedEq]⟩
+
+/-- A repeated variable beneath a rigid node exercises both decomposition
+    rounds and substitution propagation.  Completeness produces a real,
+    nonempty executable result; exact-input soundness proves that result is
+    not merely an arbitrary successful return. -/
+theorem unifyTopExact_repeated_nested_complete_nontrivial :
+    let left :=
+      Atom.expr
+        [.sym "p", .var "X", .expr [.sym "f", .var "X"]]
+    let right :=
+      Atom.expr
+        [.sym "p", .sym "a", .expr [.sym "f", .sym "a"]]
+    ∃ result,
+      unifyTopExact left right = some result ∧
+        subst result left = subst result right ∧
+        result ≠ [] := by
+  let left :=
+    Atom.expr
+      [.sym "p", .var "X", .expr [.sym "f", .var "X"]]
+  let right :=
+    Atom.expr
+      [.sym "p", .sym "a", .expr [.sym "f", .sym "a"]]
+  let witness : Subst := [("X", .sym "a")]
+  have witnessExact : subst witness left = subst witness right := by
+    simp [left, right, witness, subst, substN, Metta.Subst.lookup]
+  obtain ⟨result, resultEq⟩ :=
+    unifyTopExact_complete_of_exact_unifier left right witness witnessExact
+  have underlying :=
+    unifyTopExact_some_underlying left right result resultEq
+  have resultExact :=
+    unifyTopWith_exact_sound_of_exact_unifier prologGroundIdentical
+      left right result witness witnessExact underlying
+  have resultNonempty : result ≠ [] := by
+    intro empty
+    subst result
+    simp [left, right, subst, substN, Metta.Subst.lookup] at resultExact
+  exact ⟨result, resultEq, resultExact, resultNonempty⟩
+
+/-- A finite self-occurrence has no exact substitution witness.  This
+    semantic discriminator rules out proving completeness by accepting
+    rational-tree cycles. -/
+theorem finite_self_occurs_has_no_exact_unifier (source : String) :
+    ¬ ∃ witness : Subst,
+      subst witness (.var source) =
+        subst witness (.expr [.sym "f", .var source]) := by
+  rintro ⟨witness, exact⟩
+  exact
+    (no_exact_unifier_of_occurs_true witness source
+      (.expr [.sym "f", .var source])
+      (by simp [Metta.Subst.occurs])
+      (by intro impossible; cases impossible)) exact
+
+/-- The executable follows the finite-tree semantics on the same
+    discriminator: its occurs check rejects the cyclic equation. -/
+theorem unifyTopExact_self_occurs_rejected (source : String) :
+    unifyTopExact (.var source)
+      (.expr [.sym "f", .var source]) = none := by
+  simp [unifyTopExact, Metta.Unify.unifyTopWith, Atom.size,
+    Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
+    Metta.Unify.decomposeEqWith, Metta.Subst.occurs]
+
 /-! ## Fresh structural variants -/
 
 mutual
