@@ -1043,6 +1043,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologActivationUnifierBridge.SupportedPreparedCandidateAgrees.unifyB_complete_of_headResolution
 #print axioms PLeaTTa.PrologActivationUnifierBridge.SupportedPreparedCandidateAgrees.unifyB_ne_none_of_headResolution
 #print axioms PLeaTTa.PrologActivationUnifierBridge.matched_clause_eq_ok_correspondence
+#print axioms PLeaTTa.PrologActivationUnifierBridge.matched_clause_eq_ok_task_correspondence
 #print axioms PLeaTTa.ClauseIndex.build_candidates
 #print axioms PLeaTTa.ClauseIndex.naiveCandidates_eq_head_filter
 #print axioms PLeaTTa.ClauseIndex.Valid.push

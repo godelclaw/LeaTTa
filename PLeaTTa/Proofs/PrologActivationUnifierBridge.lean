@@ -6,12 +6,14 @@ Purpose: Rule out executable head-unification failure for one independently
   resolved, supported local clause occurrence.
 Trusted boundary: none
 Main exports:
+  ActivatedTaskAgrees,
   SupportedPreparedCandidateAgrees.unifyB_direct_of_headResolution,
   SupportedPreparedCandidateAgrees.unifyB_residual_variant_of_headResolution,
   SupportedPreparedCandidateAgrees.unifyB_body_residual_variant_of_headResolution,
   SupportedPreparedCandidateAgrees.unifyB_body_cumulative_trimmed_of_headResolution,
   SupportedPreparedCandidateAgrees.unifyB_body_continuation_support_of_headResolution,
-  SupportedPreparedCandidateAgrees.unifyB_complete_of_headResolution
+  SupportedPreparedCandidateAgrees.unifyB_complete_of_headResolution,
+  matched_clause_eq_ok_task_correspondence
 -/
 import PLeaTTa.Proofs.PrologCallPayloadBridge
 import PLeaTTa.Proofs.PrologMguComposition
@@ -40,6 +42,25 @@ open PrologGoalMguVariant
 open PrologMguComposition
 
 /-! ## One semantically matched prepared occurrence -/
+
+/-- Exact payload relation for the left task installed by a matched local
+clause.
+
+The independent task carries its cumulative binding separately from its raw
+body.  The executable task carries the corresponding trimmed runtime
+substitution beside the freshened body.  Keeping both components explicit
+avoids an idempotence assumption and gives the eventual Search/OpenConf
+simulation a relation over the actual successor payloads. -/
+def ActivatedTaskAgrees
+    (alpha support : List (LogicVar × String)) (barrier : Nat)
+    (canonical : TreeSubstitution) (referenceBase : Substitution)
+    (runtime : Subst) (entered : EnteredClause)
+    (executableGoals : List PLeaTTa.Goal) : Prop :=
+  entered.bindings =
+      TreeSubstitution.reify canonical ++ referenceBase ∧
+    AlphaGoalsCumulativeResidualVariantAgreesOn
+      alpha support barrier canonical referenceBase runtime
+      entered.rawBody executableGoals
 
 /-- A semantic head resolution at one real prepared clause occurrence
 constructs the actual executable MGU and exposes the complete
@@ -874,10 +895,9 @@ theorem SupportedPreparedCandidateAgrees.unifyB_ne_none_of_headResolution
 full-head equality both advance successfully.
 
 The theorem pins the actual `RawStep.clausesPull` splice and actual
-`PLeaTTa.Step.eq_ok` constructor.  Its two successors intentionally remain
-unrelated at the binding payload: proving that `trimFor executableResult`
-represents `branch.enter independentResult` is the still-open output
-refinement, rather than a premise smuggled into this input-success result. -/
+`PLeaTTa.Step.eq_ok` constructor.  This compatibility projection records only
+simultaneous step existence; `matched_clause_eq_ok_task_correspondence` below
+strengthens it with the successor payload relation. -/
 theorem matched_clause_eq_ok_correspondence
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {queryAlpha : List (LogicVar × String)}
@@ -968,5 +988,156 @@ theorem matched_clause_eq_ok_correspondence
         (args.map (PLeaTTa.subst binding)) args result rest binding qterm seed
         barrier clause).body ++ rest)
       binding executableResult current success
+
+/-- The paired activation step with its successor payload relation.
+
+Unlike `matched_clause_eq_ok_correspondence`, this strengthening does not
+stop at simultaneous step existence.  It relates the exact independent left
+task installed by `clausesPull` to the exact freshened executable body and
+trimmed binding installed by `eq_ok`, on the structurally extracted safe
+continuation support.  Completeness of that conservative support for all
+future observations remains a separate caller/compiler obligation. -/
+theorem matched_clause_eq_ok_task_correspondence
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {queryAlpha : List (LogicVar × String)}
+    {session : Session} {scope : CutScopeId}
+    {cursor : PreparedCursor} {branch : ClauseBranch}
+    {branches : List ClauseBranch} {clause : PLeaTTa.Clause}
+    {args : List Atom} {result : Atom} {rest : List PLeaTTa.Goal}
+    {binding : Subst} {qterm : Atom} {seed barrier : Nat}
+    {independentResult : Substitution} {conf : PLeaTTa.Conf}
+    (query :
+      NormalizedCallAgrees queryAlpha cursor
+        (args.map (PLeaTTa.subst binding))
+        (PLeaTTa.subst binding result))
+    (wellFormed : cursor.WellFormed)
+    (remaining : cursor.remaining = branch :: branches)
+    (agreement :
+      SupportedPreparedCandidateAgrees cursor.callGeneration
+        cursor.predicate cursor.arguments cursor.bindings branch clause)
+    (arity : clause.params.length = args.length)
+    (queryShared : SharedRuntimeAlpha queryAlpha)
+    (queryReferenceBelow :
+      GeneratedBelow cursor.reservationStart (queryAlpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ queryAlpha.map Prod.snd →
+        name ∈
+          resolutionOccupiedVars
+            (args.map (PLeaTTa.subst binding)) result rest binding qterm)
+    (highWater :
+      resolutionSeedHighWaterNames
+        (resolutionOccupiedVars
+          (args.map (PLeaTTa.subst binding)) result rest binding qterm) ≤
+        seed)
+    (bindingTopological : PLeaTTa.SubstTopological binding)
+    (resolved : HeadResolution branch independentResult)
+    (queryTerm : conf.qterm = qterm)
+    (current :
+      conf.cur =
+        some
+          (PLeaTTa.Goal.eq (.expr (args ++ [result]))
+              (.expr
+                ((freshenResolutionClause
+                    (args.map (PLeaTTa.subst binding)) args result rest
+                    binding qterm seed barrier clause).params ++
+                  [(freshenResolutionClause
+                    (args.map (PLeaTTa.subst binding)) args result rest
+                    binding qterm seed barrier clause).result])) ::
+            (freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body ++ rest,
+            binding)) :
+    ∃ alpha canonical installed,
+      SharedRuntimeAlpha alpha ∧
+      OrderedTreeMgu
+        (denoteEquations branch.normalizedHeadEquations) canonical ∧
+      RawStep session (.clauses scope cursor) [] .none session
+          (.running
+            (.choice scope
+              (.task scope (branch.enter independentResult).rawBody
+                (branch.enter independentResult).bindings)
+              (.clauses scope (cursor.advance branch branches)))) ∧
+      PLeaTTa.Step prog gt conf
+        { conf with
+          cur :=
+            some
+              ((freshenResolutionClause
+                  (args.map (PLeaTTa.subst binding)) args result rest
+                  binding qterm seed barrier clause).body ++ rest,
+                PLeaTTa.trimFor
+                  ((freshenResolutionClause
+                    (args.map (PLeaTTa.subst binding)) args result rest
+                    binding qterm seed barrier clause).body ++ rest)
+                  qterm installed) } ∧
+      ActivatedTaskAgrees
+        alpha
+        (continuationAlphaSupport
+          alpha branch.bindings binding
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body ++ rest)
+          qterm)
+        barrier canonical branch.bindings
+        (PLeaTTa.trimFor
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body ++ rest)
+          qterm installed)
+        (branch.enter independentResult)
+        (freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args result rest binding
+          qterm seed barrier clause).body := by
+  have member : branch ∈ cursor.remaining := by
+    rw [remaining]
+    simp
+  obtain
+    ⟨alpha, canonical, _generated, installed, shared, independentShape,
+      ordered, _generatedExact, installedExact, bodyAgreement⟩ :=
+    PLeaTTa.PrologActivationUnifierBridge.SupportedPreparedCandidateAgrees.unifyB_body_continuation_support_of_headResolution
+      query wellFormed member agreement arity queryShared
+      queryReferenceBelow queryExecutableLive highWater bindingTopological
+      resolved
+  have sourceStep :
+      RawStep session (.clauses scope cursor) [] .none session
+        (.running
+          (.choice scope
+            (.task scope (branch.enter independentResult).rawBody
+              (branch.enter independentResult).bindings)
+            (.clauses scope (cursor.advance branch branches)))) :=
+    matched_clause_splices_body_first scope session
+      (.matched cursor branch branches independentResult remaining resolved)
+  have executableStep :
+      PLeaTTa.Step prog gt conf
+        { conf with
+          cur :=
+            some
+              ((freshenResolutionClause
+                  (args.map (PLeaTTa.subst binding)) args result rest
+                  binding qterm seed barrier clause).body ++ rest,
+                PLeaTTa.trimFor
+                  ((freshenResolutionClause
+                    (args.map (PLeaTTa.subst binding)) args result rest
+                    binding qterm seed barrier clause).body ++ rest)
+                  qterm installed) } := by
+    simpa only [queryTerm] using
+      PLeaTTa.Step.eq_ok conf
+        (.expr (args ++ [result]))
+        (.expr
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).params ++
+            [(freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).result]))
+        ((freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args result rest binding qterm
+          seed barrier clause).body ++ rest)
+        binding installed current installedExact
+  refine
+    ⟨alpha, canonical, installed, shared, ordered, sourceStep,
+      executableStep, ?_⟩
+  constructor
+  · simpa [ClauseBranch.enter] using independentShape
+  · simpa [ClauseBranch.enter] using bodyAgreement
 
 end PLeaTTa.PrologActivationUnifierBridge
