@@ -2,6 +2,7 @@
 
 import PLeaTTa.Proofs.StepCases
 import PLeaTTa.Proofs.DemandDrivenStep
+import PLeaTTa.Proofs.PrologStateBridge
 import PLeaTTa.Proofs.BarrierCache
 import PLeaTTa.Proofs.Specialize
 import PLeaTTa.Proofs.Unification
@@ -1017,3 +1018,14 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.DemandDrivenStep.nested_answer_is_one_private_step
 #print axioms PLeaTTa.DemandDrivenStep.findall_exit_keeps_inner_world_and_highWater
 #print axioms PLeaTTa.DemandDrivenStep.sealed_findall_step_has_terminal_subrun
+#print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.assertz
+#print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.asserta
+#print axioms PLeaTTa.PrologStateBridge.openCatch_preserves_persistent_relation
+#print axioms PLeaTTa.PrologStateBridge.openFindall_preserves_persistent_relation
+#print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_reference
+#print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_executable
+#print axioms PLeaTTa.PrologStateBridge.freshenResolutionClause_vars_exact
+#print axioms PLeaTTa.PrologStateBridge.freshenResolutionClause_support_exact
+#print axioms PLeaTTa.PrologStateBridge.freshenClause_actual_alpha_agrees
+#print axioms PLeaTTa.PrologStateBridge.colliding_clause_has_no_injective_encoding
+#print axioms PLeaTTa.PrologStateBridge.fresh_frontiers_have_different_units
