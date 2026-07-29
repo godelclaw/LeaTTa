@@ -515,6 +515,86 @@ def AlphaValuationAgrees (alpha : List (LogicVar × String))
       (TreeSubstitution.apply canonical (.variable identity))
       (PLeaTTa.subst runtime (.var name))
 
+/-- Canonical and executable substitutions agree on the observable part of
+one alpha graph.  `support` is deliberately separate from `alpha`: the full
+graph still interprets residual variables in the resulting terms, while a
+caller may observe only query variables and let `trimFor` discard dead
+clause-local bindings. -/
+def AlphaValuationAgreesOn
+    (alpha support : List (LogicVar × String))
+    (canonical : TreeSubstitution) (runtime : Subst) : Prop :=
+  ∀ {identity name}, (identity, name) ∈ support →
+    CanonicalRuntimeAgrees alpha
+      (TreeSubstitution.apply canonical (.variable identity))
+      (PLeaTTa.subst runtime (.var name))
+
+/-- Every executable name in the observed alpha support is directly live in
+the remaining machine continuation. -/
+def AlphaRuntimeNamesLive
+    (support : List (LogicVar × String))
+    (goals : List Goal) (qterm : Atom) : Prop :=
+  ∀ {identity name}, (identity, name) ∈ support →
+    PLeaTTa.isTrimRoot goals qterm name = true
+
+/-- Full valuation agreement restricts to any subgraph of the shared alpha
+graph. -/
+theorem AlphaValuationAgrees.on
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {runtime : Subst}
+    (valuation : AlphaValuationAgrees alpha canonical runtime)
+    (included : ∀ pair, pair ∈ support → pair ∈ alpha) :
+    AlphaValuationAgreesOn alpha support canonical runtime := by
+  intro identity name linked
+  exact valuation (included (identity, name) linked)
+
+/-- The support-indexed relation is definitionally the original relation
+when every alpha link is observable. -/
+theorem alphaValuationAgreesOn_self_iff
+    {alpha : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {runtime : Subst} :
+    AlphaValuationAgreesOn alpha alpha canonical runtime ↔
+      AlphaValuationAgrees alpha canonical runtime :=
+  Iff.rfl
+
+/-- Executable liveness trimming preserves canonical/runtime denotation on
+exactly the observed alpha support.  Dead bindings outside `support` may be
+removed; no association-list equality or orientation is assumed. -/
+theorem AlphaValuationAgreesOn.trimFor
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {runtime : Subst}
+    (valuation :
+      AlphaValuationAgreesOn alpha support canonical runtime)
+    (topological : PLeaTTa.SubstTopological runtime)
+    {goals : List Goal} {qterm : Atom}
+    (live : AlphaRuntimeNamesLive support goals qterm) :
+    AlphaValuationAgreesOn alpha support canonical
+      (PLeaTTa.trimFor goals qterm runtime) := by
+  intro identity name linked
+  have unchanged :=
+    PLeaTTa.subst_trimFor_eq_of_topological
+      goals qterm runtime topological (.var name) (by
+        intro candidate member
+        simp only [Atom.vars, List.mem_singleton] at member
+        subst candidate
+        exact live linked)
+  rw [unchanged]
+  exact valuation linked
+
+/-! ### The liveness premise is load-bearing -/
+
+private def trimWitnessIdentity : LogicVar := .source "dead"
+
+private def trimWitnessAlpha : List (LogicVar × String) :=
+  [(trimWitnessIdentity, "x#r10")]
+
+private def trimWitnessCanonical : TreeSubstitution :=
+  [(trimWitnessIdentity, .node (.atom "input") [])]
+
+private def trimWitnessRuntime : Subst :=
+  [("answer", .sym "output"),
+   ("x#r10", .sym "input"),
+   ("result#r10", .sym "output")]
+
 /-- Deep executable substitution commutes with the chain encoder. -/
 private theorem subst_chainOf_local (runtime : Subst) (atoms : List Atom) :
     PLeaTTa.subst runtime (chainOf atoms) =
@@ -628,6 +708,100 @@ private theorem canonicalRuntimeAgrees_atom_inv
       simp [runtimeAtomName]
   | falseAtom =>
       simp [runtimeAtomName]
+
+/-- Topologicality alone does not make trimming invisible.  The original
+runtime substitution agrees with the canonical valuation, but a continuation
+which does not mention its sole executable name removes that binding and
+destroys the agreement.  This concrete discriminator prevents the liveness
+premise of `AlphaValuationAgreesOn.trimFor` from becoming decorative. -/
+theorem dead_alpha_name_is_not_trim_preserved :
+    ∃ _ : PLeaTTa.SubstTopological trimWitnessRuntime,
+      AlphaValuationAgreesOn trimWitnessAlpha trimWitnessAlpha
+        trimWitnessCanonical trimWitnessRuntime ∧
+      ¬ AlphaRuntimeNamesLive trimWitnessAlpha [] (.var "answer") ∧
+      ¬ AlphaValuationAgreesOn trimWitnessAlpha trimWitnessAlpha
+        trimWitnessCanonical
+          (PLeaTTa.trimFor [] (.var "answer") trimWitnessRuntime) := by
+  have topological : PLeaTTa.SubstTopological trimWitnessRuntime :=
+    PLeaTTa.SubstTopological.cons_of_fresh
+      [("x#r10", .sym "input"), ("result#r10", .sym "output")]
+      (PLeaTTa.SubstTopological.cons_of_fresh
+        [("result#r10", .sym "output")]
+        (PLeaTTa.SubstTopological.cons_of_fresh
+          [] PLeaTTa.emptySubstTopological
+          "result#r10" (.sym "output")
+          (by simp [Metta.Subst.lookup])
+          (by simp [Atom.vars])
+          (by simp [PLeaTTa.AtomAvoids, Atom.vars,
+            Metta.Subst.lookup]))
+        "x#r10" (.sym "input")
+        (by simp [Metta.Subst.lookup])
+        (by simp [Atom.vars])
+        (by simp [PLeaTTa.AtomAvoids, Atom.vars,
+          Metta.Subst.lookup]))
+      "answer" (.sym "output")
+      (by simp [Metta.Subst.lookup])
+      (by simp [Atom.vars])
+      (by simp [PLeaTTa.AtomAvoids, Atom.vars,
+        Metta.Subst.lookup])
+  have before :
+      AlphaValuationAgreesOn trimWitnessAlpha trimWitnessAlpha
+        trimWitnessCanonical trimWitnessRuntime := by
+    intro identity name linked
+    simp only [trimWitnessAlpha, List.mem_singleton,
+      Prod.mk.injEq] at linked
+    rcases linked with ⟨rfl, rfl⟩
+    simpa [trimWitnessCanonical, trimWitnessIdentity,
+      TreeSubstitution.apply, Tree.instantiateOne,
+      trimWitnessRuntime, PLeaTTa.subst, PLeaTTa.substN,
+      Metta.Subst.lookup] using
+        (CanonicalRuntimeAgrees.atom
+          (alpha := trimWitnessAlpha)
+          (name := "input") (by decide) (by decide))
+  have notLive :
+      ¬ AlphaRuntimeNamesLive trimWitnessAlpha [] (.var "answer") := by
+    intro live
+    have root := live
+      (identity := trimWitnessIdentity) (name := "x#r10") (by
+        simp [trimWitnessAlpha])
+    have preserved :=
+      PLeaTTa.trimFor_lookup_of_root
+        [] (.var "answer") trimWitnessRuntime "x#r10" root
+    change
+      Metta.Subst.lookup
+          (PLeaTTa.trimFor [] (.var "answer")
+            [("answer", .sym "output"),
+             ("x#r10", .sym "input"),
+             ("result#r10", .sym "output")])
+          "x#r10" =
+        Metta.Subst.lookup
+          [("answer", .sym "output"),
+           ("x#r10", .sym "input"),
+           ("result#r10", .sym "output")]
+          "x#r10" at preserved
+    rw [PLeaTTa.trimFor_ordered_target_specialized "input" "output"]
+      at preserved
+    simp [Metta.Subst.lookup] at preserved
+  have trimExact :
+      PLeaTTa.trimFor [] (.var "answer") trimWitnessRuntime =
+        [("answer", .sym "output")] := by
+    simpa [trimWitnessRuntime] using
+      PLeaTTa.trimFor_ordered_target_specialized "input" "output"
+  refine ⟨topological, before, notLive, ?_⟩
+  intro after
+  have impossible := after
+    (identity := trimWitnessIdentity) (name := "x#r10") (by
+      simp [trimWitnessAlpha])
+  rw [trimExact] at impossible
+  have normalized :
+      CanonicalRuntimeAgrees trimWitnessAlpha
+        (.node (.atom "input") []) (.var "x#r10") := by
+    simpa [trimWitnessCanonical, trimWitnessIdentity,
+      TreeSubstitution.apply, Tree.instantiateOne,
+      PLeaTTa.subst, PLeaTTa.substN,
+      Metta.Subst.lookup] using impossible
+  have shape := canonicalRuntimeAgrees_atom_inv normalized
+  simp [runtimeAtomName] at shape
 
 /-- Two runtime encodings of the same canonical tree are equivalent under
 exact Prolog ground identity.  Forward functionality is load-bearing only

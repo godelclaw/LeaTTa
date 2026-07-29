@@ -913,6 +913,10 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologMguBridge.SharedAlphaEquationsAgree.of_terms
 #print axioms PLeaTTa.PrologMguBridge.SharedAlphaEquationsAgree.of_disjoint_terms
 #print axioms PLeaTTa.PrologMguBridge.FreshenedClauseAlphaAgrees.sharedHeadEquations
+#print axioms PLeaTTa.PrologMguBridge.AlphaValuationAgrees.on
+#print axioms PLeaTTa.PrologMguBridge.alphaValuationAgreesOn_self_iff
+#print axioms PLeaTTa.PrologMguBridge.AlphaValuationAgreesOn.trimFor
+#print axioms PLeaTTa.PrologMguBridge.dead_alpha_name_is_not_trim_preserved
 #print axioms PLeaTTa.PrologMguBridge.canonicalRuntimeAgrees_apply
 #print axioms PLeaTTa.PrologMguBridge.CanonicalRuntimeAgrees.equivalent_of_same
 #print axioms PLeaTTa.PrologMguBridge.SharedAlphaEquationsAgree.atomsEquivalent_of_unifier
