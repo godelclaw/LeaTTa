@@ -6,10 +6,11 @@ Purpose: Rule out executable head-unification failure for one independently
   resolved, supported local clause occurrence.
 Trusted boundary: none
 Main exports:
+  SupportedPreparedCandidateAgrees.unifyB_direct_of_headResolution,
   SupportedPreparedCandidateAgrees.unifyB_complete_of_headResolution
 -/
 import PLeaTTa.Proofs.PrologCallPayloadBridge
-import PLeaTTa.Proofs.PrologMguValuation
+import PLeaTTa.Proofs.PrologMguDirectSimulation
 
 namespace PLeaTTa.PrologActivationUnifierBridge
 
@@ -27,19 +28,19 @@ open PrologCallEntryBridge
 open PrologPrefilterBridge
 open PrologCallPayloadBridge
 open PrologMguBridge
+open PrologMguOpenAgreement
+open PrologMguTopology
 
 /-! ## One semantically matched prepared occurrence -/
 
-/-- If the independent local resolver has an ordered canonical MGU for one
-real prepared clause occurrence, the executable full-head `unifyB` call for
-that same occurrence succeeds.
-
-This is intentionally only a success theorem.  It rules out the executable
-`eq_fail` transition on a semantically matched branch, but does not identify
-the returned executable substitution with the independent MGU and does not
-justify the subsequent executable `trimFor`.  Those output obligations remain
-the next activation-refinement seam. -/
-theorem SupportedPreparedCandidateAgrees.unifyB_complete_of_headResolution
+/-- A semantic head resolution at one real prepared clause occurrence
+constructs the actual executable MGU and exposes the complete
+cross-representation witness.  The returned flattened MGU may orient residual
+aliases differently from the independently ordered source MGU, so the theorem
+proves an acyclic open valuation plus mutual semantic factorization rather
+than false association-list equality.  The exact installed `unifyB` state
+remains visible; `trimFor` is deliberately outside this theorem. -/
+theorem SupportedPreparedCandidateAgrees.unifyB_direct_of_headResolution
     {queryAlpha : List (LogicVar × String)}
     {cursor : PreparedCursor} {branch : ClauseBranch}
     {clause : PLeaTTa.Clause}
@@ -70,7 +71,40 @@ theorem SupportedPreparedCandidateAgrees.unifyB_complete_of_headResolution
           (args.map (PLeaTTa.subst binding)) result rest binding qterm) ≤
         seed)
     (resolved : HeadResolution branch independentResult) :
-    ∃ executableResult,
+    ∃ alpha canonical flattened generated installed,
+      SharedRuntimeAlpha alpha ∧
+      SharedAlphaEquationsAgree alpha branch.normalizedHeadEquations
+          ((args ++ [result]).map (PLeaTTa.subst binding))
+          (((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).params ++
+            [(freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).result]).map
+            (PLeaTTa.subst binding)) ∧
+      independentResult =
+        TreeSubstitution.reify canonical ++ branch.bindings ∧
+      OrderedTreeMgu
+        (denoteEquations branch.normalizedHeadEquations) canonical ∧
+      PLeaTTa.unifyTopExact
+          (.expr ((args ++ [result]).map (PLeaTTa.subst binding)))
+          (.expr
+            (((freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).params ++
+              [(freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).result]).map
+              (PLeaTTa.subst binding))) =
+        some generated ∧
+      AlphaTreeSubstitutionAgrees alpha flattened generated ∧
+      TreeSubstitutionTopological flattened ∧
+      Nonempty (PLeaTTa.SubstTopological generated) ∧
+      AlphaValuationAgrees alpha flattened generated ∧
+      TreeIsMgu flattened
+        (denoteEquations branch.normalizedHeadEquations) ∧
+      TreeFactorsThrough flattened canonical ∧
+      TreeFactorsThrough canonical flattened ∧
       PLeaTTa.unifyB binding (.expr (args ++ [result]))
           (.expr
             ((freshenResolutionClause
@@ -79,7 +113,11 @@ theorem SupportedPreparedCandidateAgrees.unifyB_complete_of_headResolution
               [(freshenResolutionClause
                 (args.map (PLeaTTa.subst binding)) args result rest binding
                 qterm seed barrier clause).result])) =
-        some executableResult := by
+        some installed ∧
+      installed =
+        match generated with
+        | [] => binding
+        | _ :: _ => Metta.Subst.compose generated binding := by
   cases agreement with
   | intro reference freshSeed executable base encoding =>
       have startsAbove :
@@ -156,24 +194,108 @@ theorem SupportedPreparedCandidateAgrees.unifyB_complete_of_headResolution
           reference rawLengths
       rcases resolved with
         ⟨extension, ⟨canonical, derivation, extensionShape⟩, resultShape⟩
-      have ordered :
-          OrderedTreeMgu
-            (denoteEquations
-              (argumentEquations
-                (cursor.bindings.applyTerms cursor.arguments)
-                (reference.clause.freshCopy freshSeed).clause.arguments))
-            canonical := by
-        rw [← stable, ← normalizedEquations]
-        exact derivation
       have freshened :=
         freshenClause_actual_alpha_agrees
           base encoding freshSeed
           (args.map (PLeaTTa.subst binding)) args result rest binding qterm
           seed barrier
-      exact
-        PLeaTTa.PrologMguValuation.FreshenedClauseAlphaAgrees.unifyB_complete_of_ordered_mgu
-            freshened rfl queryShared query.arguments queryBelowFresh
-            queryExecutableLive highWater normalizedLengths ordered
+      have normalized :=
+        PLeaTTa.PrologMguValuation.FreshenedClauseAlphaAgrees.normalizedSharedHeadEquations
+          freshened rfl queryShared query.arguments queryBelowFresh
+          queryExecutableLive highWater normalizedLengths
+      have branchAgreement :
+          SharedAlphaEquationsAgree
+            (queryAlpha ++
+              RuntimeAlpha.graph
+                (referenceFreshTargets
+                  (reference.clause.freshCopy freshSeed).firstFresh
+                  reference.clause.variables)
+                (executableFreshTargets
+                  (resolutionFreshSuffix
+                    (args.map (PLeaTTa.subst binding)) result rest binding
+                    qterm seed)
+                  reference.clause.variables))
+            (preparedBranchOf cursor.callGeneration cursor.arguments
+              cursor.bindings freshSeed reference).normalizedHeadEquations
+            ((args ++ [result]).map (PLeaTTa.subst binding))
+            (((freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).params ++
+              [(freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).result]).map
+              (PLeaTTa.subst binding)) := by
+        rw [normalizedEquations, stable]
+        exact normalized.2
+      obtain
+        ⟨flattened, generatedRuntime, installed, generatedExact,
+          generatedAgreement, flattenedTopological, generatedTopological,
+          generatedValuation, flattenedMgu, flattenedFactors,
+          canonicalFactors, installedExact, installedShape⟩ :=
+        PLeaTTa.PrologMguDirectSimulation.OrderedTreeMgu.unifyB_exists_alpha_mgu
+          binding normalized.1 branchAgreement derivation
+      refine
+        ⟨_, canonical, flattened, generatedRuntime, installed,
+          normalized.1, branchAgreement, ?_, derivation, generatedExact,
+          generatedAgreement, flattenedTopological, generatedTopological,
+          generatedValuation, flattenedMgu, flattenedFactors,
+          canonicalFactors, installedExact, installedShape⟩
+      simpa [extensionShape] using resultShape
+
+/-- Compatibility projection of the direct witness: every independently
+resolved supported occurrence rules out executable head-unification
+failure. -/
+theorem SupportedPreparedCandidateAgrees.unifyB_complete_of_headResolution
+    {queryAlpha : List (LogicVar × String)}
+    {cursor : PreparedCursor} {branch : ClauseBranch}
+    {clause : PLeaTTa.Clause}
+    {args : List Atom} {result : Atom} {rest : List PLeaTTa.Goal}
+    {binding : Subst} {qterm : Atom} {seed barrier : Nat}
+    {independentResult : Substitution}
+    (query :
+      NormalizedCallAgrees queryAlpha cursor
+        (args.map (PLeaTTa.subst binding))
+        (PLeaTTa.subst binding result))
+    (wellFormed : cursor.WellFormed)
+    (member : branch ∈ cursor.remaining)
+    (agreement :
+      SupportedPreparedCandidateAgrees cursor.callGeneration
+        cursor.predicate cursor.arguments cursor.bindings branch clause)
+    (arity : clause.params.length = args.length)
+    (queryShared : SharedRuntimeAlpha queryAlpha)
+    (queryReferenceBelow :
+      GeneratedBelow cursor.reservationStart (queryAlpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ queryAlpha.map Prod.snd →
+        name ∈
+          resolutionOccupiedVars
+            (args.map (PLeaTTa.subst binding)) result rest binding qterm)
+    (highWater :
+      resolutionSeedHighWaterNames
+        (resolutionOccupiedVars
+          (args.map (PLeaTTa.subst binding)) result rest binding qterm) ≤
+        seed)
+    (resolved : HeadResolution branch independentResult) :
+    ∃ executableResult,
+      PLeaTTa.unifyB binding (.expr (args ++ [result]))
+          (.expr
+            ((freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).params ++
+              [(freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).result])) =
+        some executableResult := by
+  obtain
+    ⟨alpha, canonical, flattened, generated, installed, shared,
+      equationsAgreement, independentShape, ordered, generatedExact,
+      generatedAgreement, flattenedTopological, generatedTopological,
+      generatedValuation, flattenedMgu, flattenedFactors,
+      canonicalFactors, installedExact, installedShape⟩ :=
+    PLeaTTa.PrologActivationUnifierBridge.SupportedPreparedCandidateAgrees.unifyB_direct_of_headResolution
+      query wellFormed member agreement arity queryShared
+      queryReferenceBelow queryExecutableLive highWater resolved
+  exact ⟨installed, installedExact⟩
 
 /-- Equivalent negative formulation used when excluding the executable
 `eq_fail` constructor in a step correspondence proof. -/

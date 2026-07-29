@@ -14,8 +14,11 @@ Main exports:
   TreeDecomposes.runtime,
   TreeEquationsDecompose.runtime,
   TreeUnifyRounds.runtime,
+  TreeUnifyRounds.result_topological,
   TreeUnifyRounds.isMostGeneral,
   OrderedTreeMgu.unifyTopExact_exists_alpha_mgu,
+  OrderedTreeMgu.unifyB_exists_alpha_mgu,
+  FreshenedClauseAlphaAgrees.unifyB_exists_direct_alpha_mgu,
   CanonicalRuntimeAgrees.unifyTopExact_bindLeft,
   CanonicalRuntimeAgrees.unifyTopExact_bindRight
 -/
@@ -25,12 +28,14 @@ namespace PLeaTTa.PrologMguDirectSimulation
 
 open Metta (Atom Subst)
 open PeTTaSpec.PrologCore
+open PeTTaSpec.PrologCore.Resolver
 open PeTTaSpec.PrologCore.Canonical
 open PrologMguBridge
 open PrologMguOpenAgreement
 open PrologMguExecutableOpenFactor
 open PrologMguTopology
 open PrologPrefilterBridge
+open PrologStateBridge
 
 /-! ## Exact alpha transport of the occurs check -/
 
@@ -646,6 +651,11 @@ inductive TreeUnifyRounds :
           ((source, replacement) :: rest))
       (fresh : source ∉ base.map Prod.fst)
       (absent : Tree.occurs source replacement = false)
+      (avoids :
+        TreeVariablesSatisfy
+          (fun identity =>
+            identity ∉ TreeSubstitution.keys base)
+          replacement)
       (next :
         TreeUnifyRounds fuel
           (normalizeTreeConstraints source replacement rest)
@@ -664,9 +674,9 @@ theorem TreeUnifyRounds.transport
   cases rounds with
   | done fuel decomposition =>
       exact .done fuel ((equivalent []).1 decomposition)
-  | eliminate fuel decomposition fresh absent next =>
+  | eliminate fuel decomposition fresh absent avoids next =>
       exact .eliminate fuel
-        ((equivalent _).1 decomposition) fresh absent next
+        ((equivalent _).1 decomposition) fresh absent avoids next
 
 /-- Extra fuel cannot change or invalidate a successful independent round
 derivation. -/
@@ -679,10 +689,11 @@ theorem TreeUnifyRounds.add_fuel
   induction rounds with
   | done fuel decomposition =>
       exact .done (fuel + extra) decomposition
-  | eliminate fuel decomposition fresh absent next inductionHypothesis =>
+  | eliminate fuel decomposition fresh absent avoids next
+      inductionHypothesis =>
       simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
         (TreeUnifyRounds.eliminate (fuel + extra)
-          decomposition fresh absent inductionHypothesis)
+          decomposition fresh absent avoids inductionHypothesis)
 
 /-- Order-theoretic form of `TreeUnifyRounds.add_fuel`. -/
 theorem TreeUnifyRounds.mono
@@ -693,6 +704,41 @@ theorem TreeUnifyRounds.mono
     TreeUnifyRounds larger equations base result := by
   obtain ⟨extra, rfl⟩ := Nat.exists_eq_add_of_le enough
   exact rounds.add_fuel extra
+
+/-- Every successful flattened round preserves the stored elimination order.
+The replacement-avoids-base premise on `eliminate` is load-bearing: without
+it, a freshly prefixed source could point to a key later in the accumulated
+association list, and sequential canonical application would not be a deep
+normal form. -/
+theorem TreeUnifyRounds.result_topological
+    {fuel : Nat} {equations : List TreeEquation}
+    {base result : TreeSubstitution}
+    (rounds : TreeUnifyRounds fuel equations base result)
+    (baseTopological : TreeSubstitutionTopological base) :
+    TreeSubstitutionTopological result := by
+  induction rounds with
+  | done _ =>
+      exact baseTopological
+  | @eliminate fuel equations source replacement rest base result
+      decomposition fresh absent avoids next inductionHypothesis =>
+      have singletonTopological :
+          TreeSubstitutionTopological [(source, replacement)] :=
+        TreeSubstitutionTopological.singleton source replacement absent
+      have singletonAvoids :
+          TreeSubstitutionVariablesSatisfy
+            (fun identity =>
+              identity ∉ TreeSubstitution.keys base)
+            [(source, replacement)] := by
+        intro entry member
+        simp only [List.mem_singleton] at member
+        subst entry
+        exact ⟨fresh, avoids⟩
+      have nextBaseTopological :
+          TreeSubstitutionTopological
+            ((source, replacement) :: base) := by
+        simpa using
+          baseTopological.append singletonTopological singletonAvoids
+      exact inductionHypothesis nextBaseTopological
 
 mutual
 
@@ -1743,6 +1789,15 @@ theorem treeUnifyRounds_complete_of_unifier
                   ((Tree.no_finite_unifier_of_occurs_true witness
                     source replacement present different)
                     realizedSplit.1)
+          have replacementAvoidsBase :
+              TreeVariablesSatisfy
+                (fun identity =>
+                  identity ∉ TreeSubstitution.keys base)
+                replacement :=
+            TreeVariablesSatisfy.mono
+              (fun identity identityAllowed =>
+                baseFresh identity identityAllowed)
+              headSupported.2
           have sourceAllowed : source ∈ allowed := headSupported.1
           have nextSupported :
               TreeEquationsVariablesSatisfy
@@ -1780,7 +1835,8 @@ theorem treeUnifyRounds_complete_of_unifier
               nextNodup nextSupported nextFuelEnough
               nextFresh nextUnifies
           exact ⟨result, .eliminate fuel decomposition
-            (baseFresh source sourceAllowed) absent nextRounds⟩
+            (baseFresh source sourceAllowed) absent
+            replacementAvoidsBase nextRounds⟩
 
 /-- Every finitely unifiable canonical worklist has a successful flattened
 round derivation at the exact size of its deduplicated structural variable
@@ -1847,7 +1903,7 @@ theorem TreeUnifyRounds.extension_isMostGeneral
       refine ⟨[], by simp, ?_⟩
       exact (equivalent.isMgu_iff []).2 tree_empty_is_mgu
   | @eliminate fuel equations source replacement rest base result
-      decomposition fresh absent next inductionHypothesis =>
+      decomposition fresh absent avoids next inductionHypothesis =>
       obtain ⟨extension, resultEq, extensionMgu⟩ :=
         inductionHypothesis
       have tailMgu :
@@ -2456,7 +2512,7 @@ theorem TreeUnifyRounds.runtime
       cases fuel <;>
         simp [Metta.Unify.unifyRoundsWith, decomposed]
   | @eliminate fuel equations source replacement rest base result
-      decomposition fresh absent next inductionHypothesis =>
+      decomposition fresh absent avoids next inductionHypothesis =>
       obtain ⟨runtimeConstraints, decomposed, constraintsAgreement⟩ :=
         decomposition.runtime shared equationsAgreement
       cases constraintsAgreement with
@@ -2558,7 +2614,9 @@ theorem OrderedTreeMgu.unifyTopExact_exists_alpha
 /-- The executable-success bridge also exposes the semantic invariant hidden
 by association-list orientation: the independently ordered MGU and the
 flattened runtime-guiding MGU factor through each other over every canonical
-tree.  Thus residual aliases may be spelled differently without changing
+tree.  The flattened result is topological, its exact executable spelling is
+acyclic, and the two give the same open valuation under the shared alpha
+graph.  Thus residual aliases may be spelled differently without changing
 the finite-tree solution space. -/
 theorem OrderedTreeMgu.unifyTopExact_exists_alpha_mgu
     {alpha : List (LogicVar × String)}
@@ -2576,6 +2634,9 @@ theorem OrderedTreeMgu.unifyTopExact_exists_alpha_mgu
         some runtimeResult ∧
       AlphaTreeSubstitutionAgrees alpha
         flattened runtimeResult ∧
+      TreeSubstitutionTopological flattened ∧
+      Nonempty (PLeaTTa.SubstTopological runtimeResult) ∧
+      AlphaValuationAgrees alpha flattened runtimeResult ∧
       TreeIsMgu flattened (denoteEquations equations) ∧
       TreeFactorsThrough flattened canonical ∧
       TreeFactorsThrough canonical flattened := by
@@ -2588,11 +2649,179 @@ theorem OrderedTreeMgu.unifyTopExact_exists_alpha_mgu
     rounds.isMostGeneral
   have canonicalMgu : TreeIsMgu canonical (denoteEquations equations) :=
     derivation.isMostGeneral
+  have flattenedTopological :
+      TreeSubstitutionTopological flattened :=
+    rounds.result_topological TreeSubstitutionTopological.nil
+  have runtimeTopological :
+      PLeaTTa.SubstTopological runtimeResult :=
+    AlphaTreeSubstitutionAgrees.runtime_topological
+      shared runtimeAgreement flattenedTopological
+  have flattenedValuation :
+      AlphaValuationAgrees alpha flattened runtimeResult :=
+    AlphaTreeSubstitutionAgrees.valuation
+      shared runtimeAgreement flattenedTopological
   exact
     ⟨flattened, runtimeResult, runtimeExact, runtimeAgreement,
+      flattenedTopological, ⟨runtimeTopological⟩, flattenedValuation,
       flattenedMgu,
       canonicalMgu.2 flattened flattenedMgu.1,
       flattenedMgu.2 canonical canonicalMgu.1⟩
+
+/-- Composition through the machine's carried binding preserves the complete
+direct-simulation witness.  The generated component remains visible before
+installation, while `installed` is pinned to the exact `unifyB` empty/nonempty
+branch.  No claim about liveness trimming is folded into this theorem. -/
+theorem OrderedTreeMgu.unifyB_exists_alpha_mgu
+    (base : Subst)
+    {alpha : List (LogicVar × String)}
+    {equations : List (Term × Term)}
+    {leftAtoms rightAtoms : List Atom}
+    {canonical : TreeSubstitution}
+    (shared : SharedRuntimeAlpha alpha)
+    (agreement :
+      SharedAlphaEquationsAgree alpha equations
+        (leftAtoms.map (PLeaTTa.subst base))
+        (rightAtoms.map (PLeaTTa.subst base)))
+    (derivation :
+      OrderedTreeMgu (denoteEquations equations) canonical) :
+    ∃ flattened generated installed,
+      PLeaTTa.unifyTopExact
+          (.expr (leftAtoms.map (PLeaTTa.subst base)))
+          (.expr (rightAtoms.map (PLeaTTa.subst base))) =
+        some generated ∧
+      AlphaTreeSubstitutionAgrees alpha flattened generated ∧
+      TreeSubstitutionTopological flattened ∧
+      Nonempty (PLeaTTa.SubstTopological generated) ∧
+      AlphaValuationAgrees alpha flattened generated ∧
+      TreeIsMgu flattened (denoteEquations equations) ∧
+      TreeFactorsThrough flattened canonical ∧
+      TreeFactorsThrough canonical flattened ∧
+      PLeaTTa.unifyB base (.expr leftAtoms) (.expr rightAtoms) =
+        some installed ∧
+      installed =
+        match generated with
+        | [] => base
+        | _ :: _ => Metta.Subst.compose generated base := by
+  obtain
+    ⟨flattened, generated, generatedExact, generatedAgreement,
+      flattenedTopological, generatedTopological, generatedValuation,
+      flattenedMgu, flattenedFactors, canonicalFactors⟩ :=
+    PLeaTTa.PrologMguDirectSimulation.OrderedTreeMgu.unifyTopExact_exists_alpha_mgu
+      shared agreement derivation
+  cases generated with
+  | nil =>
+      refine
+        ⟨flattened, [], base, generatedExact, generatedAgreement,
+          flattenedTopological, generatedTopological, generatedValuation,
+          flattenedMgu, flattenedFactors, canonicalFactors, ?_, rfl⟩
+      simp [PLeaTTa.unifyB, PLeaTTa.subst_expr, generatedExact]
+  | cons entry generated =>
+      let complete := entry :: generated
+      let installed := Metta.Subst.compose complete base
+      refine
+        ⟨flattened, complete, installed, generatedExact,
+          generatedAgreement, flattenedTopological, generatedTopological,
+          generatedValuation, flattenedMgu, flattenedFactors,
+          canonicalFactors, ?_, rfl⟩
+      simp [PLeaTTa.unifyB, PLeaTTa.subst_expr,
+        complete, installed, generatedExact]
+
+/-- Direct repeated-elimination adequacy specialized to the real
+suffix-freshened retained-clause activation.  The exact graph joins the
+normalized query variables and the reserved clause-copy interval once, then
+relates both the generated MGU and the installed `unifyB` result. -/
+theorem FreshenedClauseAlphaAgrees.unifyB_exists_direct_alpha_mgu
+    {queryAlpha : List (LogicVar × String)}
+    {reference : LocalClause} {executablePredicate : String}
+    {executable : PLeaTTa.Clause} {freshSeed : Nat}
+    {argsv args : List Atom} {result : Atom}
+    {rest : List PLeaTTa.Goal} {binding : Subst}
+    {query : Atom} {seed barrier : Nat}
+    (freshened :
+      FreshenedClauseAlphaAgrees reference executablePredicate executable
+        freshSeed argsv args result rest binding query seed barrier)
+    (argsvEq : argsv = args.map (PLeaTTa.subst binding))
+    (queryShared : SharedRuntimeAlpha queryAlpha)
+    {queryTerms : List Term}
+    (queryPayload :
+      AlphaTermsAgree queryAlpha queryTerms
+        (args.map (PLeaTTa.subst binding) ++
+          [PLeaTTa.subst binding result]))
+    (queryReferenceBelow :
+      GeneratedBelow (reference.freshCopy freshSeed).firstFresh
+        (queryAlpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ queryAlpha.map Prod.snd →
+        name ∈ resolutionOccupiedVars argsv result rest binding query)
+    (highWater :
+      resolutionSeedHighWaterNames
+        (resolutionOccupiedVars argsv result rest binding query) ≤ seed)
+    (lengths :
+      queryTerms.length =
+        (reference.freshCopy freshSeed).clause.arguments.length)
+    {canonical : TreeSubstitution}
+    (derivation :
+      OrderedTreeMgu
+        (denoteEquations
+          (argumentEquations queryTerms
+            (reference.freshCopy freshSeed).clause.arguments))
+        canonical) :
+    ∃ flattened generated installed,
+      PLeaTTa.unifyTopExact
+          (.expr ((args ++ [result]).map (PLeaTTa.subst binding)))
+          (.expr
+            (((freshenResolutionClause argsv args result rest binding query
+                seed barrier executable).params ++
+              [(freshenResolutionClause argsv args result rest binding query
+                seed barrier executable).result]).map
+              (PLeaTTa.subst binding))) =
+        some generated ∧
+      AlphaTreeSubstitutionAgrees
+          (queryAlpha ++
+            RuntimeAlpha.graph
+              (referenceFreshTargets
+                (reference.freshCopy freshSeed).firstFresh
+                reference.variables)
+              (executableFreshTargets
+                (resolutionFreshSuffix argsv result rest binding query seed)
+                reference.variables))
+          flattened generated ∧
+      TreeSubstitutionTopological flattened ∧
+      Nonempty (PLeaTTa.SubstTopological generated) ∧
+      AlphaValuationAgrees
+          (queryAlpha ++
+            RuntimeAlpha.graph
+              (referenceFreshTargets
+                (reference.freshCopy freshSeed).firstFresh
+                reference.variables)
+              (executableFreshTargets
+                (resolutionFreshSuffix argsv result rest binding query seed)
+                reference.variables))
+          flattened generated ∧
+      TreeIsMgu flattened
+        (denoteEquations
+          (argumentEquations queryTerms
+            (reference.freshCopy freshSeed).clause.arguments)) ∧
+      TreeFactorsThrough flattened canonical ∧
+      TreeFactorsThrough canonical flattened ∧
+      PLeaTTa.unifyB binding (.expr (args ++ [result]))
+          (.expr
+            ((freshenResolutionClause argsv args result rest binding query
+                seed barrier executable).params ++
+              [(freshenResolutionClause argsv args result rest binding query
+                seed barrier executable).result])) =
+        some installed ∧
+      installed =
+        match generated with
+        | [] => binding
+        | _ :: _ => Metta.Subst.compose generated binding := by
+  have normalized :=
+    PLeaTTa.PrologMguValuation.FreshenedClauseAlphaAgrees.normalizedSharedHeadEquations
+      freshened argsvEq queryShared queryPayload queryReferenceBelow
+      queryExecutableLive highWater lengths
+  exact
+    PLeaTTa.PrologMguDirectSimulation.OrderedTreeMgu.unifyB_exists_alpha_mgu
+      binding normalized.1 normalized.2 derivation
 
 /-- An empty structural decomposition makes the top-level executable
 unifier return the empty substitution exactly. -/
@@ -2863,6 +3092,7 @@ theorem repeated_elimination_preserves_normalization_and_result_order :
     apply TreeUnifyRounds.eliminate 0 secondDecomposition
     · simp [decomposeWitnessLeft, decomposeWitnessRight]
     · simp [Tree.occurs, Trees.occurs, decomposeWitnessA]
+    · exact True.intro
     · simpa [normalizeTreeConstraints,
         Tree.instantiateOne, Trees.instantiateOne] using terminal
   have rounds :
@@ -2877,6 +3107,7 @@ theorem repeated_elimination_preserves_normalization_and_result_order :
     · simp
     · simp [Tree.occurs,
         decomposeWitnessLeft, decomposeWitnessRight]
+    · simp [TreeSubstitution.keys, TreeVariablesSatisfy]
     · simpa [normalizeTreeConstraints,
         Tree.instantiateOne, Trees.instantiateOne,
         decomposeWitnessA,
