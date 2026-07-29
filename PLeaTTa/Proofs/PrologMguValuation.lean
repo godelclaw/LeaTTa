@@ -512,6 +512,18 @@ def GroundAlphaValuationAgrees
         (TreeSubstitution.apply canonical (.variable identity)))
       (PLeaTTa.subst runtime (.var name))
 
+/-- An open executable result admits the independently specified canonical
+solution as a closed instance.  Keeping the completing valuation explicit
+separates ground-instance completeness from the stronger, still-open claim
+that the two open MGU spellings agree up to residual alpha-renaming. -/
+def GroundAlphaResultFactors
+    (alpha : List (LogicVar × String))
+    (canonical : TreeSubstitution) (result : Subst) : Prop :=
+  ∃ valuation,
+    GroundAlphaValuationAgrees alpha canonical valuation ∧
+      PLeaTTa.SubstFactorsThroughWith
+        PLeaTTa.prologGroundIdentical valuation result
+
 /-- Deep executable substitution commutes with the proper-list chain
 encoder. -/
 private theorem subst_chainOf
@@ -897,6 +909,54 @@ theorem unifyTopExact_complete_of_ordered_shared_alpha
   exact PLeaTTa.unifyTopExact_complete_of_prolog_equivalent_unifier
     (.expr leftAtoms) (.expr rightAtoms) runtime equivalent
 
+/-- Every actual executable MGU returned for a shared-alpha head is general
+enough to accept the independently ordered canonical MGU's closed runtime
+instance.  The witness is constructed from the canonical derivation rather
+than assumed, and factorization holds on every runtime atom.  This is the
+ground-instance half of cross-representation output adequacy; it deliberately
+does not identify the two open substitution spellings. -/
+theorem unifyTopExact_ground_factor_of_ordered_shared_alpha
+    {alpha : List (LogicVar × String)}
+    (shared : SharedRuntimeAlpha alpha)
+    {equations : List (Term × Term)}
+    {leftAtoms rightAtoms : List Atom}
+    (agreement :
+      SharedAlphaEquationsAgree alpha equations leftAtoms rightAtoms)
+    {canonical : TreeSubstitution}
+    (derivation :
+      OrderedTreeMgu (denoteEquations equations) canonical)
+    {result : Subst}
+    (returned :
+      PLeaTTa.unifyTopExact (.expr leftAtoms) (.expr rightAtoms) =
+        some result) :
+    GroundAlphaResultFactors alpha canonical result := by
+  have representable :
+      TreeSubstitutionRuntimeRepresentable alpha canonical :=
+    PLeaTTa.PrologMguValuation.OrderedTreeMgu.binding_runtimeRepresentable
+      derivation
+      (PLeaTTa.PrologMguValuation.SharedAlphaEquationsAgree.runtimeRepresentable
+        agreement)
+  let valuation := groundedRuntime alpha canonical representable
+  have valuationAgrees :
+      GroundAlphaValuationAgrees alpha canonical valuation :=
+    groundedRuntime_valuation shared representable
+  have valuationUnifies :
+      PLeaTTa.DeepEquivalentUnifies PLeaTTa.prologGroundIdentical valuation
+        [(.expr leftAtoms, .expr rightAtoms)] := by
+    intro equation member
+    simp only [List.mem_singleton] at member
+    subst equation
+    simp only [PLeaTTa.subst_expr]
+    exact .expression
+      (PLeaTTa.PrologMguValuation.SharedAlphaEquationsAgree.atomsEquivalent_of_ground_unifier
+        shared.forward agreement valuationAgrees
+        derivation.isMostGeneral.1)
+  have runtimeMgu :=
+    PLeaTTa.unifyTopExact_isMgu
+      (.expr leftAtoms) (.expr rightAtoms) result returned
+  exact ⟨valuation, valuationAgrees,
+    runtimeMgu.2 valuation valuationUnifies⟩
+
 /-- Current-binding specialization of unconditional ordered-MGU
 completeness.  Agreement is stated after deep normalization by `base`,
 exactly matching the operands passed to `unifyTopExact` inside `unifyB`. -/
@@ -926,6 +986,123 @@ theorem unifyB_complete_of_ordered_shared_alpha
   apply PLeaTTa.unifyB_complete_of_prolog_equivalent_unifier
     base (.expr leftAtoms) (.expr rightAtoms) runtime
   simpa only [PLeaTTa.subst_expr] using equivalent
+
+/-- A successful `unifyB` call exposes a generated open MGU through which
+the independently ordered canonical solution has a closed instance.  The
+last conjunct pins the exact installation over `base`; no property of the
+composed association-list spelling is smuggled into the factorization
+claim. -/
+theorem unifyB_result_has_ground_factor_of_ordered_shared_alpha
+    (base : Subst)
+    {alpha : List (LogicVar × String)}
+    (shared : SharedRuntimeAlpha alpha)
+    {equations : List (Term × Term)}
+    {leftAtoms rightAtoms : List Atom}
+    (agreement :
+      SharedAlphaEquationsAgree alpha equations
+        (leftAtoms.map (PLeaTTa.subst base))
+        (rightAtoms.map (PLeaTTa.subst base)))
+    {canonical : TreeSubstitution}
+    (derivation :
+      OrderedTreeMgu (denoteEquations equations) canonical)
+    {result : Subst}
+    (returned :
+      PLeaTTa.unifyB base (.expr leftAtoms) (.expr rightAtoms) =
+        some result) :
+    ∃ generated,
+      PLeaTTa.unifyTopExact
+          (.expr (leftAtoms.map (PLeaTTa.subst base)))
+          (.expr (rightAtoms.map (PLeaTTa.subst base))) =
+          some generated ∧
+        GroundAlphaResultFactors alpha canonical generated ∧
+        result =
+          match generated with
+          | [] => base
+          | _ :: _ => Metta.Subst.compose generated base := by
+  obtain ⟨generated, generatedEq, _, installed⟩ :=
+    PLeaTTa.unifyB_result_has_generated_mgu
+      base (.expr leftAtoms) (.expr rightAtoms) result returned
+  have normalizedEq :
+      PLeaTTa.unifyTopExact
+          (.expr (leftAtoms.map (PLeaTTa.subst base)))
+          (.expr (rightAtoms.map (PLeaTTa.subst base))) =
+          some generated := by
+    simpa only [PLeaTTa.subst_expr] using generatedEq
+  have factors :=
+    unifyTopExact_ground_factor_of_ordered_shared_alpha
+      shared agreement derivation normalizedEq
+  exact ⟨generated, normalizedEq, factors, installed⟩
+
+/-- The live retained-clause alpha graph and payload theorem, normalized by
+the incoming executable binding exactly once.  Both unconditional success
+and returned-MGU adequacy consume this same interface, preventing the two
+lanes from drifting on suffix freshness or head normalization. -/
+theorem FreshenedClauseAlphaAgrees.normalizedSharedHeadEquations
+    {queryAlpha : List (LogicVar × String)}
+    {reference : LocalClause} {executablePredicate : String}
+    {executable : PLeaTTa.Clause} {freshSeed : Nat}
+    {argsv args : List Atom} {result : Atom}
+    {rest : List PLeaTTa.Goal} {binding : Subst}
+    {query : Atom} {seed barrier : Nat}
+    (freshened :
+      FreshenedClauseAlphaAgrees reference executablePredicate executable
+        freshSeed argsv args result rest binding query seed barrier)
+    (argsvEq : argsv = args.map (PLeaTTa.subst binding))
+    (queryShared : SharedRuntimeAlpha queryAlpha)
+    {queryTerms : List Term}
+    (queryPayload :
+      AlphaTermsAgree queryAlpha queryTerms
+        (args.map (PLeaTTa.subst binding) ++
+          [PLeaTTa.subst binding result]))
+    (queryReferenceBelow :
+      GeneratedBelow (reference.freshCopy freshSeed).firstFresh
+        (queryAlpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ queryAlpha.map Prod.snd →
+        name ∈ resolutionOccupiedVars argsv result rest binding query)
+    (highWater :
+      resolutionSeedHighWaterNames
+        (resolutionOccupiedVars argsv result rest binding query) ≤ seed)
+    (lengths :
+      queryTerms.length =
+        (reference.freshCopy freshSeed).clause.arguments.length) :
+    SharedRuntimeAlpha
+        (queryAlpha ++
+          RuntimeAlpha.graph
+            (referenceFreshTargets
+              (reference.freshCopy freshSeed).firstFresh
+              reference.variables)
+            (executableFreshTargets
+              (resolutionFreshSuffix argsv result rest binding query seed)
+              reference.variables)) ∧
+      SharedAlphaEquationsAgree
+        (queryAlpha ++
+          RuntimeAlpha.graph
+            (referenceFreshTargets
+              (reference.freshCopy freshSeed).firstFresh
+              reference.variables)
+            (executableFreshTargets
+              (resolutionFreshSuffix argsv result rest binding query seed)
+              reference.variables))
+        (argumentEquations queryTerms
+          (reference.freshCopy freshSeed).clause.arguments)
+        ((args ++ [result]).map (PLeaTTa.subst binding))
+        (((freshenResolutionClause argsv args result rest binding query
+              seed barrier executable).params ++
+            [(freshenResolutionClause argsv args result rest binding query
+              seed barrier executable).result]).map
+          (PLeaTTa.subst binding)) := by
+  have shared :=
+    PLeaTTa.PrologMguBridge.FreshenedClauseAlphaAgrees.sharedHeadEquations
+      freshened queryShared queryPayload queryReferenceBelow
+      queryExecutableLive highWater lengths
+  have stable :=
+    subst_freshenResolutionClause_head_eq_self
+      argsv args result rest binding query seed barrier highWater executable
+  subst argsv
+  refine ⟨shared.1, ?_⟩
+  simpa only [List.map_append, List.map_singleton, stable.1, stable.2]
+    using shared.2
 
 /-- The real executable `unifyB` call at one retained nonempty-suffix clause
 head succeeds from the independent ordered MGU alone.  Query/clause
@@ -975,36 +1152,93 @@ theorem FreshenedClauseAlphaAgrees.unifyB_complete_of_ordered_mgu
               [(freshenResolutionClause argsv args result rest binding query
                 seed barrier executable).result])) =
         some executableResult := by
-  have shared :=
-    PLeaTTa.PrologMguBridge.FreshenedClauseAlphaAgrees.sharedHeadEquations
-      freshened queryShared queryPayload queryReferenceBelow
+  have normalized :=
+    PLeaTTa.PrologMguValuation.FreshenedClauseAlphaAgrees.normalizedSharedHeadEquations
+      freshened argsvEq queryShared queryPayload queryReferenceBelow
       queryExecutableLive highWater lengths
-  have stable :=
-    subst_freshenResolutionClause_head_eq_self
-      argsv args result rest binding query seed barrier highWater executable
-  have normalizedAgreement :
-      SharedAlphaEquationsAgree
-        (queryAlpha ++
-          RuntimeAlpha.graph
-            (referenceFreshTargets
-              (reference.freshCopy freshSeed).firstFresh
-              reference.variables)
-            (executableFreshTargets
-              (resolutionFreshSuffix argsv result rest binding query seed)
-              reference.variables))
-        (argumentEquations queryTerms
-          (reference.freshCopy freshSeed).clause.arguments)
-        ((args ++ [result]).map (PLeaTTa.subst binding))
-        (((freshenResolutionClause argsv args result rest binding query
-              seed barrier executable).params ++
-            [(freshenResolutionClause argsv args result rest binding query
-              seed barrier executable).result]).map
-          (PLeaTTa.subst binding)) := by
-    subst argsv
-    simpa only [List.map_append, List.map_singleton, stable.1, stable.2]
-      using shared.2
   exact unifyB_complete_of_ordered_shared_alpha
-    binding shared.1 normalizedAgreement derivation
+    binding normalized.1 normalized.2 derivation
+
+/-- Returned-substitution counterpart of
+`unifyB_complete_of_ordered_mgu` at the actual retained-clause activation.
+The live suffix-aware alpha graph constructs a canonical closed instance of
+the generated executable MGU, and the exact `unifyB` installation remains
+visible. -/
+theorem FreshenedClauseAlphaAgrees.unifyB_result_has_ground_factor
+    {queryAlpha : List (LogicVar × String)}
+    {reference : LocalClause} {executablePredicate : String}
+    {executable : PLeaTTa.Clause} {freshSeed : Nat}
+    {argsv args : List Atom} {result : Atom}
+    {rest : List PLeaTTa.Goal} {binding : Subst}
+    {query : Atom} {seed barrier : Nat}
+    (freshened :
+      FreshenedClauseAlphaAgrees reference executablePredicate executable
+        freshSeed argsv args result rest binding query seed barrier)
+    (argsvEq : argsv = args.map (PLeaTTa.subst binding))
+    (queryShared : SharedRuntimeAlpha queryAlpha)
+    {queryTerms : List Term}
+    (queryPayload :
+      AlphaTermsAgree queryAlpha queryTerms
+        (args.map (PLeaTTa.subst binding) ++
+          [PLeaTTa.subst binding result]))
+    (queryReferenceBelow :
+      GeneratedBelow (reference.freshCopy freshSeed).firstFresh
+        (queryAlpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ queryAlpha.map Prod.snd →
+        name ∈ resolutionOccupiedVars argsv result rest binding query)
+    (highWater :
+      resolutionSeedHighWaterNames
+        (resolutionOccupiedVars argsv result rest binding query) ≤ seed)
+    (lengths :
+      queryTerms.length =
+        (reference.freshCopy freshSeed).clause.arguments.length)
+    {canonical : TreeSubstitution}
+    (derivation :
+      OrderedTreeMgu
+        (denoteEquations
+          (argumentEquations queryTerms
+            (reference.freshCopy freshSeed).clause.arguments))
+        canonical)
+    {executableResult : Subst}
+    (returned :
+      PLeaTTa.unifyB binding (.expr (args ++ [result]))
+          (.expr
+            ((freshenResolutionClause argsv args result rest binding query
+                seed barrier executable).params ++
+              [(freshenResolutionClause argsv args result rest binding query
+                seed barrier executable).result])) =
+        some executableResult) :
+    ∃ generated,
+      PLeaTTa.unifyTopExact
+          (.expr ((args ++ [result]).map (PLeaTTa.subst binding)))
+          (.expr
+            (((freshenResolutionClause argsv args result rest binding query
+                seed barrier executable).params ++
+              [(freshenResolutionClause argsv args result rest binding query
+                seed barrier executable).result]).map
+              (PLeaTTa.subst binding))) =
+          some generated ∧
+        GroundAlphaResultFactors
+          (queryAlpha ++
+            RuntimeAlpha.graph
+              (referenceFreshTargets
+                (reference.freshCopy freshSeed).firstFresh
+                reference.variables)
+              (executableFreshTargets
+                (resolutionFreshSuffix argsv result rest binding query seed)
+                reference.variables))
+          canonical generated ∧
+        executableResult =
+          match generated with
+          | [] => binding
+          | _ :: _ => Metta.Subst.compose generated binding := by
+  have normalized :=
+    PLeaTTa.PrologMguValuation.FreshenedClauseAlphaAgrees.normalizedSharedHeadEquations
+      freshened argsvEq queryShared queryPayload queryReferenceBelow
+      queryExecutableLive highWater lengths
+  exact unifyB_result_has_ground_factor_of_ordered_shared_alpha
+    binding normalized.1 normalized.2 derivation returned
 
 /-! ## Anti-vacuity: success does not claim executable MGU agreement -/
 
@@ -1019,6 +1253,24 @@ private def residualWitnessEquations : List (Term × Term) :=
 
 private def residualWitnessCanonical : TreeSubstitution :=
   [(residualWitnessX, .variable residualWitnessY)]
+
+/-- The actual ordered executable MGU for the residual-alias discriminator
+is open and has the same left-variable orientation as the canonical
+derivation.  This concrete guard prevents the ground-factorization theorem
+from being mistaken for a claim that the runtime reports its closed
+completeness witness. -/
+theorem residual_alias_executable_mgu_is_open :
+    PLeaTTa.unifyTopExact
+        (.expr [.var "X"]) (.expr [.var "Y"]) =
+      some [("X", .var "Y")] ∧
+    PLeaTTa.subst [("X", .var "Y")] (.var "Y") = .var "Y" := by
+  constructor
+  · unfold PLeaTTa.unifyTopExact
+    simp [Metta.Unify.unifyTopWith, Atom.size,
+      Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
+      Metta.Unify.decomposeEqWith, Metta.Unify.decomposeListWith,
+      Metta.Subst.occurs, Metta.Subst.extend, Metta.Subst.erase]
+  · simp [PLeaTTa.subst, PLeaTTa.substN, Metta.Subst.lookup]
 
 /-- The completeness witness is intentionally stricter than the canonical
 MGU.  For `X = Y`, the ordered MGU retains residual variable `Y`, while the
