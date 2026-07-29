@@ -10,6 +10,7 @@ import PLeaTTa.Proofs.PrologPrefilterBridge
 import PLeaTTa.Proofs.PrologPrefilterScanBridge
 import PLeaTTa.Proofs.PrologCallPayloadBridge
 import PLeaTTa.Proofs.PrologPrefilterCallBridge
+import PLeaTTa.Proofs.PrologMguBridge
 import PLeaTTa.Proofs.PrologGoalAlpha
 import PLeaTTa.Proofs.PrologActivationMacro
 import PLeaTTa.Proofs.PrologActivationBridge
@@ -884,6 +885,14 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.unifyB_complete_of_prolog_equivalent_unifier
 #print axioms PLeaTTa.nan_payloads_are_prolog_equivalent
 #print axioms PLeaTTa.unifyTopExact_nan_payloads_complete
+#print axioms PLeaTTa.PrologMguBridge.conflicting_alpha_is_not_shared
+#print axioms PLeaTTa.PrologMguBridge.canonicalRuntimeAgrees_apply
+#print axioms PLeaTTa.PrologMguBridge.CanonicalRuntimeAgrees.equivalent_of_same
+#print axioms PLeaTTa.PrologMguBridge.SharedAlphaEquationsAgree.atomsEquivalent_of_unifier
+#print axioms PLeaTTa.PrologMguBridge.SharedAlphaEquationsAgree.deepEquivalentUnifies
+#print axioms PLeaTTa.PrologMguBridge.unifyTopExact_complete_of_shared_alpha_equations
+#print axioms PLeaTTa.PrologMguBridge.unifyB_complete_of_shared_alpha_equations
+#print axioms PLeaTTa.PrologMguBridge.repeated_variable_distinct_nan_payloads_complete
 #print axioms PLeaTTa.ClauseIndex.build_candidates
 #print axioms PLeaTTa.ClauseIndex.naiveCandidates_eq_head_filter
 #print axioms PLeaTTa.ClauseIndex.Valid.push
