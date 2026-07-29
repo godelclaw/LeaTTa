@@ -2,7 +2,10 @@
 
 import PLeaTTa.Proofs.StepCases
 import PLeaTTa.Proofs.DemandDrivenStep
+import PLeaTTa.Proofs.DemandDrivenCallStep
 import PLeaTTa.Proofs.PrologStateBridge
+import PLeaTTa.Proofs.PrologCallEntryBridge
+import PLeaTTa.Proofs.PrologCallStepBridge
 import PLeaTTa.Proofs.PrologGoalAlpha
 import PLeaTTa.Proofs.PrologActivationMacro
 import PLeaTTa.Proofs.PrologActivationBridge
@@ -1064,3 +1067,24 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologFloatIdentity.beq_self
 #print axioms PLeaTTa.PrologActivationBridge.nonreflexive_float_refutes_legacy_matchCompat_conservativity
 #print axioms PLeaTTa.PrologActivationBridge.nonreflexive_float_legacy_filter_is_repaired
+#print axioms PLeaTTa.PrologCallEntryBridge.DatabaseRelatesWorld.currentCandidates
+#print axioms PLeaTTa.PrologCallEntryBridge.DatabaseRelatesWorld.currentResolutionCandidates
+#print axioms PLeaTTa.PrologCallEntryBridge.DatabaseRelatesWorld.callResolve_dispatch
+#print axioms PLeaTTa.PrologCallEntryBridge.reserveVisible_candidates
+#print axioms PLeaTTa.PrologCallEntryBridge.PreparedBankRelates.candidate_length_eq
+#print axioms PLeaTTa.PrologCallEntryBridge.PreparedBankRelates.alt_length_exact
+#print axioms PLeaTTa.PrologCallEntryBridge.PreparedBankRelates.counter_exact
+#print axioms PLeaTTa.PrologCallEntryBridge.DatabaseRelatesWorld.prepareCall_resolveAlts
+#print axioms PLeaTTa.DemandDrivenCallStep.pendingCallOf_installed_toConf
+#print axioms PLeaTTa.DemandDrivenCallStep.pendingCallOf_pulled_toConf
+#print axioms PLeaTTa.DemandDrivenCallStep.callEnter_counter_exact
+#print axioms PLeaTTa.DemandDrivenCallStep.callEnter_length_exact
+#print axioms PLeaTTa.DemandDrivenCallStep.localResolveHead_forces_callEnter
+#print axioms PLeaTTa.DemandDrivenCallStep.localResolveHead_not_direct_ready
+#print axioms PLeaTTa.DemandDrivenCallStep.pending_step_unique
+#print axioms PLeaTTa.DemandDrivenCallStep.callEnter_projects_to_sealed
+#print axioms PLeaTTa.DemandDrivenCallStep.callPull_projection_stutters
+#print axioms PLeaTTa.DemandDrivenCallStep.local_call_expands_and_collapses
+#print axioms PLeaTTa.DemandDrivenCallStep.local_call_exact_two_steps
+#print axioms PLeaTTa.PrologCallStepBridge.openedFor_pendingCallOf_relates
+#print axioms PLeaTTa.PrologCallStepBridge.taskCall_callEnter_bank_correspondence

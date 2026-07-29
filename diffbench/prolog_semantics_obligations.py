@@ -21,7 +21,16 @@ LOCAL_RESOLVER = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologResolver.lean"
 PROLOG_COPY = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologCopy.lean"
 GOAL_SEMANTICS = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologGoalSemantics.lean"
 DEMAND_DRIVEN_STEP = ROOT / "PLeaTTa" / "Proofs" / "DemandDrivenStep.lean"
+DEMAND_DRIVEN_CALL_STEP = (
+    ROOT / "PLeaTTa" / "Proofs" / "DemandDrivenCallStep.lean"
+)
 PROLOG_STATE_BRIDGE = ROOT / "PLeaTTa" / "Proofs" / "PrologStateBridge.lean"
+PROLOG_CALL_ENTRY_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologCallEntryBridge.lean"
+)
+PROLOG_CALL_STEP_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologCallStepBridge.lean"
+)
 PROLOG_GOAL_ALPHA = ROOT / "PLeaTTa" / "Proofs" / "PrologGoalAlpha.lean"
 PROLOG_ACTIVATION_MACRO = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationMacro.lean"
@@ -83,7 +92,10 @@ def check() -> list[str]:
         "prolog_copy_sha256": digest(PROLOG_COPY),
         "goal_semantics_sha256": digest(GOAL_SEMANTICS),
         "demand_driven_step_sha256": digest(DEMAND_DRIVEN_STEP),
+        "demand_driven_call_step_sha256": digest(DEMAND_DRIVEN_CALL_STEP),
         "prolog_state_bridge_sha256": digest(PROLOG_STATE_BRIDGE),
+        "prolog_call_entry_bridge_sha256": digest(PROLOG_CALL_ENTRY_BRIDGE),
+        "prolog_call_step_bridge_sha256": digest(PROLOG_CALL_STEP_BRIDGE),
         "prolog_goal_alpha_sha256": digest(PROLOG_GOAL_ALPHA),
         "prolog_activation_macro_sha256": digest(PROLOG_ACTIVATION_MACRO),
         "prolog_activation_bridge_sha256": digest(PROLOG_ACTIVATION_BRIDGE),
