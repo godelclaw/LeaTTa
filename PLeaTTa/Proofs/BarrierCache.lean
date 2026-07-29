@@ -174,8 +174,8 @@ theorem resolveAlts_barrierCount_zero (clauses : List Clause)
   let resv := subst binding res
   let next := fun (acc : List Alt × Nat) (clause : Clause) =>
     if clause.params.length != argsv.length then acc
-    else if !matchCompatList argsv clause.params then acc
-    else if !matchCompat resv clause.result then acc
+    else if !prologMatchCompatList argsv clause.params then acc
+    else if !prologMatchCompat resv clause.result then acc
     else
       let copied := freshenResolutionClause argsv args res rest binding qterm
         acc.2 barrier clause

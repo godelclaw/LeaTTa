@@ -631,8 +631,8 @@ theorem resolveAlts_counter_mono (clauses : List Clause)
       (resolveAlts clauses argsv args res rest binding qterm barrier counter).2 := by
   let addClause := fun (acc : List Alt × Nat) (clause : Clause) =>
     if clause.params.length != argsv.length then acc
-    else if !matchCompatList argsv clause.params then acc
-    else if !matchCompat (subst binding res) clause.result then acc
+    else if !prologMatchCompatList argsv clause.params then acc
+    else if !prologMatchCompat (subst binding res) clause.result then acc
     else
       let copied := freshenResolutionClause argsv args res rest binding qterm
         acc.2 barrier clause
@@ -678,8 +678,8 @@ theorem resolveAlts_alts_below (clauses : List Clause)
   let resv := subst binding res
   let addClause := fun (acc : List Alt × Nat) (clause : Clause) =>
     if clause.params.length != argsv.length then acc
-    else if !matchCompatList argsv clause.params then acc
-    else if !matchCompat resv clause.result then acc
+    else if !prologMatchCompatList argsv clause.params then acc
+    else if !prologMatchCompat resv clause.result then acc
     else
       let copied := freshenResolutionClause argsv args res rest binding qterm
         acc.2 barrier clause

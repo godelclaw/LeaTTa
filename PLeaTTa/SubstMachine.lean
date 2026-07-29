@@ -523,8 +523,8 @@ def resolveGoalsPrepared (cs : List Clause)
   let (revAlts, counter') := cs.foldl
     (fun (acc : List (List Goal) × Nat) clause =>
       if clause.params.length != argsv.length then acc
-      else if !matchCompatList argsv clause.params then acc
-      else if !matchCompat resv clause.result then acc
+      else if !prologMatchCompatList argsv clause.params then acc
+      else if !prologMatchCompat resv clause.result then acc
       else
         let copied := freshenResolutionClauseSummary summary dynamic acc.2 bc
           clause
@@ -583,8 +583,8 @@ theorem resolveAltsPrepared_eq_reference (cs : List Clause)
   let summaryFolder := fun (acc : List (List Goal) × Nat)
       (clause : Clause) =>
     if clause.params.length != argsv.length then acc
-    else if !matchCompatList argsv clause.params then acc
-    else if !matchCompat (PLeaTTa.subst binding res) clause.result then acc
+    else if !prologMatchCompatList argsv clause.params then acc
+    else if !prologMatchCompat (PLeaTTa.subst binding res) clause.result then acc
     else
       let copied := freshenResolutionClauseSummary summary
         dynamic acc.2 bc clause
@@ -594,8 +594,8 @@ theorem resolveAltsPrepared_eq_reference (cs : List Clause)
       (goals :: acc.1, acc.2 + 1)
   let referenceFolder := fun (acc : List Alt × Nat) (clause : Clause) =>
     if clause.params.length != argsv.length then acc
-    else if !matchCompatList argsv clause.params then acc
-    else if !matchCompat (PLeaTTa.subst binding res) clause.result then acc
+    else if !prologMatchCompatList argsv clause.params then acc
+    else if !prologMatchCompat (PLeaTTa.subst binding res) clause.result then acc
     else
       let copied := freshenResolutionClause argsv args res rest binding qterm
         acc.2 bc clause
@@ -665,8 +665,8 @@ theorem resolveAlts_carries (cs : List Clause) (argsv args : List Atom)
   dsimp only
   let folder := fun (acc : List Alt × Nat) (clause : Clause) =>
     if clause.params.length != argsv.length then acc
-    else if !matchCompatList argsv clause.params then acc
-    else if !matchCompat (PLeaTTa.subst binding res) clause.result then acc
+    else if !prologMatchCompatList argsv clause.params then acc
+    else if !prologMatchCompat (PLeaTTa.subst binding res) clause.result then acc
     else
       let copied := freshenResolutionClause argsv args res rest binding qterm
         acc.2 bc clause

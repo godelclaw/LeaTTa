@@ -5376,8 +5376,8 @@ def resolveAlts (cs : List Clause) (argsv args : List Atom) (res : Atom)
       -- All predicate-head positions participate in Prolog indexing,
       -- including the output slot. Definite clashes build no branch.
       if cl.params.length != argsv.length then acc
-      else if !matchCompatList argsv cl.params then acc
-      else if !matchCompat resv cl.result then acc
+      else if !prologMatchCompatList argsv cl.params then acc
+      else if !prologMatchCompat resv cl.result then acc
       else
         let k := acc.2
         let copied := freshenResolutionClause argsv args res rest b qterm k bc cl

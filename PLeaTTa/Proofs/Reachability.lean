@@ -237,8 +237,8 @@ theorem resolveAlts_topological (cs : List Clause) (argsv args : List Atom)
   let resv := subst b res
   let addClause := fun (acc : List Alt × Nat) (cl : Clause) =>
     if cl.params.length != argsv.length then acc
-    else if !matchCompatList argsv cl.params then acc
-    else if !matchCompat resv cl.result then acc
+    else if !prologMatchCompatList argsv cl.params then acc
+    else if !prologMatchCompat resv cl.result then acc
     else
       let k := acc.2
       let copied := freshenResolutionClause argsv args res rest b qterm k bc cl

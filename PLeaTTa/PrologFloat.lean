@@ -51,4 +51,18 @@ def prologGroundIdentical : Metta.Ground → Metta.Ground → Bool
       leftTag == rightTag && leftPayload == rightPayload
   | _, _ => false
 
+/-- Prolog term identity is reflexive for every executable ground payload,
+including NaN. -/
+@[simp] theorem prologGroundIdentical_self :
+    ∀ ground : Metta.Ground,
+      prologGroundIdentical ground ground = true
+  | .int value => by simp [prologGroundIdentical]
+  | .float value => by
+      simp [prologGroundIdentical, PrologFloatIdentity.beq_self]
+  | .str value => by simp [prologGroundIdentical]
+  | .bool value => by simp [prologGroundIdentical]
+  | .unit => rfl
+  | .error value => by simp [prologGroundIdentical]
+  | .external tag payload => by simp [prologGroundIdentical]
+
 end PLeaTTa

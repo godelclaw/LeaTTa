@@ -1062,5 +1062,5 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms Metta.Unify.unifyRoundsWith_groundEquiv
 #print axioms Metta.Unify.unifyTopWith_groundEquiv
 #print axioms PLeaTTa.PrologFloatIdentity.beq_self
-#print axioms PLeaTTa.PrologActivationBridge.nonreflexive_float_refutes_matchCompat_conservativity
-#print axioms PLeaTTa.PrologActivationBridge.nonreflexive_float_separates_current_and_prolog_unifiers
+#print axioms PLeaTTa.PrologActivationBridge.nonreflexive_float_refutes_legacy_matchCompat_conservativity
+#print axioms PLeaTTa.PrologActivationBridge.nonreflexive_float_legacy_filter_is_repaired

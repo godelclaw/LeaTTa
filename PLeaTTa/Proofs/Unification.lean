@@ -11,7 +11,7 @@ import MettaHyperonFull.Proofs.Basic
 
 namespace PLeaTTa
 
-open Metta (Atom Subst)
+open Metta (Atom Ground Subst)
 
 def AtomAvoids (b : Subst) (a : Atom) : Prop :=
   ∀ name, name ∈ a.vars → Metta.Subst.lookup b name = none
@@ -60,16 +60,18 @@ private theorem atomAvoids_expr_iff (b : Subst) (atoms : List Atom) :
 
 mutual
 
-private theorem decomposeEq_avoids (b : Subst) (left right : Atom)
+private theorem decomposeEqWith_avoids (groundEq : Ground → Ground → Bool)
+    (b : Subst) (left right : Atom)
     (constraints : List (String × Atom))
     (hleft : AtomAvoids b left) (hright : AtomAvoids b right)
-    (hdecompose : Metta.Unify.decomposeEq left right = some constraints) :
+    (hdecompose :
+      Metta.Unify.decomposeEqWith groundEq left right = some constraints) :
     ConstraintsAvoid b constraints := by
   cases left with
   | sym leftName =>
       cases right with
       | sym rightName =>
-          simp only [Metta.Unify.decomposeEq] at hdecompose
+          simp only [Metta.Unify.decomposeEqWith] at hdecompose
           split at hdecompose
           · cases hdecompose
             exact constraintsAvoid_nil b
@@ -79,8 +81,8 @@ private theorem decomposeEq_avoids (b : Subst) (left right : Atom)
           apply constraintsAvoid_singleton
           · exact hright name (by simp [Atom.vars])
           · simp [AtomAvoids, Atom.vars]
-      | gnd ground => simp [Metta.Unify.decomposeEq] at hdecompose
-      | expr atoms => simp [Metta.Unify.decomposeEq] at hdecompose
+      | gnd ground => simp [Metta.Unify.decomposeEqWith] at hdecompose
+      | expr atoms => simp [Metta.Unify.decomposeEqWith] at hdecompose
   | var name =>
       cases right with
       | sym rightName =>
@@ -89,7 +91,7 @@ private theorem decomposeEq_avoids (b : Subst) (left right : Atom)
           · exact hleft name (by simp [Atom.vars])
           · simp [AtomAvoids, Atom.vars]
       | var rightName =>
-          simp only [Metta.Unify.decomposeEq] at hdecompose
+          simp only [Metta.Unify.decomposeEqWith] at hdecompose
           by_cases heq : name = rightName
           · have hbeq : (name == rightName) = true := by simp [heq]
             rw [hbeq] at hdecompose
@@ -115,38 +117,41 @@ private theorem decomposeEq_avoids (b : Subst) (left right : Atom)
           · exact hright
   | gnd leftGround =>
       cases right with
-      | sym rightName => simp [Metta.Unify.decomposeEq] at hdecompose
+      | sym rightName => simp [Metta.Unify.decomposeEqWith] at hdecompose
       | var name =>
           cases hdecompose
           apply constraintsAvoid_singleton
           · exact hright name (by simp [Atom.vars])
           · simp [AtomAvoids, Atom.vars]
       | gnd rightGround =>
-          simp only [Metta.Unify.decomposeEq] at hdecompose
+          simp only [Metta.Unify.decomposeEqWith] at hdecompose
           split at hdecompose
           · cases hdecompose
             exact constraintsAvoid_nil b
           · contradiction
-      | expr atoms => simp [Metta.Unify.decomposeEq] at hdecompose
+      | expr atoms => simp [Metta.Unify.decomposeEqWith] at hdecompose
   | expr leftAtoms =>
       cases right with
-      | sym rightName => simp [Metta.Unify.decomposeEq] at hdecompose
+      | sym rightName => simp [Metta.Unify.decomposeEqWith] at hdecompose
       | var name =>
           cases hdecompose
           apply constraintsAvoid_singleton
           · exact hright name (by simp [Atom.vars])
           · exact hleft
-      | gnd ground => simp [Metta.Unify.decomposeEq] at hdecompose
+      | gnd ground => simp [Metta.Unify.decomposeEqWith] at hdecompose
       | expr rightAtoms =>
-          exact decomposeList_avoids b leftAtoms rightAtoms constraints
+          exact decomposeListWith_avoids groundEq b leftAtoms rightAtoms
+            constraints
             (atomAvoids_expr_iff b leftAtoms |>.mp hleft)
             (atomAvoids_expr_iff b rightAtoms |>.mp hright) hdecompose
 
-private theorem decomposeList_avoids (b : Subst)
+private theorem decomposeListWith_avoids
+    (groundEq : Ground → Ground → Bool) (b : Subst)
     (left right : List Atom) (constraints : List (String × Atom))
     (hleft : ∀ child ∈ left, AtomAvoids b child)
     (hright : ∀ child ∈ right, AtomAvoids b child)
-    (hdecompose : Metta.Unify.decomposeList left right = some constraints) :
+    (hdecompose :
+      Metta.Unify.decomposeListWith groundEq left right = some constraints) :
     ConstraintsAvoid b constraints := by
   cases left with
   | nil =>
@@ -155,26 +160,28 @@ private theorem decomposeList_avoids (b : Subst)
           cases hdecompose
           exact constraintsAvoid_nil b
       | cons rightHead rightTail =>
-          simp [Metta.Unify.decomposeList] at hdecompose
+          simp [Metta.Unify.decomposeListWith] at hdecompose
   | cons leftHead leftTail =>
       cases right with
-      | nil => simp [Metta.Unify.decomposeList] at hdecompose
+      | nil => simp [Metta.Unify.decomposeListWith] at hdecompose
       | cons rightHead rightTail =>
-          simp only [Metta.Unify.decomposeList] at hdecompose
-          cases hhead : Metta.Unify.decomposeEq leftHead rightHead with
+          simp only [Metta.Unify.decomposeListWith] at hdecompose
+          cases hhead :
+              Metta.Unify.decomposeEqWith groundEq leftHead rightHead with
           | none => simp [hhead] at hdecompose
           | some headConstraints =>
-              cases htail : Metta.Unify.decomposeList leftTail rightTail with
+              cases htail :
+                  Metta.Unify.decomposeListWith groundEq leftTail rightTail with
               | none => simp [hhead, htail] at hdecompose
               | some tailConstraints =>
                   simp [hhead, htail] at hdecompose
                   cases hdecompose
                   apply ConstraintsAvoid.append
-                  · apply decomposeEq_avoids b leftHead rightHead
+                  · apply decomposeEqWith_avoids groundEq b leftHead rightHead
                     · exact hleft leftHead (by simp)
                     · exact hright rightHead (by simp)
                     · exact hhead
-                  · apply decomposeList_avoids b leftTail rightTail
+                  · apply decomposeListWith_avoids groundEq b leftTail rightTail
                     · intro child hchild
                       exact hleft child (by simp [hchild])
                     · intro child hchild
@@ -401,11 +408,13 @@ private def EquationsAvoid (b : Subst)
   ∀ equation, equation ∈ equations →
     AtomAvoids b equation.1 ∧ AtomAvoids b equation.2
 
-private theorem decomposeAll_avoids (b : Subst)
+private theorem decomposeAllWith_avoids
+    (groundEq : Ground → Ground → Bool) (b : Subst)
     (equations : List (Atom × Atom))
     (constraints : List (String × Atom))
     (hequations : EquationsAvoid b equations)
-    (hdecompose : Metta.Unify.decomposeAll equations = some constraints) :
+    (hdecompose :
+      Metta.Unify.decomposeAllWith groundEq equations = some constraints) :
     ConstraintsAvoid b constraints := by
   induction equations generalizing constraints with
   | nil =>
@@ -413,17 +422,17 @@ private theorem decomposeAll_avoids (b : Subst)
       exact constraintsAvoid_nil b
   | cons equation rest ih =>
       rcases equation with ⟨left, right⟩
-      simp only [Metta.Unify.decomposeAll] at hdecompose
-      cases hhead : Metta.Unify.decomposeEq left right with
+      simp only [Metta.Unify.decomposeAllWith] at hdecompose
+      cases hhead : Metta.Unify.decomposeEqWith groundEq left right with
       | none => simp [hhead] at hdecompose
       | some headConstraints =>
-          cases hrest : Metta.Unify.decomposeAll rest with
+          cases hrest : Metta.Unify.decomposeAllWith groundEq rest with
           | none => simp [hhead, hrest] at hdecompose
           | some restConstraints =>
               simp [hhead, hrest] at hdecompose
               cases hdecompose
               apply ConstraintsAvoid.append
-              · apply decomposeEq_avoids b left right
+              · apply decomposeEqWith_avoids groundEq b left right
                 · exact (hequations (left, right) (by simp)).1
                 · exact (hequations (left, right) (by simp)).2
                 · exact hhead
@@ -431,6 +440,16 @@ private theorem decomposeAll_avoids (b : Subst)
                 · intro pair hpair
                   exact hequations pair (by simp [hpair])
                 · exact hrest
+
+private theorem decomposeAll_avoids (b : Subst)
+    (equations : List (Atom × Atom))
+    (constraints : List (String × Atom))
+    (hequations : EquationsAvoid b equations)
+    (hdecompose : Metta.Unify.decomposeAll equations = some constraints) :
+    ConstraintsAvoid b constraints := by
+  apply decomposeAllWith_avoids Metta.Ground.equiv b equations constraints
+    hequations
+  simpa [Metta.Unify.decomposeAllWith_groundEquiv] using hdecompose
 
 private theorem not_mem_vars_of_occurs_eq_false (name : String) (a : Atom)
     (hoccurs : Metta.Subst.occurs name a = false) :
@@ -617,15 +636,17 @@ def emptySubstTopological : SubstTopological ([] : Subst) := by
     a previously eliminated variable; the occurs check excludes a self edge;
     and single-binding application removes the newly eliminated variable from
     the next worklist. -/
-def unifyRounds_topological (fuel : Nat) (equations : List (Atom × Atom))
+def unifyRoundsWith_topological (groundEq : Ground → Ground → Bool)
+    (fuel : Nat) (equations : List (Atom × Atom))
     (b result : Subst) (topological : SubstTopological b)
     (hequations : EquationsAvoid b equations)
-    (hresult : Metta.Unify.unifyRounds fuel equations b = some result) :
+    (hresult :
+      Metta.Unify.unifyRoundsWith groundEq fuel equations b = some result) :
     SubstTopological result := by
   induction fuel generalizing equations b result with
   | zero =>
-      simp only [Metta.Unify.unifyRounds] at hresult
-      cases hdecompose : Metta.Unify.decomposeAll equations with
+      simp only [Metta.Unify.unifyRoundsWith] at hresult
+      cases hdecompose : Metta.Unify.decomposeAllWith groundEq equations with
       | none => simp [hdecompose] at hresult
       | some constraints =>
           cases constraints with
@@ -635,8 +656,8 @@ def unifyRounds_topological (fuel : Nat) (equations : List (Atom × Atom))
               exact topological
           | cons constraint rest => simp [hdecompose] at hresult
   | succ fuel ih =>
-      simp only [Metta.Unify.unifyRounds] at hresult
-      cases hdecompose : Metta.Unify.decomposeAll equations with
+      simp only [Metta.Unify.unifyRoundsWith] at hresult
+      cases hdecompose : Metta.Unify.decomposeAllWith groundEq equations with
       | none => simp [hdecompose] at hresult
       | some constraints =>
           cases constraints with
@@ -655,8 +676,8 @@ def unifyRounds_topological (fuel : Nat) (equations : List (Atom × Atom))
                   | true => exact False.elim (hoccurs hvalue)
                 have hconstraints :
                     ConstraintsAvoid b ((name, target) :: rest) :=
-                  decomposeAll_avoids b equations ((name, target) :: rest)
-                    hequations hdecompose
+                  decomposeAllWith_avoids groundEq b equations
+                    ((name, target) :: rest) hequations hdecompose
                 have hhead := hconstraints (name, target) (by simp)
                 have hname : name ∉ target.vars :=
                   not_mem_vars_of_occurs_eq_false name target hoccursFalse
@@ -684,12 +705,25 @@ def unifyRounds_topological (fuel : Nat) (equations : List (Atom × Atom))
                 rw [hextend] at hresult
                 exact ih _ _ _ hnextTopological hnextEquations hresult
 
+/-- Legacy specialization of `unifyRoundsWith_topological` to Hyperon's
+ordinary ground equivalence. -/
+def unifyRounds_topological (fuel : Nat)
+    (equations : List (Atom × Atom)) (b result : Subst)
+    (topological : SubstTopological b)
+    (hequations : EquationsAvoid b equations)
+    (hresult : Metta.Unify.unifyRounds fuel equations b = some result) :
+    SubstTopological result := by
+  apply unifyRoundsWith_topological Metta.Ground.equiv fuel equations b result
+    topological hequations
+  simpa [Metta.Unify.unifyRoundsWith_groundEquiv] using hresult
+
 /-- Every successful `unifyTop` result carries the elimination-order
     certificate needed by deep substitution and liveness trimming. -/
-def unifyTop_topological (left right : Atom) (result : Subst)
-    (hresult : Metta.Unify.unifyTop left right = some result) :
+def unifyTopWith_topological (groundEq : Ground → Ground → Bool)
+    (left right : Atom) (result : Subst)
+    (hresult : Metta.Unify.unifyTopWith groundEq left right = some result) :
     SubstTopological result := by
-  apply unifyRounds_topological
+  apply unifyRoundsWith_topological groundEq
       (Atom.size left + Atom.size right) [(left, right)] [] result
       emptySubstTopological
   · intro equation hequation
@@ -697,6 +731,14 @@ def unifyTop_topological (left right : Atom) (result : Subst)
     subst equation
     constructor <;> simp [AtomAvoids, Metta.Subst.lookup]
   · exact hresult
+
+/-- Legacy specialization of `unifyTopWith_topological` to Hyperon's
+ordinary ground equivalence. -/
+def unifyTop_topological (left right : Atom) (result : Subst)
+    (hresult : Metta.Unify.unifyTop left right = some result) :
+    SubstTopological result := by
+  apply unifyTopWith_topological Metta.Ground.equiv left right result
+  simpa [Metta.Unify.unifyTopWith_groundEquiv] using hresult
 
 private theorem atomAvoids_apply_singleton_external (external : Subst)
     (name : String) (target a : Atom)
@@ -764,17 +806,19 @@ private theorem SubstEntriesAvoid.extend (external generated : Subst)
   · change binding ∈ generated.filter (fun entry => entry.1 != name) at hbinding
     exact hgenerated binding (List.mem_filter.mp hbinding).1
 
-private theorem unifyRounds_avoidsExternal (external : Subst) (fuel : Nat)
+private theorem unifyRoundsWith_avoidsExternal
+    (groundEq : Ground → Ground → Bool) (external : Subst) (fuel : Nat)
     (equations : List (Atom × Atom)) (generated result : Subst)
     (hequations : EquationsAvoid external equations)
     (hgenerated : SubstEntriesAvoid external generated)
-    (hresult : Metta.Unify.unifyRounds fuel equations generated =
-      some result) :
+    (hresult :
+      Metta.Unify.unifyRoundsWith groundEq fuel equations generated =
+        some result) :
     SubstEntriesAvoid external result := by
   induction fuel generalizing equations generated result with
   | zero =>
-      simp only [Metta.Unify.unifyRounds] at hresult
-      cases hdecompose : Metta.Unify.decomposeAll equations with
+      simp only [Metta.Unify.unifyRoundsWith] at hresult
+      cases hdecompose : Metta.Unify.decomposeAllWith groundEq equations with
       | none => simp [hdecompose] at hresult
       | some constraints =>
           cases constraints with
@@ -784,8 +828,8 @@ private theorem unifyRounds_avoidsExternal (external : Subst) (fuel : Nat)
               exact hgenerated
           | cons constraint rest => simp [hdecompose] at hresult
   | succ fuel ih =>
-      simp only [Metta.Unify.unifyRounds] at hresult
-      cases hdecompose : Metta.Unify.decomposeAll equations with
+      simp only [Metta.Unify.unifyRoundsWith] at hresult
+      cases hdecompose : Metta.Unify.decomposeAllWith groundEq equations with
       | none => simp [hdecompose] at hresult
       | some constraints =>
           cases constraints with
@@ -804,7 +848,7 @@ private theorem unifyRounds_avoidsExternal (external : Subst) (fuel : Nat)
                   | true => exact False.elim (hoccurs hvalue)
                 have hconstraints :
                     ConstraintsAvoid external ((name, target) :: rest) :=
-                  decomposeAll_avoids external equations
+                  decomposeAllWith_avoids groundEq external equations
                     ((name, target) :: rest) hequations hdecompose
                 have hhead := hconstraints (name, target) (by simp)
                 have hrest : ConstraintsAvoid external rest := by
@@ -825,12 +869,13 @@ private theorem unifyRounds_avoidsExternal (external : Subst) (fuel : Nat)
                   if_false] at hresult
                 exact ih _ _ _ hnextEquations hnextGenerated hresult
 
-private theorem unifyTop_avoidsExternal (external : Subst)
+private theorem unifyTopWith_avoidsExternal
+    (groundEq : Ground → Ground → Bool) (external : Subst)
     (left right : Atom) (result : Subst)
     (hleft : AtomAvoids external left) (hright : AtomAvoids external right)
-    (hresult : Metta.Unify.unifyTop left right = some result) :
+    (hresult : Metta.Unify.unifyTopWith groundEq left right = some result) :
     SubstEntriesAvoid external result := by
-  apply unifyRounds_avoidsExternal external
+  apply unifyRoundsWith_avoidsExternal groundEq external
       (Atom.size left + Atom.size right) [(left, right)] [] result
   · intro equation hequation
     simp only [List.mem_singleton] at hequation
@@ -839,10 +884,20 @@ private theorem unifyTop_avoidsExternal (external : Subst)
   · simp [SubstEntriesAvoid]
   · exact hresult
 
+private theorem unifyTop_avoidsExternal (external : Subst)
+    (left right : Atom) (result : Subst)
+    (hleft : AtomAvoids external left) (hright : AtomAvoids external right)
+    (hresult : Metta.Unify.unifyTop left right = some result) :
+    SubstEntriesAvoid external result := by
+  apply unifyTopWith_avoidsExternal Metta.Ground.equiv external left right
+    result hleft hright
+  simpa [Metta.Unify.unifyTopWith_groundEquiv] using hresult
+
 /-- The unifier never invents variable names: every key or target variable
 in a successful result occurs in one of the two input atoms. -/
-theorem unifyTop_substVars_origin (left right : Atom) (result : Subst)
-    (hresult : Metta.Unify.unifyTop left right = some result)
+theorem unifyTopWith_substVars_origin
+    (groundEq : Ground → Ground → Bool) (left right : Atom) (result : Subst)
+    (hresult : Metta.Unify.unifyTopWith groundEq left right = some result)
     (name : String) (hname : name ∈ resolutionSubstVars result) :
     name ∈ left.vars ∨ name ∈ right.vars := by
   by_cases hleftOrigin : name ∈ left.vars
@@ -864,8 +919,8 @@ theorem unifyTop_substVars_origin (left right : Atom) (result : Subst)
       subst candidate
       exact hrightOrigin hcandidate
     simp [external, Metta.Subst.lookup, hne]
-  have havoids := unifyTop_avoidsExternal external left right result
-    hleft hright hresult
+  have havoids := unifyTopWith_avoidsExternal groundEq external left right
+    result hleft hright hresult
   simp only [resolutionSubstVars, List.mem_flatMap] at hname
   obtain ⟨binding, hbinding, hmember⟩ := hname
   have hentry := havoids binding hbinding
@@ -876,6 +931,16 @@ theorem unifyTop_substVars_origin (left right : Atom) (result : Subst)
     simpa [external, Metta.Subst.lookup] using hentry.1
   · have := hentry.2 name hvalue
     simp [external, Metta.Subst.lookup] at this
+
+/-- Legacy specialization of variable-origin preservation to Hyperon's
+ordinary ground equivalence. -/
+theorem unifyTop_substVars_origin (left right : Atom) (result : Subst)
+    (hresult : Metta.Unify.unifyTop left right = some result)
+    (name : String) (hname : name ∈ resolutionSubstVars result) :
+    name ∈ left.vars ∨ name ∈ right.vars := by
+  apply unifyTopWith_substVars_origin Metta.Ground.equiv left right result
+  · simpa [Metta.Unify.unifyTopWith_groundEquiv] using hresult
+  · exact hname
 
 private theorem substLookup_mem (binding : Subst) (source : String)
     (value : Atom) (hlookup : Metta.Subst.lookup binding source = some value) :
@@ -973,20 +1038,13 @@ theorem substCompose_vars_origin (generated existing : Subst)
       simp only [resolutionSubstVars, List.mem_flatMap]
       exact ⟨binding, hgenerated, hmember⟩)
 
-/-- Every substitution accepted by the PeTTa exact-ground wrapper was first
-produced by the shared structural unifier. The wrapper can reject a candidate,
-but it never fabricates or changes one. -/
+/-- Every substitution returned by the PeTTa exact-ground entry point is
+produced by the comparator-parametric structural unifier itself. -/
 theorem unifyTopExact_some_underlying (left right : Atom) (result : Subst)
     (exactResult : unifyTopExact left right = some result) :
-    Metta.Unify.unifyTop left right = some result := by
-  unfold unifyTopExact at exactResult
-  cases underlying : Metta.Unify.unifyTop left right with
-  | none => simp [underlying] at exactResult
-  | some candidate =>
-      simp only [underlying] at exactResult
-      split at exactResult
-      · simpa using congrArg some exactResult
-      · simp at exactResult
+    Metta.Unify.unifyTopWith prologGroundIdentical left right =
+      some result := by
+  simpa [unifyTopExact] using exactResult
 
 /-- Every atom is compatible with itself at the PeTTa dialect boundary.  This
 property is independent of host-ground equality: compatibility records term
@@ -1007,19 +1065,17 @@ theorem pettaUnifyCompatible_self (atom : Atom) :
           exact ⟨children head (by simp), tailIH (fun item member =>
             children item (by simp [member]))⟩
 
-/-- An underlying unifier is accepted by the PeTTa wrapper when its result
-identifies the operands propositionally.  Equal operands necessarily have the
-same numeric constructors, while opaque host-ground reflexivity is left to the
-underlying unifier rather than assumed here. -/
+/-- The PeTTa entry point is the exact-ground structural unifier.  The
+propositional equality premise is retained because callers use this theorem
+as the handoff from an independent exact witness. -/
 theorem unifyTopExact_of_underlying_exact (left right : Atom)
     (result : Subst)
-    (underlying : Metta.Unify.unifyTop left right = some result)
-    (exact : subst result left = subst result right) :
+    (underlying :
+      Metta.Unify.unifyTopWith prologGroundIdentical left right =
+        some result)
+    (_exact : subst result left = subst result right) :
     unifyTopExact left right = some result := by
-  unfold unifyTopExact
-  simp only [underlying]
-  rw [exact, pettaUnifyCompatible_self]
-  rfl
+  simpa [unifyTopExact] using underlying
 
 /-- A reflexive executable variable equation succeeds with the empty exact
 unifier.  Alias-ledger resolution uses this case for repeated sources after
@@ -1032,10 +1088,10 @@ theorem unifyTopExact_var_self (name : String) :
       simp [Atom.size]
     obtain ⟨fuel, fuelEquation⟩ :=
       Nat.exists_eq_succ_of_ne_zero (Nat.ne_of_gt positive)
-    unfold Metta.Unify.unifyTop
+    unfold Metta.Unify.unifyTopWith
     rw [fuelEquation]
-    simp [Metta.Unify.unifyRounds, Metta.Unify.decomposeAll,
-      Metta.Unify.decomposeEq]
+    simp [Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
+      Metta.Unify.decomposeEqWith]
   · rfl
 
 /-- Unification under an existing binding carries only variables already
@@ -1050,8 +1106,8 @@ theorem unifyB_substVars_origin (binding : Subst) (left right : Atom)
       (subst binding right) with
   | none => simp [hexact] at hresult
   | some generated =>
-      have hunify : Metta.Unify.unifyTop (subst binding left)
-          (subst binding right) = some generated :=
+      have hunify : Metta.Unify.unifyTopWith prologGroundIdentical
+          (subst binding left) (subst binding right) = some generated :=
         unifyTopExact_some_underlying _ _ _ hexact
       cases generated with
       | nil =>
@@ -1063,7 +1119,7 @@ theorem unifyB_substVars_origin (binding : Subst) (left right : Atom)
           subst result
           rcases substCompose_vars_origin (entry :: rest) binding name hname
               with hgenerated | hexisting
-          · rcases unifyTop_substVars_origin
+          · rcases unifyTopWith_substVars_origin prologGroundIdentical
                 (subst binding left) (subst binding right)
                 (entry :: rest) hunify name hgenerated with
               hleft | hright
@@ -1310,8 +1366,8 @@ def unifyB_topological (b : Subst) (left right : Atom) (result : Subst)
   cases hexact : unifyTopExact (subst b left) (subst b right) with
   | none => simp [hexact] at hresult
   | some generated =>
-      have hunify : Metta.Unify.unifyTop (subst b left) (subst b right) =
-          some generated :=
+      have hunify : Metta.Unify.unifyTopWith prologGroundIdentical
+          (subst b left) (subst b right) = some generated :=
         unifyTopExact_some_underlying _ _ _ hexact
       cases generated with
       | nil =>
@@ -1321,7 +1377,8 @@ def unifyB_topological (b : Subst) (left right : Atom) (result : Subst)
       | cons binding rest =>
           have hgeneratedTopological :
               SubstTopological (binding :: rest) :=
-            unifyTop_topological (subst b left) (subst b right)
+            unifyTopWith_topological prologGroundIdentical (subst b left)
+              (subst b right)
               (binding :: rest) hunify
           have hleft : AtomAvoids b (subst b left) := by
             intro name hname
@@ -1332,8 +1389,9 @@ def unifyB_topological (b : Subst) (left right : Atom) (result : Subst)
             exact SubstTopological.subst_resolvesDomain b topological right
               name hname
           have hgeneratedAvoid : SubstEntriesAvoid b (binding :: rest) :=
-            unifyTop_avoidsExternal b (subst b left) (subst b right)
-              (binding :: rest) hleft hright hunify
+            unifyTopWith_avoidsExternal prologGroundIdentical b
+              (subst b left) (subst b right) (binding :: rest) hleft hright
+              hunify
           simp [hexact] at hresult
           subst result
           exact SubstTopological.compose_of_avoids b (binding :: rest)
@@ -1352,8 +1410,8 @@ theorem unifyB_absorbs_base (base : Subst) (left right : Atom)
   cases hexact : unifyTopExact (subst base left) (subst base right) with
   | none => simp [hexact] at hresult
   | some generated =>
-      have hunify : Metta.Unify.unifyTop (subst base left)
-          (subst base right) = some generated :=
+      have hunify : Metta.Unify.unifyTopWith prologGroundIdentical
+          (subst base left) (subst base right) = some generated :=
         unifyTopExact_some_underlying _ _ _ hexact
       cases generated with
       | nil =>
@@ -1366,8 +1424,8 @@ theorem unifyB_absorbs_base (base : Subst) (left right : Atom)
       | cons binding rest =>
           let generated : Subst := binding :: rest
           have hgeneratedTopological : SubstTopological generated :=
-            unifyTop_topological (subst base left) (subst base right)
-              generated hunify
+            unifyTopWith_topological prologGroundIdentical (subst base left)
+              (subst base right) generated hunify
           have hleftAvoid : AtomAvoids base (subst base left) := by
             intro name hname
             exact SubstTopological.subst_resolvesDomain base baseTopological
@@ -1377,8 +1435,9 @@ theorem unifyB_absorbs_base (base : Subst) (left right : Atom)
             exact SubstTopological.subst_resolvesDomain base baseTopological
               right name hname
           have hgeneratedAvoid : SubstEntriesAvoid base generated :=
-            unifyTop_avoidsExternal base (subst base left) (subst base right)
-              generated hleftAvoid hrightAvoid hunify
+            unifyTopWith_avoidsExternal prologGroundIdentical base
+              (subst base left) (subst base right) generated hleftAvoid
+              hrightAvoid hunify
           simp [hexact] at hresult
           subst result
           let composed := Metta.Subst.compose generated base
@@ -1519,16 +1578,18 @@ mutual
 
 /-- Exact unification of an equation propositionally realizes every variable
     constraint produced by structural decomposition. -/
-private theorem decomposeEq_deepRealizes (witness : Subst)
+private theorem decomposeEqWith_deepRealizes
+    (groundEq : Ground → Ground → Bool) (witness : Subst)
     (left right : Atom) (constraints : List (String × Atom))
     (heq : subst witness left = subst witness right)
-    (hdecompose : Metta.Unify.decomposeEq left right = some constraints) :
+    (hdecompose :
+      Metta.Unify.decomposeEqWith groundEq left right = some constraints) :
     DeepRealizesConstraints witness constraints := by
   cases left with
   | sym leftName =>
       cases right with
       | sym rightName =>
-          simp only [Metta.Unify.decomposeEq] at hdecompose
+          simp only [Metta.Unify.decomposeEqWith] at hdecompose
           split at hdecompose
           · cases hdecompose
             simp [DeepRealizesConstraints]
@@ -1539,8 +1600,8 @@ private theorem decomposeEq_deepRealizes (witness : Subst)
           simp only [List.mem_singleton] at hmem
           cases hmem
           exact heq.symm
-      | gnd ground => simp [Metta.Unify.decomposeEq] at hdecompose
-      | expr atoms => simp [Metta.Unify.decomposeEq] at hdecompose
+      | gnd ground => simp [Metta.Unify.decomposeEqWith] at hdecompose
+      | expr atoms => simp [Metta.Unify.decomposeEqWith] at hdecompose
   | var name =>
       cases right with
       | sym rightName =>
@@ -1550,7 +1611,7 @@ private theorem decomposeEq_deepRealizes (witness : Subst)
           cases hmem
           exact heq
       | var rightName =>
-          simp only [Metta.Unify.decomposeEq] at hdecompose
+          simp only [Metta.Unify.decomposeEqWith] at hdecompose
           split at hdecompose
           · cases hdecompose
             simp [DeepRealizesConstraints]
@@ -1573,7 +1634,7 @@ private theorem decomposeEq_deepRealizes (witness : Subst)
           exact heq
   | gnd leftGround =>
       cases right with
-      | sym rightName => simp [Metta.Unify.decomposeEq] at hdecompose
+      | sym rightName => simp [Metta.Unify.decomposeEqWith] at hdecompose
       | var name =>
           cases hdecompose
           intro constraint hmem
@@ -1581,31 +1642,33 @@ private theorem decomposeEq_deepRealizes (witness : Subst)
           cases hmem
           exact heq.symm
       | gnd rightGround =>
-          simp only [Metta.Unify.decomposeEq] at hdecompose
+          simp only [Metta.Unify.decomposeEqWith] at hdecompose
           split at hdecompose
           · cases hdecompose
             simp [DeepRealizesConstraints]
           · contradiction
-      | expr atoms => simp [Metta.Unify.decomposeEq] at hdecompose
+      | expr atoms => simp [Metta.Unify.decomposeEqWith] at hdecompose
   | expr leftAtoms =>
       cases right with
-      | sym rightName => simp [Metta.Unify.decomposeEq] at hdecompose
+      | sym rightName => simp [Metta.Unify.decomposeEqWith] at hdecompose
       | var name =>
           cases hdecompose
           intro constraint hmem
           simp only [List.mem_singleton] at hmem
           cases hmem
           exact heq.symm
-      | gnd ground => simp [Metta.Unify.decomposeEq] at hdecompose
+      | gnd ground => simp [Metta.Unify.decomposeEqWith] at hdecompose
       | expr rightAtoms =>
           simp only [subst_expr, Atom.expr.injEq] at heq
-          exact decomposeList_deepRealizes witness leftAtoms rightAtoms
-            constraints heq hdecompose
+          exact decomposeListWith_deepRealizes groundEq witness leftAtoms
+            rightAtoms constraints heq hdecompose
 
-private theorem decomposeList_deepRealizes (witness : Subst)
+private theorem decomposeListWith_deepRealizes
+    (groundEq : Ground → Ground → Bool) (witness : Subst)
     (left right : List Atom) (constraints : List (String × Atom))
     (heq : left.map (subst witness) = right.map (subst witness))
-    (hdecompose : Metta.Unify.decomposeList left right = some constraints) :
+    (hdecompose :
+      Metta.Unify.decomposeListWith groundEq left right = some constraints) :
     DeepRealizesConstraints witness constraints := by
   cases left with
   | nil =>
@@ -1619,31 +1682,37 @@ private theorem decomposeList_deepRealizes (witness : Subst)
       | nil => simp at heq
       | cons rightHead rightTail =>
           simp only [List.map_cons, List.cons.injEq] at heq
-          simp only [Metta.Unify.decomposeList] at hdecompose
-          cases hhead : Metta.Unify.decomposeEq leftHead rightHead with
+          simp only [Metta.Unify.decomposeListWith] at hdecompose
+          cases hhead :
+              Metta.Unify.decomposeEqWith groundEq leftHead rightHead with
           | none => simp [hhead] at hdecompose
           | some headConstraints =>
-              cases htail : Metta.Unify.decomposeList leftTail rightTail with
+              cases htail :
+                  Metta.Unify.decomposeListWith groundEq leftTail rightTail with
               | none => simp [hhead, htail] at hdecompose
               | some tailConstraints =>
                   simp [hhead, htail] at hdecompose
                   cases hdecompose
                   intro constraint hmem
                   rcases List.mem_append.mp hmem with hmem | hmem
-                  · exact decomposeEq_deepRealizes witness leftHead rightHead
-                      headConstraints heq.1 hhead constraint hmem
-                  · exact decomposeList_deepRealizes witness leftTail rightTail
-                      tailConstraints heq.2 htail constraint hmem
+                  · exact decomposeEqWith_deepRealizes groundEq witness
+                      leftHead rightHead headConstraints heq.1 hhead constraint
+                      hmem
+                  · exact decomposeListWith_deepRealizes groundEq witness
+                      leftTail rightTail tailConstraints heq.2 htail constraint
+                      hmem
 
 end
 
 /-- Exact unification of every input equation realizes the flattened
     constraint list returned by `decomposeAll`. -/
-private theorem decomposeAll_deepRealizes (witness : Subst)
+private theorem decomposeAllWith_deepRealizes
+    (groundEq : Ground → Ground → Bool) (witness : Subst)
     (equations : List (Atom × Atom))
     (constraints : List (String × Atom))
     (hunifies : DeepUnifies witness equations)
-    (hdecompose : Metta.Unify.decomposeAll equations = some constraints) :
+    (hdecompose :
+      Metta.Unify.decomposeAllWith groundEq equations = some constraints) :
     DeepRealizesConstraints witness constraints := by
   induction equations generalizing constraints with
   | nil =>
@@ -1651,18 +1720,18 @@ private theorem decomposeAll_deepRealizes (witness : Subst)
       simp [DeepRealizesConstraints]
   | cons equation rest ih =>
       rcases equation with ⟨left, right⟩
-      simp only [Metta.Unify.decomposeAll] at hdecompose
-      cases hhead : Metta.Unify.decomposeEq left right with
+      simp only [Metta.Unify.decomposeAllWith] at hdecompose
+      cases hhead : Metta.Unify.decomposeEqWith groundEq left right with
       | none => simp [hhead] at hdecompose
       | some headConstraints =>
-          cases hrest : Metta.Unify.decomposeAll rest with
+          cases hrest : Metta.Unify.decomposeAllWith groundEq rest with
           | none => simp [hhead, hrest] at hdecompose
           | some restConstraints =>
               simp [hhead, hrest] at hdecompose
               cases hdecompose
               intro constraint hmem
               rcases List.mem_append.mp hmem with hmem | hmem
-              · exact decomposeEq_deepRealizes witness left right
+              · exact decomposeEqWith_deepRealizes groundEq witness left right
                   headConstraints (hunifies (left, right) (by simp)) hhead
                   constraint hmem
               · exact ih restConstraints
@@ -1674,17 +1743,19 @@ mutual
 /-- If the input equation has some exact unifier, realizing its decomposed
     variable constraints is enough to recover propositional equality for the
     original equation.  The witness rules out a `Ground.equiv`-only clash. -/
-private theorem decomposeEq_exact_of_realized (witness result : Subst)
+private theorem decomposeEqWith_exact_of_realized
+    (groundEq : Ground → Ground → Bool) (witness result : Subst)
     (left right : Atom) (constraints : List (String × Atom))
     (hwitness : subst witness left = subst witness right)
-    (hdecompose : Metta.Unify.decomposeEq left right = some constraints)
+    (hdecompose :
+      Metta.Unify.decomposeEqWith groundEq left right = some constraints)
     (hrealizes : DeepRealizesConstraints result constraints) :
     subst result left = subst result right := by
   cases left with
   | sym leftName =>
       cases right with
       | sym rightName =>
-          simp only [Metta.Unify.decomposeEq] at hdecompose
+          simp only [Metta.Unify.decomposeEqWith] at hdecompose
           split at hdecompose
           next heq =>
             have hname : leftName = rightName := by simpa using heq
@@ -1694,15 +1765,15 @@ private theorem decomposeEq_exact_of_realized (witness result : Subst)
       | var name =>
           cases hdecompose
           exact (hrealizes (name, Atom.sym leftName) (by simp)).symm
-      | gnd ground => simp [Metta.Unify.decomposeEq] at hdecompose
-      | expr atoms => simp [Metta.Unify.decomposeEq] at hdecompose
+      | gnd ground => simp [Metta.Unify.decomposeEqWith] at hdecompose
+      | expr atoms => simp [Metta.Unify.decomposeEqWith] at hdecompose
   | var name =>
       cases right with
       | sym rightName =>
           cases hdecompose
           exact hrealizes (name, Atom.sym rightName) (by simp)
       | var rightName =>
-          simp only [Metta.Unify.decomposeEq] at hdecompose
+          simp only [Metta.Unify.decomposeEqWith] at hdecompose
           split at hdecompose
           next heq =>
             have hname : name = rightName := by simpa using heq
@@ -1719,29 +1790,31 @@ private theorem decomposeEq_exact_of_realized (witness result : Subst)
           exact hrealizes (name, Atom.expr atoms) (by simp)
   | gnd leftGround =>
       cases right with
-      | sym rightName => simp [Metta.Unify.decomposeEq] at hdecompose
+      | sym rightName => simp [Metta.Unify.decomposeEqWith] at hdecompose
       | var name =>
           cases hdecompose
           exact (hrealizes (name, Atom.gnd leftGround) (by simp)).symm
       | gnd rightGround =>
           simpa using hwitness
-      | expr atoms => simp [Metta.Unify.decomposeEq] at hdecompose
+      | expr atoms => simp [Metta.Unify.decomposeEqWith] at hdecompose
   | expr leftAtoms =>
       cases right with
-      | sym rightName => simp [Metta.Unify.decomposeEq] at hdecompose
+      | sym rightName => simp [Metta.Unify.decomposeEqWith] at hdecompose
       | var name =>
           cases hdecompose
           exact (hrealizes (name, Atom.expr leftAtoms) (by simp)).symm
-      | gnd ground => simp [Metta.Unify.decomposeEq] at hdecompose
+      | gnd ground => simp [Metta.Unify.decomposeEqWith] at hdecompose
       | expr rightAtoms =>
           simp only [subst_expr, Atom.expr.injEq] at hwitness ⊢
-          exact decomposeList_exact_of_realized witness result leftAtoms
-            rightAtoms constraints hwitness hdecompose hrealizes
+          exact decomposeListWith_exact_of_realized groundEq witness result
+            leftAtoms rightAtoms constraints hwitness hdecompose hrealizes
 
-private theorem decomposeList_exact_of_realized (witness result : Subst)
+private theorem decomposeListWith_exact_of_realized
+    (groundEq : Ground → Ground → Bool) (witness result : Subst)
     (left right : List Atom) (constraints : List (String × Atom))
     (hwitness : left.map (subst witness) = right.map (subst witness))
-    (hdecompose : Metta.Unify.decomposeList left right = some constraints)
+    (hdecompose :
+      Metta.Unify.decomposeListWith groundEq left right = some constraints)
     (hrealizes : DeepRealizesConstraints result constraints) :
     left.map (subst result) = right.map (subst result) := by
   cases left with
@@ -1754,11 +1827,13 @@ private theorem decomposeList_exact_of_realized (witness result : Subst)
       | nil => simp at hwitness
       | cons rightHead rightTail =>
           simp only [List.map_cons, List.cons.injEq] at hwitness ⊢
-          simp only [Metta.Unify.decomposeList] at hdecompose
-          cases hhead : Metta.Unify.decomposeEq leftHead rightHead with
+          simp only [Metta.Unify.decomposeListWith] at hdecompose
+          cases hhead :
+              Metta.Unify.decomposeEqWith groundEq leftHead rightHead with
           | none => simp [hhead] at hdecompose
           | some headConstraints =>
-              cases htail : Metta.Unify.decomposeList leftTail rightTail with
+              cases htail :
+                  Metta.Unify.decomposeListWith groundEq leftTail rightTail with
               | none => simp [hhead, htail] at hdecompose
               | some tailConstraints =>
                   simp [hhead, htail] at hdecompose
@@ -1774,32 +1849,35 @@ private theorem decomposeList_exact_of_realized (witness result : Subst)
                     exact hrealizes constraint
                       (List.mem_append_right headConstraints hmem)
                   exact ⟨
-                    decomposeEq_exact_of_realized witness result leftHead
-                      rightHead headConstraints hwitness.1 hhead hheadRealizes,
-                    decomposeList_exact_of_realized witness result leftTail
-                      rightTail tailConstraints hwitness.2 htail
+                    decomposeEqWith_exact_of_realized groundEq witness result
+                      leftHead rightHead headConstraints hwitness.1 hhead
+                      hheadRealizes,
+                    decomposeListWith_exact_of_realized groundEq witness result
+                      leftTail rightTail tailConstraints hwitness.2 htail
                       htailRealizes⟩
 
 end
 
 /-- Reconstruct exact equality for every equation from realized flattened
     constraints, using an exact witness only to exclude runtime-numeric slack. -/
-private theorem decomposeAll_exact_of_realized (witness result : Subst)
+private theorem decomposeAllWith_exact_of_realized
+    (groundEq : Ground → Ground → Bool) (witness result : Subst)
     (equations : List (Atom × Atom))
     (constraints : List (String × Atom))
     (hwitness : DeepUnifies witness equations)
-    (hdecompose : Metta.Unify.decomposeAll equations = some constraints)
+    (hdecompose :
+      Metta.Unify.decomposeAllWith groundEq equations = some constraints)
     (hrealizes : DeepRealizesConstraints result constraints) :
     DeepUnifies result equations := by
   induction equations generalizing constraints with
   | nil => simp [DeepUnifies]
   | cons equation rest ih =>
       rcases equation with ⟨left, right⟩
-      simp only [Metta.Unify.decomposeAll] at hdecompose
-      cases hhead : Metta.Unify.decomposeEq left right with
+      simp only [Metta.Unify.decomposeAllWith] at hdecompose
+      cases hhead : Metta.Unify.decomposeEqWith groundEq left right with
       | none => simp [hhead] at hdecompose
       | some headConstraints =>
-          cases hrest : Metta.Unify.decomposeAll rest with
+          cases hrest : Metta.Unify.decomposeAllWith groundEq rest with
           | none => simp [hhead, hrest] at hdecompose
           | some restConstraints =>
               simp [hhead, hrest] at hdecompose
@@ -1818,9 +1896,9 @@ private theorem decomposeAll_exact_of_realized (witness result : Subst)
               simp only [List.mem_cons] at hpair
               rcases hpair with hpair | hpair
               · cases hpair
-                exact decomposeEq_exact_of_realized witness result left right
-                  headConstraints (hwitness (left, right) (by simp)) hhead
-                  hheadRealizes
+                exact decomposeEqWith_exact_of_realized groundEq witness result
+                  left right headConstraints (hwitness (left, right) (by simp))
+                  hhead hheadRealizes
               · exact ih restConstraints
                   (fun item hitem => hwitness item (by simp [hitem])) hrest
                   hrestRealizes pair hpair
@@ -1828,17 +1906,20 @@ private theorem decomposeAll_exact_of_realized (witness result : Subst)
 /-- The actual elimination loop is propositionally sound whenever its input
     equations have a propositional unifier.  Runtime-only numeric equality
     remains available on other inputs, but cannot leak into this theorem. -/
-private def unifyRounds_exact_sound_of_unifier (fuel : Nat)
+private def unifyRoundsWith_exact_sound_of_unifier
+    (groundEq : Ground → Ground → Bool) (fuel : Nat)
     (equations : List (Atom × Atom)) (base result witness : Subst)
     (baseTopological : SubstTopological base)
     (hequations : EquationsAvoid base equations)
     (hwitness : DeepUnifies witness equations)
-    (hresult : Metta.Unify.unifyRounds fuel equations base = some result) :
+    (hresult :
+      Metta.Unify.unifyRoundsWith groundEq fuel equations base =
+        some result) :
     ExactUnifyEvidence result base equations := by
   induction fuel generalizing equations base result with
   | zero =>
-      simp only [Metta.Unify.unifyRounds] at hresult
-      cases hdecompose : Metta.Unify.decomposeAll equations with
+      simp only [Metta.Unify.unifyRoundsWith] at hresult
+      cases hdecompose : Metta.Unify.decomposeAllWith groundEq equations with
       | none => simp [hdecompose] at hresult
       | some constraints =>
           cases constraints with
@@ -1848,13 +1929,13 @@ private def unifyRounds_exact_sound_of_unifier (fuel : Nat)
               have hrealizes : DeepRealizesConstraints base [] := by
                 simp [DeepRealizesConstraints]
               exact ⟨baseTopological,
-                decomposeAll_exact_of_realized witness base equations []
-                  hwitness hdecompose hrealizes,
+                decomposeAllWith_exact_of_realized groundEq witness base
+                  equations [] hwitness hdecompose hrealizes,
                 fun name value hlookup => hlookup⟩
           | cons constraint rest => simp [hdecompose] at hresult
   | succ fuel ih =>
-      simp only [Metta.Unify.unifyRounds] at hresult
-      cases hdecompose : Metta.Unify.decomposeAll equations with
+      simp only [Metta.Unify.unifyRoundsWith] at hresult
+      cases hdecompose : Metta.Unify.decomposeAllWith groundEq equations with
       | none => simp [hdecompose] at hresult
       | some constraints =>
           cases constraints with
@@ -1864,8 +1945,8 @@ private def unifyRounds_exact_sound_of_unifier (fuel : Nat)
               have hrealizes : DeepRealizesConstraints base [] := by
                 simp [DeepRealizesConstraints]
               exact ⟨baseTopological,
-                decomposeAll_exact_of_realized witness base equations []
-                  hwitness hdecompose hrealizes,
+                decomposeAllWith_exact_of_realized groundEq witness base
+                  equations [] hwitness hdecompose hrealizes,
                 fun name value hlookup => hlookup⟩
           | cons constraint rest =>
               rcases constraint with ⟨name, target⟩
@@ -1878,7 +1959,7 @@ private def unifyRounds_exact_sound_of_unifier (fuel : Nat)
                   | true => exact False.elim (hoccurs hvalue)
                 have hconstraints :
                     ConstraintsAvoid base ((name, target) :: rest) :=
-                  decomposeAll_avoids base equations
+                  decomposeAllWith_avoids groundEq base equations
                     ((name, target) :: rest) hequations hdecompose
                 have hheadAvoid := hconstraints (name, target) (by simp)
                 have hname : name ∉ target.vars :=
@@ -1904,7 +1985,7 @@ private def unifyRounds_exact_sound_of_unifier (fuel : Nat)
                 have hwitnessConstraints :
                     DeepRealizesConstraints witness
                       ((name, target) :: rest) :=
-                  decomposeAll_deepRealizes witness equations
+                  decomposeAllWith_deepRealizes groundEq witness equations
                     ((name, target) :: rest) hwitness hdecompose
                 have hwitnessHead :
                     subst witness (Atom.var name) = subst witness target :=
@@ -1975,8 +2056,8 @@ private def unifyRounds_exact_sound_of_unifier (fuel : Nat)
                         subst_apply_singleton_of_eq result name target
                           hheadExact item.2
                 have hresultEquations : DeepUnifies result equations :=
-                  decomposeAll_exact_of_realized witness result equations
-                    ((name, target) :: rest) hwitness hdecompose
+                  decomposeAllWith_exact_of_realized groundEq witness result
+                    equations ((name, target) :: rest) hwitness hdecompose
                     hresultConstraints
                 have hlookupBase : LookupExtends result base := by
                   intro source value hlookup
@@ -1991,12 +2072,13 @@ private def unifyRounds_exact_sound_of_unifier (fuel : Nat)
 /-- Exact-input soundness for the concrete unifier.  This deliberately does
     not claim propositional soundness for every successful call: `1` and
     `1.0` are runtime-equivalent but have no exact unifier. -/
-theorem unifyTop_exact_sound_of_exact_unifier (left right : Atom)
+theorem unifyTopWith_exact_sound_of_exact_unifier
+    (groundEq : Ground → Ground → Bool) (left right : Atom)
     (result witness : Subst)
     (hwitness : subst witness left = subst witness right)
-    (hresult : Metta.Unify.unifyTop left right = some result) :
+    (hresult : Metta.Unify.unifyTopWith groundEq left right = some result) :
     subst result left = subst result right := by
-  have hproof := unifyRounds_exact_sound_of_unifier
+  have hproof := unifyRoundsWith_exact_sound_of_unifier groundEq
     (Atom.size left + Atom.size right) [(left, right)] [] result witness
     emptySubstTopological (by
       intro equation hequation
@@ -2011,6 +2093,17 @@ theorem unifyTop_exact_sound_of_exact_unifier (left right : Atom)
     hresult
   exact hproof.unifies (left, right) (by simp)
 
+/-- Legacy specialization of exact-witness soundness to Hyperon's ordinary
+ground equivalence. -/
+theorem unifyTop_exact_sound_of_exact_unifier (left right : Atom)
+    (result witness : Subst)
+    (hwitness : subst witness left = subst witness right)
+    (hresult : Metta.Unify.unifyTop left right = some result) :
+    subst result left = subst result right := by
+  apply unifyTopWith_exact_sound_of_exact_unifier Metta.Ground.equiv left
+    right result witness hwitness
+  simpa [Metta.Unify.unifyTopWith_groundEquiv] using hresult
+
 /-- A concrete exact unifier witnesses acceptance of any candidate produced
 by the shared unifier.  This packages the unifier's exact-input soundness with
 the PeTTa numeric-constructor filter for callers that already carry a semantic
@@ -2018,11 +2111,13 @@ witness. -/
 theorem unifyTopExact_of_exact_witness (left right : Atom)
     (result witness : Subst)
     (witnessExact : subst witness left = subst witness right)
-    (underlying : Metta.Unify.unifyTop left right = some result) :
+    (underlying :
+      Metta.Unify.unifyTopWith prologGroundIdentical left right =
+        some result) :
     unifyTopExact left right = some result := by
   apply unifyTopExact_of_underlying_exact left right result underlying
-  exact unifyTop_exact_sound_of_exact_unifier left right result witness
-    witnessExact underlying
+  exact unifyTopWith_exact_sound_of_exact_unifier prologGroundIdentical left
+    right result witness witnessExact underlying
 
 /-- Exact-input soundness lifted through the machine's current-binding
     composition.  The proof uses denotational absorption of both component
@@ -2041,20 +2136,22 @@ theorem unifyB_exact_sound_of_exact_unifier (base : Subst)
   cases hexact : unifyTopExact resolvedLeft resolvedRight with
   | none => simp [resolvedLeft, resolvedRight, hexact] at hresult
   | some generated =>
-      have hunify : Metta.Unify.unifyTop resolvedLeft resolvedRight =
-          some generated :=
+      have hunify : Metta.Unify.unifyTopWith prologGroundIdentical
+          resolvedLeft resolvedRight = some generated :=
         unifyTopExact_some_underlying _ _ _ hexact
       cases generated with
       | nil =>
           simp [resolvedLeft, resolvedRight, hexact] at hresult
           subst result
-          have hexact := unifyTop_exact_sound_of_exact_unifier
-            resolvedLeft resolvedRight [] witness hwitness hunify
+          have hexact := unifyTopWith_exact_sound_of_exact_unifier
+            prologGroundIdentical resolvedLeft resolvedRight [] witness
+            hwitness hunify
           simpa [resolvedLeft, resolvedRight] using hexact
       | cons binding rest =>
           let generated : Subst := binding :: rest
           have hgeneratedTopological : SubstTopological generated :=
-            unifyTop_topological resolvedLeft resolvedRight generated hunify
+            unifyTopWith_topological prologGroundIdentical resolvedLeft
+              resolvedRight generated hunify
           have hleftAvoid : AtomAvoids base resolvedLeft := by
             intro name hname
             exact SubstTopological.subst_resolvesDomain base baseTopological
@@ -2064,8 +2161,8 @@ theorem unifyB_exact_sound_of_exact_unifier (base : Subst)
             exact SubstTopological.subst_resolvesDomain base baseTopological
               right name (by simpa [resolvedRight] using hname)
           have hgeneratedAvoid : SubstEntriesAvoid base generated :=
-            unifyTop_avoidsExternal base resolvedLeft resolvedRight generated
-              hleftAvoid hrightAvoid hunify
+            unifyTopWith_avoidsExternal prologGroundIdentical base resolvedLeft
+              resolvedRight generated hleftAvoid hrightAvoid hunify
           simp [resolvedLeft, resolvedRight, hexact] at hresult
           subst result
           let composed := Metta.Subst.compose generated base
@@ -2094,8 +2191,9 @@ theorem unifyB_exact_sound_of_exact_unifier (base : Subst)
             exact hlookupDenotation.trans
               (subst_apply_of_lookupDenotes composed generated
                 hgeneratedDenotes value)
-          have hgeneratedExact := unifyTop_exact_sound_of_exact_unifier
-            resolvedLeft resolvedRight generated witness hwitness hunify
+          have hgeneratedExact :=
+            unifyTopWith_exact_sound_of_exact_unifier prologGroundIdentical
+              resolvedLeft resolvedRight generated witness hwitness hunify
           have hlifted := congrArg (subst composed) hgeneratedExact
           calc
             subst composed left = subst composed (subst base left) :=
@@ -2117,9 +2215,8 @@ theorem unifyB_exact_sound_of_exact_unifier (base : Subst)
 mutual
 
 /-- `copied` is obtained from `source` by the single variable renaming
-    `fresh`.  Ground leaves carry precisely the executable reflexivity fact
-    needed by `decomposeEq`; this excludes only values such as host NaN for
-    which runtime unification is genuinely non-reflexive. -/
+    `fresh`.  Ground leaves are unchanged; the PeTTa/Prolog comparator is
+    reflexive for every executable ground payload, including NaN. -/
 inductive FreshVariant (fresh : String → String) : Atom → Atom → Prop where
   | sym (name : String) :
       FreshVariant fresh (Atom.sym name) (Atom.sym name)
@@ -2127,8 +2224,7 @@ inductive FreshVariant (fresh : String → String) : Atom → Atom → Prop wher
       FreshVariant fresh (Atom.var name) (Atom.var name)
   | var (name : String) (hne : fresh name ≠ name) :
       FreshVariant fresh (Atom.var (fresh name)) (Atom.var name)
-  | gnd (ground : Metta.Ground)
-      (hreflexive : Metta.Ground.equiv ground ground = true) :
+  | gnd (ground : Metta.Ground) :
       FreshVariant fresh (Atom.gnd ground) (Atom.gnd ground)
   | expr {copied source : List Atom} :
       FreshVariantList fresh copied source →
@@ -2172,8 +2268,8 @@ theorem FreshVariant.subst_left {fresh : String → String}
       rcases hfreshState name (by simp [Atom.vars]) with hstill | halready
       · simpa [hstill] using FreshVariant.var (fresh := fresh) name hne
       · simpa [halready] using FreshVariant.varSame (fresh := fresh) name
-  | gnd ground hreflexive =>
-      simpa using FreshVariant.gnd (fresh := fresh) ground hreflexive
+  | gnd ground =>
+      simpa using FreshVariant.gnd (fresh := fresh) ground
   | @expr copiedAtoms sourceAtoms variants =>
       have hchildren : FreshVariantList fresh
           (copiedAtoms.map (subst base)) sourceAtoms := by
@@ -2248,7 +2344,7 @@ theorem FreshVariant.apply_witness {fresh : String → String}
       have hlookup := freshVariantWitness_lookup_fresh fresh allowed hinjective
         name hname
       simp [Metta.Subst.apply, hlookup]
-  | gnd ground hreflexive => simp [Metta.Subst.apply]
+  | gnd ground => simp [Metta.Subst.apply]
   | @expr copiedAtoms sourceAtoms variants =>
       have hchildren :
           copiedAtoms.map
@@ -2448,22 +2544,23 @@ mutual
 theorem FreshVariant.decompose {fresh : String → String}
     {copied source : Atom} (variant : FreshVariant fresh copied source) :
     ∃ constraints,
-      Metta.Unify.decomposeEq copied source = some constraints ∧
+      Metta.Unify.decomposeEqWith prologGroundIdentical copied source =
+          some constraints ∧
         FreshVariantConstraints fresh constraints ∧
         FreshVariantConstraintsIn fresh source.vars constraints ∧
         constraints.length ≤ source.size := by
   cases variant with
   | sym name =>
-      exact ⟨[], by simp [Metta.Unify.decomposeEq], by
+      exact ⟨[], by simp [Metta.Unify.decomposeEqWith], by
         simp [FreshVariantConstraints], by
         simp [FreshVariantConstraintsIn], by simp [Atom.size]⟩
   | varSame name =>
-      exact ⟨[], by simp [Metta.Unify.decomposeEq], by
+      exact ⟨[], by simp [Metta.Unify.decomposeEqWith], by
         simp [FreshVariantConstraints], by
         simp [FreshVariantConstraintsIn], by simp [Atom.size]⟩
   | var name hne =>
       refine ⟨[(fresh name, Atom.var name)], ?_, ?_⟩
-      · simp [Metta.Unify.decomposeEq, hne]
+      · simp [Metta.Unify.decomposeEqWith, hne]
       · constructor
         · intro constraint hmem
           simp only [List.mem_singleton] at hmem
@@ -2475,8 +2572,8 @@ theorem FreshVariant.decompose {fresh : String → String}
             subst constraint
             exact ⟨name, rfl, by simp [Atom.vars]⟩
           · simp [Atom.size]
-  | gnd ground hreflexive =>
-      exact ⟨[], by simp [Metta.Unify.decomposeEq, hreflexive], by
+  | gnd ground =>
+      exact ⟨[], by simp [Metta.Unify.decomposeEqWith], by
         simp [FreshVariantConstraints], by
         simp [FreshVariantConstraintsIn], by simp [Atom.size]⟩
   | expr variants =>
@@ -2492,7 +2589,8 @@ theorem FreshVariantList.decompose {fresh : String → String}
     {copied source : List Atom}
     (variants : FreshVariantList fresh copied source) :
     ∃ constraints,
-      Metta.Unify.decomposeList copied source = some constraints ∧
+      Metta.Unify.decomposeListWith prologGroundIdentical copied source =
+          some constraints ∧
         FreshVariantConstraints fresh constraints ∧
         FreshVariantConstraintsIn fresh
           ((source.map Atom.vars).flatten) constraints ∧
@@ -2509,7 +2607,7 @@ theorem FreshVariantList.decompose {fresh : String → String}
           htailLength⟩ :=
         tail.decompose
       refine ⟨headConstraints ++ tailConstraints, ?_, ?_, ?_, ?_⟩
-      · simp [Metta.Unify.decomposeList, hhead, htail]
+      · simp [Metta.Unify.decomposeListWith, hhead, htail]
       · exact FreshVariantConstraints.append fresh headConstraints
           tailConstraints hheadConstraints htailConstraints
       · intro constraint hmem
@@ -2537,22 +2635,24 @@ theorem FreshEquationList.decompose {fresh : String → String}
       ∀ target, target ∈ remaining → fresh source ≠ target)
     (related : FreshEquationList fresh remaining equations) :
     ∃ constraints,
-      Metta.Unify.decomposeAll equations = some constraints ∧
+      Metta.Unify.decomposeAllWith prologGroundIdentical equations =
+          some constraints ∧
         FreshConstraintList fresh remaining constraints := by
   induction related with
   | nil => exact ⟨[], rfl, .nil⟩
   | same source tail ih =>
       obtain ⟨constraints, hdecompose, hconstraints⟩ := ih
       exact ⟨constraints, by
-        simp [Metta.Unify.decomposeAll, Metta.Unify.decomposeEq, hdecompose],
+        simp [Metta.Unify.decomposeAllWith, Metta.Unify.decomposeEqWith,
+          hdecompose],
         hconstraints⟩
   | fresh source hsource tail ih =>
       obtain ⟨constraints, hdecompose, hconstraints⟩ := ih
       have hne : fresh source ≠ source :=
         hdisjoint source hsource source hsource
       refine ⟨(fresh source, Atom.var source) :: constraints, ?_, ?_⟩
-      · simp [Metta.Unify.decomposeAll, Metta.Unify.decomposeEq, hne,
-          hdecompose]
+      · simp [Metta.Unify.decomposeAllWith, Metta.Unify.decomposeEqWith,
+          hne, hdecompose]
       · exact .cons source hsource hconstraints
 
 /-- After eliminating the head fresh variable, every remaining constraint
@@ -2717,7 +2817,8 @@ theorem FreshEquationList.unifyRounds_succeeds {fresh : String → String}
       source ∈ allowed)
     (hgenerated : FreshGenerated fresh allowed generated) :
     ∃ result,
-      Metta.Unify.unifyRounds fuel equations generated = some result ∧
+      Metta.Unify.unifyRoundsWith prologGroundIdentical fuel equations
+          generated = some result ∧
         FreshGenerated fresh allowed result := by
   induction fuel generalizing remaining equations generated with
   | zero =>
@@ -2728,7 +2829,7 @@ theorem FreshEquationList.unifyRounds_succeeds {fresh : String → String}
           cases hconstraints with
           | nil =>
               exact ⟨generated, by
-                simp [Metta.Unify.unifyRounds, hdecompose], hgenerated⟩
+                simp [Metta.Unify.unifyRoundsWith, hdecompose], hgenerated⟩
           | cons source hsource tail => simp at hsource
       | cons head tail => simp at hfuel
   | succ fuel ih =>
@@ -2737,7 +2838,7 @@ theorem FreshEquationList.unifyRounds_succeeds {fresh : String → String}
       cases hconstraints with
       | nil =>
           exact ⟨generated, by
-            simp [Metta.Unify.unifyRounds, hdecompose], hgenerated⟩
+            simp [Metta.Unify.unifyRoundsWith, hdecompose], hgenerated⟩
       | @cons source hsource tail htail =>
           have hfreshSource : fresh source ≠ source :=
             hdisjoint source hsource source hsource
@@ -2784,7 +2885,7 @@ theorem FreshEquationList.unifyRounds_succeeds {fresh : String → String}
             (Metta.Subst.extend generated (fresh source)
               (Atom.var source)) hnextRemainingAllowed hnextGenerated
           refine ⟨result, ?_, hresultGenerated⟩
-          simpa [Metta.Unify.unifyRounds, hdecompose, hoccurs,
+          simpa [Metta.Unify.unifyRoundsWith, hdecompose, hoccurs,
             nextEquations] using hresult
 
 private theorem atom_size_positive (atom : Atom) : 0 < atom.size := by
@@ -2802,7 +2903,9 @@ theorem FreshVariant.unifyTop_succeeds_with_domain
         fresh left = fresh right → left = right)
     (hdisjoint : ∀ left, left ∈ source.vars →
       ∀ right, right ∈ source.vars → fresh left ≠ right) :
-    ∃ result, Metta.Unify.unifyTop copied source = some result ∧
+    ∃ result,
+      Metta.Unify.unifyTopWith prologGroundIdentical copied source =
+          some result ∧
       FreshGenerated fresh source.vars result := by
   obtain ⟨constraints, hdecompose, hshape, hin, hlength⟩ :=
     variant.decompose
@@ -2827,10 +2930,11 @@ theorem FreshVariant.unifyTop_succeeds_with_domain
   cases constraints with
   | nil =>
       refine ⟨[], ?_, ?_⟩
-      unfold Metta.Unify.unifyTop
+      unfold Metta.Unify.unifyTopWith
       generalize copied.size + source.size = fuel
       cases fuel <;>
-        simp [Metta.Unify.unifyRounds, Metta.Unify.decomposeAll, hdecompose]
+        simp [Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
+          hdecompose]
       simp [FreshGenerated]
   | cons constraint tail =>
       cases hconstraintList with
@@ -2893,15 +2997,14 @@ theorem FreshVariant.unifyTop_succeeds_with_domain
                         (List.mem_of_mem_erase hitem))
                     hinitialGenerated
               refine ⟨result, ?_, hresultGenerated⟩
-              unfold Metta.Unify.unifyTop
+              unfold Metta.Unify.unifyTopWith
               rw [hfuel]
-              simpa [Metta.Unify.unifyRounds, Metta.Unify.decomposeAll,
+              simpa [Metta.Unify.unifyRoundsWith,
+                Metta.Unify.decomposeAllWith,
                 hdecompose, hoccurs, nextEquations] using hresult
 
-/-- The PeTTa exact-ground wrapper accepts every structural fresh variant.
-The proof supplies the ordinary unifier with a concrete exact witness; the
-dialect filter then accepts the propositionally equal result without imposing
-an additional host-ground reflexivity law. -/
+/-- The PeTTa exact-ground unifier accepts every structural fresh variant,
+including variants containing NaN ground leaves. -/
 theorem FreshVariant.unifyTopExact_succeeds_with_domain
     {fresh : String → String} {copied source : Atom}
     (variant : FreshVariant fresh copied source)
@@ -2917,8 +3020,8 @@ theorem FreshVariant.unifyTopExact_succeeds_with_domain
   obtain ⟨witness, witnessExact⟩ :=
     variant.exact_witness hinjective hdisjoint
   have resultExact : subst result copied = subst result source :=
-    unifyTop_exact_sound_of_exact_unifier copied source result witness
-      witnessExact underlying
+    unifyTopWith_exact_sound_of_exact_unifier prologGroundIdentical copied
+      source result witness witnessExact underlying
   exact ⟨result,
     unifyTopExact_of_underlying_exact copied source result underlying
       resultExact,
@@ -2933,7 +3036,9 @@ theorem FreshVariant.unifyTop_succeeds {fresh : String → String}
         fresh left = fresh right → left = right)
     (hdisjoint : ∀ left, left ∈ source.vars →
       ∀ right, right ∈ source.vars → fresh left ≠ right) :
-    ∃ result, Metta.Unify.unifyTop copied source = some result := by
+    ∃ result,
+      Metta.Unify.unifyTopWith prologGroundIdentical copied source =
+        some result := by
   obtain ⟨result, hresult, hdomain⟩ :=
     variant.unifyTop_succeeds_with_domain hinjective hdisjoint
   exact ⟨result, hresult⟩
@@ -3008,7 +3113,7 @@ mutual
 inductive FreshInstance (fresh : String → String)
     (resolve : String → Atom) (allowed : List String) :
     Atom → Atom → Prop where
-  | same (atom : Atom) (hreflexive : Metta.Atom.equiv atom atom = true) :
+  | same (atom : Atom) :
       FreshInstance fresh resolve allowed atom atom
   | var (source : String) (hsource : source ∈ allowed)
       (havoids : fresh source ∉ (resolve source).vars) :
@@ -3031,6 +3136,45 @@ inductive FreshInstanceList (fresh : String → String)
         (copiedHead :: copiedTail) (sourceHead :: sourceTail)
 
 end
+
+mutual
+
+/-- Exact Prolog decomposition is reflexive on every atom, including atoms
+containing NaN ground leaves. -/
+theorem prolog_decomposeEq_self :
+    ∀ atom : Atom,
+      Metta.Unify.decomposeEqWith prologGroundIdentical atom atom = some []
+  | .sym name => by simp [Metta.Unify.decomposeEqWith]
+  | .var name => by simp [Metta.Unify.decomposeEqWith]
+  | .gnd ground => by simp [Metta.Unify.decomposeEqWith]
+  | .expr atoms => by
+      simpa [Metta.Unify.decomposeEqWith] using
+        prolog_decomposeList_self atoms
+
+/-- List companion to `prolog_decomposeEq_self`. -/
+theorem prolog_decomposeList_self :
+    ∀ atoms : List Atom,
+      Metta.Unify.decomposeListWith prologGroundIdentical atoms atoms =
+        some []
+  | [] => rfl
+  | atom :: rest => by
+      simp [Metta.Unify.decomposeListWith, prolog_decomposeEq_self atom,
+        prolog_decomposeList_self rest]
+
+end
+
+/-- Exact PeTTa/Prolog unification is reflexive for every atom. -/
+theorem unifyTopExact_self (atom : Atom) :
+    unifyTopExact atom atom = some [] := by
+  unfold unifyTopExact Metta.Unify.unifyTopWith
+  generalize atom.size + atom.size = fuel
+  cases fuel with
+  | zero =>
+      simp [Metta.Unify.unifyRoundsWith,
+        Metta.Unify.decomposeAllWith, prolog_decomposeEq_self]
+  | succ remaining =>
+      simp [Metta.Unify.unifyRoundsWith,
+        Metta.Unify.decomposeAllWith, prolog_decomposeEq_self]
 
 /-- Decomposed instantiated-copy constraints, paired with their source index
     so arbitrary resolved targets need not be inverted. -/
@@ -3065,28 +3209,27 @@ theorem FreshInstance.decompose {fresh : String → String}
     {copied source : Atom}
     (related : FreshInstance fresh resolve allowed copied source) :
     ∃ sources constraints,
-      Metta.Unify.decomposeEq copied source = some constraints ∧
+      Metta.Unify.decomposeEqWith prologGroundIdentical copied source =
+          some constraints ∧
         FreshResolvedConstraintList fresh resolve sources constraints ∧
         constraints.length ≤ copied.size ∧
         (∀ item, item ∈ sources → item ∈ allowed) := by
   cases related with
-  | same _ _ =>
-      refine ⟨[], [], ?_, .nil, by simp, by simp⟩
-      apply fresh_decomposeEq_self_of_equiv
-      assumption
+  | same =>
+      exact ⟨[], [], prolog_decomposeEq_self copied, .nil, by simp, by simp⟩
   | var source hsource havoids =>
       refine ⟨[source], [(fresh source, resolve source)], ?_,
         .cons source .nil, by simp [Atom.size], by simp [hsource]⟩
       cases htarget : resolve source with
-      | sym symbol => simp [Metta.Unify.decomposeEq]
+      | sym symbol => simp [Metta.Unify.decomposeEqWith]
       | var target =>
           have hnames : fresh source ≠ target := by
             intro hequal
             apply havoids
             simp [htarget, Atom.vars, hequal]
-          simp [Metta.Unify.decomposeEq, hnames]
-      | gnd ground => simp [Metta.Unify.decomposeEq]
-      | expr atoms => simp [Metta.Unify.decomposeEq]
+          simp [Metta.Unify.decomposeEqWith, hnames]
+      | gnd ground => simp [Metta.Unify.decomposeEqWith]
+      | expr atoms => simp [Metta.Unify.decomposeEqWith]
   | expr instances =>
       obtain ⟨sources, constraints, hdecompose, hrelated, hlength,
           hsources⟩ :=
@@ -3101,7 +3244,8 @@ theorem FreshInstanceList.decompose {fresh : String → String}
     {copied source : List Atom}
     (instances : FreshInstanceList fresh resolve allowed copied source) :
     ∃ sources constraints,
-      Metta.Unify.decomposeList copied source = some constraints ∧
+      Metta.Unify.decomposeListWith prologGroundIdentical copied source =
+          some constraints ∧
         FreshResolvedConstraintList fresh resolve sources constraints ∧
         constraints.length ≤ (copied.map Atom.size).sum ∧
         (∀ item, item ∈ sources → item ∈ allowed) := by
@@ -3114,7 +3258,7 @@ theorem FreshInstanceList.decompose {fresh : String → String}
           htailLength, htailSources⟩ := tail.decompose
       refine ⟨headSources ++ tailSources, headConstraints ++ tailConstraints,
         ?_, ?_, ?_, ?_⟩
-      · simp [Metta.Unify.decomposeList, hhead, htail]
+      · simp [Metta.Unify.decomposeListWith, hhead, htail]
       · exact hheadRelated.append fresh resolve htailRelated
       · simp only [List.length_append, List.map_cons, List.sum_cons]
         omega
@@ -3130,9 +3274,7 @@ inductive FreshResolvedEquationList (fresh : String → String)
     (resolve : String → Atom) (remaining : List String) :
     List (Atom × Atom) → Prop where
   | nil : FreshResolvedEquationList fresh resolve remaining []
-  | same (source : String)
-      (hreflexive : Metta.Atom.equiv (resolve source) (resolve source) = true)
-      {tail : List (Atom × Atom)} :
+  | same (source : String) {tail : List (Atom × Atom)} :
       FreshResolvedEquationList fresh resolve remaining tail →
       FreshResolvedEquationList fresh resolve remaining
         ((resolve source, resolve source) :: tail)
@@ -3152,35 +3294,37 @@ theorem FreshResolvedEquationList.decompose
         fresh left ∉ (resolve right).vars)
     (related : FreshResolvedEquationList fresh resolve remaining equations) :
     ∃ sources constraints,
-      Metta.Unify.decomposeAll equations = some constraints ∧
+      Metta.Unify.decomposeAllWith prologGroundIdentical equations =
+          some constraints ∧
         FreshResolvedConstraintList fresh resolve sources constraints ∧
         (∀ source, source ∈ sources → source ∈ remaining) := by
   induction related with
   | nil => exact ⟨[], [], rfl, .nil, by simp⟩
-  | same source hreflexive tail ih =>
+  | same source tail ih =>
       obtain ⟨sources, constraints, hdecompose, hconstraints, hsources⟩ := ih
       exact ⟨sources, constraints, by
-        simp [Metta.Unify.decomposeAll,
-          fresh_decomposeEq_self_of_equiv (resolve source)
-            hreflexive,
+        simp [Metta.Unify.decomposeAllWith,
+          prolog_decomposeEq_self (resolve source),
           hdecompose], hconstraints, hsources⟩
   | fresh source hsource tail ih =>
       obtain ⟨sources, constraints, hdecompose, hconstraints, hsources⟩ := ih
       have hnotmem := havoids source hsource source hsource
-      have hhead : Metta.Unify.decomposeEq (Atom.var (fresh source))
-          (resolve source) = some [(fresh source, resolve source)] := by
+      have hhead :
+          Metta.Unify.decomposeEqWith prologGroundIdentical
+              (Atom.var (fresh source)) (resolve source) =
+            some [(fresh source, resolve source)] := by
         cases htarget : resolve source with
-        | sym symbol => simp [Metta.Unify.decomposeEq]
+        | sym symbol => simp [Metta.Unify.decomposeEqWith]
         | var target =>
             have hne : fresh source ≠ target := by
               intro hequal
               apply hnotmem
               simp [htarget, Atom.vars, hequal]
-            simp [Metta.Unify.decomposeEq, hne]
-        | gnd ground => simp [Metta.Unify.decomposeEq]
-        | expr atoms => simp [Metta.Unify.decomposeEq]
+            simp [Metta.Unify.decomposeEqWith, hne]
+        | gnd ground => simp [Metta.Unify.decomposeEqWith]
+        | expr atoms => simp [Metta.Unify.decomposeEqWith]
       exact ⟨source :: sources, (fresh source, resolve source) :: constraints, by
-        simp [Metta.Unify.decomposeAll, hhead, hdecompose],
+        simp [Metta.Unify.decomposeAllWith, hhead, hdecompose],
         .cons source hconstraints, by
           intro item hitem
           simp only [List.mem_cons] at hitem
@@ -3200,8 +3344,6 @@ theorem FreshResolvedConstraintList.afterBinding
     (havoids : ∀ left, left ∈ remaining →
       ∀ right, right ∈ remaining →
         fresh left ∉ (resolve right).vars)
-    (hresolvedReflexive : ∀ source, source ∈ remaining →
-      Metta.Atom.equiv (resolve source) (resolve source) = true)
     (chosen : String) (hchosen : chosen ∈ remaining)
     (related : FreshResolvedConstraintList fresh resolve sources constraints)
     (hsources : ∀ source, source ∈ sources → source ∈ remaining) :
@@ -3226,7 +3368,7 @@ theorem FreshResolvedConstraintList.afterBinding
           simp [Metta.Subst.apply, Metta.Subst.lookup]
         simp only [List.map_cons]
         rw [hleft, htargetFixed]
-        exact .same chosen (hresolvedReflexive chosen hchosen) ihTail
+        exact .same chosen ihTail
       · have hfreshNe : fresh source ≠ fresh chosen := by
           intro hnames
           exact hequal (hinjective source hsource chosen hchosen hnames)
@@ -3364,15 +3506,14 @@ theorem FreshResolvedEquationList.unifyRounds_succeeds
     (havoids : ∀ left, left ∈ remaining →
       ∀ right, right ∈ remaining →
         fresh left ∉ (resolve right).vars)
-    (hreflexive : ∀ source, source ∈ remaining →
-      Metta.Atom.equiv (resolve source) (resolve source) = true)
     (fuel : Nat) (hfuel : remaining.length ≤ fuel)
     (generated : Subst) (allowed : List String)
     (hremainingAllowed : ∀ source, source ∈ remaining →
       source ∈ allowed)
     (hgenerated : FreshResolvedGenerated fresh resolve allowed generated) :
     ∃ result,
-      Metta.Unify.unifyRounds fuel equations generated = some result ∧
+      Metta.Unify.unifyRoundsWith prologGroundIdentical fuel equations
+          generated = some result ∧
         FreshResolvedGenerated fresh resolve allowed result := by
   induction fuel generalizing remaining equations generated with
   | zero =>
@@ -3383,7 +3524,7 @@ theorem FreshResolvedEquationList.unifyRounds_succeeds
           cases hconstraints with
           | nil =>
               exact ⟨generated, by
-                simp [Metta.Unify.unifyRounds, hdecompose], hgenerated⟩
+                simp [Metta.Unify.unifyRoundsWith, hdecompose], hgenerated⟩
           | cons source tail =>
               have himpossible : source ∈ ([] : List String) :=
                 hsources source (by simp)
@@ -3395,7 +3536,7 @@ theorem FreshResolvedEquationList.unifyRounds_succeeds
       cases hconstraints with
       | nil =>
           exact ⟨generated, by
-            simp [Metta.Unify.unifyRounds, hdecompose], hgenerated⟩
+            simp [Metta.Unify.unifyRoundsWith, hdecompose], hgenerated⟩
       | @cons source sourceTail constraintTail htail =>
           have hsource : source ∈ remaining := hsources source (by simp)
           have hnotmem := havoids source hsource source hsource
@@ -3413,8 +3554,8 @@ theorem FreshResolvedEquationList.unifyRounds_succeeds
             exact hsources item (by simp [hitem])
           have hnextRelated : FreshResolvedEquationList fresh resolve
               (remaining.erase source) nextEquations := by
-            exact htail.afterBinding hinjective havoids hreflexive source
-              hsource hsourceTail
+            exact htail.afterBinding hinjective havoids source hsource
+              hsourceTail
           have hnextInjective : ∀ left,
               left ∈ remaining.erase source →
               ∀ right, right ∈ remaining.erase source →
@@ -3429,11 +3570,6 @@ theorem FreshResolvedEquationList.unifyRounds_succeeds
             intro left hleft right hright
             exact havoids left (List.mem_of_mem_erase hleft) right
               (List.mem_of_mem_erase hright)
-          have hnextReflexive : ∀ item,
-              item ∈ remaining.erase source →
-                Metta.Atom.equiv (resolve item) (resolve item) = true := by
-            intro item hitem
-            exact hreflexive item (List.mem_of_mem_erase hitem)
           have hnextFuel : (remaining.erase source).length ≤ fuel := by
             have herase := length_erase_lt_of_mem_string source remaining
               hsource
@@ -3449,11 +3585,11 @@ theorem FreshResolvedEquationList.unifyRounds_succeeds
               (hremainingAllowed source hsource)
           obtain ⟨result, hresult, hresultGenerated⟩ :=
             ih (remaining.erase source) nextEquations hnextRelated
-              hnextInjective hnextAvoids hnextReflexive hnextFuel
+              hnextInjective hnextAvoids hnextFuel
               (Metta.Subst.extend generated (fresh source) (resolve source))
               hnextAllowed hnextGenerated
           refine ⟨result, ?_, hresultGenerated⟩
-          simpa [Metta.Unify.unifyRounds, hdecompose, hoccurs,
+          simpa [Metta.Unify.unifyRoundsWith, hdecompose, hoccurs,
             nextEquations] using hresult
 
 /-- First-order unification succeeds after arbitrary caller instantiation of
@@ -3468,10 +3604,10 @@ theorem FreshInstance.unifyTop_succeeds_with_domain
         fresh left = fresh right → left = right)
     (havoids : ∀ left, left ∈ allowed →
       ∀ right, right ∈ allowed →
-        fresh left ∉ (resolve right).vars)
-    (hreflexive : ∀ source, source ∈ allowed →
-      Metta.Atom.equiv (resolve source) (resolve source) = true) :
-    ∃ result, Metta.Unify.unifyTop copied source = some result ∧
+        fresh left ∉ (resolve right).vars) :
+    ∃ result,
+      Metta.Unify.unifyTopWith prologGroundIdentical copied source =
+          some result ∧
       FreshResolvedGenerated fresh resolve allowed result := by
   obtain ⟨sources, constraints, hdecompose, hconstraints, hlength,
       hsources⟩ := related.decompose
@@ -3489,10 +3625,11 @@ theorem FreshInstance.unifyTop_succeeds_with_domain
   cases constraints with
   | nil =>
       refine ⟨[], ?_, ?_⟩
-      · unfold Metta.Unify.unifyTop
+      · unfold Metta.Unify.unifyTopWith
         generalize copied.size + source.size = fuel
         cases fuel <;>
-          simp [Metta.Unify.unifyRounds, Metta.Unify.decomposeAll, hdecompose]
+          simp [Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
+            hdecompose]
       · simp [FreshResolvedGenerated]
   | cons constraint constraintTail =>
       cases hconstraints with
@@ -3510,9 +3647,6 @@ theorem FreshInstance.unifyTop_succeeds_with_domain
           have hnextRelated : FreshResolvedEquationList fresh resolve
               ((selected :: sourceTail).erase selected) nextEquations := by
             exact htail.afterBinding hsourcesInjective hsourcesAvoids
-              (by
-                intro item hitem
-                exact hreflexive item (hsources item hitem))
               selected hselected (by
                 intro item hitem
                 exact List.mem_cons_of_mem selected hitem)
@@ -3556,10 +3690,6 @@ theorem FreshInstance.unifyTop_succeeds_with_domain
                     intro left hleft right hright
                     exact hsourcesAvoids left (List.mem_of_mem_erase hleft)
                       right (List.mem_of_mem_erase hright))
-                  (by
-                    intro item hitem
-                    exact hreflexive item
-                      (hsources item (List.mem_of_mem_erase hitem)))
                   fuel hnextFuel
                   (Metta.Subst.extend [] (fresh selected) (resolve selected))
                   allowed (by
@@ -3567,9 +3697,10 @@ theorem FreshInstance.unifyTop_succeeds_with_domain
                     exact hsources item (List.mem_of_mem_erase hitem))
                   hinitialGenerated
               refine ⟨result, ?_, hresultGenerated⟩
-              unfold Metta.Unify.unifyTop
+              unfold Metta.Unify.unifyTopWith
               rw [hfuel]
-              simpa [Metta.Unify.unifyRounds, Metta.Unify.decomposeAll,
+              simpa [Metta.Unify.unifyRoundsWith,
+                Metta.Unify.decomposeAllWith,
                 hdecompose, hoccurs, nextEquations] using hresult
 
 mutual
@@ -3585,9 +3716,6 @@ theorem FreshVariant.instantiate {fresh : String → String}
       Metta.Subst.lookup runtime (fresh name) = none ∨
         subst runtime (Atom.var (fresh name)) =
           subst runtime (Atom.var name))
-    (hresolvedReflexive : ∀ name, name ∈ allowed →
-      Metta.Atom.equiv (subst runtime (Atom.var name))
-        (subst runtime (Atom.var name)) = true)
     (havoids : ∀ left, left ∈ allowed →
       ∀ right, right ∈ allowed →
         fresh left ∉ (subst runtime (Atom.var right)).vars) :
@@ -3597,11 +3725,9 @@ theorem FreshVariant.instantiate {fresh : String → String}
   | sym name =>
       simpa using (FreshInstance.same (fresh := fresh)
         (resolve := fun name => subst runtime (Atom.var name))
-        (allowed := allowed) (Atom.sym name) (by simp [Metta.Atom.equiv]))
+        (allowed := allowed) (Atom.sym name))
   | varSame name =>
-      have hname := hsources name (by simp [Atom.vars])
       exact .same (subst runtime (Atom.var name))
-        (hresolvedReflexive name hname)
   | var name hne =>
       have hname := hsources name (by simp [Atom.vars])
       rcases hstate name hname with hnone | hequal
@@ -3610,12 +3736,10 @@ theorem FreshVariant.instantiate {fresh : String → String}
         exact .var name hname (havoids name hname name hname)
       · rw [hequal]
         exact .same (subst runtime (Atom.var name))
-          (hresolvedReflexive name hname)
-  | gnd ground hreflexive =>
+  | gnd ground =>
       simpa using (FreshInstance.same (fresh := fresh)
         (resolve := fun name => subst runtime (Atom.var name))
-        (allowed := allowed) (Atom.gnd ground) (by
-          simpa [Metta.Atom.equiv] using hreflexive))
+        (allowed := allowed) (Atom.gnd ground))
   | @expr copiedAtoms sourceAtoms variants =>
       have children : FreshInstanceList fresh
           (fun name => subst runtime (Atom.var name)) allowed
@@ -3626,7 +3750,6 @@ theorem FreshVariant.instantiate {fresh : String → String}
           apply hsources name
           simpa [Atom.vars] using hname
         · exact hstate
-        · exact hresolvedReflexive
         · exact havoids
       simpa [subst_expr] using FreshInstance.expr children
 
@@ -3641,9 +3764,6 @@ theorem FreshVariantList.instantiate {fresh : String → String}
       Metta.Subst.lookup runtime (fresh name) = none ∨
         subst runtime (Atom.var (fresh name)) =
           subst runtime (Atom.var name))
-    (hresolvedReflexive : ∀ name, name ∈ allowed →
-      Metta.Atom.equiv (subst runtime (Atom.var name))
-        (subst runtime (Atom.var name)) = true)
     (havoids : ∀ left, left ∈ allowed →
       ∀ right, right ∈ allowed →
         fresh left ∉ (subst runtime (Atom.var right)).vars) :
@@ -3659,7 +3779,6 @@ theorem FreshVariantList.instantiate {fresh : String → String}
           simp only [List.map_cons, List.flatten_cons, List.mem_append]
           exact Or.inl hname
         · exact hstate
-        · exact hresolvedReflexive
         · exact havoids
       · apply tail.instantiate runtime allowed
         · intro name hname
@@ -3667,7 +3786,6 @@ theorem FreshVariantList.instantiate {fresh : String → String}
           simp only [List.map_cons, List.flatten_cons, List.mem_append]
           exact Or.inr hname
         · exact hstate
-        · exact hresolvedReflexive
         · exact havoids
 
 end
@@ -3825,7 +3943,7 @@ theorem FreshInstance.apply_witness {fresh : String → String}
     Metta.Subst.apply (freshResolvedWitness fresh resolve allowed) copied =
       Metta.Subst.apply (freshResolvedWitness fresh resolve allowed) source := by
   cases related with
-  | same atom hreflexive => rfl
+  | same => rfl
   | var source hsource hnotmem =>
       have hright : Metta.Subst.apply
           (freshResolvedWitness fresh resolve allowed) (resolve source) =

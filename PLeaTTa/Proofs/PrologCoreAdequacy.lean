@@ -36,13 +36,24 @@ theorem unifyRounds_of_decomposeAll_none (fuel : Nat)
     Metta.Unify.unifyRounds fuel equations binding = none := by
   cases fuel <;> simp [Metta.Unify.unifyRounds, inconsistent]
 
+/-- Comparator-parametric form of immediate worklist inconsistency. -/
+theorem unifyRoundsWith_of_decomposeAllWith_none
+    (groundEq : Metta.Ground → Metta.Ground → Bool) (fuel : Nat)
+    (equations : List (Atom × Atom)) (binding : Subst)
+    (inconsistent :
+      Metta.Unify.decomposeAllWith groundEq equations = none) :
+    Metta.Unify.unifyRoundsWith groundEq fuel equations binding = none := by
+  cases fuel <;>
+    simp [Metta.Unify.unifyRoundsWith, inconsistent]
+
 /-- The executable unifier rejects the distinct canonical truth values under
 every existing substitution. -/
 theorem unifyB_true_false_none (binding : Subst) :
     unifyB binding (.sym "True") (.sym "False") = none := by
-  have hunify : Metta.Unify.unifyTop (.sym "True") (.sym "False") = none := by
-    unfold Metta.Unify.unifyTop
-    rw [unifyRounds_of_decomposeAll_none]
+  have hunify : Metta.Unify.unifyTopWith prologGroundIdentical
+      (.sym "True") (.sym "False") = none := by
+    unfold Metta.Unify.unifyTopWith
+    rw [unifyRoundsWith_of_decomposeAllWith_none]
     rfl
   simp [unifyB, unifyTopExact, hunify]
 
@@ -198,6 +209,38 @@ theorem unifyTop_fresh_variable (fresh : String) (target : Atom)
   simp [Metta.Unify.unifyRounds, Metta.Unify.decomposeAll,
     hdecompose, hoccurs, Metta.Subst.extend, Metta.Subst.erase, hdone]
 
+/-- A fresh variable is eliminated identically for every ground comparator:
+the comparator is unreachable at the variable-elimination step. -/
+theorem unifyTopWith_fresh_variable
+    (groundEq : Metta.Ground → Metta.Ground → Bool)
+    (fresh : String) (target : Atom)
+    (hoccurs : Metta.Subst.occurs fresh target = false) :
+    Metta.Unify.unifyTopWith groundEq (.var fresh) target =
+      some [(fresh, target)] := by
+  have hdecompose :
+      Metta.Unify.decomposeEqWith groundEq (.var fresh) target =
+        some [(fresh, target)] := by
+    cases target with
+    | sym name => rfl
+    | var name =>
+        have hne : fresh ≠ name := by
+          simpa [Metta.Subst.occurs] using hoccurs
+        simp [Metta.Unify.decomposeEqWith, hne]
+    | gnd ground => rfl
+    | expr atoms => rfl
+  have hpositive : 0 < (Atom.var fresh).size + target.size := by
+    cases target <;> simp [Atom.size]
+  obtain ⟨fuel, hfuel⟩ := Nat.exists_eq_succ_of_ne_zero
+    (Nat.ne_of_gt hpositive)
+  have hdone :
+      Metta.Unify.unifyRoundsWith groundEq fuel [] [(fresh, target)] =
+        some [(fresh, target)] := by
+    cases fuel <;> rfl
+  unfold Metta.Unify.unifyTopWith
+  rw [hfuel]
+  simp [Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
+    hdecompose, hoccurs, Metta.Subst.extend, Metta.Subst.erase, hdone]
+
 /-- Capturing a template into a name fresh for both the incoming binding and
 the resolved template succeeds with the exact composed substitution. -/
 theorem unifyB_fresh_capture (binding : Subst) (fresh : String)
@@ -209,9 +252,10 @@ theorem unifyB_fresh_capture (binding : Subst) (fresh : String)
   have hoccurs : Metta.Subst.occurs fresh (subst binding template) = false :=
     occurs_eq_false_of_not_mem_vars fresh (subst binding template) hfresh
   let target := subst binding template
-  have hunify : Metta.Unify.unifyTop (.var fresh) target =
+  have hunify : Metta.Unify.unifyTopWith prologGroundIdentical
+      (.var fresh) target =
       some [(fresh, target)] :=
-    unifyTop_fresh_variable fresh target hoccurs
+    unifyTopWith_fresh_variable prologGroundIdentical fresh target hoccurs
   have htopological : SubstTopological [(fresh, target)] :=
     SubstTopological.cons_of_fresh [] emptySubstTopological fresh target
       (by simp [Metta.Subst.lookup]) hfresh
@@ -274,10 +318,11 @@ theorem fresh_capture_closed_example :
 /-- Negative witness showing why capture freshness cannot be omitted. -/
 theorem recursive_capture_rejected :
     unifyB [] (.var "_q0") (.expr [.sym "f", .var "_q0"]) = none := by
-  have hunify : Metta.Unify.unifyTop (.var "_q0")
+  have hunify : Metta.Unify.unifyTopWith prologGroundIdentical (.var "_q0")
       (.expr [.sym "f", .var "_q0"]) = none := by
-    simp [Metta.Unify.unifyTop, Atom.size, Metta.Unify.unifyRounds,
-      Metta.Unify.decomposeAll, Metta.Unify.decomposeEq,
+    simp [Metta.Unify.unifyTopWith, Atom.size,
+      Metta.Unify.unifyRoundsWith,
+      Metta.Unify.decomposeAllWith, Metta.Unify.decomposeEqWith,
       Metta.Subst.occurs]
   simp [unifyB, unifyTopExact, hunify]
 

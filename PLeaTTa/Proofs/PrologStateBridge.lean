@@ -1391,7 +1391,8 @@ theorem fresh_frontiers_have_different_units :
         (.var "query") 1 0).2 = 1 := by
   constructor
   · rfl
-  · simp [resolveAlts, twoVariableExecutableClause, matchCompat,
-      matchCompatList, freshenResolutionClause, resolutionFreshSuffix]
+  · simp [resolveAlts, twoVariableExecutableClause, prologMatchCompat,
+      prologMatchCompatList, freshenResolutionClause,
+      resolutionFreshSuffix]
 
 end PLeaTTa.PrologStateBridge

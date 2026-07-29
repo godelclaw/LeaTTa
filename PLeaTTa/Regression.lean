@@ -72,7 +72,7 @@ private def negativeZero : Float :=
 
 -- SWI has one NaN term regardless of IEEE payload/sign, but distinguishes
 -- the two signed zero terms.  These executable guards pin the new canonical
--- identity independently of the still-open unifier migration.
+-- identity used by the live local-clause resolver.
 #guard PrologFloatIdentity.ofFloat canonicalNaN₁ == .nan
 #guard PrologFloatIdentity.ofFloat canonicalNaN₂ == .nan
 #guard PrologFloatIdentity.ofFloat canonicalNegativeNaN == .nan
@@ -80,6 +80,22 @@ private def negativeZero : Float :=
 #guard prologGroundIdentical (.float canonicalNaN₁) (.float canonicalNegativeNaN)
 #guard !prologGroundIdentical (.float positiveZero) (.float negativeZero)
 #guard !prologGroundIdentical (.int 1) (.float 1.0)
+#guard unifyB [] (.gnd (.float canonicalNaN₁))
+  (.gnd (.float canonicalNaN₂)) == some []
+#guard (unifyB [] (.gnd (.float positiveZero))
+  (.gnd (.float negativeZero))).isNone
+
+-- The exact comparator is consulted after every elimination round, not only
+-- as a prefilter.  Binding the repeated variable exposes two distinct IEEE
+-- NaN payloads; Prolog identity makes the remaining ground equation succeed.
+#guard
+  match unifyB []
+      (.expr [.sym "pair", .var "x", .var "x"])
+      (.expr [.sym "pair", .gnd (.float canonicalNaN₁),
+        .gnd (.float canonicalNaN₂)]) with
+  | some [("x", .gnd (.float value))] =>
+      PrologFloatIdentity.ofFloat value == .nan
+  | _ => false
 
 -- PeTTa's `!=/3` now consumes that same term identity: distinct NaN payloads
 -- are one Prolog term, while signed zeroes remain different terms.
@@ -755,9 +771,10 @@ private def nanPartialFallback : PWorld × List Goal :=
   specializeGoals (fun name => name == "+") 100 specializerSeedWorld
     [Goal.call "f" [nanPartialValue] (Metta.Atom.var "out")]
 
--- Runtime equality intentionally treats NaN as non-reflexive.  The redundant
--- specialization guard would therefore prune a generic success, so the
--- transactional pass must keep the exact generic call and world.
+-- Specialization still applies a deliberately conservative Hyperon-reflexive
+-- admission gate even though the local resolver now handles NaN exactly.
+-- Falling back keeps answers correct; removing this optimization-only
+-- restriction is separate specialization work.
 #guard proofGoalsEq nanPartialFallback.2
   [Goal.call "f" [nanPartialValue] (Metta.Atom.var "out")]
 #guard nanPartialFallback.1.specializations.isEmpty

@@ -1337,7 +1337,7 @@ theorem bindTypedSharedResult_namesAllowed
         · have underlying := unifyTopExact_some_underlying
               (subst binding sharedResult) (subst binding branch.1)
               generated exactEq
-          rcases unifyTop_substVars_origin
+          rcases unifyTopWith_substVars_origin prologGroundIdentical
               (subst binding sharedResult) (subst binding branch.1)
               generated underlying name generatedMember with
             sharedMember | branchMember

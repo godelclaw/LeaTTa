@@ -53,9 +53,11 @@ unifier result. -/
 theorem unifyTopExact_fresh_variable (fresh : String) (target : Atom)
     (occurs : Metta.Subst.occurs fresh target = false) :
     unifyTopExact (.var fresh) target = some [(fresh, target)] := by
-  have underlying : Metta.Unify.unifyTop (.var fresh) target =
+  have underlying : Metta.Unify.unifyTopWith prologGroundIdentical
+      (.var fresh) target =
       some [(fresh, target)] :=
-    PLeaTTa.PrologCoreAdequacy.unifyTop_fresh_variable fresh target occurs
+    PLeaTTa.PrologCoreAdequacy.unifyTopWith_fresh_variable
+      prologGroundIdentical fresh target occurs
   have freshForTarget : fresh ∉ target.vars :=
     not_mem_vars_of_occurs_eq_false fresh target occurs
   have topological : SubstTopological [(fresh, target)] :=
@@ -80,12 +82,11 @@ theorem unifyTopExact_unary_partial_alias (head left right : String)
     unifyTopExact (partialValue head [.var left])
       (partialValue head [.var right]) = some [(left, .var right)] := by
   unfold partialValue chainOf consC nilA unifyTopExact
-  simp [Metta.Unify.unifyTop, Atom.size, Metta.Unify.unifyRounds,
-    Metta.Unify.decomposeAll, Metta.Unify.decomposeEq,
-    Metta.Unify.decomposeList, different, Ne.symm different,
-    Metta.Subst.occurs, Metta.Subst.extend, Metta.Subst.erase,
-    Metta.Subst.lookup, subst, substN,
-    pettaUnifyCompatible, pettaUnifyCompatibleList]
+  simp [Metta.Unify.unifyTopWith, Atom.size,
+    Metta.Unify.unifyRoundsWith,
+    Metta.Unify.decomposeAllWith, Metta.Unify.decomposeEqWith,
+    Metta.Unify.decomposeListWith, different,
+    Metta.Subst.occurs, Metta.Subst.extend, Metta.Subst.erase]
 
 /-- After the first incomplete branch has bound `output` to one unary
 partial value, a compatible later branch succeeds, aliases the differing

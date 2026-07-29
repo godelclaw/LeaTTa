@@ -6,8 +6,8 @@ Purpose: Relate executable conservative clause filtering to the independent
   canonical Prolog resolver before constructing the ranked activation macro.
 Trusted boundary: none
 Main exports: TreeMayUnify,
-  nonreflexive_float_refutes_matchCompat_conservativity,
-  nonreflexive_float_separates_current_and_prolog_unifiers
+  nonreflexive_float_refutes_legacy_matchCompat_conservativity,
+  nonreflexive_float_legacy_filter_is_repaired
 -/
 import PLeaTTa.Proofs.PrologActivationMacro
 
@@ -19,9 +19,11 @@ open PeTTaSpec.PrologCore.Canonical
 open PrologStateBridge
 
 /-!
-`matchCompat` is only a conservative executable prefilter.  It may retain a
-doomed repeated-variable or occurs-check case, but it must never discard a
-head pair that the independent canonical resolver can unify.
+`prologMatchCompat` is the conservative executable prefilter for local
+clauses.  It may retain a doomed repeated-variable or occurs-check case, but
+it must never discard a head pair that the independent canonical resolver
+can unify.  The generic-space `matchCompat` remains below only as the
+anti-regression foil that exposed non-reflexive NaN handling.
 
 The proof is factored through a representation-free structural relation on
 canonical trees.  Variables are wildcards; rigid nodes must have the same
@@ -172,12 +174,11 @@ compatibility tests. -/
     matchCompat nilA nilA = true := by
   rfl
 
-/-- The current executable prefilter is not conservative on the full
+/-- The retired generic-space prefilter is not conservative on the full
 independent float domain: IEEE equality rejects a reflexive NaN payload,
-while canonical Prolog term identity and SWI unification accept it.  This is
-the concrete blocker that `RESOLVER.float_identity` records; a later repair
-must use bitwise float identity at every unification decomposition round. -/
-theorem nonreflexive_float_refutes_matchCompat_conservativity
+while canonical Prolog term identity and SWI unification accept it.  Keeping
+this witness prevents the resolver from silently regressing to `matchCompat`. -/
+theorem nonreflexive_float_refutes_legacy_matchCompat_conservativity
     (value : Float)
     (nonreflexive :
       Metta.Ground.equiv (.float value) (.float value) = false) :
@@ -198,28 +199,31 @@ theorem nonreflexive_float_refutes_matchCompat_conservativity
   · simpa [matchCompat] using nonreflexive
   · rfl
 
-/-- The same non-reflexive runtime float separates the current executable
-unifier from the comparator-parametric repair itself.  The first conjunct is
-the shipped defect exercised by the typed-host differential fixture; the
-second shows that changing only the ground comparator makes the identical
-ground equation succeed with the empty substitution. -/
-theorem nonreflexive_float_separates_current_and_prolog_unifiers
+/-- The exact Prolog resolver repairs the legacy NaN false negative at both
+gates.  On the same non-reflexive runtime payload, the generic-space filter
+still rejects (the anti-regression witness), while the Prolog-specific filter
+accepts, the executable exact unifier succeeds with the empty substitution,
+and the independent canonical semantics has a denotational unifier. -/
+theorem nonreflexive_float_legacy_filter_is_repaired
     (value : Float)
     (nonreflexive :
       Metta.Ground.equiv (.float value) (.float value) = false) :
-    PLeaTTa.unifyTopExact
-        (.gnd (.float value)) (.gnd (.float value)) = none ∧
-      Metta.Unify.unifyTopWith PLeaTTa.prologGroundIdentical
-        (.gnd (.float value)) (.gnd (.float value)) = some [] := by
+    matchCompat (.gnd (.float value)) (.gnd (.float value)) = false ∧
+      prologMatchCompat (.gnd (.float value)) (.gnd (.float value)) = true ∧
+      PLeaTTa.unifyTopExact
+        (.gnd (.float value)) (.gnd (.float value)) = some [] ∧
+      ∃ binding,
+        DenotationalUnifier binding
+          (.float (PLeaTTa.PrologFloatIdentity.ofFloat value))
+          (.float (PLeaTTa.PrologFloatIdentity.ofFloat value)) := by
   have identitySelf :
       (PLeaTTa.PrologFloatIdentity.ofFloat value ==
         PLeaTTa.PrologFloatIdentity.ofFloat value) = true := by
     exact PLeaTTa.PrologFloatIdentity.beq_self _
-  constructor
-  · simp [PLeaTTa.unifyTopExact, Metta.Unify.unifyTop,
-      Metta.Atom.size, Metta.Unify.unifyRounds, Metta.Unify.decomposeAll,
-      Metta.Unify.decomposeEq, nonreflexive]
-  · simp [Metta.Unify.unifyTopWith, Metta.Atom.size,
+  refine ⟨?_, ?_, ?_, [], rfl⟩
+  · simpa [matchCompat] using nonreflexive
+  · simp [prologMatchCompat, PLeaTTa.prologGroundIdentical, identitySelf]
+  · simp [PLeaTTa.unifyTopExact, Metta.Unify.unifyTopWith, Metta.Atom.size,
       Metta.Unify.unifyRoundsWith,
       Metta.Unify.decomposeAllWith, Metta.Unify.decomposeEqWith,
       PLeaTTa.prologGroundIdentical, identitySelf]

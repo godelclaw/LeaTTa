@@ -36,8 +36,8 @@ list. -/
 def resolutionClauseRetained (argsv : List Atom) (resv : Atom)
     (clause : Clause) : Bool :=
   clause.params.length == argsv.length &&
-    matchCompatList argsv clause.params &&
-    matchCompat resv clause.result
+    prologMatchCompatList argsv clause.params &&
+    prologMatchCompat resv clause.result
 
 /-- The exact alternative minted for one retained clause at one executable
 suffix seed.  The complete input-plus-output head equality is first, before
@@ -169,8 +169,8 @@ private def resolutionFoldStep (argsv args : List Atom) (res : Atom)
     (barrier : Nat) (acc : List Alt × Nat) (clause : Clause) :
     List Alt × Nat :=
   if clause.params.length != argsv.length then acc
-  else if !matchCompatList argsv clause.params then acc
-  else if !matchCompat (PLeaTTa.subst binding res) clause.result then acc
+  else if !prologMatchCompatList argsv clause.params then acc
+  else if !prologMatchCompat (PLeaTTa.subst binding res) clause.result then acc
   else
     (resolutionAlt argsv args res rest binding qterm barrier acc.2 clause ::
         acc.1,
@@ -188,9 +188,9 @@ private theorem resolutionFoldStep_eq (argsv args : List Atom) (res : Atom)
   unfold resolutionFoldStep resolutionClauseRetained
   cases arity : clause.params.length == argsv.length <;>
     cases params :
-      matchCompatList argsv clause.params <;>
+      prologMatchCompatList argsv clause.params <;>
     cases result :
-      matchCompat (PLeaTTa.subst binding res) clause.result <;>
+      prologMatchCompat (PLeaTTa.subst binding res) clause.result <;>
     simp_all
 
 private theorem foldl_resolutionFoldStep_eq_scanResolution
@@ -397,8 +397,8 @@ theorem resolutionClauseRetained_true_iff
     (argsv : List Atom) (resv : Atom) (clause : Clause) :
     resolutionClauseRetained argsv resv clause = true ↔
       clause.params.length = argsv.length ∧
-        matchCompatList argsv clause.params = true ∧
-        matchCompat resv clause.result = true := by
+        prologMatchCompatList argsv clause.params = true ∧
+        prologMatchCompat resv clause.result = true := by
   simp [resolutionClauseRetained, Bool.and_eq_true, and_assoc]
 
 /-- If the complete retained head equality fails, the sealed machine consumes
@@ -532,7 +532,7 @@ theorem dropped_clause_reservation_creates_frontier_gap :
   · rw [resolveAlts_eq_scanResolution]
     simp [scanResolution, resolutionClauseRetained,
       incompatibleParameterClause, retainedVariableOutputClause,
-      matchCompatList, matchCompat, PLeaTTa.subst_nil]
+      prologMatchCompatList, prologMatchCompat, PLeaTTa.subst_nil]
 
 /-- Conservative compatibility does not pretend to be a full MGU test.  A
 repeated-variable head is retained for unequal actual arguments, but its
@@ -557,11 +557,12 @@ theorem repeated_variable_doomed_alt_is_retained :
       rw [PLeaTTa.subst_nil]
       rfl
     simp only [scanResolution, retained, if_true]
-  · simp [unifyB, unifyTopExact, Metta.Unify.unifyTop,
-      Metta.Unify.unifyRounds, Metta.Unify.decomposeAll,
-      Metta.Unify.decomposeEq, Metta.Unify.decomposeList,
+  · simp [unifyB, unifyTopExact, Metta.Unify.unifyTopWith,
+      Atom.size, Metta.Unify.unifyRoundsWith,
+      Metta.Unify.decomposeAllWith,
+      Metta.Unify.decomposeEqWith, Metta.Unify.decomposeListWith,
       Metta.Subst.occurs,
-      Metta.Subst.apply, Metta.Subst.lookup, Atom.size]
+      Metta.Subst.apply, Metta.Subst.lookup]
 
 /-- The dual witness prevents the doomed-alt test from passing because every
 repeated-variable head was accidentally rejected. -/
@@ -572,13 +573,13 @@ theorem repeated_variable_equal_actuals_succeed :
         (.expr [.var "shared#r0", .var "shared#r0", .sym "ok"]) =
           some result := by
   refine ⟨[("shared#r0", .sym "same")], ?_⟩
-  simp [unifyB, unifyTopExact, Metta.Unify.unifyTop,
-    Metta.Unify.unifyRounds, Metta.Unify.decomposeAll,
-    Metta.Unify.decomposeEq, Metta.Unify.decomposeList,
+  simp [unifyB, unifyTopExact, Metta.Unify.unifyTopWith,
+    Atom.size, Metta.Unify.unifyRoundsWith,
+    Metta.Unify.decomposeAllWith,
+    Metta.Unify.decomposeEqWith, Metta.Unify.decomposeListWith,
     Metta.Subst.occurs, Metta.Subst.compose, Metta.Subst.extend,
     Metta.Subst.erase,
-    Metta.Subst.apply, Metta.Subst.lookup, Atom.size,
-    pettaUnifyCompatible, pettaUnifyCompatibleList]
+    Metta.Subst.apply, Metta.Subst.lookup]
 
 /-- Two retained occurrences remain in source order with exact duplicate
 multiplicity and consecutive retained-clause seeds. -/
@@ -593,7 +594,7 @@ theorem two_retained_clauses_keep_source_order :
         6) := by
   rw [resolveAlts_eq_scanResolution]
   simp [scanResolution, resolutionClauseRetained, firstOrderedClause,
-    secondOrderedClause, matchCompatList, matchCompat]
+    secondOrderedClause, prologMatchCompatList, prologMatchCompat]
 
 /-- Reversing those two alternatives is observably a different bank.  This
 guards source-order preservation against a set- or permutation-based

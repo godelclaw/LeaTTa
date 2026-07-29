@@ -628,11 +628,9 @@ theorem rename_apply_freshVariant (copy : Subst) (suffix : String)
         (FreshVariant.var (fresh := fun source =>
           copiedResidualNameSuffix copy suffix source) name hnameFresh)
   | gnd ground =>
-      have hground : Metta.Ground.equiv ground ground = true := by
-        simpa [Metta.Subst.apply, Metta.Atom.equiv] using hreflexive
       simpa [Metta.Subst.apply, renameAtomSuffix] using
         (FreshVariant.gnd
-          (fresh := copiedResidualNameSuffix copy suffix) ground hground)
+          (fresh := copiedResidualNameSuffix copy suffix) ground)
   | expr atoms ih =>
       have hchildVariants : ∀ child, child ∈ atoms →
           FreshVariant (copiedResidualNameSuffix copy suffix)
@@ -679,9 +677,6 @@ theorem rename_apply_current_freshSnapshotInstance
     (hresolvedFixed : ∀ name, name ∈ allowed →
       subst runtime (subst origin (Atom.var name)) =
         subst origin (Atom.var name))
-    (hresolvedReflexive : ∀ name, name ∈ allowed →
-      Metta.Atom.equiv (subst origin (Atom.var name))
-        (subst origin (Atom.var name)) = true)
     (havoids : ∀ left, left ∈ allowed →
       ∀ right, right ∈ allowed →
         copiedResidualNameSuffix copy suffix left ∉
@@ -701,8 +696,7 @@ theorem rename_apply_current_freshSnapshotInstance
           (FreshInstance.same
             (fresh := copiedResidualNameSuffix copy suffix)
             (resolve := fun source => subst origin (Atom.var source))
-            (allowed := allowed) (Atom.sym name) (by
-              simp [Metta.Atom.equiv]))
+            (allowed := allowed) (Atom.sym name))
       · simp
   | var name =>
       have hname : name ∈ allowed := hallowed name (by simp [Atom.vars])
@@ -732,18 +726,14 @@ theorem rename_apply_current_freshSnapshotInstance
               ← hcopiedName, hsemantic]
           rw [hcopied]
           exact FreshInstance.same (subst origin (Atom.var name))
-            (hresolvedReflexive name hname)
       · exact htargetFixed
   | gnd ground =>
-      have hground : Metta.Ground.equiv ground ground = true := by
-        simpa [Metta.Subst.apply, Metta.Atom.equiv] using hreflexive
       constructor
       · simpa [Metta.Subst.apply, renameAtomSuffix] using
           (FreshInstance.same
             (fresh := copiedResidualNameSuffix copy suffix)
             (resolve := fun source => subst origin (Atom.var source))
-            (allowed := allowed) (Atom.gnd ground) (by
-              simpa [Metta.Atom.equiv] using hground))
+            (allowed := allowed) (Atom.gnd ground))
       · simp
   | expr atoms ih =>
       have hchildren : ∀ child, child ∈ atoms →
@@ -988,9 +978,6 @@ theorem specializationCopy_current_freshInstance (clause : Clause)
       (Metta.Subst.apply (specializationCopySubst clause binding) sourceValue)
       (Metta.Subst.apply (specializationCopySubst clause binding) sourceValue) =
         true)
-    (hresolvedReflexive : ∀ source, source ∈ allowed →
-      Metta.Atom.equiv (subst runtime (Atom.var source))
-        (subst runtime (Atom.var source)) = true)
     (hrawDisjoint : ∀ source, source ∈ allowed →
       copiedResidualNameSuffix
         (specializationCopySubst clause binding) suffix source ≠ source)
@@ -1027,7 +1014,6 @@ theorem specializationCopy_current_freshInstance (clause : Clause)
   apply original.instantiate runtime allowed
   · exact hsourceAllowed
   · exact state
-  · exact hresolvedReflexive
   · exact havoids
 
 /-- The real discovery copy, followed by the real resolution suffix, is an
@@ -1046,7 +1032,7 @@ theorem specializationCopy_unifyTop_succeeds_with_domain (clause : Clause)
         copiedResidualNameSuffix
           (specializationCopySubst clause binding) suffix left ≠ right) :
     ∃ result,
-      Metta.Unify.unifyTop
+      Metta.Unify.unifyTopWith prologGroundIdentical
         (renameAtomSuffix suffix
           (Metta.Subst.apply (specializationCopySubst clause binding)
             sourceValue))
@@ -1109,7 +1095,7 @@ theorem specializationCopy_unifyTop_succeeds (clause : Clause)
         copiedResidualNameSuffix
           (specializationCopySubst clause binding) suffix left ≠ right) :
     ∃ result,
-      Metta.Unify.unifyTop
+      Metta.Unify.unifyTopWith prologGroundIdentical
         (renameAtomSuffix suffix
           (Metta.Subst.apply (specializationCopySubst clause binding)
             sourceValue))
@@ -1136,7 +1122,7 @@ theorem specializationCopy_resolution_unifyTop_succeeds_with_domain
     (hoccupied : ∀ source, source ∈ sourceValue.vars →
       source ∈ resolutionOccupiedVars argsv res rest base qterm) :
     ∃ result,
-      Metta.Unify.unifyTop
+      Metta.Unify.unifyTopWith prologGroundIdentical
         (renameAtomSuffix
           (resolutionFreshSuffix argsv res rest base qterm seed)
           (Metta.Subst.apply (specializationCopySubst clause binding)
@@ -1185,7 +1171,7 @@ theorem specializationCopy_resolution_unifyTop_succeeds (clause : Clause)
     (hoccupied : ∀ source, source ∈ sourceValue.vars →
       source ∈ resolutionOccupiedVars argsv res rest base qterm) :
     ∃ result,
-      Metta.Unify.unifyTop
+      Metta.Unify.unifyTopWith prologGroundIdentical
         (renameAtomSuffix
           (resolutionFreshSuffix argsv res rest base qterm seed)
           (Metta.Subst.apply (specializationCopySubst clause binding)
@@ -4661,15 +4647,10 @@ theorem unifyTop_self_of_equiv (a : Atom) (h : Atom.equiv a a = true) :
     atom, the guard contributes no binding: `unifyB` returns the incoming
     substitution verbatim. -/
 theorem unifyB_redundant (b : Subst) (x y : Atom)
-    (hsame : subst b x = subst b y)
-    (hequiv : Atom.equiv (subst b x) (subst b x) = true) :
+    (hsame : subst b x = subst b y) :
     unifyB b x y = some b := by
-  have hequivY : Atom.equiv (subst b y) (subst b y) = true := by
-    rwa [hsame] at hequiv
-  have hunderlying : Metta.Unify.unifyTop (subst b y) (subst b y) = some [] :=
-    unifyTop_self_of_equiv _ hequivY
   have hexact : unifyTopExact (subst b y) (subst b y) = some [] :=
-    unifyTopExact_of_underlying_exact _ _ [] hunderlying rfl
+    unifyTopExact_self _
   rw [unifyB, hsame, hexact]
 
 /-- A satisfied specialization equality is one genuine semantic stutter:
@@ -4679,12 +4660,11 @@ theorem unifyB_redundant (b : Subst) (x y : Atom)
 theorem redundant_eq_guard_step (prog : Prog) (gt : GroundingTable)
     (c : Conf) (x y : Atom) (rest : List Goal) (b : Subst)
     (hcur : c.cur = some (Goal.eq x y :: rest, b))
-    (hsame : subst b x = subst b y)
-    (hequiv : Atom.equiv (subst b x) (subst b x) = true) :
+    (hsame : subst b x = subst b y) :
     Step prog gt c
       { c with cur := some (rest, trimFor rest c.qterm b) } := by
   exact Step.eq_ok c x y rest b b hcur
-    (unifyB_redundant b x y hsame hequiv)
+    (unifyB_redundant b x y hsame)
 
 /-- One specialization guard is an actual unification step, not generally a
     redundant equality.  Given an exact unifier for the already-substituted
@@ -4733,15 +4713,12 @@ theorem closed_binding_guard_step (prog : Prog) (gt : GroundingTable)
     (c : Conf) (v : String) (value : Atom) (rest : List Goal) (b : Subst)
     (hcur : c.cur = some (Goal.eq (Atom.var v) value :: rest, b))
     (hlookup : Metta.Subst.lookup b v = some value)
-    (hclosed : value.vars = [])
-    (hequiv : Atom.equiv value value = true) :
+    (hclosed : value.vars = []) :
     Step prog gt c
       { c with cur := some (rest, trimFor rest c.qterm b) } := by
   apply redundant_eq_guard_step prog gt c (Atom.var v) value rest b hcur
-  · rw [subst_var_of_lookup_closed b v value hlookup hclosed,
-      subst_of_closed b value hclosed]
-  · rw [subst_var_of_lookup_closed b v value hlookup hclosed]
-    exact hequiv
+  rw [subst_var_of_lookup_closed b v value hlookup hclosed,
+    subst_of_closed b value hclosed]
 
 /-- Exact runtime denotation of every (possibly open) captured binding.  This
     is the semantic fact consumed by callable-head rewriting. -/
@@ -4749,21 +4726,16 @@ def SubstDenotesBinding (runtime : Subst) (binding : Subst) : Prop :=
   ∀ name value, (name, value) ∈ binding →
     subst runtime (Atom.var name) = subst runtime value
 
-/-- A denoting binding whose equations are also safe to execute as redundant
-    PeTTa equality guards.  The extra conjunct matters for grounded NaN,
-    which is propositionally equal to itself but rejected by runtime
-    unification. -/
+/-- A binding realized by the current runtime substitution.  Exact Prolog
+    identity is reflexive even for NaN, so denotation equality alone is now
+    sufficient for redundant equality guards. -/
 def SubstRealizesBinding (runtime : Subst) (binding : Subst) : Prop :=
-  ∀ name value, (name, value) ∈ binding →
-    subst runtime (Atom.var name) = subst runtime value ∧
-      Atom.equiv (subst runtime (Atom.var name))
-        (subst runtime (Atom.var name)) = true
+  SubstDenotesBinding runtime binding
 
 theorem SubstRealizesBinding.denotes {runtime binding : Subst}
     (realized : SubstRealizesBinding runtime binding) :
-    SubstDenotesBinding runtime binding := by
-  intro name value hmem
-  exact (realized name value hmem).1
+    SubstDenotesBinding runtime binding :=
+  realized
 
 private theorem subst_lookup_mem (binding : Subst) (name : String)
     (value : Atom) (hlookup : Metta.Subst.lookup binding name = some value) :
@@ -5014,9 +4986,7 @@ theorem realized_binding_head_step (prog : Prog) (gt : GroundingTable)
   apply redundant_eq_guard_step prog gt c value (Atom.var name)
     (specializationGuards binding ++ rest) b
   · simpa [specializationGuards] using hcur
-  · exact hentry.1.symm
-  · rw [← hentry.1]
-    exact hentry.2
+  · exact hentry.symm
 
 theorem specializationGuards_mem_of_binding_mem (binding : Subst)
     (name : String) (value : Atom) (hmem : (name, value) ∈ binding) :
@@ -5067,11 +5037,8 @@ theorem substRealizesBinding_trimFor_guards (binding : Subst)
         (specializationGuards binding ++ rest) qterm value (Atom.var name)
         dependency hgoal hdependency)
   have hentry := hrealized name value hmem
-  constructor
-  · rw [hleft, hright]
-    exact hentry.1
-  · rw [hleft]
-    exact hentry.2
+  rw [hleft, hright]
+  exact hentry
 
 /-- Construction-independent evidence for the real ordered execution of a
     specialization guard prefix.  Each constructor records the concrete
@@ -7131,8 +7098,8 @@ private def resolveFoldStep (argsv args : List Atom) (res : Atom)
     (List Alt × Nat) → Clause → List Alt × Nat :=
   fun acc clause =>
     if clause.params.length != argsv.length then acc
-    else if !matchCompatList argsv clause.params then acc
-    else if !matchCompat (subst b res) clause.result then acc
+    else if !prologMatchCompatList argsv clause.params then acc
+    else if !prologMatchCompat (subst b res) clause.result then acc
     else
       let k := acc.2
       let copied := freshenResolutionClause argsv args res rest b qterm k bc clause
@@ -7177,17 +7144,24 @@ private theorem resolveFoldStep_preserves
   rcases clauseRel with ⟨hparams, hresult, hbody⟩
   by_cases harity : genericClause.params.length != argsv.length
   · simp [resolveFoldStep, harity, ← hparams, altsRel]
-  by_cases hparamsCompat : matchCompatList argsv genericClause.params = false
+  by_cases hparamsCompat :
+      prologMatchCompatList argsv genericClause.params = false
   · simp [resolveFoldStep, harity, hparamsCompat, ← hparams, altsRel]
   by_cases hresultCompat :
-      matchCompat (subst b res) genericClause.result = false
+      prologMatchCompat (subst b res) genericClause.result = false
   · simp [resolveFoldStep, harity, hparamsCompat, hresultCompat,
       ← hparams, ← hresult, altsRel]
-  · have hparamsTrue : matchCompatList argsv genericClause.params = true :=
-      by cases h : matchCompatList argsv genericClause.params <;> simp_all
+  · have hparamsTrue :
+        prologMatchCompatList argsv genericClause.params = true :=
+      by
+        cases h : prologMatchCompatList argsv genericClause.params <;>
+          simp_all
     have hresultTrue :
-        matchCompat (subst b res) genericClause.result = true :=
-      by cases h : matchCompat (subst b res) genericClause.result <;> simp_all
+        prologMatchCompat (subst b res) genericClause.result = true :=
+      by
+        cases h :
+            prologMatchCompat (subst b res) genericClause.result <;>
+          simp_all
     let suffix := resolutionFreshSuffix argsv res rest b qterm counter
     have hrenamed := renamePreserves suffix bc _ _ hbody
     simp only [resolveFoldStep, freshenResolutionClause]
@@ -7319,14 +7293,15 @@ private theorem resolveFoldStep_rawArgs_preserves
         left.1 right.1 := by
   by_cases harity : clause.params.length != argsv.length
   · simp [resolveFoldStep, harity, altsRel]
-  by_cases hparams : matchCompatList argsv clause.params = false
+  by_cases hparams : prologMatchCompatList argsv clause.params = false
   · simp [resolveFoldStep, harity, hparams, altsRel]
-  by_cases hresult : matchCompat (subst b res) clause.result = false
+  by_cases hresult : prologMatchCompat (subst b res) clause.result = false
   · simp [resolveFoldStep, harity, hparams, hresult, altsRel]
-  · have hparamsTrue : matchCompatList argsv clause.params = true := by
-      cases h : matchCompatList argsv clause.params <;> simp_all
-    have hresultTrue : matchCompat (subst b res) clause.result = true := by
-      cases h : matchCompat (subst b res) clause.result <;> simp_all
+  · have hparamsTrue : prologMatchCompatList argsv clause.params = true := by
+      cases h : prologMatchCompatList argsv clause.params <;> simp_all
+    have hresultTrue :
+        prologMatchCompat (subst b res) clause.result = true := by
+      cases h : prologMatchCompat (subst b res) clause.result <;> simp_all
     simp only [resolveFoldStep, harity, hparamsTrue, hresultTrue,
       Bool.not_true, Bool.false_eq_true, if_false]
     exact ⟨trivial, .cons (.branch _ _ _) altsRel⟩
@@ -8564,9 +8539,6 @@ theorem freshInstance_guard_exact_evidence_state
     (havoids : ∀ left, left ∈ allowed →
       ∀ right, right ∈ allowed →
         fresh left ∉ (subst base (Atom.var right)).vars)
-    (hresolvedReflexive : ∀ source, source ∈ allowed →
-      Metta.Atom.equiv (subst base (Atom.var source))
-        (subst base (Atom.var source)) = true)
     (hqueryFresh : ∀ source, source ∈ allowed →
       ∀ visible, visible ∈ (subst base qterm).vars →
         fresh source ≠ visible)
@@ -8585,7 +8557,6 @@ theorem freshInstance_guard_exact_evidence_state
           Metta.Subst.lookup next key = some value) := by
   obtain ⟨generated, hgenerated, hdomain⟩ :=
     related.unifyTop_succeeds_with_domain hinjective havoids
-      hresolvedReflexive
   obtain ⟨witness, hwitness⟩ :=
     related.exact_witness hinjective havoids
   have hgeneratedExact : unifyTopExact (subst base copied)
@@ -8723,8 +8694,6 @@ theorem freshSnapshot_guard_exact_evidence_state
     (havoids : ∀ left, left ∈ allowed →
       ∀ right, right ∈ allowed →
         fresh left ∉ (resolve right).vars)
-    (hresolvedReflexive : ∀ source, source ∈ allowed →
-      Metta.Atom.equiv (resolve source) (resolve source) = true)
     (hqueryFresh : ∀ source, source ∈ allowed →
       ∀ visible, visible ∈ (subst base qterm).vars →
         fresh source ≠ visible)
@@ -8742,7 +8711,6 @@ theorem freshSnapshot_guard_exact_evidence_state
           Metta.Subst.lookup next key = some value) := by
   obtain ⟨generated, hgenerated, hdomain⟩ :=
     related.unifyTop_succeeds_with_domain hinjective havoids
-      hresolvedReflexive
   obtain ⟨witness, hwitness⟩ :=
     related.exact_witness hinjective havoids
   have hgeneratedExact : unifyTopExact (subst base copied) target =
@@ -8935,8 +8903,6 @@ theorem specialization_exactBindingGuardsRun_general
           value hentryAll suffix base allowed hsource residualState
           (hreflexive name value hentryAll)
         · intro source hsourceAllowed
-          exact hresolvedReflexive source hsourceAllowed
-        · intro source hsourceAllowed
           exact hrawDisjoint source (hallowedAll source hsourceAllowed)
             source (hallowedAll source hsourceAllowed)
         · intro left hleft right hright
@@ -8955,8 +8921,7 @@ theorem specialization_exactBindingGuardsRun_general
           hsourceNext, nextState, lookupPreserved⟩ :=
         freshInstance_guard_exact_evidence_state fresh allowed copied value
           base qterm (Atom.var (name ++ suffix)) topological residualState
-          related hinjectiveAllowed havoids hresolvedReflexive hqueryFresh
-          hformal
+          related hinjectiveAllowed havoids hqueryFresh hformal
       let goals := specializationGuards tailBinding ++ rest
       let trimmed := PLeaTTa.trimFor goals qterm next
       have trimmedTopological : SubstTopological trimmed :=
@@ -9160,7 +9125,7 @@ theorem specialization_exactBindingGuardsRun_snapshot
       obtain ⟨related, htargetFixed⟩ :=
         rename_apply_current_freshSnapshotInstance copy suffix value origin
           base allowed hlookupCopy hsource residualState hresolveFixed
-          hresolvedReflexive havoids (hreflexive name value hentryAll)
+          havoids (hreflexive name value hentryAll)
       have hformal : subst base (Atom.var (name ++ suffix)) = target := by
         have hlookup := headLookup name value (by simp)
         exact (topological.subst_var_of_lookup base (name ++ suffix)
@@ -9176,7 +9141,7 @@ theorem specialization_exactBindingGuardsRun_snapshot
         freshSnapshot_guard_exact_evidence_state fresh resolve allowed copied
           target base qterm (Atom.var (name ++ suffix)) topological
           residualState related hresolveFixed hinjectiveAllowed havoids
-          hresolvedReflexive hqueryFresh hformal
+          hqueryFresh hformal
       let goals := specializationGuards tailBinding ++ rest
       let trimmed := PLeaTTa.trimFor goals qterm next
       have trimmedTopological : SubstTopological trimmed :=
@@ -9623,14 +9588,17 @@ theorem open_residual_guard_unify (formal fresh caller : String)
     subst name
     simp [base, Metta.Subst.lookup, Ne.symm hformalFresh]
   let generated : Subst := [(fresh, Atom.var caller)]
-  have hgenerated : Metta.Unify.unifyTop copied source = some generated := by
-    simp [copied, source, generated, Atom.size, Metta.Unify.unifyTop,
-      Metta.Unify.unifyRounds, Metta.Unify.decomposeAll,
-      Metta.Unify.decomposeEq, Metta.Unify.decomposeList,
+  have hgenerated :
+      Metta.Unify.unifyTopWith prologGroundIdentical copied source =
+        some generated := by
+    simp [copied, source, generated, Atom.size, Metta.Unify.unifyTopWith,
+      Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
+      Metta.Unify.decomposeEqWith, Metta.Unify.decomposeListWith,
       Metta.Subst.occurs, Metta.Subst.extend, Metta.Subst.erase,
       hfreshCaller]
   have hgeneratedTopological : SubstTopological generated :=
-    unifyTop_topological copied source generated hgenerated
+    unifyTopWith_topological prologGroundIdentical copied source generated
+      hgenerated
   have hfreshLookup : Metta.Subst.lookup generated fresh =
       some (Atom.var caller) := by
     simp [generated, Metta.Subst.lookup]
@@ -10262,7 +10230,7 @@ private theorem generic_parent_resolution (g input answer marker : String)
   simp [finiteConf, finiteWorld, genericAfterParentResolution, prefixConf,
     genericParentGoals, baseParentClause, finiteSpecializedClause_eq, step,
     PWorld.clausesOf, PWorld.canTableCall, PWorld.isTabled,
-    resolveAlts, matchCompatList, matchCompat,
+    resolveAlts, prologMatchCompatList, prologMatchCompat,
     freshenResolutionClause, resolutionFreshSuffix,
     renameAtomSuffix, renameGoalSuffix, Atom.vars, hgf]
   rw [pull_of_alts_branch (h := rfl)]
@@ -10275,17 +10243,18 @@ private theorem generic_parent_unify (g input : String) :
       (Atom.expr [Atom.var "hof#r10", Atom.var "x#r10", Atom.var "result#r10"]) =
         some (genericParentSubst g input) := by
   let generated := genericParentSubst g input
-  have hgenerated : Metta.Unify.unifyTop
+  have hgenerated : Metta.Unify.unifyTopWith prologGroundIdentical
       (Atom.expr [Atom.sym g, Atom.sym input, Atom.var "answer"])
       (Atom.expr [Atom.var "hof#r10", Atom.var "x#r10",
         Atom.var "result#r10"]) = some generated := by
-    simp [generated, genericParentSubst, Atom.size, Metta.Unify.unifyTop,
-      Metta.Unify.unifyRounds, Metta.Unify.decomposeAll,
-      Metta.Unify.decomposeEq, Metta.Unify.decomposeList,
+    simp [generated, genericParentSubst, Atom.size,
+      Metta.Unify.unifyTopWith, Metta.Unify.unifyRoundsWith,
+      Metta.Unify.decomposeAllWith, Metta.Unify.decomposeEqWith,
+      Metta.Unify.decomposeListWith,
       Metta.Subst.occurs, Metta.Subst.extend, Metta.Subst.erase,
       Metta.Subst.apply, Metta.Subst.lookup]
   have htopological : SubstTopological generated :=
-    unifyTop_topological
+    unifyTopWith_topological prologGroundIdentical
       (Atom.expr [Atom.sym g, Atom.sym input, Atom.var "answer"])
       (Atom.expr [Atom.var "hof#r10", Atom.var "x#r10",
         Atom.var "result#r10"])
@@ -10387,9 +10356,9 @@ private theorem specialized_guard (g input answer marker : String) :
   simp [specializedAfterParentBinding, specializedAfterGuard, prefixConf,
     specializedParentSubst, genericParentSubst, finiteWorld,
     baseParentClause, finiteSpecializedClause_eq, step, unifyB, unifyTopExact,
-    pettaUnifyCompatible,
-    Atom.size, Metta.Unify.unifyTop, Metta.Unify.unifyRounds,
-    Metta.Unify.decomposeAll, Metta.Unify.decomposeEq,
+    Atom.size,
+    Metta.Unify.unifyTopWith, Metta.Unify.unifyRoundsWith,
+    Metta.Unify.decomposeAllWith, Metta.Unify.decomposeEqWith,
     Metta.Subst.lookup, trimFor_specialization_guard_direct]
 
 private def genericAfterDispatch (g input answer marker : String) : Conf :=
@@ -10423,7 +10392,7 @@ private theorem specialized_parent_resolution (g input answer marker : String)
   simp [finiteConf, finiteWorld, specializedAfterParentResolution, prefixConf,
     specializedParentGoals, baseParentClause, finiteSpecializedClause_eq, step,
     PWorld.clausesOf, PWorld.canTableCall, PWorld.isTabled,
-    resolveAlts, matchCompatList, matchCompat,
+    resolveAlts, prologMatchCompatList, prologMatchCompat,
     freshenResolutionClause, resolutionFreshSuffix,
     renameAtomSuffix, renameGoalSuffix, Atom.vars, hgs]
   rw [pull_of_alts_branch (h := rfl)]
@@ -10448,7 +10417,7 @@ private theorem generic_target_resolution (g input answer marker : String)
     prefixConf, genericParentSubst, finiteWorld, baseParentClause,
     finiteSpecializedClause_eq, finiteTargetClause, step, PWorld.clausesOf,
     PWorld.canTableCall, PWorld.isTabled, resolveAlts,
-    matchCompatList, matchCompat, freshenResolutionClause,
+    prologMatchCompatList, prologMatchCompat, freshenResolutionClause,
     resolutionFreshSuffix, renameAtomSuffix,
     renameGoalSuffix, Atom.vars,
     Metta.Subst.lookup, hfg, hfsg]
@@ -10465,7 +10434,7 @@ private theorem specialized_target_resolution (g input answer marker : String)
     targetGoals, prefixConf, specializedParentSubst, finiteWorld,
     baseParentClause, finiteSpecializedClause_eq, finiteTargetClause, step,
     PWorld.clausesOf, PWorld.canTableCall, PWorld.isTabled, resolveAlts,
-    matchCompatList, matchCompat, freshenResolutionClause,
+    prologMatchCompatList, prologMatchCompat, freshenResolutionClause,
     resolutionFreshSuffix, renameAtomSuffix,
     renameGoalSuffix, Atom.vars,
     Metta.Subst.lookup, hfg, hfsg]
@@ -10490,11 +10459,11 @@ private theorem generic_target_unify (g input answer : String) :
       (Atom.expr [Atom.var "x#r10", Atom.var "result#r10"])
       (Atom.expr [Atom.var "targetArg#r11", Atom.sym answer]) =
         some (genericTargetSubst g input answer) := by
-  simp [unifyB, unifyTopExact, pettaUnifyCompatible,
-    pettaUnifyCompatibleList, genericParentSubst, genericTargetSubst, Atom.size,
-    Metta.Unify.unifyTop, Metta.Unify.unifyRounds,
-    Metta.Unify.decomposeAll, Metta.Unify.decomposeEq,
-    Metta.Unify.decomposeList, Metta.Subst.occurs,
+  simp [unifyB, unifyTopExact, genericParentSubst, genericTargetSubst,
+    Atom.size,
+    Metta.Unify.unifyTopWith, Metta.Unify.unifyRoundsWith,
+    Metta.Unify.decomposeAllWith, Metta.Unify.decomposeEqWith,
+    Metta.Unify.decomposeListWith, Metta.Subst.occurs,
     Metta.Subst.extend, Metta.Subst.erase, Metta.Subst.apply,
     Metta.Subst.compose, Metta.Subst.lookup]
 
@@ -10503,12 +10472,11 @@ private theorem specialized_target_unify (input answer : String) :
       (Atom.expr [Atom.var "x#r10", Atom.var "result#r10"])
       (Atom.expr [Atom.var "targetArg#r11", Atom.sym answer]) =
         some (specializedTargetSubst input answer) := by
-  simp [unifyB, unifyTopExact, pettaUnifyCompatible,
-    pettaUnifyCompatibleList, specializedParentSubst, specializedTargetSubst,
-    Atom.size,
-    Metta.Unify.unifyTop, Metta.Unify.unifyRounds,
-    Metta.Unify.decomposeAll, Metta.Unify.decomposeEq,
-    Metta.Unify.decomposeList, Metta.Subst.occurs,
+  simp [unifyB, unifyTopExact, specializedParentSubst,
+    specializedTargetSubst, Atom.size, Metta.Unify.unifyTopWith,
+    Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
+    Metta.Unify.decomposeEqWith, Metta.Unify.decomposeListWith,
+    Metta.Subst.occurs,
     Metta.Subst.extend, Metta.Subst.erase, Metta.Subst.apply,
     Metta.Subst.compose, Metta.Subst.lookup]
 
@@ -10668,7 +10636,7 @@ private theorem ordered_generic_parent_resolution (g input : String)
     orderedPrefixConf, genericParentGoals, baseParentClause,
     step, orderedWorld_clauses_f,
     orderedWorld_canTableCall_false, resolveAlts,
-    matchCompatList, matchCompat, freshenResolutionClause,
+    prologMatchCompatList, prologMatchCompat, freshenResolutionClause,
     resolutionFreshSuffix, renameAtomSuffix,
     renameGoalSuffix, Atom.vars,
     hgf]
@@ -10683,7 +10651,7 @@ private theorem ordered_specialized_parent_resolution (g input : String)
     orderedPrefixConf, specializedParentGoals,
     finiteSpecializedClause_eq, step, orderedWorld_clauses_fSpec,
     orderedWorld_canTableCall_false, resolveAlts,
-    matchCompatList, matchCompat, freshenResolutionClause,
+    prologMatchCompatList, prologMatchCompat, freshenResolutionClause,
     resolutionFreshSuffix, renameAtomSuffix,
     renameGoalSuffix, Atom.vars,
     hgs]
@@ -10719,9 +10687,9 @@ private theorem ordered_specialized_guard (g input : String)
   simp [orderedSpecializedAfterParentBinding, orderedSpecializedAfterGuard,
     orderedPrefixConf, specializedParentSubst, genericParentSubst,
     orderedWorld, baseParentClause, finiteSpecializedClause_eq, step, unifyB,
-    unifyTopExact, pettaUnifyCompatible,
-    Atom.size, Metta.Unify.unifyTop, Metta.Unify.unifyRounds,
-    Metta.Unify.decomposeAll, Metta.Unify.decomposeEq,
+    unifyTopExact, Atom.size, Metta.Unify.unifyTopWith,
+    Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
+    Metta.Unify.decomposeEqWith,
     Metta.Subst.lookup, trimFor_specialization_guard_direct]
 
 private theorem ordered_generic_dispatch (g input : String)
@@ -10771,7 +10739,7 @@ private theorem ordered_resolve_generic (g input : String)
   unfold resolveAlts
   simp only [hres]
   rw [List.foldl_map]
-  simp only [orderedTargetClause, matchCompatList, matchCompat,
+  simp only [orderedTargetClause, prologMatchCompatList, prologMatchCompat,
     freshenResolutionClause, renameAtomSuffix,
     List.map_cons, List.map_nil, List.length_cons, List.length_nil,
     beq_self_eq_true, List.append_nil]
@@ -10796,7 +10764,7 @@ private theorem ordered_resolve_specialized (input : String)
   unfold resolveAlts
   simp only [hres]
   rw [List.foldl_map]
-  simp only [orderedTargetClause, matchCompatList, matchCompat,
+  simp only [orderedTargetClause, prologMatchCompatList, prologMatchCompat,
     freshenResolutionClause, renameAtomSuffix,
     List.map_cons, List.map_nil, List.length_cons, List.length_nil,
     beq_self_eq_true, List.append_nil]
@@ -10881,12 +10849,11 @@ private theorem ordered_generic_target_unify (g input answer : String) :
       (Atom.expr [Atom.var "x#r10", Atom.var "result#r10"])
       (Atom.expr [Atom.sym input, Atom.sym answer]) =
         some (orderedGenericTargetSubst g input answer) := by
-  simp [unifyB, unifyTopExact, pettaUnifyCompatible,
-    pettaUnifyCompatibleList, genericParentSubst, orderedGenericTargetSubst,
-    Atom.size,
-    Metta.Unify.unifyTop, Metta.Unify.unifyRounds,
-    Metta.Unify.decomposeAll, Metta.Unify.decomposeEq,
-    Metta.Unify.decomposeList, Metta.Subst.occurs,
+  simp [unifyB, unifyTopExact, genericParentSubst,
+    orderedGenericTargetSubst, Atom.size, Metta.Unify.unifyTopWith,
+    Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
+    Metta.Unify.decomposeEqWith, Metta.Unify.decomposeListWith,
+    Metta.Subst.occurs,
     Metta.Subst.extend, Metta.Subst.erase, Metta.Subst.apply,
     Metta.Subst.compose, Metta.Subst.lookup]
 
@@ -10895,12 +10862,11 @@ private theorem ordered_specialized_target_unify (input answer : String) :
       (Atom.expr [Atom.var "x#r10", Atom.var "result#r10"])
       (Atom.expr [Atom.sym input, Atom.sym answer]) =
         some (orderedSpecializedTargetSubst input answer) := by
-  simp [unifyB, unifyTopExact, pettaUnifyCompatible,
-    pettaUnifyCompatibleList, specializedParentSubst,
-    orderedSpecializedTargetSubst, Atom.size, Metta.Unify.unifyTop,
-    Metta.Unify.unifyRounds,
-    Metta.Unify.decomposeAll, Metta.Unify.decomposeEq,
-    Metta.Unify.decomposeList, Metta.Subst.occurs,
+  simp [unifyB, unifyTopExact, specializedParentSubst,
+    orderedSpecializedTargetSubst, Atom.size, Metta.Unify.unifyTopWith,
+    Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
+    Metta.Unify.decomposeEqWith, Metta.Unify.decomposeListWith,
+    Metta.Subst.occurs,
     Metta.Subst.extend, Metta.Subst.erase, Metta.Subst.apply,
     Metta.Subst.compose, Metta.Subst.lookup]
 

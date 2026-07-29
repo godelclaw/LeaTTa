@@ -46,15 +46,36 @@ def pettaUnifyCompatibleList : List Atom → List Atom → Bool
   | _, _ => false
 end
 
-/-- Current PeTTa/SWI exact-ground wrapper.  The comparator-parametric core is
-available for the full Prolog-identity migration; until its metatheory is
-ported, this wrapper retains the existing candidate filter. -/
+mutual
+
+/-- Conservative clause-indexing discriminator for the PeTTa/Prolog
+dialect.  Variables remain wildcards, while every ground-ground comparison
+uses exact Prolog term identity.  `false` therefore means that Prolog
+unification is structurally impossible; in particular, equal NaN terms are
+not discarded before the resolver can unify them. -/
+def prologMatchCompat : Atom → Atom → Bool
+  | .var _, _ => true
+  | _, .var _ => true
+  | .sym left, .sym right => left == right
+  | .gnd left, .gnd right => prologGroundIdentical left right
+  | .expr left, .expr right => prologMatchCompatList left right
+  | _, _ => false
+
+/-- List counterpart of `prologMatchCompat`. -/
+def prologMatchCompatList : List Atom → List Atom → Bool
+  | [], [] => true
+  | left :: leftRest, right :: rightRest =>
+      prologMatchCompat left right &&
+        prologMatchCompatList leftRest rightRest
+  | _, _ => false
+
+end
+
+/-- PeTTa/SWI first-order unification with exact Prolog ground identity at
+every decomposition round.  Comparator-parametric decomposition is
+load-bearing: substitution may expose a ground-ground equation only after an
+earlier variable-elimination round. -/
 def unifyTopExact (x y : Atom) : Option Subst :=
-  match Metta.Unify.unifyTop x y with
-  | some generated =>
-      if pettaUnifyCompatible (subst generated x) (subst generated y) then
-        some generated
-      else none
-  | none => none
+  Metta.Unify.unifyTopWith prologGroundIdentical x y
 
 end PLeaTTa
