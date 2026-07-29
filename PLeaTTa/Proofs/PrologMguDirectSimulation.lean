@@ -11,6 +11,7 @@ Main exports:
   CanonicalRuntimeAgrees.decomposeEqWith_same,
   TreeDecomposes.runtime,
   TreeEquationsDecompose.runtime,
+  TreeUnifyRounds.runtime,
   CanonicalRuntimeAgrees.unifyTopExact_bindLeft,
   CanonicalRuntimeAgrees.unifyTopExact_bindRight
 -/
@@ -182,6 +183,15 @@ abbrev AlphaTreeConstraintsAgree
     (runtime : List (String × Atom)) : Prop :=
   List.Forall₂ (AlphaTreeConstraintAgrees alpha) canonical runtime
 
+/-- Canonical one-pass normalization of the remaining flattened
+constraints after eliminating one variable. -/
+def normalizeTreeConstraints
+    (source : LogicVar) (replacement : Tree)
+    (constraints : List (LogicVar × Tree)) : List TreeEquation :=
+  constraints.map fun item =>
+    (Tree.instantiateOne source replacement (.variable item.1),
+      Tree.instantiateOne source replacement item.2)
+
 /-- The exact equation worklist produced after eliminating one aligned
 constraint remains pointwise alpha-related.  Both sides use their real
 one-pass operations; no deep-substitution theorem or decoded runtime atom is
@@ -199,12 +209,11 @@ theorem AlphaTreeConstraintsAgree.instantiateOne
     (agreement :
       AlphaTreeConstraintsAgree alpha canonical runtime) :
     AlphaTreeEquationsAgree alpha
-      (canonical.map fun item =>
-        (Tree.instantiateOne source replacement (.variable item.1),
-          Tree.instantiateOne source replacement item.2))
+      (normalizeTreeConstraints source replacement canonical)
       (runtime.map fun item =>
         (Metta.Subst.apply [(name, target)] (.var item.1),
           Metta.Subst.apply [(name, target)] item.2)) := by
+  unfold normalizeTreeConstraints
   induction agreement with
   | nil =>
       exact .nil
@@ -269,6 +278,33 @@ inductive TreeEquationsDecompose :
       TreeEquationsDecompose
         ((left, right) :: equations)
         (headConstraints ++ tailConstraints)
+
+/-- Successful canonical Robinson rounds, indexed by the same fuel discipline
+as the executable algorithm.  The state is an ordered substitution list;
+freshness makes canonical cons coincide with executable `Subst.extend`.
+There is deliberately no constructor for a rigid clash, an occurs failure,
+or exhausted fuel with pending constraints. -/
+inductive TreeUnifyRounds :
+    Nat → List TreeEquation → TreeSubstitution →
+      TreeSubstitution → Prop where
+  | done (fuel : Nat) {equations : List TreeEquation}
+      {base : TreeSubstitution}
+      (decomposition : TreeEquationsDecompose equations []) :
+      TreeUnifyRounds fuel equations base base
+  | eliminate (fuel : Nat) {equations : List TreeEquation}
+      {source : LogicVar} {replacement : Tree}
+      {rest : List (LogicVar × Tree)}
+      {base result : TreeSubstitution}
+      (decomposition :
+        TreeEquationsDecompose equations
+          ((source, replacement) :: rest))
+      (fresh : source ∉ base.map Prod.fst)
+      (absent : Tree.occurs source replacement = false)
+      (next :
+        TreeUnifyRounds fuel
+          (normalizeTreeConstraints source replacement rest)
+          ((source, replacement) :: base) result) :
+      TreeUnifyRounds (fuel + 1) equations base result
 
 mutual
 
@@ -699,6 +735,128 @@ theorem TreeEquationsDecompose.runtime
           simp [Metta.Unify.decomposeAllWith,
             headExact, tailExact]
 
+/-! ## Exact repeated elimination -/
+
+/-- Canonical key freshness transports to the runtime association list.
+Inverse alpha functionality is load-bearing: without it, a distinct
+canonical key could reuse the executable name being inserted. -/
+theorem AlphaTreeSubstitutionAgrees.runtime_key_not_mem
+    {alpha : List (LogicVar × String)}
+    (shared : SharedRuntimeAlpha alpha)
+    {source : LogicVar} {name : String}
+    (linked : (source, name) ∈ alpha)
+    {canonical : TreeSubstitution} {runtime : Subst}
+    (agreement :
+      AlphaTreeSubstitutionAgrees alpha canonical runtime)
+    (fresh : source ∉ canonical.map Prod.fst) :
+    name ∉ runtime.map Prod.fst := by
+  induction agreement with
+  | nil =>
+      simp
+  | @cons identity runtimeName tree atom canonical runtime
+      identityLinked replacement tail inductionHypothesis =>
+      simp only [List.map_cons, List.mem_cons, not_or] at fresh ⊢
+      constructor
+      · intro namesEqual
+        subst runtimeName
+        have identitiesEqual : identity = source := by
+          exact shared.backward identityLinked linked
+        exact fresh.1 identitiesEqual.symm
+      · exact inductionHypothesis fresh.2
+
+/-- Filtering a runtime substitution by a key absent from its complete key
+list is the identity. -/
+theorem substErase_eq_self_of_key_not_mem
+    (runtime : Subst) (name : String)
+    (fresh : name ∉ runtime.map Prod.fst) :
+    Metta.Subst.erase runtime name = runtime := by
+  induction runtime with
+  | nil => rfl
+  | cons entry runtime inductionHypothesis =>
+      rcases entry with ⟨key, value⟩
+      simp only [List.map_cons, List.mem_cons, not_or] at fresh
+      have keep : (key != name) = true := by
+        simp [Ne.symm fresh.1]
+      unfold Metta.Subst.erase at inductionHypothesis ⊢
+      simp only [List.filter_cons, keep, if_true]
+      rw [inductionHypothesis fresh.2]
+
+/-- The executable comparator-parametric round loop realizes every
+successful independent canonical round derivation with the same fuel,
+ordered worklist, base substitution, and final association-list shape up to
+the shared alpha graph. -/
+theorem TreeUnifyRounds.runtime
+    {alpha : List (LogicVar × String)}
+    (shared : SharedRuntimeAlpha alpha)
+    {fuel : Nat}
+    {canonicalEquations : List TreeEquation}
+    {canonicalBase canonicalResult : TreeSubstitution}
+    {runtimeEquations : List (Atom × Atom)}
+    {runtimeBase : Subst}
+    (equationsAgreement :
+      AlphaTreeEquationsAgree alpha canonicalEquations runtimeEquations)
+    (baseAgreement :
+      AlphaTreeSubstitutionAgrees alpha canonicalBase runtimeBase)
+    (rounds :
+      TreeUnifyRounds fuel canonicalEquations
+        canonicalBase canonicalResult) :
+    ∃ runtimeResult : Subst,
+      Metta.Unify.unifyRoundsWith PLeaTTa.prologGroundIdentical
+          fuel runtimeEquations runtimeBase =
+        some runtimeResult ∧
+      AlphaTreeSubstitutionAgrees alpha
+        canonicalResult runtimeResult := by
+  induction rounds generalizing runtimeEquations runtimeBase with
+  | done fuel decomposition =>
+      obtain ⟨runtimeConstraints, decomposed, constraintsAgreement⟩ :=
+        decomposition.runtime shared equationsAgreement
+      cases constraintsAgreement
+      refine ⟨runtimeBase, ?_, baseAgreement⟩
+      cases fuel <;>
+        simp [Metta.Unify.unifyRoundsWith, decomposed]
+  | @eliminate fuel equations source replacement rest base result
+      decomposition fresh absent next inductionHypothesis =>
+      obtain ⟨runtimeConstraints, decomposed, constraintsAgreement⟩ :=
+        decomposition.runtime shared equationsAgreement
+      cases constraintsAgreement with
+      | @cons canonicalHead runtimeHead canonicalTail runtimeTail
+          headAgreement tailAgreement =>
+          rcases runtimeHead with ⟨name, target⟩
+          have runtimeAbsent :
+              Metta.Subst.occurs name target = false := by
+            rw [←
+              PLeaTTa.PrologMguDirectSimulation.CanonicalRuntimeAgrees.occurs_eq
+                shared headAgreement.key headAgreement.replacement]
+            exact absent
+          have runtimeFresh :
+              name ∉ runtimeBase.map Prod.fst :=
+            PLeaTTa.PrologMguDirectSimulation.AlphaTreeSubstitutionAgrees.runtime_key_not_mem
+              shared headAgreement.key baseAgreement fresh
+          have erased :
+              Metta.Subst.erase runtimeBase name = runtimeBase :=
+            substErase_eq_self_of_key_not_mem
+              runtimeBase name runtimeFresh
+          have nextEquationsAgreement :
+              AlphaTreeEquationsAgree alpha
+                (normalizeTreeConstraints source replacement rest)
+                (runtimeTail.map fun item =>
+                  (Metta.Subst.apply [(name, target)] (.var item.1),
+                    Metta.Subst.apply [(name, target)] item.2)) :=
+            PLeaTTa.PrologMguDirectSimulation.AlphaTreeConstraintsAgree.instantiateOne
+              shared headAgreement.key headAgreement.replacement
+                tailAgreement
+          have nextBaseAgreement :
+              AlphaTreeSubstitutionAgrees alpha
+                ((source, replacement) :: base)
+                ((name, target) :: runtimeBase) :=
+            .cons headAgreement.key headAgreement.replacement baseAgreement
+          obtain ⟨runtimeResult, nextExact, resultAgreement⟩ :=
+            inductionHypothesis
+              nextEquationsAgreement nextBaseAgreement
+          refine ⟨runtimeResult, ?_, resultAgreement⟩
+          simp [Metta.Unify.unifyRoundsWith, decomposed,
+            runtimeAbsent, Metta.Subst.extend, erased, nextExact]
+
 /-- An empty structural decomposition makes the top-level executable
 unifier return the empty substitution exactly. -/
 theorem unifyTopExact_of_decompose_empty
@@ -901,6 +1059,124 @@ theorem structural_decomposition_preserves_left_to_right_order :
       Metta.Unify.decomposeListWith] using runtimeExact
   subst runtime
   exact ⟨independent, runtimeExact, runtimeAgreement⟩
+
+/-- Two genuine elimination rounds pin both normalization and the
+newest-first returned association-list order.  A one-round shortcut or a
+reversed extension policy falsifies the exact executable result. -/
+theorem repeated_elimination_preserves_normalization_and_result_order :
+    let canonicalEquations : List TreeEquation :=
+      [(.variable decomposeWitnessLeft,
+          .variable decomposeWitnessRight),
+       (.variable decomposeWitnessRight, decomposeWitnessA)]
+    let canonicalResult : TreeSubstitution :=
+      [(decomposeWitnessRight, decomposeWitnessA),
+       (decomposeWitnessLeft, .variable decomposeWitnessRight)]
+    let runtimeEquations : List (Atom × Atom) :=
+      [(.var "X", .var "Y"), (.var "Y", .sym "a")]
+    let runtimeResult : Subst :=
+      [("Y", .sym "a"), ("X", .var "Y")]
+    TreeUnifyRounds 2 canonicalEquations [] canonicalResult ∧
+      Metta.Unify.unifyRoundsWith PLeaTTa.prologGroundIdentical
+          2 runtimeEquations [] =
+        some runtimeResult ∧
+      AlphaTreeSubstitutionAgrees decomposeWitnessAlpha
+        canonicalResult runtimeResult := by
+  dsimp only
+  have firstDecomposition :
+      TreeEquationsDecompose
+        [(.variable decomposeWitnessLeft,
+            .variable decomposeWitnessRight),
+         (.variable decomposeWitnessRight, decomposeWitnessA)]
+        [(decomposeWitnessLeft, .variable decomposeWitnessRight),
+         (decomposeWitnessRight, decomposeWitnessA)] := by
+    simpa using
+      (TreeEquationsDecompose.cons
+        (TreeDecomposes.bindLeft
+          decomposeWitnessLeft
+          (.variable decomposeWitnessRight) (by
+            simp [decomposeWitnessLeft, decomposeWitnessRight]))
+        (TreeEquationsDecompose.cons
+          (TreeDecomposes.bindLeft
+            decomposeWitnessRight decomposeWitnessA (by
+              simp [decomposeWitnessA]))
+          TreeEquationsDecompose.nil))
+  have secondDecomposition :
+      TreeEquationsDecompose
+        [(.variable decomposeWitnessRight, decomposeWitnessA)]
+        [(decomposeWitnessRight, decomposeWitnessA)] := by
+    simpa using
+      (TreeEquationsDecompose.cons
+        (TreeDecomposes.bindLeft
+          decomposeWitnessRight decomposeWitnessA (by
+            simp [decomposeWitnessA]))
+        TreeEquationsDecompose.nil)
+  have terminal :
+      TreeUnifyRounds 0 []
+        [(decomposeWitnessRight, decomposeWitnessA),
+         (decomposeWitnessLeft, .variable decomposeWitnessRight)]
+        [(decomposeWitnessRight, decomposeWitnessA),
+         (decomposeWitnessLeft, .variable decomposeWitnessRight)] :=
+    .done 0 TreeEquationsDecompose.nil
+  have secondRound :
+      TreeUnifyRounds 1
+        [(.variable decomposeWitnessRight, decomposeWitnessA)]
+        [(decomposeWitnessLeft, .variable decomposeWitnessRight)]
+        [(decomposeWitnessRight, decomposeWitnessA),
+         (decomposeWitnessLeft, .variable decomposeWitnessRight)] := by
+    apply TreeUnifyRounds.eliminate 0 secondDecomposition
+    · simp [decomposeWitnessLeft, decomposeWitnessRight]
+    · simp [Tree.occurs, Trees.occurs, decomposeWitnessA]
+    · simpa [normalizeTreeConstraints,
+        Tree.instantiateOne, Trees.instantiateOne] using terminal
+  have rounds :
+      TreeUnifyRounds 2
+        [(.variable decomposeWitnessLeft,
+            .variable decomposeWitnessRight),
+         (.variable decomposeWitnessRight, decomposeWitnessA)]
+        []
+        [(decomposeWitnessRight, decomposeWitnessA),
+         (decomposeWitnessLeft, .variable decomposeWitnessRight)] := by
+    apply TreeUnifyRounds.eliminate 1 firstDecomposition
+    · simp
+    · simp [Tree.occurs,
+        decomposeWitnessLeft, decomposeWitnessRight]
+    · simpa [normalizeTreeConstraints,
+        Tree.instantiateOne, Trees.instantiateOne,
+        decomposeWitnessA,
+        decomposeWitnessLeft, decomposeWitnessRight] using secondRound
+  have equationsAgreement :
+      AlphaTreeEquationsAgree decomposeWitnessAlpha
+        [(.variable decomposeWitnessLeft,
+            .variable decomposeWitnessRight),
+         (.variable decomposeWitnessRight, decomposeWitnessA)]
+        [(.var "X", .var "Y"), (.var "Y", .sym "a")] :=
+    .cons
+      ⟨.variable (by simp [decomposeWitnessAlpha]),
+        .variable (by simp [decomposeWitnessAlpha])⟩
+      (.cons
+        ⟨.variable (by simp [decomposeWitnessAlpha]),
+          .atom (by decide) (by decide)⟩
+        .nil)
+  obtain ⟨runtime, runtimeExact, runtimeAgreement⟩ :=
+    rounds.runtime decomposeWitnessShared
+      equationsAgreement AlphaTreeSubstitutionAgrees.nil
+  have runtimeValue :
+      runtime = [("Y", .sym "a"), ("X", .var "Y")] := by
+    have computed :
+        Metta.Unify.unifyRoundsWith
+            PLeaTTa.prologGroundIdentical 2
+            [(.var "X", .var "Y"), (.var "Y", .sym "a")] [] =
+          some [("Y", .sym "a"), ("X", .var "Y")] := by
+      simp [Metta.Unify.unifyRoundsWith,
+        Metta.Unify.decomposeAllWith,
+        Metta.Unify.decomposeEqWith,
+        Metta.Subst.occurs, Metta.Subst.apply,
+        Metta.Subst.lookup, Metta.Subst.extend,
+        Metta.Subst.erase]
+    rw [computed] at runtimeExact
+    exact Option.some.inj runtimeExact.symm
+  subst runtime
+  exact ⟨rounds, runtimeExact, runtimeAgreement⟩
 
 private def occursWitnessLeft : LogicVar := .source "left"
 private def occursWitnessRight : LogicVar := .source "right"
