@@ -572,7 +572,7 @@ theorem Step.answerValues_shape
       ∃ binding, source.cur = some ([], binding) ∧
         target.answerValues =
           source.answerValues ++ [PLeaTTa.subst binding source.qterm] := by
-  cases step <;> simp [Conf.answerValues, *]
+  cases step <;> simp [Conf.answerValues, rejoinFindall, *]
 
 /-- A single semantic step can only extend the published answer sequence by a
 suffix.  The stronger `Step.answerValues_shape` theorem identifies the sole

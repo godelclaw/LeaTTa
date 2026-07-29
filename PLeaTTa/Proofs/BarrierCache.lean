@@ -385,7 +385,7 @@ theorem Step.preserves_barrierCacheCoherent {prog : Prog}
         Goal.eq res template] ++ rest) binding] coherent (by simp)
   case findall =>
     intro c d template sub res rest binding hcur hrun hdone ih coherent
-    simpa [BarrierCacheCoherent] using coherent
+    simpa [BarrierCacheCoherent, rejoinFindall] using coherent
   case transaction =>
     intro c d template sub rest binding err hcur hraise ih coherent
     apply ih

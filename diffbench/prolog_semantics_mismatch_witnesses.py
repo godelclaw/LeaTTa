@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Execute known semantics mismatches against the pinned PeTTa oracle.
+"""Execute semantics mismatches and repaired-characterization witnesses.
 
-This is evidence, not a proof ledger.  Green means that each exact documented
-divergence remains observable.  Agreement, output drift, a stale ledger row,
-or a fixture that escapes the repository all fail the gate so a repaired
-semantic obligation cannot remain mislabeled as FAIL.
+This is evidence, not a proof ledger.  Green means that every exact documented
+divergence remains observable and every promoted characterization agrees with
+the pinned PeTTa oracle.  Output drift, a stale ledger row, or a fixture that
+escapes the repository fails the gate.
 """
 
 from __future__ import annotations

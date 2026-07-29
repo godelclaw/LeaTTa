@@ -4339,6 +4339,77 @@ theorem renameAtomSuffixShared_eq (suffix : String) (atom : Atom) :
       simp [renameAtomSuffixShared, closed,
         renameAtomSuffix_eq_self_of_resolutionAtomClosed suffix atom closed]
 
+/-- The certified local result of copying one residual `findall/3` value.
+`counter` is the next globally available resolution-name seed. -/
+structure FindallAtomCopy where
+  value : Atom
+  counter : Nat
+deriving Repr
+
+/-- Copy one materialized solution at collection time.  A non-ground value is
+renamed by one common fresh suffix, preserving every sharing occurrence inside
+that value.  The allocator is first repaired past any host/source token carried
+by the value, then advanced exactly once.  Ground values allocate nothing. -/
+def copyFindallAtom (counter : Nat) (value : Atom) : FindallAtomCopy :=
+  if resolutionAtomClosed value then
+    { value := value, counter := counter }
+  else
+    let seed := advanceCounterPastAtoms counter [value]
+    { value := renameAtomSuffix (resolutionCompactSuffix seed) value
+      counter := seed + 1 }
+
+/-- Ordered result of copying a complete finite `findall/3` bag. -/
+structure FindallBagCopy where
+  values : List Atom
+  counter : Nat
+deriving Repr
+
+/-- Copy every materialized solution once, in discovery order, threading the
+same global allocator between solutions. -/
+def copyFindallBag : Nat → List Atom → FindallBagCopy
+  | counter, [] => { values := [], counter := counter }
+  | counter, value :: rest =>
+      let copied := copyFindallAtom counter value
+      let copiedRest := copyFindallBag copied.counter rest
+      { values := copied.value :: copiedRest.values
+        counter := copiedRest.counter }
+
+theorem copyFindallAtom_counter_mono (counter : Nat) (value : Atom) :
+    counter ≤ (copyFindallAtom counter value).counter := by
+  simp only [copyFindallAtom]
+  split
+  · exact Nat.le_refl counter
+  · dsimp only
+    exact Nat.le_trans (Nat.le_max_left counter _) (Nat.le_add_right _ _)
+
+theorem copyFindallBag_counter_mono :
+    ∀ (counter : Nat) (values : List Atom),
+      counter ≤ (copyFindallBag counter values).counter
+  | counter, [] => Nat.le_refl counter
+  | counter, value :: rest => by
+      exact Nat.le_trans (copyFindallAtom_counter_mono counter value)
+        (copyFindallBag_counter_mono
+          (copyFindallAtom counter value).counter rest)
+
+@[simp] theorem copyFindallBag_values_length :
+    ∀ (counter : Nat) (values : List Atom),
+      (copyFindallBag counter values).values.length = values.length
+  | _, [] => rfl
+  | counter, _ :: rest => by
+      simp only [copyFindallBag, List.length_cons]
+      rw [copyFindallBag_values_length
+        (copyFindallAtom counter _).counter rest]
+
+/-- Shared atomic rejoin for a completed finite `findall/3` run.  All machine
+representations and the sealed relation use this exact construction. -/
+def rejoinFindall {Binding : Type} (outer inner : Conf Binding)
+    (result : Atom) (rest : List Goal) (binding : Binding) : Conf Binding :=
+  let copied := copyFindallBag inner.counter inner.answerValues
+  { outer with
+    cur := some (Goal.eq result (chainOf copied.values) :: rest, binding)
+    world := inner.world
+    counter := copied.counter }
+
 mutual
 
 /-- Apply one suffix renaming throughout a goal and tag its cuts. -/
@@ -5764,9 +5835,7 @@ def step (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf) : Conf :=
             counter := c.counter, qterm := tmpl,
             barriers := resetBarrierCache c.barriers }
         let subDone := run prog gt fuel subConf none
-        let items := chainOf subDone.answerValues
-        { c with cur := some (Goal.eq res items :: rest, b),
-                 world := subDone.world, counter := subDone.counter }
+        rejoinFindall c subDone res rest b
     | .onceg tmpl sub res =>
         -- once(G) ≡ (G, !) under its own barrier: bindings RETAINED in the
         -- caller (unlike findall, which copies), first solution committed.
@@ -5907,9 +5976,7 @@ def finishSoftcutClean (c : Conf) (rest thn els : List Goal)
 def finishFindallClean (c : Conf) (rest : List Goal) (res : Atom)
     (b : Subst) : RunOutcome → StepOutcome
   | .done d =>
-      .progressed { c with
-        cur := some (Goal.eq res (chainOf d.answerValues) :: rest, b),
-        world := d.world, counter := d.counter }
+      .progressed (rejoinFindall c d res rest b)
   | .limited d => .exhausted d
   | .exhausted d => .exhausted d
   | .errored d err => .errored d err

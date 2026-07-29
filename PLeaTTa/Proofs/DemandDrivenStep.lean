@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: Apache-2.0
 
 import PLeaTTa.Semantics
+import PLeaTTa.Proofs.FindallCopy
 import PLeaTTa.Proofs.Unification
 
 /-!
@@ -149,13 +150,41 @@ def enterFindall (state : OpenConf) (template : Atom) (sub : List Goal)
 restored; the persistent world and high-water come exclusively from `inner`. -/
 def resumeFindall (inner : OpenConf) (frame : FindallFrame)
     (remaining : List Frame) : OpenConf :=
-  { persistent := inner.persistent
+  let copied :=
+    copyFindallBag inner.persistent.counter inner.control.answerValues
+  { persistent := { inner.persistent with counter := copied.counter }
     control :=
       { frame.outer with
         cur := some
-          (Goal.eq frame.result (chainOf inner.control.answerValues) ::
+          (Goal.eq frame.result (chainOf copied.values) ::
             frame.rest, frame.binding) }
     frames := remaining }
+
+/-- Rejoin from an already-certified copied bag.  This is the local fine
+copy lane's exit; unlike `resumeFindall`, it performs no copying itself. -/
+def resumeFindallCopied (persistent : Persistent) (frame : FindallFrame)
+    (remaining : List Frame) (copiedValues : List Atom) : OpenConf :=
+  { persistent := persistent
+    control :=
+      { frame.outer with
+        cur := some
+          (Goal.eq frame.result (chainOf copiedValues) ::
+            frame.rest, frame.binding) }
+    frames := remaining }
+
+/-- The atomic collector is exactly rejoining the certified batch result. -/
+theorem resumeFindall_eq_copied (inner : OpenConf)
+    (frame : FindallFrame) (remaining : List Frame) :
+    resumeFindall inner frame remaining =
+      resumeFindallCopied
+        { inner.persistent with
+          counter :=
+            (copyFindallBag inner.persistent.counter
+              inner.control.answerValues).counter }
+        frame remaining
+        (copyFindallBag inner.persistent.counter
+          inner.control.answerValues).values := by
+  rfl
 
 /-- The suspended frame generated from a plain outer machine state. -/
 def findallFrameOf (outer : Conf) (template result : Atom)
@@ -169,10 +198,7 @@ def findallFrameOf (outer : Conf) (template result : Atom)
 /-- Exact atomic successor used by the sealed `Step.findall` constructor. -/
 def findallSuccessor (outer inner : Conf) (result : Atom)
     (rest : List Goal) (binding : Subst) : Conf :=
-  { outer with
-    cur := some (Goal.eq result (chainOf inner.answerValues) :: rest, binding)
-    world := inner.world
-    counter := inner.counter }
+  rejoinFindall outer inner result rest binding
 
 /-- Exact successor used by the sealed answer rule. -/
 def answerSuccessor (inner : Conf) (binding : Subst) : Conf :=
@@ -221,7 +247,11 @@ def answerSuccessor (inner : Conf) (binding : Subst) : Conf :=
 
 @[simp] theorem resumeFindall_persistent (inner : OpenConf)
     (frame : FindallFrame) (remaining : List Frame) :
-    (resumeFindall inner frame remaining).persistent = inner.persistent := rfl
+    (resumeFindall inner frame remaining).persistent =
+      { inner.persistent with
+        counter :=
+          (copyFindallBag inner.persistent.counter
+            inner.control.answerValues).counter } := rfl
 
 /-- Flatten all active and suspended alternative stacks.  This is a resource
 partition view, not a scheduler: only `control.alts` is runnable. -/
@@ -806,18 +836,15 @@ theorem empty_generator_findall_is_three_fine_steps
     frames template [] result rest binding 1 head innerRun done
   exact ⟨inner, done, by simpa using bridge.1, bridge.2⟩
 
-/-- Concrete counterexample to treating the current sealed collector as
-SWI-compatible on residual variables.  An empty generator succeeds once, so
-its variable template is a reachable collected answer.  The current
-`findallSuccessor` places that *same caller variable* in the bag instead of a
-fresh copy: the source name remains in the collected value.  Native
-`findall/3` copies every solution template, so this theorem records the exact
-executable behavior that a future Search↔open-machine correspondence must
-reject rather than quotient away.
+/-- An empty generator succeeds once, and the sealed collector copies its
+residual variable before placing it in the bag.  The nested run still records
+the raw source variable, while the atomic rejoin produces a distinct compact
+name.  This pins the copy boundary rather than merely testing the helper in
+isolation.
 
 [SPEC SWI-Prolog manual, `findall/3`: template copies are made for every
 solution] -/
-theorem empty_generator_findall_retains_source_variable
+theorem empty_generator_findall_copies_source_variable
     (prog : Prog) (gt : GroundingTable) (outer : Conf)
     (frames : List Frame) (source : String) (result : Atom)
     (rest : List Goal)
@@ -833,7 +860,9 @@ theorem empty_generator_findall_retains_source_variable
       PLeaTTa.Step prog gt outer
         (findallSuccessor outer inner result rest []) ∧
       inner.answerValues = [.var source] ∧
-      source ∈ (chainOf inner.answerValues).vars := by
+      ∃ copiedName,
+        (copyFindallBag inner.counter inner.answerValues).values =
+          [.var copiedName] ∧ copiedName ≠ source := by
   let start := subConfOf outer [] [] (.var source)
   let inner := answerSuccessor start []
   have answerStep : PLeaTTa.Step prog gt start inner := by
@@ -856,7 +885,13 @@ theorem empty_generator_findall_retains_source_variable
       simp [inner, start, answerSuccessor, subConfOf, Conf.answerValues, pull,
         pullAuxTracked, pullAuxCached, pullAux, resetBarrierCache, hbarriers]
   refine ⟨inner, rfl, done, by simpa using bridge.1, bridge.2, answers, ?_⟩
-  simp [answers, chainOf, consC, nilA, Atom.vars]
+  let seed := advanceCounterPastAtoms inner.counter [.var source]
+  refine
+    ⟨source ++ resolutionCompactSuffix seed, ?_,
+      FindallCopy.compact_copy_name_ne_source source seed⟩
+  rw [answers]
+  simp only [copyFindallBag]
+  rw [FindallCopy.copyFindallAtom_var]
 
 /-- Sealed runs with no nested `findall` head, retaining exact step count. -/
 inductive FlatStepsN (prog : Prog) (gt : GroundingTable) :
@@ -877,16 +912,14 @@ theorem FlatStepsN.toStepStar {prog : Prog} {gt : GroundingTable}
   | succ n before middle after _ step _ inductionHypothesis =>
       exact .tail before middle after step inductionHypothesis
 
-/-- The executable aliasing bug is observable with two successful generator
-branches, not merely through the spelling of one residual variable.  This is
-the sealed counterpart of the differential
-`findall-fresh-copy.metta` witness: a source-shaped two-branch `amb` reaches a
-terminal nested run whose collected value contains the *same* source variable
-twice.  Consequently its variable-occurrence list is not duplicate-free;
-alpha-renaming cannot turn it into two independently copied variables.
+/-- A source-shaped two-branch generator reaches a terminal nested run whose
+raw accumulator contains the same source variable twice.  The certified
+rejoin copies those two solutions separately: the bag keeps length/order and
+its two residual variable identities are duplicate-free.  This is the sealed
+counterpart of the differential `findall-fresh-copy.metta` witness.
 
 [SPEC translator.pl:112-116; SWI-Prolog manual, `findall/3`] -/
-theorem two_answer_findall_reuses_one_source_variable
+theorem two_answer_findall_copies_source_variables_apart
     (prog : Prog) (gt : GroundingTable) (outer : Conf)
     (source : String) (result : Atom) (rest : List Goal)
     (head : outer.cur = some
@@ -902,8 +935,9 @@ theorem two_answer_findall_reuses_one_source_variable
       inner.answerValues = [.var source, .var source] ∧
       PLeaTTa.Step prog gt outer
         (findallSuccessor outer inner result rest []) ∧
-      (chainOf inner.answerValues).vars = [source, source] ∧
-      ¬ (chainOf inner.answerValues).vars.Nodup := by
+      (copyFindallBag inner.counter inner.answerValues).values.length = 2 ∧
+      (chainOf
+        (copyFindallBag inner.counter inner.answerValues).values).vars.Nodup := by
   let x : Atom := .var source
   let branches : List (Atom × List Goal) := [(x, []), (x, [])]
   let start := subConfOf outer [Goal.amb branches x] [] x
@@ -989,8 +1023,13 @@ theorem two_answer_findall_reuses_one_source_variable
   refine ⟨inner, ?_, done, ?_, sealed, ?_, ?_⟩
   · simpa [start, branches, x] using run
   · simpa [x] using answers
-  · simp [answers, x, chainOf, consC, nilA, Atom.vars]
-  · simp [answers, x, chainOf, consC, nilA, Atom.vars]
+  · simp [answers]
+  · have separated :=
+      FindallCopy.copyFindallBag_two_same_variables_separate
+        inner.counter source
+    rw [answers]
+    rw [separated.1]
+    simp [chainOf, consC, nilA, Atom.vars, separated.2]
 
 /-- Every private machine step remains one fine step under a fixed frame
 stack.  No zero-step quotient is used. -/
@@ -1239,9 +1278,287 @@ theorem findall_exit_keeps_inner_world_and_highWater
     (inner : OpenConf) (frame : FindallFrame) (remaining : List Frame) :
     (resumeFindall inner frame remaining).persistent.world =
         inner.persistent.world ∧
-      (resumeFindall inner frame remaining).persistent.counter =
-        inner.persistent.counter := by
-  exact ⟨rfl, rfl⟩
+      inner.persistent.counter ≤
+        (resumeFindall inner frame remaining).persistent.counter := by
+  constructor
+  · rfl
+  · exact copyFindallBag_counter_mono _ _
+
+/-! ## Additive fine copy phase
+
+`Step.findallExit` above remains the atomic terminating-run macro-spec used by
+the established frame-bracket parser.  The following second lane refines only
+that exit.  It transfers a terminal collector into a local phase, consumes
+exactly one materialized source value per certified microstep, and rejoins
+after the private reverse accumulator is complete.  Generic trace/provider
+types never receive a constructor for copied answer content. -/
+
+/-- Non-backtrackable world plus the linearly owned suspended continuation
+during residual-bag copying.  The active generator and its top frame have
+been consumed; `bag.counter` is the sole fresh high-water in this phase. -/
+structure FindallCopyPhase where
+  world : PWorld
+  frame : FindallFrame
+  remainingFrames : List Frame
+  bag : FindallCopy.BagCopyState
+deriving Repr
+
+/-- Transfer a terminal collector into its certified local copy phase. -/
+def beginFindallCopy (inner : OpenConf) (frame : FindallFrame)
+    (remaining : List Frame) : FindallCopyPhase :=
+  { world := inner.persistent.world
+    frame := frame
+    remainingFrames := remaining
+    bag :=
+      FindallCopy.BagCopyState.initial inner.persistent.counter
+        inner.control.answerValues }
+
+/-- Rejoin a completed local copy phase.  The caller receives source-order
+values by reversing the phase's private accumulator exactly once. -/
+def finishFindallCopy (phase : FindallCopyPhase) : OpenConf :=
+  resumeFindallCopied
+    { world := phase.world, counter := phase.bag.counter }
+    phase.frame phase.remainingFrames phase.bag.copiedRev.reverse
+
+/-- Additive state space: established open-machine states are retained
+unchanged, while the new constructor represents only bounded certified local
+copy work. -/
+inductive CopyOpenConf where
+  | open (state : OpenConf)
+  | copying (phase : FindallCopyPhase)
+deriving Repr
+
+/-- Fine transition relation with no atomic collector exit.  Ordinary work
+and collector entry mirror the established lane.  A terminal collector must
+transfer into `FindallCopyPhase`; each `copyNext` is justified by the local
+functional copy relation, and `copyFinish` requires exhausted input. -/
+inductive CopyStep (prog : Prog) (gt : GroundingTable) :
+    CopyOpenConf → CopyOpenConf → Prop where
+  | ordinary (state : OpenConf) (next : Conf)
+      (notFindall : ¬ findallRunHead state.toConf)
+      (step : PLeaTTa.Step prog gt state.toConf next) :
+      CopyStep prog gt (.open state)
+        (.open (OpenConf.ofConf next state.frames))
+  | findallEnter (state : OpenConf) (template : Atom) (sub : List Goal)
+      (result : Atom) (rest : List Goal) (binding : Subst)
+      (head : state.toConf.cur =
+        some (Goal.findall template sub result :: rest, binding)) :
+      CopyStep prog gt (.open state)
+        (.open (enterFindall state template sub result rest binding))
+  | copyBegin (inner : OpenConf) (frame : FindallFrame)
+      (remaining : List Frame)
+      (frameHead : inner.frames = .findall frame :: remaining)
+      (done : PLeaTTa.Terminal inner.toConf) :
+      CopyStep prog gt (.open inner)
+        (.copying (beginFindallCopy inner frame remaining))
+  | copyNext (phase : FindallCopyPhase)
+      (nextBag : FindallCopy.BagCopyState)
+      (step : FindallCopy.BagCopyStep phase.bag nextBag) :
+      CopyStep prog gt (.copying phase)
+        (.copying { phase with bag := nextBag })
+  | copyFinish (phase : FindallCopyPhase)
+      (done : phase.bag.remaining = []) :
+      CopyStep prog gt (.copying phase)
+        (.open (finishFindallCopy phase))
+
+/-- Exact step-counted closure of the additive copy lane. -/
+inductive CopyStepsN (prog : Prog) (gt : GroundingTable) :
+    Nat → CopyOpenConf → CopyOpenConf → Prop where
+  | zero (state : CopyOpenConf) : CopyStepsN prog gt 0 state state
+  | succ (n : Nat) (before middle after : CopyOpenConf) :
+      CopyStep prog gt before middle →
+      CopyStepsN prog gt n middle after →
+      CopyStepsN prog gt (n + 1) before after
+
+theorem CopyStepsN.trans {prog : Prog} {gt : GroundingTable}
+    {left middle right : CopyOpenConf} {m n : Nat}
+    (first : CopyStepsN prog gt m left middle)
+    (second : CopyStepsN prog gt n middle right) :
+    CopyStepsN prog gt (m + n) left right := by
+  induction first with
+  | zero state => simpa using second
+  | succ count before stepMiddle after step tail inductionHypothesis =>
+      have combined :=
+        CopyStepsN.succ (count + n) before stepMiddle right step
+          (inductionHypothesis second)
+      have lengthEq : count + n + 1 = count + 1 + n := by omega
+      rw [lengthEq] at combined
+      exact combined
+
+/-- Lift the certified bag copier under a fixed, linearly owned collector
+context.  Every bag microstep remains exactly one open-machine microstep. -/
+theorem BagCopyStepsN_lift
+    {prog : Prog} {gt : GroundingTable}
+    {n : Nat} {before after : FindallCopy.BagCopyState}
+    (world : PWorld) (frame : FindallFrame)
+    (remaining : List Frame)
+    (steps : FindallCopy.BagCopyStepsN n before after) :
+    CopyStepsN prog gt n
+      (.copying
+        { world := world
+          frame := frame
+          remainingFrames := remaining
+          bag := before })
+      (.copying
+        { world := world
+          frame := frame
+          remainingFrames := remaining
+          bag := after }) := by
+  induction steps with
+  | zero state => exact .zero _
+  | succ count before middle after step tail inductionHypothesis =>
+      exact .succ count _ _ _
+        (.copyNext _ middle step)
+        inductionHypothesis
+
+/-- The phase's world and suspended-continuation metadata are invariant under
+one local copy step; only the private bag state can change. -/
+theorem CopyStep.copyNext_preserves_context
+    {prog : Prog} {gt : GroundingTable}
+    {phase nextPhase : FindallCopyPhase}
+    (step : CopyStep prog gt (.copying phase) (.copying nextPhase)) :
+    nextPhase.world = phase.world ∧
+      nextPhase.frame = phase.frame ∧
+      nextPhase.remainingFrames = phase.remainingFrames := by
+  cases step
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- The fresh high-water cannot move backwards during a local copy step. -/
+theorem CopyStep.copyNext_counter_mono
+    {prog : Prog} {gt : GroundingTable}
+    {phase nextPhase : FindallCopyPhase}
+    (step : CopyStep prog gt (.copying phase) (.copying nextPhase)) :
+    phase.bag.counter ≤ nextPhase.bag.counter := by
+  cases step with
+  | copyNext _ _ bagStep =>
+      exact bagStep.counter_mono
+
+/-- Public caller answers remain unchanged throughout one private copy
+microstep.  This is content isolation, not observation-list erasure: the
+transition is still counted by `CopyStepsN`. -/
+theorem CopyStep.copyNext_publicAnswers
+    {prog : Prog} {gt : GroundingTable}
+    {phase nextPhase : FindallCopyPhase}
+    (step : CopyStep prog gt (.copying phase) (.copying nextPhase)) :
+    publicAnswers
+        { persistent :=
+            { world := nextPhase.world
+              counter := nextPhase.bag.counter }
+          control := nextPhase.frame.outer
+          frames := nextPhase.remainingFrames } =
+      publicAnswers
+        { persistent :=
+            { world := phase.world
+              counter := phase.bag.counter }
+          control := phase.frame.outer
+          frames := phase.remainingFrames } := by
+  cases step
+  rfl
+
+/-- The exact terminal microstep state computed from a collector. -/
+def completedFindallCopyPhase (inner : OpenConf) (frame : FindallFrame)
+    (remaining : List Frame) : FindallCopyPhase :=
+  let copied :=
+    copyFindallBag inner.persistent.counter inner.control.answerValues
+  { world := inner.persistent.world
+    frame := frame
+    remainingFrames := remaining
+    bag :=
+      { remaining := []
+        copiedRev := copied.values.reverse
+        counter := copied.counter } }
+
+/-- The certified one-at-a-time phase runs for exactly one step per source
+solution and reaches the macro copier's exact terminal state. -/
+theorem findallCopyPhase_exact
+    {prog : Prog} {gt : GroundingTable}
+    (inner : OpenConf) (frame : FindallFrame)
+    (remaining : List Frame) :
+    CopyStepsN prog gt inner.control.answerValues.length
+      (.copying (beginFindallCopy inner frame remaining))
+      (.copying (completedFindallCopyPhase inner frame remaining)) := by
+  simpa [beginFindallCopy, completedFindallCopyPhase] using
+    BagCopyStepsN_lift inner.persistent.world frame remaining
+      (FindallCopy.BagCopyStepsN.run_initial
+        inner.persistent.counter inner.control.answerValues)
+
+/-- Finishing the exact microstep fold is definitionally the shared atomic
+collector.  This is the non-stuttering collapse: copied content, order,
+multiplicity, world, counter, and caller continuation all coincide. -/
+theorem completedFindallCopyPhase_finish
+    (inner : OpenConf) (frame : FindallFrame)
+    (remaining : List Frame) :
+    finishFindallCopy
+        (completedFindallCopyPhase inner frame remaining) =
+      resumeFindall inner frame remaining := by
+  rw [resumeFindall_eq_copied]
+  simp [finishFindallCopy, completedFindallCopyPhase,
+    resumeFindallCopied]
+
+/-- One atomic `findallExit` expands to: transfer, exactly one certified local
+copy step per source solution, and rejoin.  The endpoint is byte-for-byte the
+atomic macro successor; no answer-list quotient or stuttering assumption is
+used. -/
+theorem findallExit_copy_expands
+    (prog : Prog) (gt : GroundingTable)
+    (inner : OpenConf) (frame : FindallFrame)
+    (remaining : List Frame)
+    (frameHead : inner.frames = .findall frame :: remaining)
+    (done : PLeaTTa.Terminal inner.toConf) :
+    CopyStepsN prog gt (inner.control.answerValues.length + 2)
+      (.open inner) (.open (resumeFindall inner frame remaining)) := by
+  let started := beginFindallCopy inner frame remaining
+  let completed := completedFindallCopyPhase inner frame remaining
+  have beginStep :
+      CopyStep prog gt (.open inner) (.copying started) := by
+    exact .copyBegin inner frame remaining frameHead done
+  have beginRun :
+      CopyStepsN prog gt 1 (.open inner) (.copying started) := by
+    simpa using
+      CopyStepsN.succ 0 _ (.copying started) (.copying started)
+        beginStep (.zero _)
+  have copyRun :
+      CopyStepsN prog gt inner.control.answerValues.length
+        (.copying started) (.copying completed) := by
+    simpa [started, completed] using
+      findallCopyPhase_exact (prog := prog) (gt := gt)
+        inner frame remaining
+  have finishedInput :
+      completed.bag.remaining = [] := by
+    rfl
+  have finishStep :
+      CopyStep prog gt (.copying completed)
+        (.open (finishFindallCopy completed)) :=
+    .copyFinish completed finishedInput
+  have finishRun :
+      CopyStepsN prog gt 1 (.copying completed)
+        (.open (finishFindallCopy completed)) := by
+    simpa using
+      CopyStepsN.succ 0 _ _ _ finishStep (.zero _)
+  have combined := beginRun.trans (copyRun.trans finishRun)
+  rw [completedFindallCopyPhase_finish] at combined
+  have countEq :
+      1 + (inner.control.answerValues.length + 1) =
+        inner.control.answerValues.length + 2 := by
+    omega
+  rw [countEq] at combined
+  exact combined
+
+/-- The additive expansion and the atomic established step are paired on the
+same source and target.  Thus the local copy phase refines rather than
+replaces the existing sealed/OpenConf collector. -/
+theorem findallExit_copy_expands_and_collapses
+    (prog : Prog) (gt : GroundingTable)
+    (inner : OpenConf) (frame : FindallFrame)
+    (remaining : List Frame)
+    (frameHead : inner.frames = .findall frame :: remaining)
+    (done : PLeaTTa.Terminal inner.toConf) :
+    CopyStepsN prog gt (inner.control.answerValues.length + 2)
+        (.open inner) (.open (resumeFindall inner frame remaining)) ∧
+      Step prog gt inner (resumeFindall inner frame remaining) := by
+  exact
+    ⟨findallExit_copy_expands prog gt inner frame remaining frameHead done,
+      .findallExit inner frame remaining frameHead done⟩
 
 /-- The current sealed relation treats every outer findall step atomically:
 the step can exist only with a terminal nested `StepStar` premise. -/

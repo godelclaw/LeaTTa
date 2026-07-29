@@ -24,6 +24,7 @@ LOCAL_RESOLVER = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologResolver.lean"
 PROLOG_COPY = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologCopy.lean"
 GOAL_SEMANTICS = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologGoalSemantics.lean"
 DEMAND_DRIVEN_STEP = ROOT / "PLeaTTa" / "Proofs" / "DemandDrivenStep.lean"
+FINDALL_COPY = ROOT / "PLeaTTa" / "Proofs" / "FindallCopy.lean"
 DEMAND_DRIVEN_CALL_STEP = (
     ROOT / "PLeaTTa" / "Proofs" / "DemandDrivenCallStep.lean"
 )
@@ -140,6 +141,7 @@ def check() -> list[str]:
         "prolog_copy_sha256": digest(PROLOG_COPY),
         "goal_semantics_sha256": digest(GOAL_SEMANTICS),
         "demand_driven_step_sha256": digest(DEMAND_DRIVEN_STEP),
+        "findall_copy_sha256": digest(FINDALL_COPY),
         "demand_driven_call_step_sha256": digest(DEMAND_DRIVEN_CALL_STEP),
         "prolog_state_bridge_sha256": digest(PROLOG_STATE_BRIDGE),
         "prolog_call_entry_bridge_sha256": digest(PROLOG_CALL_ENTRY_BRIDGE),

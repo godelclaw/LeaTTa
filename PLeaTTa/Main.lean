@@ -139,10 +139,7 @@ partial def stepCount (prog : Prog) (gt : Metta.GroundingTable)
           counter := c.counter, qterm := tmpl,
           barriers := resetBarrierCache c.barriers }
       let (subDone, subSteps, maxSubst) := runCount prog gt fuel subConf none
-      let items := chainOf subDone.answerValues
-      ({ c with cur := some (Goal.eq res items :: rest, b),
-                world := subDone.world, counter := subDone.counter },
-       subSteps, maxSubst)
+      (rejoinFindall c subDone res rest b, subSteps, maxSubst)
   | _ => (PLeaTTa.step prog gt fuel c, 0, 0)
 end
 

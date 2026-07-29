@@ -2050,10 +2050,7 @@ theorem rememberAnswerChain_valid (engine : SubstEngine)
 /-- Rejoin the outer search after collecting every nested answer. -/
 def finishFindall {State : Type} (c done : Conf State) (rest : List Goal)
     (res : Atom) (state : State) : Conf State :=
-  { c with
-    cur := some (Goal.eq res (chainOf done.answerValues) :: rest, state)
-    world := done.world
-    counter := done.counter }
+  rejoinFindall c done res rest state
 
 /-- Rejoin the outer search after a transactional nested evaluation. -/
 def finishTransaction {State : Type} (c done : Conf State) (rest : List Goal)
@@ -3509,9 +3506,10 @@ theorem erase_stepWith_of_run (engine : SubstEngine) (prog : Prog)
               rw [doneErase]
               rw [nestedErase]
               apply Conf.ext
-              · simp [base, mapConf, finishFindall]
+              · simp [base, mapConf, finishFindall, rejoinFindall]
                 congr 1
-              all_goals simp [base, mapConf, finishFindall]
+              all_goals simp [base, mapConf, finishFindall, rejoinFindall]
+              all_goals rfl
           | transactiong tmpl sub =>
               let base : Conf engine.State :=
                 { cur := some (Goal.transactiong tmpl sub :: rest, state)

@@ -304,6 +304,39 @@ theorem resolutionSeedHighWaterAtomList_renameCompact_le
     (renameAtomSuffix (resolutionCompactSuffix seed) source).vars
     (seed + 1)).mp hatom name hname
 
+/-- One certified collection copy is below the high-water it returns. -/
+theorem copyFindallAtom_value_below (counter : Nat) (value : Atom) :
+    resolutionSeedHighWaterNames
+        (copyFindallAtom counter value).value.vars ≤
+      (copyFindallAtom counter value).counter := by
+  simp only [copyFindallAtom]
+  split
+  next closed =>
+    have noVars : value.vars = [] :=
+      (PersistentSubst.atomClosed_eq_true_iff_vars_nil value).mp closed
+    simp [noVars, resolutionSeedHighWaterNames]
+  next isOpen =>
+    exact resolutionSeedHighWaterAtom_renameCompact_le value
+      (advanceCounterPastAtoms counter [value])
+
+/-- Every copied bag value is below the final threaded collection high-water. -/
+theorem copyFindallBag_values_below :
+    ∀ (counter : Nat) (values : List Atom),
+      resolutionSeedHighWaterNames
+          ((copyFindallBag counter values).values.flatMap Atom.vars) ≤
+        (copyFindallBag counter values).counter
+  | counter, [] => by simp [copyFindallBag, resolutionSeedHighWaterNames]
+  | counter, value :: rest => by
+      simp only [copyFindallBag, List.flatMap_cons,
+        resolutionSeedHighWaterNames_append]
+      apply Nat.max_le.mpr
+      constructor
+      · exact Nat.le_trans (copyFindallAtom_value_below counter value)
+          (copyFindallBag_counter_mono
+            (copyFindallAtom counter value).counter rest)
+      · exact copyFindallBag_values_below
+          (copyFindallAtom counter value).counter rest
+
 mutual
 
 theorem resolutionSeedHighWaterGoal_renameCompact_le
@@ -1433,6 +1466,8 @@ theorem Step.counter_mono {prog : Prog} {gt : GroundingTable}
       rest c.qterm
     rw [hsmatch] at hcounter
     exact hcounter
+  case findall =>
+    exact Nat.le_trans (by omega) (copyFindallBag_counter_mono _ _)
   all_goals omega
 
 theorem StepStar.counter_mono {prog : Prog} {gt : GroundingTable}
@@ -2546,18 +2581,21 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
           · simp [hbinding]
           · simp [htemplate])
     have dBelow := ih nestedBelow
-    have hcounter : c.counter ≤ d.counter := by
+    have hrunCounter : c.counter ≤ d.counter := by
       simpa using hrun.counter_mono
+    let copied := copyFindallBag d.counter d.answerValues
+    have hcounter : c.counter ≤ copied.counter :=
+      Nat.le_trans hrunCounter (copyFindallBag_counter_mono _ _)
     have hchain : resolutionSeedHighWaterNames
-        (chainOf d.answerValues).vars ≤ d.counter :=
+        (chainOf copied.values).vars ≤ copied.counter :=
       Nat.le_trans
         (resolutionSeedHighWaterNames_le_of_subset (by
           intro name member
-          exact chainOf_vars_subset d.answerValues name member))
-        dBelow.answerValues
-    exact below.replaceActiveEq
+          exact chainOf_vars_subset copied.values name member))
+        (copyFindallBag_values_below _ _)
+    have next := below.replaceActiveEq
       (Goal.findall template sub res :: rest) binding hcur res
-      (chainOf d.answerValues) rest d.world d.counter hcounter (by
+      (chainOf copied.values) rest d.world copied.counter hcounter (by
         intro name member
         simp only [specializationGoalsVars, specializationGoalVars,
           List.mem_append] at member ⊢
@@ -2565,6 +2603,7 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
         · simp [hres]
         · simp [hrest]
         · simp [hbinding]) hchain
+    simpa [copied, rejoinFindall] using next
   case call_table_compute =>
     intro c d function args res rest binding tres hcur hcan hcache htres hrun
       hdone ih below

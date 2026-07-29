@@ -542,10 +542,7 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
           counter := c.counter, qterm := tmpl,
           barriers := resetBarrierCache c.barriers } d)
       (hdone : Terminal d) :
-      Step prog gt c
-        { c with
-          cur := some (Goal.eq res (chainOf d.answerValues) :: rest, b),
-                 world := d.world, counter := d.counter }
+      Step prog gt c (rejoinFindall c d res rest b)
   -- uncached tabled calls compute the ground variant once, cache the answer
   -- bank, then replay the answers. Fuel exhaustion is not a semantic step.
   | call_table_compute (c d : Conf) (f : String) (args : List Atom)

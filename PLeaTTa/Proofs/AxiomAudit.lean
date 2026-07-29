@@ -2,6 +2,7 @@
 
 import PLeaTTa.Proofs.StepCases
 import PLeaTTa.Proofs.DemandDrivenStep
+import PLeaTTa.Proofs.FindallCopy
 import PLeaTTa.Proofs.DemandDrivenCallStep
 import PLeaTTa.Proofs.PrologStateBridge
 import PLeaTTa.Proofs.PrologCallEntryBridge
@@ -1192,9 +1193,18 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.DemandDrivenStep.MacroPrefixN.closedRootSteps_collapse_to_sealed
 #print axioms PLeaTTa.DemandDrivenStep.findall_nested_run_expands_and_collapses
 #print axioms PLeaTTa.DemandDrivenStep.empty_generator_findall_is_three_fine_steps
-#print axioms PLeaTTa.DemandDrivenStep.empty_generator_findall_retains_source_variable
+#print axioms PLeaTTa.DemandDrivenStep.empty_generator_findall_copies_source_variable
+#print axioms PLeaTTa.FindallCopy.copyFindallAtom_agrees
+#print axioms PLeaTTa.FindallCopy.copyFindallBag_agrees
+#print axioms PLeaTTa.FindallCopy.copyFindallBag_pairwise_variable_disjoint
+#print axioms PLeaTTa.FindallCopy.BagCopyStep.deterministic
+#print axioms PLeaTTa.FindallCopy.BagCopyStepsN.run_initial
+#print axioms PLeaTTa.FindallCopy.copyFindallBag_two_same_variables_separate
+#print axioms PLeaTTa.FindallCopy.two_solution_copy_witness
+#print axioms PLeaTTa.FindallCopy.intra_solution_sharing_witness
+#print axioms PLeaTTa.FindallCopy.occupied_seed_repair_witness
 #print axioms PLeaTTa.DemandDrivenStep.FlatStepsN.lift
-#print axioms PLeaTTa.DemandDrivenStep.two_answer_findall_reuses_one_source_variable
+#print axioms PLeaTTa.DemandDrivenStep.two_answer_findall_copies_source_variables_apart
 #print axioms PLeaTTa.DemandDrivenStep.findall_prefix_lifts
 #print axioms PLeaTTa.DemandDrivenStep.findall_unpaired_prefix_has_no_macro_collapse
 #print axioms PLeaTTa.DemandDrivenStep.findall_macro_expands
@@ -1202,6 +1212,10 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.DemandDrivenStep.findall_step_forces_entry
 #print axioms PLeaTTa.DemandDrivenStep.nested_answer_is_one_private_step
 #print axioms PLeaTTa.DemandDrivenStep.findall_exit_keeps_inner_world_and_highWater
+#print axioms PLeaTTa.DemandDrivenStep.findallCopyPhase_exact
+#print axioms PLeaTTa.DemandDrivenStep.completedFindallCopyPhase_finish
+#print axioms PLeaTTa.DemandDrivenStep.findallExit_copy_expands
+#print axioms PLeaTTa.DemandDrivenStep.findallExit_copy_expands_and_collapses
 #print axioms PLeaTTa.DemandDrivenStep.sealed_findall_step_has_terminal_subrun
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.assertz
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.asserta
