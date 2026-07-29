@@ -215,7 +215,7 @@ theorem compileAppDefaultWith_success_stable
               simp only [empty, Bool.false_eq_true, if_false] at compiled ⊢
               exact compiled
           | true =>
-              simp only [empty, if_true, Bind.bind, Except.bind] at compiled ⊢
+              simp only [empty, if_true] at compiled ⊢
               split at compiled
               · contradiction
               · rename_i argsOutcome argsValue argsEq
@@ -435,8 +435,7 @@ theorem compileTypedArgsFuel_stable_step (fuel : Nat)
           cases expression : (ty == (.sym "Expression" : Metta.Atom)) with
           | true =>
               rw [compileTypedArgsFuel.eq_def] at compiled ⊢
-              simp only [show fuel + 2 = Nat.succ (fuel + 1) by omega,
-                expression, if_true] at compiled ⊢
+              simp only [expression, if_true] at compiled ⊢
               simp only [Bind.bind, Except.bind] at compiled ⊢
               split at compiled
               · contradiction
@@ -636,7 +635,7 @@ theorem compileAppFuel_stable_step (fuel : Nat)
         · rename_i argsOutcome argsValue argsEq
           rw [ih.argsAt _ _ _ _ _ _ _ _ argsEq]
           exact compiled
-      · simp_all only [if_false]
+      · simp_all only
         exact ih.appCore _ _ _ _ _ _ _ compiled
 
 theorem compilePatternFuel_stable_step (fuel : Nat)
@@ -711,7 +710,7 @@ theorem compilePatternFuel_stable_step (fuel : Nat)
                   split at compiled
                   · simp_all only [if_true]
                     exact ih.expr _ _ _ _ _ _ compiled
-                  · simp_all only [if_false]
+                  · simp_all only
                     simp only [Bind.bind, Except.bind] at compiled ⊢
                     split at compiled
                     · contradiction
@@ -727,7 +726,7 @@ theorem compilePatternFuel_stable_step (fuel : Nat)
                       split at compiled
                       · simp_all only [if_true]
                         exact ih.expr _ _ _ _ _ _ compiled
-                      · simp_all only [if_false]
+                      · simp_all only
                         simp only [Bind.bind, Except.bind] at compiled ⊢
                         split at compiled
                         · contradiction
@@ -766,7 +765,7 @@ theorem compilePatternFuel_stable_step (fuel : Nat)
                               split at compiled
                               · simp_all only [if_true]
                                 exact ih.expr _ _ _ _ _ _ compiled
-                              · simp_all only [if_false]
+                              · simp_all only
                                 simp only [Bind.bind, Except.bind] at compiled ⊢
                                 split at compiled
                                 · contradiction
@@ -780,7 +779,7 @@ theorem compilePatternFuel_stable_step (fuel : Nat)
                           split at compiled
                           · simp_all only [if_true]
                             exact ih.expr _ _ _ _ _ _ compiled
-                          · simp_all only [if_false]
+                          · simp_all only
                             simp only [Bind.bind, Except.bind] at compiled ⊢
                             split at compiled
                             · contradiction

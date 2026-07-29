@@ -1565,6 +1565,7 @@ theorem task_deterministic {before : Session} {scope : CutScopeId}
   case taskCall.taskThrow =>
     simp [BuiltinThrowCall] at *
 
+set_option linter.unnecessarySeqFocus false in
 /-- Pulling the same frozen local cursor has one exact small-step outcome.
 This lifts canonical head-MGU and `LocalPull` determinism through the search
 state without quotienting answer order or clause multiplicity. -/
@@ -2146,8 +2147,7 @@ theorem preserves_cursorOwnership_target {before after : Session}
       simp_all (config := { failIfUnchanged := false })
         [RawTarget.CursorOwnership, Search.CursorOwnership,
           Search.liveCursorScopes, openedFor, openLocalCall,
-          List.nodup_append] <;>
-        try omega
+          List.nodup_append]
 
 /-- Running successors inherit the linear cursor-ownership invariant. -/
 theorem preserves_cursorOwnership {before after : Session}
@@ -2170,6 +2170,7 @@ theorem database_eq {before after : Session} {search : Search}
   induction step <;> try rfl
   all_goals assumption
 
+set_option linter.unnecessarySeqFocus false in
 set_option maxHeartbeats 2000000 in
 /-- The whole local scheduler is functional: one state has one exact event
 batch, cut signal, successor session, and target.  This is stronger than
