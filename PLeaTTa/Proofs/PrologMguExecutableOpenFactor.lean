@@ -16,7 +16,9 @@ namespace PLeaTTa.PrologMguExecutableOpenFactor
 
 open Metta (Atom Subst)
 open PeTTaSpec.PrologCore
+open PeTTaSpec.PrologCore.Resolver
 open PeTTaSpec.PrologCore.Canonical
+open PrologStateBridge
 open PrologMguBridge
 open PrologMguOpenAgreement
 open PrologMguTopology
@@ -210,6 +212,89 @@ theorem unifyB_result_has_open_factor_of_ordered_shared_alpha
     unifyTopExact_open_factor_of_ordered_shared_alpha
       shared agreement derivation normalizedEq
   exact ⟨generated, normalizedEq, factors, installed⟩
+
+/-! ## Actual freshened retained-clause head -/
+
+/-- Returned-substitution open factorization at the actual retained-clause
+activation.  The graph contains both the normalized query payload and the
+real suffix-freshened executable clause occurrence; it is constructed once
+by `normalizedSharedHeadEquations` and consumed unchanged by the general
+open-factor theorem. -/
+theorem FreshenedClauseAlphaAgrees.unifyB_result_has_open_factor
+    {queryAlpha : List (LogicVar × String)}
+    {reference : LocalClause} {executablePredicate : String}
+    {executable : PLeaTTa.Clause} {freshSeed : Nat}
+    {argsv args : List Atom} {result : Atom}
+    {rest : List PLeaTTa.Goal} {binding : Subst}
+    {query : Atom} {seed barrier : Nat}
+    (freshened :
+      FreshenedClauseAlphaAgrees reference executablePredicate executable
+        freshSeed argsv args result rest binding query seed barrier)
+    (argsvEq : argsv = args.map (PLeaTTa.subst binding))
+    (queryShared : SharedRuntimeAlpha queryAlpha)
+    {queryTerms : List Term}
+    (queryPayload :
+      AlphaTermsAgree queryAlpha queryTerms
+        (args.map (PLeaTTa.subst binding) ++
+          [PLeaTTa.subst binding result]))
+    (queryReferenceBelow :
+      GeneratedBelow (reference.freshCopy freshSeed).firstFresh
+        (queryAlpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ queryAlpha.map Prod.snd →
+        name ∈ resolutionOccupiedVars argsv result rest binding query)
+    (highWater :
+      resolutionSeedHighWaterNames
+        (resolutionOccupiedVars argsv result rest binding query) ≤ seed)
+    (lengths :
+      queryTerms.length =
+        (reference.freshCopy freshSeed).clause.arguments.length)
+    {canonical : TreeSubstitution}
+    (derivation :
+      OrderedTreeMgu
+        (denoteEquations
+          (argumentEquations queryTerms
+            (reference.freshCopy freshSeed).clause.arguments))
+        canonical)
+    {executableResult : Subst}
+    (returned :
+      PLeaTTa.unifyB binding (.expr (args ++ [result]))
+          (.expr
+            ((freshenResolutionClause argsv args result rest binding query
+                seed barrier executable).params ++
+              [(freshenResolutionClause argsv args result rest binding query
+                seed barrier executable).result])) =
+        some executableResult) :
+    ∃ generated,
+      PLeaTTa.unifyTopExact
+          (.expr ((args ++ [result]).map (PLeaTTa.subst binding)))
+          (.expr
+            (((freshenResolutionClause argsv args result rest binding query
+                seed barrier executable).params ++
+              [(freshenResolutionClause argsv args result rest binding query
+                seed barrier executable).result]).map
+              (PLeaTTa.subst binding))) =
+          some generated ∧
+        OpenAlphaResultFactors
+          (queryAlpha ++
+            RuntimeAlpha.graph
+              (referenceFreshTargets
+                (reference.freshCopy freshSeed).firstFresh
+                reference.variables)
+              (executableFreshTargets
+                (resolutionFreshSuffix argsv result rest binding query seed)
+                reference.variables))
+          canonical generated ∧
+        executableResult =
+          match generated with
+          | [] => binding
+          | _ :: _ => Metta.Subst.compose generated binding := by
+  have normalized :=
+    PLeaTTa.PrologMguValuation.FreshenedClauseAlphaAgrees.normalizedSharedHeadEquations
+      freshened argsvEq queryShared queryPayload queryReferenceBelow
+      queryExecutableLive highWater lengths
+  exact unifyB_result_has_open_factor_of_ordered_shared_alpha
+    binding normalized.1 normalized.2 derivation returned
 
 /-! ### Anti-vacuity: the factor remains open -/
 
