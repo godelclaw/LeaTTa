@@ -7,6 +7,7 @@ tuple operations are CHAIN versions (values are cons-chains). `and`/`or`/
 boolean constraint enumeration works exactly as in native PeTTa.
 -/
 import PLeaTTa.Chain
+import PLeaTTa.PrologFloat
 import MettaHyperonFull.Core.Alpha
 import MettaHyperonFull.Core.Builtins
 import MettaHyperonFull.Core.Unification
@@ -59,16 +60,8 @@ def assertOp : List Atom → ReduceResult
       else .runtimeError "assertion failed"
   | _ => .incorrectArgument "assert"
 
-private def groundTermIdentical : Ground → Ground → Bool
-  | .int left, .int right => left == right
-  | .float left, .float right => left.toBits == right.toBits
-  | .str left, .str right => left == right
-  | .bool left, .bool right => left == right
-  | .unit, .unit => true
-  | .error left, .error right => left == right
-  | .external leftTag leftPayload, .external rightTag rightPayload =>
-      leftTag == rightTag && leftPayload == rightPayload
-  | _, _ => false
+private def groundTermIdentical : Ground → Ground → Bool :=
+  prologGroundIdentical
 
 mutual
 private def atomTermIdentical : Atom → Atom → Bool
@@ -87,8 +80,8 @@ end
 
 /-- PeTTa `!=/3`: compare already-evaluated terms without binding them and
     return the negation of Prolog term identity [SPEC metta.pl:42].  This is
-    constructor- and float-bit-sensitive: integer `1` is not float `1.0`, and
-    signed zeroes are distinct, just as under SWI `==/2`. -/
+    constructor-sensitive; all NaNs denote SWI's one NaN term, while signed
+    zeroes are distinct and integer `1` is not float `1.0`. -/
 def notEqualOp : List Atom → ReduceResult
   | [left, right] =>
       .ok [Atom.sym (if atomTermIdentical left right then "False" else "True")]

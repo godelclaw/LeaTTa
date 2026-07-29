@@ -68,7 +68,8 @@ namespace Substitution
       simp only [OpenSubstitution.Substitution.applyTerm, induction,
         Term.instantiateOne]
 
-@[simp] theorem applyTerm_float (bindings : Substitution) (value : Float) :
+@[simp] theorem applyTerm_float (bindings : Substitution)
+    (value : PLeaTTa.PrologFloatIdentity) :
     bindings.applyTerm (.float value) = .float value := by
   induction bindings with
   | nil => rfl

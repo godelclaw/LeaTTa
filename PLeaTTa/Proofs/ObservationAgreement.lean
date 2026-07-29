@@ -84,7 +84,8 @@ inductive AtomDenotes (valuation : ExecutableValuation) :
   | integer (value : Int) :
       AtomDenotes valuation (.gnd (.int value)) (.integer value)
   | float (value : Float) :
-      AtomDenotes valuation (.gnd (.float value)) (.float value)
+      AtomDenotes valuation (.gnd (.float value))
+        (.float (PLeaTTa.PrologFloatIdentity.ofFloat value))
   | string (value : String) :
       AtomDenotes valuation (.gnd (.str value)) (.string value)
   | properList {items : List GroundTerm} {encoded : Atom}
@@ -200,7 +201,8 @@ private theorem atomDenotes_ground {valuation : ExecutableValuation}
     {ground : Metta.Ground} {value : GroundTerm}
     (denotes : AtomDenotes valuation (.gnd ground) value) :
     (∃ integer, ground = .int integer ∧ value = .integer integer) ∨
-      (∃ float, ground = .float float ∧ value = .float float) ∨
+      (∃ float, ground = .float float ∧
+        value = .float (PLeaTTa.PrologFloatIdentity.ofFloat float)) ∨
       (∃ string, ground = .str string ∧ value = .string string) := by
   generalize encodedEq : Atom.gnd ground = encoded at denotes
   cases denotes with

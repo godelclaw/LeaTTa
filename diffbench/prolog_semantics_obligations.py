@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "diffbench" / "prolog-semantics-obligations.tsv"
 TRACE_SEMANTICS = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologTraceSemantics.lean"
 TERM_ALGEBRA = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologTermAlgebra.lean"
+PROLOG_FLOAT = ROOT / "PLeaTTa" / "PrologFloat.lean"
+UNIFICATION_CORE = ROOT / "MettaHyperonFull" / "Core" / "Unification.lean"
 ORDERED_MGU = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologMgu.lean"
 LOCAL_RESOLVER = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologResolver.lean"
 PROLOG_COPY = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologCopy.lean"
@@ -23,6 +25,9 @@ PROLOG_STATE_BRIDGE = ROOT / "PLeaTTa" / "Proofs" / "PrologStateBridge.lean"
 PROLOG_GOAL_ALPHA = ROOT / "PLeaTTa" / "Proofs" / "PrologGoalAlpha.lean"
 PROLOG_ACTIVATION_MACRO = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationMacro.lean"
+)
+PROLOG_ACTIVATION_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologActivationBridge.lean"
 )
 PINNED_PETTA_REVISION = "6b7f52f064bdbc82fabd0a0998404121fb01d52e"
 FIELDS = ["id", "native_source", "layer", "reference", "proof", "status", "finding"]
@@ -71,6 +76,8 @@ def check() -> list[str]:
         "pinned_petta_revision": PINNED_PETTA_REVISION,
         "trace_semantics_sha256": digest(TRACE_SEMANTICS),
         "term_algebra_sha256": digest(TERM_ALGEBRA),
+        "prolog_float_sha256": digest(PROLOG_FLOAT),
+        "unification_core_sha256": digest(UNIFICATION_CORE),
         "ordered_mgu_sha256": digest(ORDERED_MGU),
         "local_resolver_sha256": digest(LOCAL_RESOLVER),
         "prolog_copy_sha256": digest(PROLOG_COPY),
@@ -79,6 +86,7 @@ def check() -> list[str]:
         "prolog_state_bridge_sha256": digest(PROLOG_STATE_BRIDGE),
         "prolog_goal_alpha_sha256": digest(PROLOG_GOAL_ALPHA),
         "prolog_activation_macro_sha256": digest(PROLOG_ACTIVATION_MACRO),
+        "prolog_activation_bridge_sha256": digest(PROLOG_ACTIVATION_BRIDGE),
     }
     for key, expected in expected_metadata.items():
         actual = metadata.get(key)

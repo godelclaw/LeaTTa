@@ -31,7 +31,10 @@ LEATTA_BIN = os.environ.get(
     "LEATTA_BIN",
     os.environ.get("PLEATTA_WRAPPER", str(REPO / ".lake" / "build" / "bin" / "pleatta")),
 )
-LEATTA = [LEATTA_BIN] + (os.environ.get("LEATTA_ARGS", "").split() if os.environ.get("LEATTA_ARGS") else []) + ["--file"]
+LEATTA_BASE = [LEATTA_BIN] + (
+    os.environ.get("LEATTA_ARGS", "").split()
+    if os.environ.get("LEATTA_ARGS") else [])
+LEATTA = LEATTA_BASE + ["--file"]
 SCOREBOARD = REPO / "diffbench" / "scoreboard.tsv"
 DEFAULT_TIMEOUT = float(os.environ.get("DIFFBENCH_TIMEOUT", "30"))
 DEFAULT_PETTA_TIMEOUT_MULTIPLIER = float(
@@ -334,8 +337,8 @@ def petta_results(path, timeout):
     return out
 
 
-def leatta_results(path, timeout):
-    out, _err, returncode = run_grouped(LEATTA + [str(path)], timeout)
+def _leatta_command_results(cmd, timeout):
+    out, _err, returncode = run_grouped(cmd, timeout)
     if returncode != 0:
         if "fuel exhausted before a semantics-licensed result" in out + _err:
             raise FuelExhausted
@@ -381,6 +384,19 @@ def leatta_results(path, timeout):
             cur += ch
     items.append(cur.strip())
     return items
+
+
+def leatta_results(path, timeout):
+    return _leatta_command_results(LEATTA + [str(path)], timeout)
+
+
+def leatta_replay_results(path, transcript, timeout):
+    """Run one deterministic typed-host replay through the same result parser."""
+    return _leatta_command_results(
+        LEATTA_BASE + [
+            "--host-replay", str(path), str(transcript), "4000000"],
+        timeout)
+
 
 def transformed_temp(source_path):
     """Create a transformed file beside the source so relative imports keep

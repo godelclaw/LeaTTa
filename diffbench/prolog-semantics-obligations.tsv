@@ -1,14 +1,17 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
 # trace_semantics_sha256=5775b6a9f6b12e6719846d47bf46fb8a4259c9be3ab0b14a98871c807a87c0ef
-# term_algebra_sha256=fd8c5c4912379a03a4e1ed2b88dc05501eaaa2b3a5ebb43338ece4bb1f81faf0
+# term_algebra_sha256=31fea876ea945aacba512f4ac718e4ea9e5e092bc37e847c5e4b7fbb5c1cb23c
+# prolog_float_sha256=52f7e5b429b4e788f16f25055f928843f9feec41950627a97fa7107cd2644730
+# unification_core_sha256=d1120907fe95440871dbb7a2e4036f3f36b5d51a3a2f2b61b9542a3482cd6d87
 # ordered_mgu_sha256=75985862b874d7b9d5e686555f8058e00b08bb648777f29880d5dd54b1f17f6c
 # local_resolver_sha256=e75938ed1fb73a79e6d62516871e8250fd2c0d511e6397e0f10e187aea538c63
 # prolog_copy_sha256=850a556e4b955fe947eed5b9b4f18ca58cc25229abe94f87500a3bf58906ef91
 # goal_semantics_sha256=b85ef6ce1f736d06df61d40af381daba290e4de61218c4e7b4668f12dfa190fa
 # demand_driven_step_sha256=ca967d14109c33e0f93d3b7f39f435ea6654ee2cfcf45a691a22fde46a2eed2e
-# prolog_state_bridge_sha256=59a6b575d26c3588a7a40b20dd18f2a8ff3a61d0b5307b6904ca371850e2ff5a
+# prolog_state_bridge_sha256=735c1be534273f71712e6b31a000c942baf0d8c6488b875afabab2942f737fd5
 # prolog_goal_alpha_sha256=9610689876a8cd0928f929f24b46c939458a8b50e11ff1df5030eba889b7b561
 # prolog_activation_macro_sha256=08d86cfbe068ce3fb7aa40293e58d7fb80d08f1b377c47045add1b4df34c879a
+# prolog_activation_bridge_sha256=5dfbb626bb0ba1e5bd1caf660d9b07693ed7b56e3c40fc6e2d7e84864c05d9c9
 # status: PASS=proved-property-of-the-independent-model GAP=open-reference-or-adequacy-proof FAIL=known-implementation/reference-mismatch BOUNDARY=permanent-explicit-trusted-boundary
 # proof: SC=sound-complete W=witness/inversion theorem SH=shape-only N=none
 # native_source: T=src/translator.pl M=src/metta.pl SWI=official SWI-Prolog manual ISO=ISO Prolog working documents -=independent infrastructure
@@ -54,7 +57,10 @@ RESOLVER.clause_order	ISO:SLD	resolver	Resolver.Database;reserveVisible;Prepared
 RESOLVER.freshening	ISO:SLD	resolver	reserveVisible;FreshReservation;prepareCall	W	PASS	all actual renaming targets lie in disjoint reserved intervals above the live query, nested targets begin above every retained outer target, and raw control steps cannot roll the high-water back; a concrete lazy-cursor foil collides
 RESOLVER.mgu	ISO:unification	resolver	Canonical.TreeMgu;OrderedTreeMgu	SC	PASS	finite-tree occurs check, ordered Robinson derivation, most-generality, completeness, determinism, exact typed reification, and head-resolution uniqueness proved
 RESOLVER.mgu_executable	ISO:unification	composition	PLeaTTa.unifyTopExact	N	GAP	executable substitution orientation and exact canonical-MGU refinement remain open
-RESOLVER.float_identity	SWI:term-order	composition	Canonical.RigidSymbol.float	N	GAP	executable equality must use Float.toBits rather than IEEE equality; NaN identity must be reconciled explicitly with pinned SWI
+RESOLVER.float_identity_model	SWI:term-order	resolver	PrologFloatIdentity;prologGroundIdentical;notEqualOp;Regression	W	PASS	the independent term algebra and PeTTa term-identity builtin share one decidable SWI key: every IEEE NaN payload maps to one Prolog NaN identity, signed zeroes remain distinct, integer and float constructors remain distinct, and executable guards reject the two opposite weaker readings
+RESOLVER.comparator_parametric	-	resolver	Metta.Unify.unifyTopWith;Metta.Unify.unifyTopWith_groundEquiv	W	PASS	one additive first-order algorithm accepts a ground comparator at every decomposition round, while five structural equivalence theorems prove that specializing it to Hyperon Ground.equiv is exactly the legacy decomposer, worklist, elimination loop, and top-level unifier rather than a drifting duplicate
+RESOLVER.float_prefilter	SWI:term-order	composition	PrologActivationBridge.nonreflexive_float_refutes_matchCompat_conservativity	W	FAIL	the current resolveAlts matchCompat prefilter can reject a reflexive NaN clause head even though the independent canonical term has a denotational unifier; the executable must migrate to the exact Prolog comparator rather than reuse SpaceIndex compatibility
+RESOLVER.float_identity	SWI:term-order	composition	Canonical.RigidSymbol.float;PrologFloatIdentity;Metta.Unify.unifyTopWith;PrologActivationBridge.nonreflexive_float_separates_current_and_prolog_unifiers;host-fixtures/prolog-nan-clause-head.metta	W	FAIL	the typed-host differential is pinned PeTTa matched versus current PLeaTTa no answer for a repeated clause variable receiving the same NaN twice; Lean proves the old executable unifier rejects the reflexive ground equation while the Prolog comparator succeeds, and executable unifyTopExact, prepared-unifier paths, resolveAlts filtering, substitution orientation, arithmetic separation, and seal refinement must migrate together
 RESOLVER.recursive_prefix	M251-256	resolver	GoalSemantics.left_recursive_arbitrarily_long_open_prefix	W	PASS	a concrete local clause loop :- loop has exact arbitrarily long positive finite prefixes containing only call-open observations, with the machine still running and no fabricated answer, effect, exception, or completion
 RESOLVER.body_execution	M251-256	resolver	EnteredClause;LocalPull.reply_body_consistent;GoalSemantics.Search;GoalSemantics.RawStep	W	GAP	measure-free finite states deterministically execute truth, failure, ordered MGU, identity, conjunction, disjunction, cut, and recursive local calls; every pulled raw body is tied to its cumulative instantiation without an idempotence premise, bodies run left of retained clauses, products stream into caller tails, and concrete left recursion has exact open finite prefixes; remaining Goal constructors and executable refinement remain open
 EXTERNAL.imported_swi	M271-280	boundary	OrderedCallProtocol	N	BOUNDARY	exact typed trace is trusted and replay-policed; SWI implementation is never counted as certified core

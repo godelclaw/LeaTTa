@@ -62,6 +62,9 @@ def main() -> int:
         if row["mode"] not in {"expected-divergence", "characterization"}:
             raise SystemExit(
                 f"unknown mode for {row['case']}: {row['mode']}")
+        if row["driver"] not in {"core", "host-replay"}:
+            raise SystemExit(
+                f"unknown driver for {row['case']}: {row['driver']}")
         relative = row["fixture"]
         fixture = (ROOT / relative).resolve()
         try:
@@ -76,7 +79,26 @@ def main() -> int:
             raise SystemExit(f"fixture lacks SPDX header: {relative}")
 
         native = witnesses.run(witnesses.diff.petta_results, fixture)
-        pleatta = witnesses.run(witnesses.diff.leatta_results, fixture)
+        if row["driver"] == "core":
+            if row["transcript"] != "-":
+                raise SystemExit(
+                    f"core case has transcript for {row['case']}")
+            pleatta = witnesses.run(witnesses.diff.leatta_results, fixture)
+        else:
+            transcript = (ROOT / row["transcript"]).resolve()
+            try:
+                transcript.relative_to(ROOT)
+            except ValueError:
+                raise SystemExit(
+                    f"transcript escapes repository: {row['transcript']}")
+            if not transcript.is_file():
+                raise SystemExit(
+                    f"missing replay transcript: {row['transcript']}")
+            pleatta = witnesses.run(
+                lambda path, timeout:
+                    witnesses.diff.leatta_replay_results(
+                        path, transcript, timeout),
+                fixture)
         native_expected = witnesses.expected(
             row["native_kind"], row["native_expect"])
         pleatta_expected = witnesses.expected(

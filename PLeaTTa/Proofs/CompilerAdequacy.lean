@@ -28,7 +28,9 @@ inductive TermAgrees : Term → Atom → Prop where
   | trueAtom : TermAgrees (.atom "true") (.sym "True")
   | falseAtom : TermAgrees (.atom "false") (.sym "False")
   | integer (value : Int) : TermAgrees (.integer value) (.gnd (.int value))
-  | float (value : Float) : TermAgrees (.float value) (.gnd (.float value))
+  | float (value : Float) :
+      TermAgrees (.float (PLeaTTa.PrologFloatIdentity.ofFloat value))
+        (.gnd (.float value))
   | string (value : String) : TermAgrees (.string value) (.gnd (.str value))
   | partialValue {head : String} {terms : List Term} {encodedArguments : Atom}
       (arguments : ProperListAgrees terms encodedArguments) :

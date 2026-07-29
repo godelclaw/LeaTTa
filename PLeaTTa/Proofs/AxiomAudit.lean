@@ -5,6 +5,7 @@ import PLeaTTa.Proofs.DemandDrivenStep
 import PLeaTTa.Proofs.PrologStateBridge
 import PLeaTTa.Proofs.PrologGoalAlpha
 import PLeaTTa.Proofs.PrologActivationMacro
+import PLeaTTa.Proofs.PrologActivationBridge
 import PLeaTTa.Proofs.BarrierCache
 import PLeaTTa.Proofs.Specialize
 import PLeaTTa.Proofs.Unification
@@ -1055,3 +1056,11 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologActivationMacro.repeated_variable_equal_actuals_succeed
 #print axioms PLeaTTa.PrologActivationMacro.two_retained_clauses_keep_source_order
 #print axioms PLeaTTa.PrologActivationMacro.swapped_retained_order_is_rejected
+#print axioms Metta.Unify.decomposeEqWith_groundEquiv
+#print axioms Metta.Unify.decomposeListWith_groundEquiv
+#print axioms Metta.Unify.decomposeAllWith_groundEquiv
+#print axioms Metta.Unify.unifyRoundsWith_groundEquiv
+#print axioms Metta.Unify.unifyTopWith_groundEquiv
+#print axioms PLeaTTa.PrologFloatIdentity.beq_self
+#print axioms PLeaTTa.PrologActivationBridge.nonreflexive_float_refutes_matchCompat_conservativity
+#print axioms PLeaTTa.PrologActivationBridge.nonreflexive_float_separates_current_and_prolog_unifiers

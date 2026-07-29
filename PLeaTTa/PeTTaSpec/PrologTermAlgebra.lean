@@ -29,7 +29,7 @@ grounds, the source arity for compounds, and arities zero/two for lists. -/
 inductive RigidSymbol where
   | atom (name : String)
   | integer (value : Int)
-  | float (value : Float)
+  | float (value : PLeaTTa.PrologFloatIdentity)
   | string (value : String)
   | compound (functor : String)
   | nil
@@ -60,7 +60,8 @@ inductive Tree.WellFormed : Tree → Prop where
   | variable (identity : LogicVar) : Tree.WellFormed (.variable identity)
   | atom (name : String) : Tree.WellFormed (.node (.atom name) [])
   | integer (value : Int) : Tree.WellFormed (.node (.integer value) [])
-  | float (value : Float) : Tree.WellFormed (.node (.float value) [])
+  | float (value : PLeaTTa.PrologFloatIdentity) :
+      Tree.WellFormed (.node (.float value) [])
   | string (value : String) : Tree.WellFormed (.node (.string value) [])
   | compound (functor : String) (children : List Tree)
       (formed : Trees.WellFormed children) :

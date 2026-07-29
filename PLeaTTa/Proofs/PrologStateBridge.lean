@@ -418,7 +418,9 @@ inductive AlphaTermAgrees (alpha : List (LogicVar × String)) :
   | integer (value : Int) :
       AlphaTermAgrees alpha (.integer value) (.gnd (.int value))
   | float (value : Float) :
-      AlphaTermAgrees alpha (.float value) (.gnd (.float value))
+      AlphaTermAgrees alpha
+        (.float (PLeaTTa.PrologFloatIdentity.ofFloat value))
+        (.gnd (.float value))
   | string (value : String) :
       AlphaTermAgrees alpha (.string value) (.gnd (.str value))
   | partialValue {head : String} {terms : List Term}

@@ -55,6 +55,42 @@ private def aliasSeed : Metta.Subst :=
   (Metta.Atom.expr [.sym "pair", .var "x", .var "x"])
   (Metta.Atom.expr [.sym "pair", .gnd (.int 1), .gnd (.float 1.0)])).isNone
 
+private def canonicalNaN₁ : Float :=
+  Float.ofBits 0x7ff8000000000000
+
+private def canonicalNaN₂ : Float :=
+  Float.ofBits 0x7ff8000000000001
+
+private def canonicalNegativeNaN : Float :=
+  Float.ofBits 0xfff8000000000000
+
+private def positiveZero : Float :=
+  Float.ofBits 0x0000000000000000
+
+private def negativeZero : Float :=
+  Float.ofBits 0x8000000000000000
+
+-- SWI has one NaN term regardless of IEEE payload/sign, but distinguishes
+-- the two signed zero terms.  These executable guards pin the new canonical
+-- identity independently of the still-open unifier migration.
+#guard PrologFloatIdentity.ofFloat canonicalNaN₁ == .nan
+#guard PrologFloatIdentity.ofFloat canonicalNaN₂ == .nan
+#guard PrologFloatIdentity.ofFloat canonicalNegativeNaN == .nan
+#guard prologGroundIdentical (.float canonicalNaN₁) (.float canonicalNaN₂)
+#guard prologGroundIdentical (.float canonicalNaN₁) (.float canonicalNegativeNaN)
+#guard !prologGroundIdentical (.float positiveZero) (.float negativeZero)
+#guard !prologGroundIdentical (.int 1) (.float 1.0)
+
+-- PeTTa's `!=/3` now consumes that same term identity: distinct NaN payloads
+-- are one Prolog term, while signed zeroes remain different terms.
+#guard notEqualOp [.gnd (.float canonicalNaN₁), .gnd (.float canonicalNaN₂)] ==
+  .ok [.sym "False"]
+#guard notEqualOp
+  [.gnd (.float canonicalNaN₁), .gnd (.float canonicalNegativeNaN)] ==
+    .ok [.sym "False"]
+#guard notEqualOp [.gnd (.float positiveZero), .gnd (.float negativeZero)] ==
+  .ok [.sym "True"]
+
 private def trimSeed : Metta.Subst :=
   [("live", Metta.Atom.var "needed"),
    ("live", Metta.Atom.var "shadowed"),

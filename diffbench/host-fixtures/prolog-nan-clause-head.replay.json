@@ -1,0 +1,48 @@
+[
+  {
+    "response": {
+      "returned": {
+        "value": {
+          "floating": {
+            "bits": "9221120237041090560"
+          }
+        }
+      }
+    },
+    "request": {
+      "call": {
+        "spec": "float",
+        "args": [
+          {
+            "string": {
+              "value": "nan"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "response": {
+      "returned": {
+        "value": {
+          "floating": {
+            "bits": "9221120237041090560"
+          }
+        }
+      }
+    },
+    "request": {
+      "call": {
+        "spec": "float",
+        "args": [
+          {
+            "string": {
+              "value": "nan"
+            }
+          }
+        ]
+      }
+    }
+  }
+]

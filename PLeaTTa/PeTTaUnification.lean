@@ -1,4 +1,5 @@
 import PLeaTTa.Types
+import PLeaTTa.PrologFloat
 import MettaHyperonFull.Core.Unification
 
 namespace PLeaTTa
@@ -45,10 +46,9 @@ def pettaUnifyCompatibleList : List Atom → List Atom → Bool
   | _, _ => false
 end
 
-/-- PeTTa/SWI unification is exact on numeric term constructors.  A candidate
-from the shared Hyperon unifier is retained only when its deep-substituted
-operands contain no corresponding integer/float mismatch.  Hyperon's broader
-numeric matcher remains unchanged outside the PeTTa dialect boundary. -/
+/-- Current PeTTa/SWI exact-ground wrapper.  The comparator-parametric core is
+available for the full Prolog-identity migration; until its metatheory is
+ported, this wrapper retains the existing candidate filter. -/
 def unifyTopExact (x y : Atom) : Option Subst :=
   match Metta.Unify.unifyTop x y with
   | some generated =>

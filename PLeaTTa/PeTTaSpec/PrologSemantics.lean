@@ -13,7 +13,7 @@ namespace PLeaTTa.PeTTaSpec.PrologCore.Declarative
 inductive GroundTerm where
   | atom (name : String)
   | integer (value : Int)
-  | float (value : Float)
+  | float (value : PLeaTTa.PrologFloatIdentity)
   | string (value : String)
   | compound (functor : String) (arguments : List GroundTerm)
   | list (items : List GroundTerm) (tail : Option GroundTerm)

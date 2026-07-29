@@ -5,7 +5,7 @@ Purpose: Independent syntax for the Prolog term and goal fragment emitted by
 Trusted boundary: none
 Main exports: Term, Goal, Literal, Quotes, TranslatesExpr
 -/
-import MettaHyperonFull.Core.Atom
+import PLeaTTa.PrologFloat
 
 namespace PLeaTTa.PeTTaSpec.PrologCore
 
@@ -39,7 +39,7 @@ inductive Term where
   | variable (identity : LogicVar)
   | atom (name : String)
   | integer (value : Int)
-  | float (value : Float)
+  | float (value : PLeaTTa.PrologFloatIdentity)
   | string (value : String)
   | compound (functor : String) (arguments : List Term)
   | list (items : List Term) (tail : Option Term)
@@ -109,7 +109,9 @@ inductive Literal : Atom → Term → Prop where
       Literal (.var name) (.variable (.source name))
   | symbol (name : String) : Literal (.sym name) (.atom name)
   | integer (value : Int) : Literal (.gnd (.int value)) (.integer value)
-  | float (value : Float) : Literal (.gnd (.float value)) (.float value)
+  | float (value : Float) :
+      Literal (.gnd (.float value))
+        (.float (PLeaTTa.PrologFloatIdentity.ofFloat value))
   | string (value : String) : Literal (.gnd (.str value)) (.string value)
   | trueGround : Literal (.gnd (.bool true)) (.atom "true")
   | falseGround : Literal (.gnd (.bool false)) (.atom "false")
@@ -181,7 +183,9 @@ inductive Quotes : Atom → Term → Prop where
       Quotes (.var name) (.variable (.source name))
   | symbol (name : String) : Quotes (.sym name) (.atom name)
   | integer (value : Int) : Quotes (.gnd (.int value)) (.integer value)
-  | float (value : Float) : Quotes (.gnd (.float value)) (.float value)
+  | float (value : Float) :
+      Quotes (.gnd (.float value))
+        (.float (PLeaTTa.PrologFloatIdentity.ofFloat value))
   | string (value : String) : Quotes (.gnd (.str value)) (.string value)
   | trueGround : Quotes (.gnd (.bool true)) (.atom "true")
   | falseGround : Quotes (.gnd (.bool false)) (.atom "false")
