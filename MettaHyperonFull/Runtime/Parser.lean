@@ -283,6 +283,15 @@ private def parseSucceeded {α : Type} : Except String α → Bool
   | .ok _ => true
   | .error _ => false
 
+/- Hyperon's program surface and pinned PeTTa's file-loader surface are
+intentionally distinct.  The former accepts split runnable markers and bare
+top-level atoms; the latter requires each stored form to start with `(` and
+each runnable form with the contiguous prefix `!(`. -/
+#guard parseSucceeded (parseProgram "! (foo)")
+#guard !parseSucceeded (parseFile "! (foo)")
+#guard parseSucceeded (parseProgram "bare top level atoms")
+#guard !parseSucceeded (parseFile "bare top level atoms")
+
 #guard parseSucceeded (parseSExpr "((shell a;b))")
 #guard parseSucceeded (parseSExpr "((shell \"a;b\"))")
 #guard parseSucceeded (parseSExpr "((cmd a) ... (cmd b))")
