@@ -8,10 +8,11 @@ Trusted boundary: none
 Main exports:
   SupportedPreparedCandidateAgrees.unifyB_direct_of_headResolution,
   SupportedPreparedCandidateAgrees.unifyB_residual_variant_of_headResolution,
+  SupportedPreparedCandidateAgrees.unifyB_body_residual_variant_of_headResolution,
   SupportedPreparedCandidateAgrees.unifyB_complete_of_headResolution
 -/
 import PLeaTTa.Proofs.PrologCallPayloadBridge
-import PLeaTTa.Proofs.PrologMguVariant
+import PLeaTTa.Proofs.PrologGoalMguVariant
 
 namespace PLeaTTa.PrologActivationUnifierBridge
 
@@ -32,6 +33,8 @@ open PrologMguBridge
 open PrologMguOpenAgreement
 open PrologMguTopology
 open PrologMguVariant
+open PrologGoalAlpha
+open PrologGoalMguVariant
 
 /-! ## One semantically matched prepared occurrence -/
 
@@ -75,6 +78,10 @@ theorem SupportedPreparedCandidateAgrees.unifyB_direct_of_headResolution
     (resolved : HeadResolution branch independentResult) :
     ∃ alpha canonical flattened generated installed,
       SharedRuntimeAlpha alpha ∧
+      AlphaGoalsAgree alpha barrier branch.body
+        (freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args result rest binding
+          qterm seed barrier clause).body ∧
       SharedAlphaEquationsAgree alpha branch.normalizedHeadEquations
           ((args ++ [result]).map (PLeaTTa.subst binding))
           (((freshenResolutionClause
@@ -121,7 +128,7 @@ theorem SupportedPreparedCandidateAgrees.unifyB_direct_of_headResolution
         | [] => binding
         | _ :: _ => Metta.Subst.compose generated binding := by
   cases agreement with
-  | intro reference freshSeed executable base encoding =>
+  | intro reference freshSeed executable base encoding bodySupported =>
       have startsAbove :
           cursor.reservationStart ≤
             (reference.clause.freshCopy freshSeed).firstFresh := by
@@ -238,10 +245,22 @@ theorem SupportedPreparedCandidateAgrees.unifyB_direct_of_headResolution
           binding normalized.1 branchAgreement derivation
       refine
         ⟨_, canonical, flattened, generatedRuntime, installed,
-          normalized.1, branchAgreement, ?_, derivation, generatedExact,
+          normalized.1, ?_, branchAgreement, ?_, derivation, generatedExact,
           generatedAgreement, flattenedTopological, generatedTopological,
           generatedValuation, flattenedMgu, flattenedFactors,
           canonicalFactors, installedExact, installedShape⟩
+      ·
+        have bodyAgreement :=
+          freshenClause_body_alpha_agrees
+            base bodySupported freshSeed
+            (args.map (PLeaTTa.subst binding)) args result rest binding
+            qterm seed barrier
+        have enlarged :=
+          PLeaTTa.PrologGoalMguVariant.AlphaGoalsAgree.mono
+            (fun pair pairMember =>
+              List.mem_append_right queryAlpha pairMember)
+            bodyAgreement
+        simpa [preparedBranchOf] using enlarged
       simpa [extensionShape] using resultShape
 
 /-- The direct activation witness, quotiented only by semantic residual
@@ -252,6 +271,111 @@ instantiation.  Ground observations remain exact by
 `AlphaResidualVariantAgrees.apply_of_canonical_ground`. -/
 theorem
     SupportedPreparedCandidateAgrees.unifyB_residual_variant_of_headResolution
+    {queryAlpha : List (LogicVar × String)}
+    {cursor : PreparedCursor} {branch : ClauseBranch}
+    {clause : PLeaTTa.Clause}
+    {args : List Atom} {result : Atom} {rest : List PLeaTTa.Goal}
+    {binding : Subst} {qterm : Atom} {seed barrier : Nat}
+    {independentResult : Substitution}
+    (query :
+      NormalizedCallAgrees queryAlpha cursor
+        (args.map (PLeaTTa.subst binding))
+        (PLeaTTa.subst binding result))
+    (wellFormed : cursor.WellFormed)
+    (member : branch ∈ cursor.remaining)
+    (agreement :
+      SupportedPreparedCandidateAgrees cursor.callGeneration
+        cursor.predicate cursor.arguments cursor.bindings branch clause)
+    (arity : clause.params.length = args.length)
+    (queryShared : SharedRuntimeAlpha queryAlpha)
+    (queryReferenceBelow :
+      GeneratedBelow cursor.reservationStart (queryAlpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ queryAlpha.map Prod.snd →
+        name ∈
+          resolutionOccupiedVars
+            (args.map (PLeaTTa.subst binding)) result rest binding qterm)
+    (highWater :
+      resolutionSeedHighWaterNames
+        (resolutionOccupiedVars
+          (args.map (PLeaTTa.subst binding)) result rest binding qterm) ≤
+        seed)
+    (resolved : HeadResolution branch independentResult) :
+    ∃ alpha canonical generated installed,
+      SharedRuntimeAlpha alpha ∧
+      AlphaGoalsAgree alpha barrier branch.body
+        (freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args result rest binding
+          qterm seed barrier clause).body ∧
+      SharedAlphaEquationsAgree alpha branch.normalizedHeadEquations
+          ((args ++ [result]).map (PLeaTTa.subst binding))
+          (((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).params ++
+            [(freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).result]).map
+            (PLeaTTa.subst binding)) ∧
+      independentResult =
+        TreeSubstitution.reify canonical ++ branch.bindings ∧
+      OrderedTreeMgu
+        (denoteEquations branch.normalizedHeadEquations) canonical ∧
+      PLeaTTa.unifyTopExact
+          (.expr ((args ++ [result]).map (PLeaTTa.subst binding)))
+          (.expr
+            (((freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).params ++
+              [(freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).result]).map
+              (PLeaTTa.subst binding))) =
+        some generated ∧
+      AlphaResidualVariantAgrees alpha canonical generated ∧
+      PLeaTTa.unifyB binding (.expr (args ++ [result]))
+          (.expr
+            ((freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).params ++
+              [(freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).result])) =
+        some installed ∧
+      installed =
+        match generated with
+        | [] => binding
+        | _ :: _ => Metta.Subst.compose generated binding := by
+  obtain
+    ⟨alpha, canonical, flattened, generated, installed, shared,
+      bodyControl, equationsAgreement, independentShape, ordered, generatedExact,
+      generatedAgreement, flattenedTopological, generatedTopological,
+      generatedValuation, _flattenedMgu, flattenedFactors,
+      canonicalFactors, installedExact, installedShape⟩ :=
+    PLeaTTa.PrologActivationUnifierBridge.SupportedPreparedCandidateAgrees.unifyB_direct_of_headResolution
+      query wellFormed member agreement arity queryShared
+      queryReferenceBelow queryExecutableLive highWater resolved
+  have canonicalTopological :
+      TreeSubstitutionTopological canonical :=
+    PrologMguTopology.OrderedTreeMgu.binding_topological ordered
+  have variantAgreement :
+      AlphaResidualVariantAgrees alpha canonical generated :=
+    ⟨flattened, ⟨canonicalFactors, flattenedFactors⟩,
+      canonicalTopological, flattenedTopological,
+      generatedTopological, generatedValuation⟩
+  exact
+    ⟨alpha, canonical, generated, installed, shared,
+      bodyControl, equationsAgreement, independentShape, ordered, generatedExact,
+      variantAgreement, installedExact, installedShape⟩
+
+/-- A supported body certificate closes the first source-to-runtime
+activation payload: the exact freshened body control structure and every
+alpha-linked term leaf share one residual-MGU representative.
+
+The result is deliberately about the generated head MGU.  Relating the
+installed `compose generated binding` state and its later `trimFor` projection
+to the cumulative independent binding remains a separate obligation. -/
+theorem
+    SupportedPreparedCandidateAgrees.unifyB_body_residual_variant_of_headResolution
     {queryAlpha : List (LogicVar × String)}
     {cursor : PreparedCursor} {branch : ClauseBranch}
     {clause : PLeaTTa.Clause}
@@ -319,30 +443,27 @@ theorem
                 qterm seed barrier clause).result])) =
         some installed ∧
       installed =
-        match generated with
+        (match generated with
         | [] => binding
-        | _ :: _ => Metta.Subst.compose generated binding := by
+        | _ :: _ => Metta.Subst.compose generated binding) ∧
+      AlphaGoalsResidualVariantAgrees alpha barrier canonical generated
+        branch.body
+        (freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args result rest binding
+          qterm seed barrier clause).body := by
   obtain
-    ⟨alpha, canonical, flattened, generated, installed, shared,
+    ⟨alpha, canonical, generated, installed, shared, bodyControl,
       equationsAgreement, independentShape, ordered, generatedExact,
-      generatedAgreement, flattenedTopological, generatedTopological,
-      generatedValuation, _flattenedMgu, flattenedFactors,
-      canonicalFactors, installedExact, installedShape⟩ :=
-    PLeaTTa.PrologActivationUnifierBridge.SupportedPreparedCandidateAgrees.unifyB_direct_of_headResolution
+      generatedAgreement, installedExact, installedShape⟩ :=
+    PLeaTTa.PrologActivationUnifierBridge.SupportedPreparedCandidateAgrees.unifyB_residual_variant_of_headResolution
       query wellFormed member agreement arity queryShared
       queryReferenceBelow queryExecutableLive highWater resolved
-  have canonicalTopological :
-      TreeSubstitutionTopological canonical :=
-    PrologMguTopology.OrderedTreeMgu.binding_topological ordered
-  have variantAgreement :
-      AlphaResidualVariantAgrees alpha canonical generated :=
-    ⟨flattened, ⟨canonicalFactors, flattenedFactors⟩,
-      canonicalTopological, flattenedTopological,
-      generatedTopological, generatedValuation⟩
   exact
     ⟨alpha, canonical, generated, installed, shared,
       equationsAgreement, independentShape, ordered, generatedExact,
-      variantAgreement, installedExact, installedShape⟩
+      generatedAgreement, installedExact, installedShape,
+      PLeaTTa.PrologGoalMguVariant.AlphaResidualVariantAgrees.goals
+        generatedAgreement bodyControl⟩
 
 /-- Compatibility projection of the direct witness: every independently
 resolved supported occurrence rules out executable head-unification
@@ -390,7 +511,7 @@ theorem SupportedPreparedCandidateAgrees.unifyB_complete_of_headResolution
         some executableResult := by
   obtain
     ⟨alpha, canonical, flattened, generated, installed, shared,
-      equationsAgreement, independentShape, ordered, generatedExact,
+      bodyControl, equationsAgreement, independentShape, ordered, generatedExact,
       generatedAgreement, flattenedTopological, generatedTopological,
       generatedValuation, flattenedMgu, flattenedFactors,
       canonicalFactors, installedExact, installedShape⟩ :=

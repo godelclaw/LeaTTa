@@ -7,6 +7,8 @@ Purpose: Derive the conservative prefilter scan from one actual prepared
 Trusted boundary: none
 Main exports:
   VisibleEncodingSupported,
+  CandidateBankSupported,
+  SupportedCandidateBank,
   DatabaseRelatesWorld.prepareCall_resolveAlts_prefilter
 -/
 import PLeaTTa.Proofs.PrologCallPayloadBridge
@@ -46,6 +48,72 @@ def VisibleEncodingSupported (entries : List VersionedClause) : Prop :=
   ∀ entry, entry ∈ entries →
     EncodingInjectiveOn entry.clause.variables
 
+/-- Exact source-ordered candidate bank carrying both finite name-injectivity
+and the agreement-indexed body-support certificate for each paired
+executable clause.  Support is indexed by the actual `Forall₂` spine, so an
+arbitrary agreeing hidden branch cannot be swapped in after the compiler
+proof has been chosen. -/
+inductive CandidateBankSupported (predicate : String) :
+    {references : List VersionedClause} →
+    {executables : List PLeaTTa.Clause} →
+    List.Forall₂ (CandidateClauseAgrees predicate)
+      references executables → Prop where
+  | nil : CandidateBankSupported predicate (List.Forall₂.nil)
+  | cons {reference : VersionedClause} {executable : PLeaTTa.Clause}
+      {references : List VersionedClause}
+      {executables : List PLeaTTa.Clause}
+      {head : CandidateClauseAgrees predicate reference executable}
+      {tail :
+        List.Forall₂ (CandidateClauseAgrees predicate)
+          references executables}
+      (encoding : EncodingInjectiveOn reference.clause.variables)
+      (body :
+        CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported
+          reference.clause.variables reference.clause.variables head.body)
+      (rest : CandidateBankSupported predicate tail) :
+      CandidateBankSupported predicate (List.Forall₂.cons head tail)
+
+/-- Proof-irrelevance-safe packaging of the exact candidate spine and its
+constructor-sensitive support. -/
+def SupportedCandidateBank (predicate : String)
+    (references : List VersionedClause)
+    (executables : List PLeaTTa.Clause) : Prop :=
+  ∃ agreement :
+      List.Forall₂ (CandidateClauseAgrees predicate)
+        references executables,
+    CandidateBankSupported predicate agreement
+
+/-- The strengthened bank contract still exposes the earlier finite
+encoding property on its reference snapshot. -/
+theorem CandidateBankSupported.visibleEncoding
+    {predicate : String} {references : List VersionedClause}
+    {executables : List PLeaTTa.Clause}
+    {agreement :
+      List.Forall₂ (CandidateClauseAgrees predicate)
+        references executables}
+    (supported : CandidateBankSupported predicate agreement) :
+    VisibleEncodingSupported references := by
+  induction supported with
+  | nil =>
+      intro entry member
+      simp at member
+  | cons encoding body rest inductionHypothesis =>
+      intro entry member
+      simp only [List.mem_cons] at member
+      rcases member with rfl | member
+      · exact encoding
+      · exact inductionHypothesis entry member
+
+/-- Existentially packaged candidate-bank support retains the same reference
+snapshot encoding certificate. -/
+theorem SupportedCandidateBank.visibleEncoding
+    {predicate : String} {references : List VersionedClause}
+    {executables : List PLeaTTa.Clause}
+    (supported : SupportedCandidateBank predicate references executables) :
+    VisibleEncodingSupported references := by
+  rcases supported with ⟨_agreement, certificate⟩
+  exact certificate.visibleEncoding
+
 /-- Eager reservation transports the supported-source certificate alongside
 the exact source-ordered candidate occurrence relation. -/
 theorem reserveVisible_supported_candidates
@@ -54,30 +122,24 @@ theorem reserveVisible_supported_candidates
     (freshSeed : Nat)
     {references : List VersionedClause}
     {executables : List PLeaTTa.Clause}
-    (agreement :
-      List.Forall₂ (CandidateClauseAgrees predicate)
-        references executables)
-    (supported : VisibleEncodingSupported references) :
+    (supported : SupportedCandidateBank predicate references executables) :
     List.Forall₂
       (SupportedPreparedCandidateAgrees callGeneration predicate
         arguments bindings)
       (reserveVisible callGeneration arguments bindings freshSeed
         references).1
       executables := by
-  induction agreement generalizing freshSeed with
+  rcases supported with ⟨agreement, supported⟩
+  induction supported generalizing freshSeed with
   | nil =>
       exact .nil
   | @cons reference executable references executables head tail
-      inductionHypothesis =>
+      encoding body rest inductionHypothesis =>
       simp only [reserveVisible]
       exact .cons
-        (.intro reference freshSeed executable head
-          (supported reference (by simp)))
+        (.intro reference freshSeed executable head encoding body)
         (inductionHypothesis
-          (reference.clause.freshCopy freshSeed).nextFresh
-          (by
-            intro later laterMember
-            exact supported later (by simp [laterMember])))
+          (reference.clause.freshCopy freshSeed).nextFresh)
 
 /-- Every candidate returned by the enabled coherent executable index has
 the selected input arity.  This is derived from the indexed definition rather
@@ -163,9 +225,10 @@ theorem supportedCandidates_normalizedHeads
 /-- The concrete independent call opener and the concrete executable
 `resolveAlts` scan satisfy the complete prefilter-bank relation.
 
-The sole supported-source premise is the finite encoding certificate on the
-actual immutable snapshot.  `query` is the still-independent caller-payload
-relation; no clause decision or unifier result appears in it. -/
+The supported-source premise is the exact occurrence spine with both finite
+encoding and agreement-indexed body support.  `query` is the
+still-independent caller-payload relation; no clause decision or unifier
+result appears in it. -/
 theorem prepareCall_resolveAlts_prefilter
     {session : LocalSession} {world : PWorld}
     (database : DatabaseRelatesWorld session.database world)
@@ -181,9 +244,10 @@ theorem prepareCall_resolveAlts_prefilter
         (prepareCall session request).1 argsv
         (PLeaTTa.subst binding res))
     (supported :
-      VisibleEncodingSupported
+      SupportedCandidateBank request.predicate
         (session.database.visibleClausesAt session.database.generation
-          request.predicate request.arguments.length)) :
+          request.predicate request.arguments.length)
+        (world.resolutionCandidates request.predicate args.length)) :
     PreparedPrefilterBankRelates
       (prepareCall session request).1
       argsv args res rest binding qterm barrier
@@ -206,19 +270,11 @@ theorem prepareCall_resolveAlts_prefilter
     PrologCallEntryBridge.DatabaseRelatesWorld.prepareCall_resolveAlts
       database ready request argsv args res rest binding qterm barrier counter
       arity
-  have candidates :=
-    PrologCallEntryBridge.DatabaseRelatesWorld.currentResolutionCandidates
-      database ready request.predicate args.length
-  have supportedAtSelectedArity :
-      VisibleEncodingSupported
-        (session.database.visibleClausesAt session.database.generation
-          request.predicate (args.length + 1)) := by
-    simpa only [arity] using supported
   have supportedSpine :=
     reserveVisible_supported_candidates
       session.database.generation request.predicate request.arguments
       request.bindings (max session.nextFresh request.generatedCeiling)
-      candidates supportedAtSelectedArity
+      supported
   have preparedSpine :
       List.Forall₂
         (SupportedPreparedCandidateAgrees
@@ -267,9 +323,10 @@ theorem prepareCall_conservativeResolutionScan
         (prepareCall session request).1 argsv
         (PLeaTTa.subst binding res))
     (supported :
-      VisibleEncodingSupported
+      SupportedCandidateBank request.predicate
         (session.database.visibleClausesAt session.database.generation
-          request.predicate request.arguments.length)) :
+          request.predicate request.arguments.length)
+        (world.resolutionCandidates request.predicate args.length)) :
     ConservativeResolutionScan argsv (PLeaTTa.subst binding res)
       (prepareCall session request).1.remaining
       (world.resolutionCandidates request.predicate args.length) :=
@@ -348,10 +405,11 @@ theorem openedFor_pendingCallOf_prefilter_relates
         (args.map (PLeaTTa.subst binding))
         (PLeaTTa.subst binding res))
     (supported :
-      VisibleEncodingSupported
+      SupportedCandidateBank predicate
         (session.resolver.database.visibleClausesAt
           session.resolver.database.generation predicate
-          referenceArguments.length)) :
+          referenceArguments.length)
+        (state.persistent.world.resolutionCandidates predicate args.length)) :
     CallEntryPrefilterRelates
       (openedFor session predicate referenceArguments referenceBindings)
       state (pendingCallOf state branches finalCounter)
@@ -415,10 +473,11 @@ theorem taskCall_callEnter_prefilter_correspondence
         (args.map (PLeaTTa.subst binding))
         (PLeaTTa.subst binding res))
     (supported :
-      VisibleEncodingSupported
+      SupportedCandidateBank predicate
         (session.resolver.database.visibleClausesAt
           session.resolver.database.generation predicate
-          referenceArguments.length)) :
+          referenceArguments.length)
+        (state.toConf.world.resolutionCandidates predicate args.length)) :
     RawStep session
         (.task scope
           (.call predicate referenceArguments :: referenceRest)
@@ -485,5 +544,15 @@ theorem colliding_snapshot_not_supported (index : Nat) :
       [.source (generatedExecutableName index), .generated index]
     at injective
   exact source_generated_pair_not_injective index injective
+
+/-- The stronger exact candidate-bank contract also rejects the same
+collision for every possible executable bank.  Thus adding body support did
+not weaken the original anti-aliasing guard. -/
+theorem colliding_candidate_bank_not_supported
+    (index : Nat) (executables : List PLeaTTa.Clause) :
+    ¬ SupportedCandidateBank "collision"
+      [collidingVisibleClause index] executables := by
+  intro supported
+  exact colliding_snapshot_not_supported index supported.visibleEncoding
 
 end PLeaTTa.PrologPrefilterCallBridge

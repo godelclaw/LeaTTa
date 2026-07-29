@@ -287,7 +287,10 @@ inductive SupportedPreparedCandidateAgrees
   | intro (reference : VersionedClause) (freshSeed : Nat)
       (executable : PLeaTTa.Clause)
       (base : CandidateClauseAgrees predicate reference executable)
-      (encoding : EncodingInjectiveOn reference.clause.variables) :
+      (encoding : EncodingInjectiveOn reference.clause.variables)
+      (bodySupported :
+        CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported
+          reference.clause.variables reference.clause.variables base.body) :
       SupportedPreparedCandidateAgrees callGeneration predicate
         arguments bindings
         (preparedBranchOf callGeneration arguments bindings freshSeed
@@ -306,7 +309,7 @@ theorem SupportedPreparedCandidateAgrees.prepared
     PreparedCandidateAgrees callGeneration predicate arguments bindings
       branch clause := by
   cases agreement with
-  | intro reference freshSeed executable base encoding =>
+  | intro reference freshSeed executable base encoding bodySupported =>
       exact .intro reference freshSeed clause base
 
 /-- One real prepared occurrence satisfies the normalized-head contract.
@@ -325,7 +328,7 @@ theorem supportedPreparedCandidate_normalizedHeadAgrees
     (arity : clause.params.length = argsv.length) :
     NormalizedHeadAgrees branch argsv resv clause := by
   cases agreement with
-  | intro reference freshSeed executable base encoding =>
+  | intro reference freshSeed executable base encoding bodySupported =>
       have startsAbove :
           cursor.reservationStart ≤
             (reference.clause.freshCopy freshSeed).firstFresh := by
