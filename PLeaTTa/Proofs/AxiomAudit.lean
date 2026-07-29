@@ -4,6 +4,7 @@ import PLeaTTa.Proofs.StepCases
 import PLeaTTa.Proofs.DemandDrivenStep
 import PLeaTTa.Proofs.PrologStateBridge
 import PLeaTTa.Proofs.PrologGoalAlpha
+import PLeaTTa.Proofs.PrologActivationMacro
 import PLeaTTa.Proofs.BarrierCache
 import PLeaTTa.Proofs.Specialize
 import PLeaTTa.Proofs.Unification
@@ -1042,3 +1043,15 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologGoalAlpha.wrong_empty_literal_output_is_rejected
 #print axioms PLeaTTa.PrologGoalAlpha.wrong_empty_superpose_output_is_rejected
 #print axioms PLeaTTa.PrologGoalAlpha.wrong_alpha_cut_barrier_is_rejected
+#print axioms PLeaTTa.PrologActivationMacro.resolveAlts_eq_scanResolution
+#print axioms PLeaTTa.PrologActivationMacro.ResolutionScan.deterministic
+#print axioms PLeaTTa.PrologActivationMacro.resolveAlts_counter_exact
+#print axioms PLeaTTa.PrologActivationMacro.resolveAlts_alts_leading_full_head_eq
+#print axioms PLeaTTa.PrologActivationMacro.leading_full_head_eq_failure_is_silent
+#print axioms PLeaTTa.PrologActivationMacro.incompatible_parameter_clause_is_dropped
+#print axioms PLeaTTa.PrologActivationMacro.incompatible_output_clause_is_dropped
+#print axioms PLeaTTa.PrologActivationMacro.dropped_clause_reservation_creates_frontier_gap
+#print axioms PLeaTTa.PrologActivationMacro.repeated_variable_doomed_alt_is_retained
+#print axioms PLeaTTa.PrologActivationMacro.repeated_variable_equal_actuals_succeed
+#print axioms PLeaTTa.PrologActivationMacro.two_retained_clauses_keep_source_order
+#print axioms PLeaTTa.PrologActivationMacro.swapped_retained_order_is_rejected

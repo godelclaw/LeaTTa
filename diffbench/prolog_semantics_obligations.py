@@ -21,6 +21,9 @@ GOAL_SEMANTICS = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologGoalSemantics.lean"
 DEMAND_DRIVEN_STEP = ROOT / "PLeaTTa" / "Proofs" / "DemandDrivenStep.lean"
 PROLOG_STATE_BRIDGE = ROOT / "PLeaTTa" / "Proofs" / "PrologStateBridge.lean"
 PROLOG_GOAL_ALPHA = ROOT / "PLeaTTa" / "Proofs" / "PrologGoalAlpha.lean"
+PROLOG_ACTIVATION_MACRO = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologActivationMacro.lean"
+)
 PINNED_PETTA_REVISION = "6b7f52f064bdbc82fabd0a0998404121fb01d52e"
 FIELDS = ["id", "native_source", "layer", "reference", "proof", "status", "finding"]
 LAYERS = {"trace", "control", "collection", "exception", "world", "boundary",
@@ -75,6 +78,7 @@ def check() -> list[str]:
         "demand_driven_step_sha256": digest(DEMAND_DRIVEN_STEP),
         "prolog_state_bridge_sha256": digest(PROLOG_STATE_BRIDGE),
         "prolog_goal_alpha_sha256": digest(PROLOG_GOAL_ALPHA),
+        "prolog_activation_macro_sha256": digest(PROLOG_ACTIVATION_MACRO),
     }
     for key, expected in expected_metadata.items():
         actual = metadata.get(key)
