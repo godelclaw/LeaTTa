@@ -6,9 +6,11 @@ Purpose: Faithful state-side bridge between the independent local-Prolog
   semantics and the fine-grained executable lane.
 Trusted boundary: none
 Main exports: LocalClauseAgrees, DatabaseRelatesWorld,
-  SessionRelatesPersistent, RuntimeAlpha, FreshenedClauseAlphaAgrees
+  SessionRelatesPersistent, RuntimeAlpha, LocalClauseHeadAlphaAgrees,
+  FreshenedClauseAlphaAgrees
 -/
 import PLeaTTa.Proofs.CompilerAdequacy
+import PLeaTTa.Proofs.CompilerSubstitutionAdequacy
 import PLeaTTa.Proofs.DemandDrivenStep
 import PLeaTTa.Proofs.OpenBindingAgreement
 import PLeaTTa.Proofs.ResolutionCounter
@@ -18,9 +20,11 @@ namespace PLeaTTa.PrologStateBridge
 
 open Metta (Atom)
 open PeTTaSpec.PrologCore
+open PeTTaSpec.PrologCore.OpenSubstitution
 open PeTTaSpec.PrologCore.Resolver
 open PeTTaSpec.PrologCore.GoalSemantics
 open CompilerAdequacy
+open CompilerSubstitutionAdequacy
 open DemandDrivenStep
 open OpenBindingAgreement
 
@@ -395,6 +399,287 @@ theorem RuntimeAlpha.graph_executable
     (RuntimeAlpha.graph reference executable).map Prod.snd = executable := by
   exact List.map_snd_zip (Nat.le_of_eq alpha.cardinality.symm)
 
+mutual
+
+/-- Structural term agreement under an explicit finite runtime alpha graph.
+Unlike compiler-time `TermAgrees`, the variable constructor does not assign
+an executable spelling from the independent identity: the graph records the
+actual names chosen by the two runtime copiers. -/
+inductive AlphaTermAgrees (alpha : List (LogicVar × String)) :
+    Term → Atom → Prop where
+  | variable {identity : LogicVar} {name : String}
+      (linked : (identity, name) ∈ alpha) :
+      AlphaTermAgrees alpha (.variable identity) (.var name)
+  | atom {name : String} (notTrue : name ≠ "true")
+      (notFalse : name ≠ "false") :
+      AlphaTermAgrees alpha (.atom name) (.sym name)
+  | trueAtom : AlphaTermAgrees alpha (.atom "true") (.sym "True")
+  | falseAtom : AlphaTermAgrees alpha (.atom "false") (.sym "False")
+  | integer (value : Int) :
+      AlphaTermAgrees alpha (.integer value) (.gnd (.int value))
+  | float (value : Float) :
+      AlphaTermAgrees alpha (.float value) (.gnd (.float value))
+  | string (value : String) :
+      AlphaTermAgrees alpha (.string value) (.gnd (.str value))
+  | partialValue {head : String} {terms : List Term}
+      {encodedArguments : Atom}
+      (arguments : AlphaProperListAgrees alpha terms encodedArguments) :
+      AlphaTermAgrees alpha
+        (.compound "partial" [.atom head, .list terms none])
+        (chainOf [.sym "partial", .sym head, encodedArguments])
+  | properList {items : List Term} {encoded : Atom}
+      (elements : AlphaProperListAgrees alpha items encoded) :
+      AlphaTermAgrees alpha (.list items none) encoded
+
+/-- Proper-list counterpart of `AlphaTermAgrees`. -/
+inductive AlphaProperListAgrees (alpha : List (LogicVar × String)) :
+    List Term → Atom → Prop where
+  | nil : AlphaProperListAgrees alpha [] nilA
+  | cons {term : Term} {atom : Atom} {terms : List Term} {tail : Atom}
+      (head : AlphaTermAgrees alpha term atom)
+      (rest : AlphaProperListAgrees alpha terms tail) :
+      AlphaProperListAgrees alpha (term :: terms) (consC atom tail)
+
+end
+
+/-- Ordered pointwise term agreement under one runtime alpha graph. -/
+inductive AlphaTermsAgree (alpha : List (LogicVar × String)) :
+    List Term → List Atom → Prop where
+  | nil : AlphaTermsAgree alpha [] []
+  | cons {term : Term} {atom : Atom} {terms : List Term}
+      {atoms : List Atom}
+      (head : AlphaTermAgrees alpha term atom)
+      (tail : AlphaTermsAgree alpha terms atoms) :
+      AlphaTermsAgree alpha (term :: terms) (atom :: atoms)
+
+/-- Exact freshened head-payload agreement.  This is deliberately separate
+from body-goal agreement: runtime cut tagging and the executable-only goal
+constructors require their own alpha-preservation layer. -/
+structure LocalClauseHeadAlphaAgrees
+    (alpha : List (LogicVar × String))
+    (reference : LocalClause)
+    (executable : String × PLeaTTa.Clause) : Prop where
+  predicate : reference.predicate = executable.1
+  outputLast :
+    ∃ referenceParameters referenceResult,
+      reference.arguments = referenceParameters ++ [referenceResult] ∧
+        AlphaTermsAgree alpha referenceParameters executable.2.params ∧
+        AlphaTermAgrees alpha referenceResult executable.2.result
+
+/-- Suffix renaming commutes with the executable proper-list encoder. -/
+theorem renameAtomSuffix_chainOf (suffix : String) (atoms : List Atom) :
+    renameAtomSuffix suffix (chainOf atoms) =
+      chainOf (atoms.map (renameAtomSuffix suffix)) := by
+  induction atoms with
+  | nil =>
+      simp [chainOf, nilA, renameAtomSuffix_sym]
+  | cons head tail inductionHypothesis =>
+      change renameAtomSuffix suffix (consC head (chainOf tail)) =
+        consC (renameAtomSuffix suffix head)
+          (chainOf (tail.map (renameAtomSuffix suffix)))
+      simp [consC, renameAtomSuffix_expr, renameAtomSuffix_sym,
+        inductionHypothesis]
+
+/-- Representation agreement transports through one simultaneous independent
+freshening and one executable suffix renaming when every supported source
+variable is tied to the same finite alpha graph.  This is not executable deep
+substitution: suffix targets may themselves resemble source names, so the
+simultaneous `renameAtomSuffix` operation remains explicit. -/
+theorem termAgrees_alpha_freshen
+    {referenceSubstitution : Substitution} {suffix : String}
+    {domain : List LogicVar} {alpha : List (LogicVar × String)}
+    (variableAgreement :
+      ∀ identity, identity ∈ domain →
+        ∃ target,
+          referenceSubstitution.applyTerm (.variable identity) =
+            .variable target ∧
+          (target, logicVarExecutableName identity ++ suffix) ∈ alpha)
+    {term : Term} {atom : Atom} (agreement : TermAgrees term atom)
+    (supported : termVariablesIn domain term) :
+    AlphaTermAgrees alpha
+      (referenceSubstitution.applyTerm term)
+      (renameAtomSuffix suffix atom) := by
+  apply TermAgrees.rec
+    (motive_1 := fun term atom _ =>
+      termVariablesIn domain term →
+        AlphaTermAgrees alpha
+          (referenceSubstitution.applyTerm term)
+          (renameAtomSuffix suffix atom))
+    (motive_2 := fun terms atom _ =>
+      termsVariablesIn domain terms →
+        AlphaProperListAgrees alpha
+          (referenceSubstitution.applyTerms terms)
+          (renameAtomSuffix suffix atom))
+  · intro name member
+    obtain ⟨target, applied, linked⟩ :=
+      variableAgreement (.source name) member
+    rw [applied, renameAtomSuffix_var]
+    exact .variable linked
+  · intro index member
+    obtain ⟨target, applied, linked⟩ :=
+      variableAgreement (.generated index) member
+    rw [applied, renameAtomSuffix_var]
+    exact .variable linked
+  · intro name notTrue notFalse _supported
+    simpa [renameAtomSuffix_sym] using
+      (AlphaTermAgrees.atom (alpha := alpha) notTrue notFalse)
+  · intro _supported
+    simpa [renameAtomSuffix_sym] using
+      (AlphaTermAgrees.trueAtom (alpha := alpha))
+  · intro _supported
+    simpa [renameAtomSuffix_sym] using
+      (AlphaTermAgrees.falseAtom (alpha := alpha))
+  · intro value _supported
+    simpa [renameAtomSuffix_gnd] using
+      (AlphaTermAgrees.integer (alpha := alpha) value)
+  · intro value _supported
+    simpa [renameAtomSuffix_gnd] using
+      (AlphaTermAgrees.float (alpha := alpha) value)
+  · intro value _supported
+    simpa [renameAtomSuffix_gnd] using
+      (AlphaTermAgrees.string (alpha := alpha) value)
+  · intro head terms encoded arguments inductionHypothesis termSupport
+    have termsSupport : termsVariablesIn domain terms := by
+      simpa [termVariablesIn, termsVariablesIn] using termSupport
+    simpa [renameAtomSuffix_chainOf, renameAtomSuffix_sym] using
+      (AlphaTermAgrees.partialValue
+        (inductionHypothesis termsSupport))
+  · intro items encoded elements inductionHypothesis termSupport
+    have itemsSupport : termsVariablesIn domain items := by
+      simpa [termVariablesIn] using termSupport
+    simpa using
+      (AlphaTermAgrees.properList (inductionHypothesis itemsSupport))
+  · intro _supported
+    simpa [nilA, renameAtomSuffix_sym] using
+      (AlphaProperListAgrees.nil (alpha := alpha))
+  · intro term atom terms tail head rest headInduction tailInduction support
+    simpa [consC, renameAtomSuffix_expr, renameAtomSuffix_sym] using
+      (AlphaProperListAgrees.cons
+        (headInduction support.1) (tailInduction support.2))
+  · exact agreement
+  · exact supported
+
+/-- Ordered-list counterpart of `termAgrees_alpha_freshen`. -/
+theorem termsAgree_alpha_freshen
+    {referenceSubstitution : Substitution} {suffix : String}
+    {domain : List LogicVar} {alpha : List (LogicVar × String)}
+    (variableAgreement :
+      ∀ identity, identity ∈ domain →
+        ∃ target,
+          referenceSubstitution.applyTerm (.variable identity) =
+            .variable target ∧
+          (target, logicVarExecutableName identity ++ suffix) ∈ alpha)
+    {terms : List Term} {atoms : List Atom}
+    (agreement : TermsAgree terms atoms)
+    (supported : termsVariablesIn domain terms) :
+    AlphaTermsAgree alpha
+      (referenceSubstitution.applyTerms terms)
+      (atoms.map (renameAtomSuffix suffix)) := by
+  induction agreement with
+  | nil =>
+      simpa using (AlphaTermsAgree.nil (alpha := alpha))
+  | cons head tail inductionHypothesis =>
+      simpa [Substitution.applyTerms] using
+        (AlphaTermsAgree.cons
+          (termAgrees_alpha_freshen variableAgreement head supported.1)
+          (inductionHypothesis supported.2))
+
+/-- A term is supported by any finite domain containing its complete
+independently computed occurrence list. -/
+theorem termVariablesIn_of_occurrences
+    (domain : List LogicVar) (term : Term)
+    (contained : ∀ identity, identity ∈ termVariables term →
+      identity ∈ domain) :
+    termVariablesIn domain term := by
+  apply Term.rec
+    (motive_1 := fun term =>
+      (∀ identity, identity ∈ termVariables term → identity ∈ domain) →
+        termVariablesIn domain term)
+    (motive_2 := fun terms =>
+      (∀ identity, identity ∈ termsVariables terms → identity ∈ domain) →
+        termsVariablesIn domain terms)
+    (motive_3 := fun tail =>
+      match tail with
+      | none => True
+      | some term =>
+          (∀ identity, identity ∈ termVariables term →
+            identity ∈ domain) →
+          termVariablesIn domain term)
+  · intro identity support
+    exact support identity (by simp [termVariables])
+  · intro name support
+    trivial
+  · intro value support
+    trivial
+  · intro value support
+    trivial
+  · intro value support
+    trivial
+  · intro functor arguments inductionHypothesis support
+    apply inductionHypothesis
+    intro identity member
+    exact support identity (by simpa [termVariables] using member)
+  · intro items tail itemsInduction tailInduction support
+    cases tail with
+    | none =>
+        apply itemsInduction
+        intro identity member
+        exact support identity (by simpa [termVariables] using member)
+    | some tail =>
+        constructor
+        · apply itemsInduction
+          intro identity member
+          apply support identity
+          simp [termVariables, member]
+        · apply tailInduction
+          intro identity member
+          apply support identity
+          simp [termVariables, member]
+  · intro support
+    trivial
+  · intro head tail headInduction tailInduction support
+    constructor
+    · apply headInduction
+      intro identity member
+      apply support identity
+      simp [termsVariables, member]
+    · apply tailInduction
+      intro identity member
+      apply support identity
+      simp [termsVariables, member]
+  · trivial
+  · intro term inductionHypothesis
+    exact inductionHypothesis
+  · exact contained
+
+/-- Ordered-list counterpart of `termVariablesIn_of_occurrences`. -/
+theorem termsVariablesIn_of_occurrences
+    (domain : List LogicVar) (terms : List Term)
+    (contained : ∀ identity, identity ∈ termsVariables terms →
+      identity ∈ domain) :
+    termsVariablesIn domain terms := by
+  cases terms with
+  | nil =>
+      trivial
+  | cons term terms =>
+      constructor
+      · apply termVariablesIn_of_occurrences
+        intro identity member
+        apply contained identity
+        simp [termsVariables, member]
+      · apply termsVariablesIn_of_occurrences
+        intro identity member
+        apply contained identity
+        simp [termsVariables, member]
+
+/-- Every argument variable is contained in its clause's stable finite
+support. -/
+theorem LocalClause.arguments_supported (clause : LocalClause) :
+    termsVariablesIn clause.variables clause.arguments := by
+  apply termsVariablesIn_of_occurrences
+  intro identity member
+  exact List.mem_eraseDups.mpr (List.mem_append_left _ member)
+
 private theorem nodup_map_of_injective {α β : Type}
     (function : α → β) (injective : Function.Injective function) :
     ∀ values : List α, values.Nodup → (values.map function).Nodup
@@ -458,6 +743,150 @@ theorem buildFreshening_targets (seed : Nat) (support : List LogicVar) :
   | cons head rest inductionHypothesis =>
       simp only [buildFreshening, List.map_cons, referenceFreshTargets,
         inductionHypothesis]
+
+/-- A finite substitution fixes a variable absent from its complete source
+projection.  Replacement targets need no disjointness premise because the
+source is never replaced in the first place. -/
+theorem applyTerm_variable_of_not_mem_sources
+    (bindings : Substitution) (identity : LogicVar)
+    (absent : identity ∉ bindings.map Prod.fst) :
+    bindings.applyTerm (.variable identity) = .variable identity := by
+  induction bindings with
+  | nil => rfl
+  | cons binding bindings inductionHypothesis =>
+      rcases binding with ⟨source, replacement⟩
+      have sourceDifferent : identity ≠ source := by
+        intro same
+        apply absent
+        simp [same]
+      have tailAbsent : identity ∉ bindings.map Prod.fst := by
+        intro member
+        apply absent
+        simp [member]
+      simp [Substitution.applyTerm, inductionHypothesis tailAbsent,
+        Term.instantiateOne, sourceDifferent]
+
+/-- `buildFreshening` behaves as a simultaneous renaming on every binding it
+creates.  Duplicate-free sources and a starting high-water above the source
+syntax prevent a later target from being captured by an earlier source key. -/
+theorem buildFreshening_apply_member
+    (seed : Nat) (support : List LogicVar)
+    (supportNodup : support.Nodup)
+    (below : GeneratedBelow seed support)
+    {source : LogicVar} {target : Term}
+    (member : (source, target) ∈ (buildFreshening seed support).1) :
+    (buildFreshening seed support).1.applyTerm (.variable source) =
+      target := by
+  induction support generalizing seed source target with
+  | nil => simp [buildFreshening] at member
+  | cons head tail inductionHypothesis =>
+      rw [List.nodup_cons] at supportNodup
+      simp only [buildFreshening] at member
+      rcases List.mem_cons.mp member with first | later
+      · have sourceEq : source = head := congrArg Prod.fst first
+        have targetEq :
+            target = .variable (.generated seed) :=
+          congrArg Prod.snd first
+        subst source
+        subst target
+        change Term.instantiateOne head (.variable (.generated seed))
+          ((buildFreshening (seed + 1) tail).1.applyTerm
+            (.variable head)) =
+          .variable (.generated seed)
+        rw [applyTerm_variable_of_not_mem_sources]
+        · simp [Term.instantiateOne]
+        · rw [buildFreshening_sources]
+          exact supportNodup.1
+      · have tailBelow : GeneratedBelow (seed + 1) tail := by
+          intro index indexMember
+          have oldBound := below index (by simp [indexMember])
+          omega
+        have tailResult :=
+          inductionHypothesis (seed := seed + 1) supportNodup.2
+            tailBelow later
+        obtain ⟨index, targetShape, lower, upper⟩ :=
+          buildFreshening_target_generated (seed + 1) tail later
+        rw [targetShape] at tailResult ⊢
+        have targetDifferent : (.generated index : LogicVar) ≠ head := by
+          cases head with
+          | source name => simp
+          | anonymous anonymousIndex => simp
+          | generated headIndex =>
+              have headBound := below headIndex (by simp)
+              intro same
+              injection same with indexEq
+              omega
+        change Term.instantiateOne head (.variable (.generated seed))
+          ((buildFreshening (seed + 1) tail).1.applyTerm
+            (.variable source)) =
+          .variable (.generated index)
+        rw [tailResult]
+        simp [Term.instantiateOne, targetDifferent]
+
+/-- The source, independent target, and executable suffix target at every
+support position are tied together by the actual builder and the runtime
+alpha graph. -/
+theorem buildFreshening_alpha_member
+    (seed : Nat) (support : List LogicVar) (suffix : String)
+    {source : LogicVar} (member : source ∈ support) :
+    ∃ target,
+      (source, .variable target) ∈ (buildFreshening seed support).1 ∧
+        (target, logicVarExecutableName source ++ suffix) ∈
+          RuntimeAlpha.graph (referenceFreshTargets seed support)
+            (executableFreshTargets suffix support) := by
+  induction support generalizing seed with
+  | nil => simp at member
+  | cons head tail inductionHypothesis =>
+      rcases List.mem_cons.mp member with same | later
+      · subst source
+        refine ⟨.generated seed, ?_, ?_⟩
+        · simp [buildFreshening]
+        · simp [RuntimeAlpha.graph, referenceFreshTargets,
+            executableFreshTargets]
+      · obtain ⟨target, targetMember, graphMember⟩ :=
+          inductionHypothesis (seed := seed + 1) later
+        refine ⟨target, ?_, ?_⟩
+        · simp [buildFreshening, targetMember]
+        · simp only [RuntimeAlpha.graph, referenceFreshTargets,
+            executableFreshTargets, List.map_cons, List.zip_cons_cons,
+            List.mem_cons]
+          exact Or.inr graphMember
+
+/-- The actual independent clause copier starts above every generated
+identity in the stored clause support. -/
+theorem LocalClause.freshCopy_generatedBelow
+    (clause : LocalClause) (freshSeed : Nat) :
+    GeneratedBelow (clause.freshCopy freshSeed).firstFresh
+      clause.variables := by
+  exact (generatedBelow_variablesGeneratedCeiling clause.variables).mono
+    (clause.freshCopy_first_ge_clause freshSeed)
+
+/-- Every original clause variable is sent by the actual independent
+freshening substitution to the exact alpha-graph partner of the executable
+suffix renamer.  This is the source-to-target link missing from a bare
+cardinality/support theorem. -/
+theorem LocalClause.freshCopy_alpha_variable
+    (clause : LocalClause) (freshSeed : Nat) (suffix : String)
+    {source : LogicVar} (member : source ∈ clause.variables) :
+    ∃ target,
+      (clause.freshCopy freshSeed).freshSubstitution.applyTerm
+          (.variable source) =
+        .variable target ∧
+      (target, logicVarExecutableName source ++ suffix) ∈
+        RuntimeAlpha.graph
+          (referenceFreshTargets
+            (clause.freshCopy freshSeed).firstFresh clause.variables)
+          (executableFreshTargets suffix clause.variables) := by
+  obtain ⟨target, targetMember, graphMember⟩ :=
+    buildFreshening_alpha_member
+      (clause.freshCopy freshSeed).firstFresh clause.variables suffix member
+  refine ⟨target, ?_, graphMember⟩
+  simpa only [LocalClause.freshCopy] using
+    (buildFreshening_apply_member
+      (clause.freshCopy freshSeed).firstFresh clause.variables
+      (LocalClause.variables_nodup clause)
+      (LocalClause.freshCopy_generatedBelow clause freshSeed)
+      targetMember)
 
 /-- Every identity in a consecutive independent target support is generated
 at or above its starting high-water. -/
@@ -726,10 +1155,85 @@ theorem freshenClause_alpha_reference_projection
         (clause.freshCopy freshSeed).firstFresh clause.variables := by
   exact buildFreshening_targets _ _
 
-/-- Full one-clause freshening witness.  Both outputs are the actual
-independent/executable copier results; their variable-occurrence streams use
-the same original support, and the fresh-name graph is an explicit finite
-bijection.
+/-- The actual independent and executable clause copiers produce
+alpha-related output-last head payloads.  This theorem reaches the terms
+the resolver unifies, rather than stopping at occurrence/support equality. -/
+theorem freshenClause_head_alpha_agrees
+    {reference : LocalClause} {executablePredicate : String}
+    {executable : PLeaTTa.Clause}
+    (base : LocalClauseAgrees reference
+      (executablePredicate, executable))
+    (freshSeed : Nat) (argsv args : List Atom) (result : Atom)
+    (rest : List PLeaTTa.Goal) (binding : Metta.Subst)
+    (query : Atom) (seed barrier : Nat) :
+    LocalClauseHeadAlphaAgrees
+      (RuntimeAlpha.graph
+        (referenceFreshTargets
+          (reference.freshCopy freshSeed).firstFresh reference.variables)
+        (executableFreshTargets
+          (resolutionFreshSuffix argsv result rest binding query seed)
+          reference.variables))
+      (reference.freshCopy freshSeed).clause
+      (executablePredicate,
+        freshenResolutionClause argsv args result rest binding query
+          seed barrier executable) := by
+  rcases base.outputLast with
+    ⟨referenceParameters, referenceResult, arguments,
+      parameters, resultAgreement⟩
+  have argumentsSupported := LocalClause.arguments_supported reference
+  rw [arguments, termsVariablesIn_append] at argumentsSupported
+  have resultSupported :
+      termVariablesIn reference.variables referenceResult := by
+    simpa [termsVariablesIn] using argumentsSupported.2
+  let suffix :=
+    resolutionFreshSuffix argsv result rest binding query seed
+  let alpha :=
+    RuntimeAlpha.graph
+      (referenceFreshTargets
+        (reference.freshCopy freshSeed).firstFresh reference.variables)
+      (executableFreshTargets suffix reference.variables)
+  have variableAgreement :
+      ∀ identity, identity ∈ reference.variables →
+        ∃ target,
+          (reference.freshCopy freshSeed).freshSubstitution.applyTerm
+              (.variable identity) =
+            .variable target ∧
+          (target, logicVarExecutableName identity ++ suffix) ∈ alpha := by
+    intro identity member
+    exact LocalClause.freshCopy_alpha_variable
+      reference freshSeed suffix member
+  constructor
+  · simpa only [LocalClause.freshCopy_predicate] using base.predicate
+  · refine ⟨
+      (reference.freshCopy freshSeed).freshSubstitution.applyTerms
+        referenceParameters,
+      (reference.freshCopy freshSeed).freshSubstitution.applyTerm
+        referenceResult,
+      ?_, ?_, ?_⟩
+    · change
+        (reference.freshCopy freshSeed).freshSubstitution.applyTerms
+            reference.arguments =
+          (reference.freshCopy freshSeed).freshSubstitution.applyTerms
+              referenceParameters ++
+            [(reference.freshCopy freshSeed).freshSubstitution.applyTerm
+              referenceResult]
+      rw [arguments, applyTerms_append]
+      simp
+    · have transported :=
+        termsAgree_alpha_freshen variableAgreement parameters
+          argumentsSupported.1
+      simpa [alpha, suffix, freshenResolutionClause] using transported
+    · have transported :=
+        termAgrees_alpha_freshen variableAgreement resultAgreement
+          resultSupported
+      simpa [alpha, suffix, freshenResolutionClause] using transported
+
+/-- One-clause freshening witness for the proved layer.  Both outputs are the
+actual independent/executable copier results; their output-last head payloads
+are structurally related under an explicit finite alpha bijection, and their
+complete head/body variable-occurrence streams use the same original support.
+Alpha-preservation for the executable body-goal constructors remains a
+separate composition obligation.
 
 Finite support is an explicit field of `LocalClauseAgrees`; it is not inferred
 from raw occurrence equality because some compiler representations store a
@@ -749,6 +1253,18 @@ structure FreshenedClauseAlphaAgrees
       (executableFreshTargets
         (resolutionFreshSuffix argsv result rest binding query seed)
         reference.variables)
+  headPayload :
+    LocalClauseHeadAlphaAgrees
+      (RuntimeAlpha.graph
+        (referenceFreshTargets
+          (reference.freshCopy freshSeed).firstFresh reference.variables)
+        (executableFreshTargets
+          (resolutionFreshSuffix argsv result rest binding query seed)
+          reference.variables))
+      (reference.freshCopy freshSeed).clause
+      (executablePredicate,
+        freshenResolutionClause argsv args result rest binding query
+          seed barrier executable)
   referenceSources :
     (reference.freshCopy freshSeed).freshSubstitution.map Prod.fst =
       reference.variables
@@ -806,6 +1322,8 @@ theorem freshenClause_actual_alpha_agrees
   constructor
   · exact base
   · exact freshenClause_alpha_agrees reference freshSeed _ encoding
+  · exact freshenClause_head_alpha_agrees base freshSeed argsv args result
+      rest binding query seed barrier
   · exact buildFreshening_sources _ _
   · exact freshenClause_alpha_reference_projection reference freshSeed
   · intro source target member
@@ -839,6 +1357,16 @@ private def collidingLocalClause (index : Nat) : LocalClause :=
       [.variable (.source (generatedExecutableName index)),
        .variable (.generated index)]
     body := [] }
+
+/-- The payload relation is stricter than support cardinality: an executable
+variable with the wrong alpha partner is rejected even though both sides
+still contain exactly one variable. -/
+theorem wrong_alpha_head_name_is_rejected :
+    ¬ AlphaTermAgrees [(.generated 0, "right#r0")]
+      (.variable (.generated 0)) (.var "wrong#r0") := by
+  intro agreement
+  cases agreement
+  simp_all
 
 /-- The alpha theorem's encoding premise excludes a real parser-permitted
 clause: a source variable can spell exactly like a compiler-generated one.

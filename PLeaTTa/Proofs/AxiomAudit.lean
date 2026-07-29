@@ -1024,8 +1024,13 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologStateBridge.openFindall_preserves_persistent_relation
 #print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_reference
 #print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_executable
+#print axioms PLeaTTa.PrologStateBridge.buildFreshening_apply_member
+#print axioms PLeaTTa.PrologStateBridge.LocalClause.freshCopy_alpha_variable
+#print axioms PLeaTTa.PrologStateBridge.termAgrees_alpha_freshen
 #print axioms PLeaTTa.PrologStateBridge.freshenResolutionClause_vars_exact
 #print axioms PLeaTTa.PrologStateBridge.freshenResolutionClause_support_exact
+#print axioms PLeaTTa.PrologStateBridge.freshenClause_head_alpha_agrees
 #print axioms PLeaTTa.PrologStateBridge.freshenClause_actual_alpha_agrees
+#print axioms PLeaTTa.PrologStateBridge.wrong_alpha_head_name_is_rejected
 #print axioms PLeaTTa.PrologStateBridge.colliding_clause_has_no_injective_encoding
 #print axioms PLeaTTa.PrologStateBridge.fresh_frontiers_have_different_units
