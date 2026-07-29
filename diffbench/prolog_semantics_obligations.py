@@ -31,6 +31,18 @@ PROLOG_CALL_ENTRY_BRIDGE = (
 PROLOG_CALL_STEP_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologCallStepBridge.lean"
 )
+PROLOG_PREFILTER_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologPrefilterBridge.lean"
+)
+PROLOG_PREFILTER_SCAN_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologPrefilterScanBridge.lean"
+)
+PROLOG_CALL_PAYLOAD_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologCallPayloadBridge.lean"
+)
+PROLOG_PREFILTER_CALL_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologPrefilterCallBridge.lean"
+)
 PROLOG_GOAL_ALPHA = ROOT / "PLeaTTa" / "Proofs" / "PrologGoalAlpha.lean"
 PROLOG_ACTIVATION_MACRO = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationMacro.lean"
@@ -96,6 +108,13 @@ def check() -> list[str]:
         "prolog_state_bridge_sha256": digest(PROLOG_STATE_BRIDGE),
         "prolog_call_entry_bridge_sha256": digest(PROLOG_CALL_ENTRY_BRIDGE),
         "prolog_call_step_bridge_sha256": digest(PROLOG_CALL_STEP_BRIDGE),
+        "prolog_prefilter_bridge_sha256": digest(PROLOG_PREFILTER_BRIDGE),
+        "prolog_prefilter_scan_bridge_sha256":
+            digest(PROLOG_PREFILTER_SCAN_BRIDGE),
+        "prolog_call_payload_bridge_sha256":
+            digest(PROLOG_CALL_PAYLOAD_BRIDGE),
+        "prolog_prefilter_call_bridge_sha256":
+            digest(PROLOG_PREFILTER_CALL_BRIDGE),
         "prolog_goal_alpha_sha256": digest(PROLOG_GOAL_ALPHA),
         "prolog_activation_macro_sha256": digest(PROLOG_ACTIVATION_MACRO),
         "prolog_activation_bridge_sha256": digest(PROLOG_ACTIVATION_BRIDGE),
