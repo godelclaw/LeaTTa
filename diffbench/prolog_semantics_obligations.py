@@ -59,6 +59,10 @@ PROLOG_MGU_EXECUTABLE_OPEN_FACTOR = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologMguExecutableOpenFactor.lean"
 )
+PROLOG_MGU_DIRECT_SIMULATION = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologMguDirectSimulation.lean"
+)
 PROLOG_ACTIVATION_UNIFIER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationUnifierBridge.lean"
 )
@@ -143,6 +147,8 @@ def check() -> list[str]:
         "prolog_mgu_topology_sha256": digest(PROLOG_MGU_TOPOLOGY),
         "prolog_mgu_executable_open_factor_sha256":
             digest(PROLOG_MGU_EXECUTABLE_OPEN_FACTOR),
+        "prolog_mgu_direct_simulation_sha256":
+            digest(PROLOG_MGU_DIRECT_SIMULATION),
         "prolog_activation_unifier_bridge_sha256":
             digest(PROLOG_ACTIVATION_UNIFIER_BRIDGE),
         "prolog_goal_alpha_sha256": digest(PROLOG_GOAL_ALPHA),
