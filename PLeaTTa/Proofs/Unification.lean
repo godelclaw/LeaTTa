@@ -2761,6 +2761,62 @@ private def EquationsSupported (allowed : List String)
     (∀ name, name ∈ equation.1.vars → name ∈ allowed) ∧
     (∀ name, name ∈ equation.2.vars → name ∈ allowed)
 
+/-- Every key and every variable occurring in a replacement value of one
+runtime substitution satisfies `predicate`.  Unlike key-only support, the
+replacement clause is load-bearing for residual-variable alpha transport. -/
+def RuntimeSubstitutionVariablesSatisfy
+    (predicate : String → Prop) (binding : Subst) : Prop :=
+  ∀ entry, entry ∈ binding →
+    predicate entry.1 ∧
+      ∀ name, name ∈ entry.2.vars → predicate name
+
+/-- The empty executable substitution has no variable support obligations. -/
+theorem RuntimeSubstitutionVariablesSatisfy.nil
+    (predicate : String → Prop) :
+    RuntimeSubstitutionVariablesSatisfy predicate [] := by
+  intro entry member
+  simp at member
+
+/-- Extending a supported executable substitution with a supported key and
+replacement preserves the complete key-and-value support invariant. -/
+theorem RuntimeSubstitutionVariablesSatisfy.extend
+    {predicate : String → Prop} {binding : Subst}
+    (supported :
+      RuntimeSubstitutionVariablesSatisfy predicate binding)
+    (source : String) (replacement : Atom)
+    (sourceSupported : predicate source)
+    (replacementSupported :
+      ∀ name, name ∈ replacement.vars → predicate name) :
+    RuntimeSubstitutionVariablesSatisfy predicate
+      (Metta.Subst.extend binding source replacement) := by
+  intro entry member
+  simp only [Metta.Subst.extend, List.mem_cons] at member
+  rcases member with rfl | member
+  · exact ⟨sourceSupported, replacementSupported⟩
+  · change
+      entry ∈ binding.filter (fun candidate => candidate.fst != source)
+        at member
+    exact supported entry (List.mem_of_mem_filter member)
+
+/-- Membership exposes support of a substitution key. -/
+theorem RuntimeSubstitutionVariablesSatisfy.key
+    {predicate : String → Prop} {binding : Subst}
+    (supported :
+      RuntimeSubstitutionVariablesSatisfy predicate binding)
+    {entry : String × Atom} (member : entry ∈ binding) :
+    predicate entry.1 :=
+  (supported entry member).1
+
+/-- Membership exposes support of every variable nested in a replacement. -/
+theorem RuntimeSubstitutionVariablesSatisfy.replacement
+    {predicate : String → Prop} {binding : Subst}
+    (supported :
+      RuntimeSubstitutionVariablesSatisfy predicate binding)
+    {entry : String × Atom} (member : entry ∈ binding)
+    {name : String} (nameMember : name ∈ entry.2.vars) :
+    predicate name :=
+  (supported entry member).2 name nameMember
+
 /-- Every variable in the singleton-substituted residual worklist lies in
     the old support with the eliminated source removed. -/
 private theorem constraintMap_supported_after_erase
@@ -2799,6 +2855,174 @@ private theorem length_erase_lt_of_mem_nodup
     (names.erase name).length < names.length := by
   have lengthEq := List.length_erase_add_one member
   omega
+
+/-- A successful elimination run cannot invent a substitution key or a
+variable inside a replacement.  `allowed` shrinks as variables are
+eliminated, while `universe` remains the support of the original input. -/
+private theorem unifyRoundsWith_result_variablesSatisfy
+    (groundEq : Ground → Ground → Bool)
+    (fuel : Nat) (allowed supportNames : List String)
+    (equations : List (Atom × Atom)) (base result : Subst)
+    (supported : EquationsSupported allowed equations)
+    (included : ∀ name, name ∈ allowed → name ∈ supportNames)
+    (baseSupported :
+      RuntimeSubstitutionVariablesSatisfy
+        (fun name => name ∈ supportNames) base)
+    (returned :
+      Metta.Unify.unifyRoundsWith groundEq fuel equations base =
+        some result) :
+    RuntimeSubstitutionVariablesSatisfy
+      (fun name => name ∈ supportNames) result := by
+  induction fuel generalizing allowed equations base result with
+  | zero =>
+      simp only [Metta.Unify.unifyRoundsWith] at returned
+      cases decomposed :
+          Metta.Unify.decomposeAllWith groundEq equations with
+      | none =>
+          simp [decomposed] at returned
+      | some constraints =>
+          cases constraints with
+          | nil =>
+              simp [decomposed] at returned
+              subst result
+              exact baseSupported
+          | cons constraint rest =>
+              simp [decomposed] at returned
+  | succ fuel induction =>
+      simp only [Metta.Unify.unifyRoundsWith] at returned
+      cases decomposed :
+          Metta.Unify.decomposeAllWith groundEq equations with
+      | none =>
+          simp [decomposed] at returned
+      | some constraints =>
+          cases constraints with
+          | nil =>
+              simp [decomposed] at returned
+              subst result
+              exact baseSupported
+          | cons constraint rest =>
+              rcases constraint with ⟨source, replacement⟩
+              by_cases occurs :
+                  Metta.Subst.occurs source replacement = true
+              · simp [decomposed, occurs] at returned
+              · have occursFalse :
+                    Metta.Subst.occurs source replacement = false := by
+                  cases value :
+                      Metta.Subst.occurs source replacement with
+                  | false => rfl
+                  | true => exact False.elim (occurs value)
+                have constraintsSupported :=
+                  decomposeAllWith_supported groundEq allowed equations
+                    ((source, replacement) :: rest) supported decomposed
+                have headSupported :
+                    ConstraintSupported allowed (source, replacement) :=
+                  constraintsSupported (source, replacement) (by simp)
+                have restSupported :
+                    ConstraintsSupported allowed rest := by
+                  intro item member
+                  exact constraintsSupported item (by simp [member])
+                let nextEquations := rest.map fun item =>
+                  (Metta.Subst.apply [(source, replacement)]
+                      (.var item.1),
+                    Metta.Subst.apply [(source, replacement)] item.2)
+                have nextSupported :
+                    EquationsSupported (allowed.erase source)
+                      nextEquations := by
+                  exact constraintMap_supported_after_erase allowed source
+                    replacement rest headSupported
+                    (not_mem_vars_of_occurs_eq_false source replacement
+                      occursFalse)
+                    restSupported
+                have nextIncluded :
+                    ∀ name, name ∈ allowed.erase source →
+                      name ∈ supportNames := by
+                  intro name member
+                  exact included name (List.mem_of_mem_erase member)
+                have extendedSupported :
+                    RuntimeSubstitutionVariablesSatisfy
+                      (fun name => name ∈ supportNames)
+                      (Metta.Subst.extend base source replacement) := by
+                  exact baseSupported.extend source replacement
+                    (included source headSupported.1)
+                    (fun name member =>
+                      included name (headSupported.2.1 name member))
+                simp only [decomposed, occursFalse, Bool.false_eq_true,
+                  if_false] at returned
+                exact induction (allowed.erase source) nextEquations
+                  (Metta.Subst.extend base source replacement) result
+                  nextSupported nextIncluded extendedSupported returned
+
+/-- Every key and every replacement variable returned by the concrete
+comparator-parametric unifier originates in one of its two inputs. -/
+theorem unifyTopWith_result_variablesSatisfy
+    (groundEq : Ground → Ground → Bool)
+    (left right : Atom) (result : Subst)
+    (returned :
+      Metta.Unify.unifyTopWith groundEq left right = some result) :
+    RuntimeSubstitutionVariablesSatisfy
+      (fun name => name ∈ left.vars ++ right.vars) result := by
+  let allowed := (left.vars ++ right.vars).dedup
+  have supported : EquationsSupported allowed [(left, right)] := by
+    intro equation member
+    simp only [List.mem_singleton] at member
+    subst equation
+    constructor
+    · intro name nameMember
+      exact List.mem_dedup.mpr
+        (List.mem_append_left right.vars nameMember)
+    · intro name nameMember
+      exact List.mem_dedup.mpr
+        (List.mem_append_right left.vars nameMember)
+  have included :
+      ∀ name, name ∈ allowed → name ∈ left.vars ++ right.vars := by
+    intro name member
+    exact List.mem_dedup.mp member
+  apply unifyRoundsWith_result_variablesSatisfy
+    groundEq (left.size + right.size) allowed
+      (left.vars ++ right.vars) [(left, right)] [] result
+      supported included
+      (RuntimeSubstitutionVariablesSatisfy.nil _)
+  simpa [Metta.Unify.unifyTopWith] using returned
+
+/-- PeTTa's exact Prolog-ground specialization inherits complete
+key-and-replacement variable-origin tracking. -/
+theorem unifyTopExact_result_variablesSatisfy
+    (left right : Atom) (result : Subst)
+    (returned : unifyTopExact left right = some result) :
+    RuntimeSubstitutionVariablesSatisfy
+      (fun name => name ∈ left.vars ++ right.vars) result := by
+  exact unifyTopWith_result_variablesSatisfy
+    prologGroundIdentical left right result returned
+
+/-- The support theorem is inhabited by a nonempty open result and excludes
+both ways an implementation could invent a foreign variable: as a new key or
+inside a replacement value. -/
+theorem residual_alias_result_has_no_foreign_support :
+    ∃ result,
+      unifyTopExact (.expr [.var "X"]) (.expr [.var "Y"]) =
+          some result ∧
+        ("Z", .var "X") ∉ result ∧
+        ("X", .var "Z") ∉ result := by
+  have returned :
+      unifyTopExact (.expr [.var "X"]) (.expr [.var "Y"]) =
+        some [("X", .var "Y")] := by
+    unfold unifyTopExact
+    simp [Metta.Unify.unifyTopWith, Atom.size,
+      Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
+      Metta.Unify.decomposeEqWith, Metta.Unify.decomposeListWith,
+      Metta.Subst.occurs, Metta.Subst.extend, Metta.Subst.erase]
+  have supported :=
+    unifyTopExact_result_variablesSatisfy
+      (.expr [.var "X"]) (.expr [.var "Y"])
+      [("X", .var "Y")] returned
+  refine ⟨[("X", .var "Y")], returned, ?_, ?_⟩
+  · intro foreign
+    have key := supported.key foreign
+    simp [Atom.vars] at key
+  · intro foreign
+    have replacement :=
+      supported.replacement foreign (name := "Z") (by simp [Atom.vars])
+    simp [Atom.vars] at replacement
 
 /-- The actual fuel-bounded elimination loop succeeds whenever a finite exact
     unifier exists and `fuel` covers a duplicate-free support for every

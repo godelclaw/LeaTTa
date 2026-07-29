@@ -897,6 +897,9 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.unifyTopExact_isMgu
 #print axioms PLeaTTa.unifyB_result_has_generated_mgu
 #print axioms PLeaTTa.distinct_nan_payloads_have_semantic_mgu
+#print axioms PLeaTTa.unifyTopWith_result_variablesSatisfy
+#print axioms PLeaTTa.unifyTopExact_result_variablesSatisfy
+#print axioms PLeaTTa.residual_alias_result_has_no_foreign_support
 #print axioms PLeaTTa.PrologMguBridge.conflicting_alpha_is_not_shared
 #print axioms PLeaTTa.PrologMguBridge.aliasing_alpha_is_not_shared
 #print axioms PLeaTTa.PrologMguBridge.AlphaForwardFunctional.append
