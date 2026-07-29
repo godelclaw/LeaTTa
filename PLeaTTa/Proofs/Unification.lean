@@ -3038,6 +3038,700 @@ theorem unifyTopExact_self_occurs_rejected (source : String) :
     Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
     Metta.Unify.decomposeEqWith, Metta.Subst.occurs]
 
+/-! ## Comparator-respecting completeness
+
+Raw `Atom` equality is stronger than the identity relation passed to the
+unifier.  In particular, SWI-Prolog identifies all IEEE NaN payloads while
+Lean `Float` equality does not.  The following layer proves the executable
+algorithm complete against the structural `AtomEquivalentWith` relation, so
+the cross-representation Prolog bridge need not silently exclude NaN. -/
+
+/-- One deep substitution unifies an ordered equation worklist modulo the
+same grounded-leaf comparator used by the executable unifier. -/
+def DeepEquivalentUnifies
+    (groundEq : Ground → Ground → Bool) (binding : Subst)
+    (equations : List (Atom × Atom)) : Prop :=
+  ∀ equation, equation ∈ equations →
+    AtomEquivalentWith groundEq
+      (subst binding equation.1) (subst binding equation.2)
+
+/-- Comparator-respecting realization of a flattened variable-constraint
+worklist. -/
+private def DeepEquivalentRealizes
+    (groundEq : Ground → Ground → Bool) (binding : Subst)
+    (constraints : List (String × Atom)) : Prop :=
+  ∀ constraint, constraint ∈ constraints →
+    AtomEquivalentWith groundEq
+      (subst binding (.var constraint.1))
+      (subst binding constraint.2)
+
+mutual
+
+  /-- Applying one variable equation is invisible modulo structural
+  equivalence to any deep substitution that already realizes it. -/
+  private theorem subst_apply_singleton_equivalent
+      (groundEq : Ground → Ground → Bool)
+      (groundReflexive : ∀ ground, groundEq ground ground = true)
+      (groundSymmetric :
+        ∀ {left right : Ground}, groundEq left right = true →
+          groundEq right left = true)
+      (runtime : Subst) (name : String) (target : Atom)
+      (equivalent :
+        AtomEquivalentWith groundEq
+          (subst runtime (.var name)) (subst runtime target)) :
+      (atom : Atom) →
+        AtomEquivalentWith groundEq
+          (subst runtime (Metta.Subst.apply [(name, target)] atom))
+          (subst runtime atom)
+    | .sym symbol => by
+        simpa [Metta.Subst.apply] using
+          (AtomEquivalentWith.symbol (groundEq := groundEq) symbol)
+    | .gnd ground => by
+        simpa [Metta.Subst.apply] using
+          (AtomEquivalentWith.ground (groundEq := groundEq)
+            (groundReflexive ground))
+    | .var variableName => by
+        by_cases same : variableName = name
+        · subst variableName
+          simpa [Metta.Subst.apply, Metta.Subst.lookup] using
+            equivalent.symm groundSymmetric
+        · simp only [Metta.Subst.apply, Metta.Subst.lookup]
+          have nameCheck : (variableName == name) = false := by
+            simpa [beq_iff_eq] using same
+          rw [nameCheck]
+          exact AtomEquivalentWith.refl groundReflexive
+            (subst runtime (.var variableName))
+    | .expr atoms => by
+        simp only [Metta.Subst.apply, subst_expr]
+        exact .expression
+          (substs_apply_singleton_equivalent groundEq groundReflexive
+            groundSymmetric runtime name target equivalent atoms)
+
+  /-- Ordered-list companion to
+  `subst_apply_singleton_equivalent`. -/
+  private theorem substs_apply_singleton_equivalent
+      (groundEq : Ground → Ground → Bool)
+      (groundReflexive : ∀ ground, groundEq ground ground = true)
+      (groundSymmetric :
+        ∀ {left right : Ground}, groundEq left right = true →
+          groundEq right left = true)
+      (runtime : Subst) (name : String) (target : Atom)
+      (equivalent :
+        AtomEquivalentWith groundEq
+          (subst runtime (.var name)) (subst runtime target)) :
+      (atoms : List Atom) →
+        AtomsEquivalentWith groundEq
+          ((atoms.map (Metta.Subst.apply [(name, target)])).map
+            (subst runtime))
+          (atoms.map (subst runtime))
+    | [] => .nil
+    | atom :: atoms => .cons
+        (subst_apply_singleton_equivalent groundEq groundReflexive
+          groundSymmetric runtime name target equivalent atom)
+        (substs_apply_singleton_equivalent groundEq groundReflexive
+          groundSymmetric runtime name target equivalent atoms)
+
+end
+
+mutual
+
+  /-- Comparator-respecting unification of one equation realizes every
+  variable constraint produced by structural decomposition. -/
+  private theorem decomposeEqWith_equivalentRealizes
+      (groundEq : Ground → Ground → Bool)
+      (groundSymmetric :
+        ∀ {left right : Ground}, groundEq left right = true →
+          groundEq right left = true)
+      (witness : Subst) (left right : Atom)
+      (constraints : List (String × Atom))
+      (equivalent :
+        AtomEquivalentWith groundEq
+          (subst witness left) (subst witness right))
+      (decomposed :
+        Metta.Unify.decomposeEqWith groundEq left right =
+          some constraints) :
+      DeepEquivalentRealizes groundEq witness constraints := by
+    cases left with
+    | sym leftName =>
+        simp only [subst_sym] at equivalent
+        cases right with
+        | sym rightName =>
+            simp only [subst_sym] at equivalent
+            cases equivalent
+            simp [Metta.Unify.decomposeEqWith] at decomposed
+            subst constraints
+            simp [DeepEquivalentRealizes]
+        | var name =>
+            cases decomposed
+            intro constraint member
+            simp only [List.mem_singleton] at member
+            cases member
+            simpa using equivalent.symm groundSymmetric
+        | gnd ground =>
+            simp only [subst_gnd] at equivalent
+            cases equivalent
+        | expr atoms =>
+            simp only [subst_expr] at equivalent
+            cases equivalent
+    | var name =>
+        cases right with
+        | sym rightName =>
+            cases decomposed
+            intro constraint member
+            simp only [List.mem_singleton] at member
+            cases member
+            exact equivalent
+        | var rightName =>
+            simp only [Metta.Unify.decomposeEqWith] at decomposed
+            split at decomposed
+            next same =>
+              have names : name = rightName := by simpa using same
+              subst rightName
+              cases decomposed
+              simp [DeepEquivalentRealizes]
+            next different =>
+              cases decomposed
+              intro constraint member
+              simp only [List.mem_singleton] at member
+              cases member
+              exact equivalent
+        | gnd ground =>
+            cases decomposed
+            intro constraint member
+            simp only [List.mem_singleton] at member
+            cases member
+            exact equivalent
+        | expr atoms =>
+            cases decomposed
+            intro constraint member
+            simp only [List.mem_singleton] at member
+            cases member
+            exact equivalent
+    | gnd leftGround =>
+        simp only [subst_gnd] at equivalent
+        cases right with
+        | sym rightName =>
+            simp only [subst_sym] at equivalent
+            cases equivalent
+        | var name =>
+            cases decomposed
+            intro constraint member
+            simp only [List.mem_singleton] at member
+            cases member
+            simpa using equivalent.symm groundSymmetric
+        | gnd rightGround =>
+            simp only [subst_gnd] at equivalent
+            cases equivalent with
+            | ground identical =>
+                simp [Metta.Unify.decomposeEqWith, identical] at decomposed
+                subst constraints
+                simp [DeepEquivalentRealizes]
+        | expr atoms =>
+            simp only [subst_expr] at equivalent
+            cases equivalent
+    | expr leftAtoms =>
+        simp only [subst_expr] at equivalent
+        cases right with
+        | sym rightName =>
+            simp only [subst_sym] at equivalent
+            cases equivalent
+        | var name =>
+            cases decomposed
+            intro constraint member
+            simp only [List.mem_singleton] at member
+            cases member
+            simpa using equivalent.symm groundSymmetric
+        | gnd ground =>
+            simp only [subst_gnd] at equivalent
+            cases equivalent
+        | expr rightAtoms =>
+            simp only [subst_expr] at equivalent
+            cases equivalent with
+            | expression children =>
+                exact decomposeListWith_equivalentRealizes groundEq
+                  groundSymmetric witness leftAtoms rightAtoms constraints
+                  children decomposed
+
+  /-- Ordered-list companion to
+  `decomposeEqWith_equivalentRealizes`. -/
+  private theorem decomposeListWith_equivalentRealizes
+      (groundEq : Ground → Ground → Bool)
+      (groundSymmetric :
+        ∀ {left right : Ground}, groundEq left right = true →
+          groundEq right left = true)
+      (witness : Subst) (left right : List Atom)
+      (constraints : List (String × Atom))
+      (equivalent :
+        AtomsEquivalentWith groundEq
+          (left.map (subst witness)) (right.map (subst witness)))
+      (decomposed :
+        Metta.Unify.decomposeListWith groundEq left right =
+          some constraints) :
+      DeepEquivalentRealizes groundEq witness constraints := by
+    cases left with
+    | nil =>
+        cases right with
+        | nil =>
+            cases decomposed
+            simp [DeepEquivalentRealizes]
+        | cons rightHead rightTail => cases equivalent
+    | cons leftHead leftTail =>
+        cases right with
+        | nil => cases equivalent
+        | cons rightHead rightTail =>
+            cases equivalent with
+            | cons headEquivalent tailEquivalent =>
+                simp only [Metta.Unify.decomposeListWith] at decomposed
+                cases headDecomposition :
+                    Metta.Unify.decomposeEqWith groundEq leftHead rightHead with
+                | none => simp [headDecomposition] at decomposed
+                | some headConstraints =>
+                    cases tailDecomposition :
+                        Metta.Unify.decomposeListWith groundEq
+                          leftTail rightTail with
+                    | none =>
+                        simp [headDecomposition, tailDecomposition]
+                          at decomposed
+                    | some tailConstraints =>
+                        simp [headDecomposition, tailDecomposition]
+                          at decomposed
+                        cases decomposed
+                        intro constraint member
+                        rcases List.mem_append.mp member with
+                          headMember | tailMember
+                        · exact
+                            decomposeEqWith_equivalentRealizes groundEq
+                              groundSymmetric witness leftHead rightHead
+                              headConstraints headEquivalent
+                              headDecomposition constraint headMember
+                        · exact
+                            decomposeListWith_equivalentRealizes groundEq
+                              groundSymmetric witness leftTail rightTail
+                              tailConstraints tailEquivalent
+                              tailDecomposition constraint tailMember
+
+end
+
+/-- Comparator-respecting unification of every input equation realizes the
+flattened structural constraint worklist. -/
+private theorem decomposeAllWith_equivalentRealizes
+    (groundEq : Ground → Ground → Bool)
+    (groundSymmetric :
+      ∀ {left right : Ground}, groundEq left right = true →
+        groundEq right left = true)
+    (witness : Subst) (equations : List (Atom × Atom))
+    (constraints : List (String × Atom))
+    (unifies : DeepEquivalentUnifies groundEq witness equations)
+    (decomposed :
+      Metta.Unify.decomposeAllWith groundEq equations = some constraints) :
+    DeepEquivalentRealizes groundEq witness constraints := by
+  induction equations generalizing constraints with
+  | nil =>
+      cases decomposed
+      simp [DeepEquivalentRealizes]
+  | cons equation rest induction =>
+      rcases equation with ⟨left, right⟩
+      simp only [Metta.Unify.decomposeAllWith] at decomposed
+      cases headDecomposition :
+          Metta.Unify.decomposeEqWith groundEq left right with
+      | none => simp [headDecomposition] at decomposed
+      | some headConstraints =>
+          cases tailDecomposition :
+              Metta.Unify.decomposeAllWith groundEq rest with
+          | none => simp [headDecomposition, tailDecomposition] at decomposed
+          | some tailConstraints =>
+              simp [headDecomposition, tailDecomposition] at decomposed
+              cases decomposed
+              intro constraint member
+              rcases List.mem_append.mp member with
+                headMember | tailMember
+              · exact decomposeEqWith_equivalentRealizes groundEq
+                  groundSymmetric witness left right headConstraints
+                  (unifies (left, right) (by simp)) headDecomposition
+                  constraint headMember
+              · exact induction tailConstraints
+                  (fun item itemMember =>
+                    unifies item (by simp [itemMember]))
+                  tailDecomposition constraint tailMember
+
+mutual
+
+  /-- Structural equivalence under the chosen ground comparator makes
+  decomposition total; unlike the raw-equality theorem, this admits
+  comparator-identical but propositionally distinct grounds. -/
+  private theorem decomposeEqWith_exists_of_equivalent_unifier
+      (groundEq : Ground → Ground → Bool) (witness : Subst) :
+      ∀ (left right : Atom),
+        AtomEquivalentWith groundEq
+          (subst witness left) (subst witness right) →
+        ∃ constraints,
+          Metta.Unify.decomposeEqWith groundEq left right =
+            some constraints
+    | .sym leftName, .sym rightName, equivalent => by
+        simp only [subst_sym] at equivalent
+        cases equivalent
+        exact ⟨[], by simp [Metta.Unify.decomposeEqWith]⟩
+    | .sym leftName, .var name, _ =>
+        ⟨[(name, .sym leftName)], rfl⟩
+    | .sym leftName, .gnd ground, equivalent => by
+        simp only [subst_sym, subst_gnd] at equivalent
+        cases equivalent
+    | .sym leftName, .expr atoms, equivalent => by
+        simp only [subst_sym, subst_expr] at equivalent
+        cases equivalent
+    | .var name, right, _ => by
+        cases right with
+        | var target =>
+            by_cases same : name = target
+            · subst target
+              exact ⟨[], by simp [Metta.Unify.decomposeEqWith]⟩
+            · exact ⟨[(name, .var target)], by
+                simp [Metta.Unify.decomposeEqWith, same]⟩
+        | sym symbol => exact ⟨[(name, .sym symbol)], rfl⟩
+        | gnd ground => exact ⟨[(name, .gnd ground)], rfl⟩
+        | expr atoms => exact ⟨[(name, .expr atoms)], rfl⟩
+    | .gnd leftGround, .sym rightName, equivalent => by
+        simp only [subst_gnd, subst_sym] at equivalent
+        cases equivalent
+    | .gnd ground, .var name, _ =>
+        ⟨[(name, .gnd ground)], rfl⟩
+    | .gnd leftGround, .gnd rightGround, equivalent => by
+        simp only [subst_gnd] at equivalent
+        cases equivalent with
+        | ground identical =>
+            exact ⟨[], by
+              simp [Metta.Unify.decomposeEqWith, identical]⟩
+    | .gnd leftGround, .expr atoms, equivalent => by
+        simp only [subst_gnd, subst_expr] at equivalent
+        cases equivalent
+    | .expr atoms, .sym rightName, equivalent => by
+        simp only [subst_expr, subst_sym] at equivalent
+        cases equivalent
+    | .expr atoms, .var name, _ =>
+        ⟨[(name, .expr atoms)], rfl⟩
+    | .expr atoms, .gnd ground, equivalent => by
+        simp only [subst_expr, subst_gnd] at equivalent
+        cases equivalent
+    | .expr left, .expr right, equivalent => by
+        simp only [subst_expr] at equivalent
+        cases equivalent with
+        | expression children =>
+            exact decomposeListWith_exists_of_equivalent_unifier
+              groundEq witness left right children
+
+  /-- Ordered-list companion to
+  `decomposeEqWith_exists_of_equivalent_unifier`. -/
+  private theorem decomposeListWith_exists_of_equivalent_unifier
+      (groundEq : Ground → Ground → Bool) (witness : Subst) :
+      ∀ (left right : List Atom),
+        AtomsEquivalentWith groundEq
+          (left.map (subst witness)) (right.map (subst witness)) →
+        ∃ constraints,
+          Metta.Unify.decomposeListWith groundEq left right =
+            some constraints
+    | [], [], _ => ⟨[], rfl⟩
+    | [], _ :: _, equivalent => by cases equivalent
+    | _ :: _, [], equivalent => by cases equivalent
+    | leftHead :: leftTail, rightHead :: rightTail, equivalent => by
+        cases equivalent with
+        | cons headEquivalent tailEquivalent =>
+            obtain ⟨headConstraints, headDecomposition⟩ :=
+              decomposeEqWith_exists_of_equivalent_unifier groundEq witness
+                leftHead rightHead headEquivalent
+            obtain ⟨tailConstraints, tailDecomposition⟩ :=
+              decomposeListWith_exists_of_equivalent_unifier groundEq witness
+                leftTail rightTail tailEquivalent
+            exact ⟨headConstraints ++ tailConstraints, by
+              simp [Metta.Unify.decomposeListWith, headDecomposition,
+                tailDecomposition]⟩
+
+end
+
+/-- Comparator-respecting unifiability makes whole-worklist decomposition
+total. -/
+private theorem decomposeAllWith_exists_of_equivalent_unifier
+    (groundEq : Ground → Ground → Bool) (witness : Subst)
+    (equations : List (Atom × Atom))
+    (unifies : DeepEquivalentUnifies groundEq witness equations) :
+    ∃ constraints,
+      Metta.Unify.decomposeAllWith groundEq equations = some constraints := by
+  induction equations with
+  | nil => exact ⟨[], rfl⟩
+  | cons equation rest induction =>
+      rcases equation with ⟨left, right⟩
+      obtain ⟨headConstraints, headDecomposition⟩ :=
+        decomposeEqWith_exists_of_equivalent_unifier groundEq witness
+          left right (unifies (left, right) (by simp))
+      obtain ⟨tailConstraints, tailDecomposition⟩ :=
+        induction (fun item member => unifies item (by simp [member]))
+      exact ⟨headConstraints ++ tailConstraints, by
+        simp [Metta.Unify.decomposeAllWith, headDecomposition,
+          tailDecomposition]⟩
+
+/-- A proper finite occurrence cannot be unified even modulo a structural
+ground comparator: equivalence preserves shape and therefore finite size. -/
+private theorem no_equivalent_unifier_of_occurs_true
+    (groundEq : Ground → Ground → Bool)
+    (bindings : Subst) (source : String) (atom : Atom)
+    (present : Metta.Subst.occurs source atom = true)
+    (different : atom ≠ .var source)
+    (equivalent :
+      AtomEquivalentWith groundEq
+        (subst bindings (.var source)) (subst bindings atom)) :
+    False := by
+  have member := mem_vars_of_occurs_eq_true source atom present
+  have strict :=
+    subst_variable_size_lt_of_mem_vars_of_ne bindings source atom member
+      different
+  have sameSize := equivalent.size_eq
+  omega
+
+/-- The actual fuel-bounded elimination loop succeeds whenever a finite
+comparator-respecting unifier exists.  Ground equivalence must itself be an
+equivalence relation; every other part of the relation is structural and
+fixed by `AtomEquivalentWith`. -/
+private theorem unifyRoundsWith_complete_of_equivalent_unifier
+    (groundEq : Ground → Ground → Bool)
+    (groundReflexive : ∀ ground, groundEq ground ground = true)
+    (groundSymmetric :
+      ∀ {left right : Ground}, groundEq left right = true →
+        groundEq right left = true)
+    (groundTransitive :
+      ∀ {first second third : Ground},
+        groundEq first second = true →
+        groundEq second third = true →
+        groundEq first third = true)
+    (fuel : Nat) (allowed : List String)
+    (equations : List (Atom × Atom)) (base witness : Subst)
+    (allowedNodup : allowed.Nodup)
+    (supported : EquationsSupported allowed equations)
+    (fuelEnough : allowed.length ≤ fuel)
+    (unifies : DeepEquivalentUnifies groundEq witness equations) :
+    ∃ result,
+      Metta.Unify.unifyRoundsWith groundEq fuel equations base =
+        some result := by
+  induction fuel generalizing allowed equations base with
+  | zero =>
+      have allowedEmpty : allowed = [] := by
+        exact List.eq_nil_of_length_eq_zero (by omega)
+      obtain ⟨constraints, decomposed⟩ :=
+        decomposeAllWith_exists_of_equivalent_unifier groundEq witness
+          equations unifies
+      have constraintsSupported :=
+        decomposeAllWith_supported groundEq allowed equations constraints
+          supported decomposed
+      have constraintsEmpty : constraints = [] := by
+        cases constraints with
+        | nil => rfl
+        | cons constraint rest =>
+            have sourceAllowed :=
+              (constraintsSupported constraint (by simp)).1
+            rw [allowedEmpty] at sourceAllowed
+            contradiction
+      subst constraints
+      exact ⟨base, by
+        simp [Metta.Unify.unifyRoundsWith, decomposed]⟩
+  | succ fuel induction =>
+      obtain ⟨constraints, decomposed⟩ :=
+        decomposeAllWith_exists_of_equivalent_unifier groundEq witness
+          equations unifies
+      have constraintsSupported :=
+        decomposeAllWith_supported groundEq allowed equations constraints
+          supported decomposed
+      cases constraints with
+      | nil =>
+          exact ⟨base, by
+            simp [Metta.Unify.unifyRoundsWith, decomposed]⟩
+      | cons constraint rest =>
+          rcases constraint with ⟨source, replacement⟩
+          have headSupported :=
+            constraintsSupported (source, replacement) (by simp)
+          have restSupported : ConstraintsSupported allowed rest := by
+            intro item member
+            exact constraintsSupported item (by simp [member])
+          have realized :=
+            decomposeAllWith_equivalentRealizes groundEq groundSymmetric
+              witness equations ((source, replacement) :: rest)
+              unifies decomposed
+          have headEquivalent :
+              AtomEquivalentWith groundEq
+                (subst witness (.var source))
+                (subst witness replacement) :=
+            realized (source, replacement) (by simp)
+          have occursFalse :
+              Metta.Subst.occurs source replacement = false := by
+            cases occurs : Metta.Subst.occurs source replacement with
+            | false => rfl
+            | true =>
+                exact False.elim
+                  (no_equivalent_unifier_of_occurs_true groundEq witness
+                    source replacement occurs headSupported.2.2
+                    headEquivalent)
+          let nextEquations := rest.map fun item =>
+            (Metta.Subst.apply [(source, replacement)] (.var item.1),
+              Metta.Subst.apply [(source, replacement)] item.2)
+          have nextSupported :
+              EquationsSupported (allowed.erase source) nextEquations := by
+            exact constraintMap_supported_after_erase allowed source
+              replacement rest headSupported
+              (not_mem_vars_of_occurs_eq_false source replacement occursFalse)
+              restSupported
+          have nextNodup : (allowed.erase source).Nodup :=
+            allowedNodup.erase source
+          have nextFuelEnough :
+              (allowed.erase source).length ≤ fuel := by
+            have sourceAllowed : source ∈ allowed := headSupported.1
+            have shorter : (allowed.erase source).length < allowed.length :=
+              length_erase_lt_of_mem_nodup sourceAllowed allowedNodup
+            omega
+          have nextUnifies :
+              DeepEquivalentUnifies groundEq witness nextEquations := by
+            intro equation equationMember
+            simp only [nextEquations, List.mem_map] at equationMember
+            obtain ⟨item, itemMember, rfl⟩ := equationMember
+            have itemEquivalent := realized item (by simp [itemMember])
+            have leftInvisible :=
+              subst_apply_singleton_equivalent groundEq groundReflexive
+                groundSymmetric witness source replacement headEquivalent
+                (.var item.1)
+            have rightInvisible :=
+              subst_apply_singleton_equivalent groundEq groundReflexive
+                groundSymmetric witness source replacement headEquivalent
+                item.2
+            have throughOriginal :=
+              AtomEquivalentWith.trans (groundEq := groundEq)
+                groundTransitive leftInvisible itemEquivalent
+            have rightBack :=
+              AtomEquivalentWith.symm (groundEq := groundEq)
+                groundSymmetric rightInvisible
+            exact AtomEquivalentWith.trans (groundEq := groundEq)
+              groundTransitive throughOriginal rightBack
+          obtain ⟨result, resultEq⟩ :=
+            induction (allowed.erase source) nextEquations
+              (Metta.Subst.extend base source replacement)
+              nextNodup nextSupported nextFuelEnough nextUnifies
+          exact ⟨result, by
+            simpa [Metta.Unify.unifyRoundsWith, decomposed, occursFalse,
+              nextEquations] using resultEq⟩
+
+/-- The concrete comparator-parametric first-order algorithm is complete for
+every finite witness under the structural equivalence induced by an
+equivalence-relation ground comparator.  This is strictly more general than
+`unifyTopWith_complete_of_exact_unifier`: comparator-identical grounded
+leaves need not be propositionally equal Lean values. -/
+theorem unifyTopWith_complete_of_equivalent_unifier
+    (groundEq : Ground → Ground → Bool)
+    (groundReflexive : ∀ ground, groundEq ground ground = true)
+    (groundSymmetric :
+      ∀ {left right : Ground}, groundEq left right = true →
+        groundEq right left = true)
+    (groundTransitive :
+      ∀ {first second third : Ground},
+        groundEq first second = true →
+        groundEq second third = true →
+        groundEq first third = true)
+    (left right : Atom) (witness : Subst)
+    (equivalent :
+      AtomEquivalentWith groundEq
+        (subst witness left) (subst witness right)) :
+    ∃ result,
+      Metta.Unify.unifyTopWith groundEq left right = some result := by
+  let allowed := (left.vars ++ right.vars).dedup
+  have allowedNodup : allowed.Nodup := List.nodup_dedup _
+  have supported : EquationsSupported allowed [(left, right)] := by
+    intro equation member
+    simp only [List.mem_singleton] at member
+    subst equation
+    constructor
+    · intro name nameMember
+      exact List.mem_dedup.mpr
+        (List.mem_append_left right.vars nameMember)
+    · intro name nameMember
+      exact List.mem_dedup.mpr
+        (List.mem_append_right left.vars nameMember)
+  have fuelEnough :
+      allowed.length ≤ left.size + right.size := by
+    have dedupBound : allowed.length ≤ (left.vars ++ right.vars).length :=
+      List.Sublist.length_le (List.dedup_sublist _)
+    simp only [List.length_append] at dedupBound
+    exact Nat.le_trans dedupBound
+      (Nat.add_le_add (atom_vars_length_le_size left)
+        (atom_vars_length_le_size right))
+  unfold Metta.Unify.unifyTopWith
+  exact unifyRoundsWith_complete_of_equivalent_unifier
+    groundEq groundReflexive groundSymmetric groundTransitive
+    (left.size + right.size) allowed [(left, right)] [] witness
+    allowedNodup supported fuelEnough (by
+      intro equation member
+      simp only [List.mem_singleton] at member
+      subst equation
+      exact equivalent)
+
+/-- PeTTa's exact Prolog-ground specialization is complete for the actual
+SWI term-identity relation, including distinct IEEE NaN payloads that share
+the single Prolog `nan` identity. -/
+theorem unifyTopExact_complete_of_prolog_equivalent_unifier
+    (left right : Atom) (witness : Subst)
+    (equivalent :
+      AtomEquivalentWith prologGroundIdentical
+        (subst witness left) (subst witness right)) :
+    ∃ result, unifyTopExact left right = some result := by
+  exact unifyTopWith_complete_of_equivalent_unifier
+    prologGroundIdentical prologGroundIdentical_self
+    (fun identical => prologGroundIdentical_symm identical)
+    (fun firstSecond secondThird =>
+      prologGroundIdentical_trans firstSecond secondThird)
+    left right witness equivalent
+
+/-- Comparator-respecting completeness lifted through the machine's current
+binding. -/
+theorem unifyB_complete_of_prolog_equivalent_unifier
+    (base : Subst) (left right : Atom) (witness : Subst)
+    (equivalent :
+      AtomEquivalentWith prologGroundIdentical
+        (subst witness (subst base left))
+        (subst witness (subst base right))) :
+    ∃ result, unifyB base left right = some result := by
+  obtain ⟨generated, generatedEq⟩ :=
+    unifyTopExact_complete_of_prolog_equivalent_unifier
+      (subst base left) (subst base right) witness equivalent
+  cases generated with
+  | nil =>
+      exact ⟨base, by simp [unifyB, generatedEq]⟩
+  | cons binding rest =>
+      exact ⟨Metta.Subst.compose (binding :: rest) base, by
+        simp [unifyB, generatedEq]⟩
+
+/-- Any two IEEE NaN payloads denote the one SWI-Prolog `nan` term.  The
+payload hypotheses are explicit because Lean's primitive `Float` operations
+are opaque to kernel reduction; executable concrete-bit guards live in
+`Regression.lean`. -/
+theorem nan_payloads_are_prolog_equivalent
+    (left right : Float)
+    (leftNan : left.isNaN = true)
+    (rightNan : right.isNaN = true) :
+    AtomEquivalentWith prologGroundIdentical
+      (.gnd (.float left)) (.gnd (.float right)) := by
+  apply AtomEquivalentWith.ground
+  simp [prologGroundIdentical, PrologFloatIdentity.ofFloat,
+    leftNan, rightNan]
+
+/-- The stronger completeness theorem reaches the NaN discriminator:
+payload equality is neither assumed nor needed for the executable unifier to
+accept the two grounds through their one Prolog identity. -/
+theorem unifyTopExact_nan_payloads_complete
+    (left right : Float)
+    (leftNan : left.isNaN = true)
+    (rightNan : right.isNaN = true) :
+    ∃ result,
+      unifyTopExact (.gnd (.float left)) (.gnd (.float right)) =
+        some result := by
+  apply unifyTopExact_complete_of_prolog_equivalent_unifier
+    (.gnd (.float left)) (.gnd (.float right)) []
+  simpa using
+    (nan_payloads_are_prolog_equivalent
+      left right leftNan rightNan)
+
 /-! ## Fresh structural variants -/
 
 mutual

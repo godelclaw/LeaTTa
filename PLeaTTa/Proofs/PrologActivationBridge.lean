@@ -216,16 +216,12 @@ theorem nonreflexive_float_legacy_filter_is_repaired
         DenotationalUnifier binding
           (.float (PLeaTTa.PrologFloatIdentity.ofFloat value))
           (.float (PLeaTTa.PrologFloatIdentity.ofFloat value)) := by
-  have identitySelf :
-      (PLeaTTa.PrologFloatIdentity.ofFloat value ==
-        PLeaTTa.PrologFloatIdentity.ofFloat value) = true := by
-    exact PLeaTTa.PrologFloatIdentity.beq_self _
   refine ⟨?_, ?_, ?_, [], rfl⟩
   · simpa [matchCompat] using nonreflexive
-  · simp [prologMatchCompat, PLeaTTa.prologGroundIdentical, identitySelf]
+  · simp [prologMatchCompat, PLeaTTa.prologGroundIdentical]
   · simp [PLeaTTa.unifyTopExact, Metta.Unify.unifyTopWith, Metta.Atom.size,
       Metta.Unify.unifyRoundsWith,
       Metta.Unify.decomposeAllWith, Metta.Unify.decomposeEqWith,
-      PLeaTTa.prologGroundIdentical, identitySelf]
+      PLeaTTa.prologGroundIdentical]
 
 end PLeaTTa.PrologActivationBridge

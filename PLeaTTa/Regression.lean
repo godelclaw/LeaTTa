@@ -80,6 +80,8 @@ private def negativeZero : Float :=
 #guard prologGroundIdentical (.float canonicalNaN₁) (.float canonicalNegativeNaN)
 #guard !prologGroundIdentical (.float positiveZero) (.float negativeZero)
 #guard !prologGroundIdentical (.int 1) (.float 1.0)
+#guard !(Metta.Atom.gnd (.float canonicalNaN₁) ==
+  Metta.Atom.gnd (.float canonicalNaN₂))
 #guard unifyB [] (.gnd (.float canonicalNaN₁))
   (.gnd (.float canonicalNaN₂)) == some []
 #guard (unifyB [] (.gnd (.float positiveZero))

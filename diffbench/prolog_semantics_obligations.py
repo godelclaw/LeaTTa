@@ -16,6 +16,7 @@ TRACE_SEMANTICS = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologTraceSemantics.lean"
 TERM_ALGEBRA = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologTermAlgebra.lean"
 PROLOG_FLOAT = ROOT / "PLeaTTa" / "PrologFloat.lean"
 UNIFICATION_CORE = ROOT / "MettaHyperonFull" / "Core" / "Unification.lean"
+PETTA_UNIFICATION = ROOT / "PLeaTTa" / "PeTTaUnification.lean"
 UNIFICATION_PROOFS = ROOT / "PLeaTTa" / "Proofs" / "Unification.lean"
 ORDERED_MGU = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologMgu.lean"
 LOCAL_RESOLVER = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologResolver.lean"
@@ -100,6 +101,7 @@ def check() -> list[str]:
         "term_algebra_sha256": digest(TERM_ALGEBRA),
         "prolog_float_sha256": digest(PROLOG_FLOAT),
         "unification_core_sha256": digest(UNIFICATION_CORE),
+        "petta_unification_sha256": digest(PETTA_UNIFICATION),
         "unification_proofs_sha256": digest(UNIFICATION_PROOFS),
         "ordered_mgu_sha256": digest(ORDERED_MGU),
         "local_resolver_sha256": digest(LOCAL_RESOLVER),

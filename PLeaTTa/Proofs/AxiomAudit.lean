@@ -875,6 +875,15 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.unifyTopExact_repeated_nested_complete_nontrivial
 #print axioms PLeaTTa.finite_self_occurs_has_no_exact_unifier
 #print axioms PLeaTTa.unifyTopExact_self_occurs_rejected
+#print axioms PLeaTTa.AtomEquivalentWith.refl
+#print axioms PLeaTTa.AtomEquivalentWith.symm
+#print axioms PLeaTTa.AtomEquivalentWith.trans
+#print axioms PLeaTTa.AtomEquivalentWith.size_eq
+#print axioms PLeaTTa.unifyTopWith_complete_of_equivalent_unifier
+#print axioms PLeaTTa.unifyTopExact_complete_of_prolog_equivalent_unifier
+#print axioms PLeaTTa.unifyB_complete_of_prolog_equivalent_unifier
+#print axioms PLeaTTa.nan_payloads_are_prolog_equivalent
+#print axioms PLeaTTa.unifyTopExact_nan_payloads_complete
 #print axioms PLeaTTa.ClauseIndex.build_candidates
 #print axioms PLeaTTa.ClauseIndex.naiveCandidates_eq_head_filter
 #print axioms PLeaTTa.ClauseIndex.Valid.push
@@ -1074,7 +1083,11 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms Metta.Unify.decomposeAllWith_groundEquiv
 #print axioms Metta.Unify.unifyRoundsWith_groundEquiv
 #print axioms Metta.Unify.unifyTopWith_groundEquiv
+#print axioms PLeaTTa.PrologFloatIdentity.beq_eq_true_iff
 #print axioms PLeaTTa.PrologFloatIdentity.beq_self
+#print axioms PLeaTTa.prologGroundIdentical_eq_true_iff
+#print axioms PLeaTTa.prologGroundIdentical_symm
+#print axioms PLeaTTa.prologGroundIdentical_trans
 #print axioms PLeaTTa.PrologActivationBridge.nonreflexive_float_refutes_legacy_matchCompat_conservativity
 #print axioms PLeaTTa.PrologActivationBridge.nonreflexive_float_legacy_filter_is_repaired
 #print axioms PLeaTTa.PrologCallEntryBridge.DatabaseRelatesWorld.currentCandidates
