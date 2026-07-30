@@ -176,6 +176,18 @@ PROLOG_PRODUCT_RESOURCE_TRANSITION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologProductResourceTransitionBridge.lean"
 )
+PROLOG_RETAINED_PAYLOAD_SNAPSHOT_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologRetainedPayloadSnapshotBridge.lean"
+)
+PROLOG_RETAINED_PAYLOAD_CATCHUP_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologRetainedPayloadCatchupBridge.lean"
+)
+PROLOG_RETAINED_PAYLOAD_ACTIVATION_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologRetainedPayloadActivationBridge.lean"
+)
 PROLOG_ACTIVATION_FAILURE_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationFailureBridge.lean"
 )
@@ -355,6 +367,12 @@ def check() -> list[str]:
             digest(PROLOG_PRODUCT_RESOURCE_CONTEXT_BRIDGE),
         "prolog_product_resource_transition_bridge_sha256":
             digest(PROLOG_PRODUCT_RESOURCE_TRANSITION_BRIDGE),
+        "prolog_retained_payload_snapshot_bridge_sha256":
+            digest(PROLOG_RETAINED_PAYLOAD_SNAPSHOT_BRIDGE),
+        "prolog_retained_payload_catchup_bridge_sha256":
+            digest(PROLOG_RETAINED_PAYLOAD_CATCHUP_BRIDGE),
+        "prolog_retained_payload_activation_bridge_sha256":
+            digest(PROLOG_RETAINED_PAYLOAD_ACTIVATION_BRIDGE),
         "prolog_activation_failure_bridge_sha256":
             digest(PROLOG_ACTIVATION_FAILURE_BRIDGE),
         "prolog_head_failure_continuation_bridge_sha256":

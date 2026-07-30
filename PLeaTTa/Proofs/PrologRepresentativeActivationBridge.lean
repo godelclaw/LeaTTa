@@ -685,6 +685,178 @@ theorem OrderedTreeMgu.unifyB_exists_canonical_alpha_mgu
 
 /-! ## Representation-independent retained-clause activation -/
 
+/-- The current ambient alpha graph can be extended by the exact clause-copy
+graph selected by one supported prepared occurrence.
+
+The supported occurrence hides the source clause and its independent fresh
+seed in `Prop`; eliminating that certificate into data would be unsound.
+This proposition instead eliminates it only into the two cross-disjointness
+facts required by `SharedRuntimeAlpha.append_of_projection_disjoint`. -/
+inductive SupportedPreparedCandidateAgrees.ClauseAlphaMergeSafe
+    {callGeneration : Generation} {predicate : String}
+    {arguments : List Term} {bindings : Substitution}
+    (ambientAlpha : List (LogicVar × String))
+    (argsv : List Atom) (result : Atom) (rest : List PLeaTTa.Goal)
+    (binding : Subst) (qterm : Atom) (seed : Nat) :
+    {branch : ClauseBranch} → {clause : PLeaTTa.Clause} →
+      SupportedPreparedCandidateAgrees callGeneration predicate arguments
+        bindings branch clause → Prop where
+  | intro (reference : VersionedClause) (freshSeed : Nat)
+      (executable : PLeaTTa.Clause)
+      (base : CandidateClauseAgrees predicate reference executable)
+      (encoding :
+        OpenBindingAgreement.EncodingInjectiveOn
+          reference.clause.variables)
+      (bodySupported :
+        CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported
+          reference.clause.variables reference.clause.variables base.body)
+      (referenceDisjoint :
+        List.Disjoint (ambientAlpha.map Prod.fst)
+          ((RuntimeAlpha.graph
+            (referenceFreshTargets
+              (reference.clause.freshCopy freshSeed).firstFresh
+              reference.clause.variables)
+            (executableFreshTargets
+              (resolutionFreshSuffix argsv result rest binding qterm seed)
+              reference.clause.variables)).map Prod.fst))
+      (executableDisjoint :
+        List.Disjoint (ambientAlpha.map Prod.snd)
+          ((RuntimeAlpha.graph
+            (referenceFreshTargets
+              (reference.clause.freshCopy freshSeed).firstFresh
+              reference.clause.variables)
+            (executableFreshTargets
+              (resolutionFreshSuffix argsv result rest binding qterm seed)
+              reference.clause.variables)).map Prod.snd)) :
+      ClauseAlphaMergeSafe ambientAlpha argsv result rest binding qterm seed
+        (.intro reference freshSeed executable base encoding bodySupported)
+
+/-- The immediate-call freshness discipline constructs merge safety.
+
+All ambient canonical identities lie below the selected clause interval, and
+all ambient runtime names are live below the executable suffix seed. -/
+theorem SupportedPreparedCandidateAgrees.ClauseAlphaMergeSafe.ofBelow
+    {queryAlpha : List (LogicVar × String)}
+    {cursor : PreparedCursor} {branch : ClauseBranch}
+    {clause : PLeaTTa.Clause}
+    {argsv : List Atom} {result : Atom} {rest : List PLeaTTa.Goal}
+    {binding : Subst} {qterm : Atom} {seed : Nat}
+    (wellFormed : cursor.WellFormed)
+    (member : branch ∈ cursor.remaining)
+    (agreement :
+      SupportedPreparedCandidateAgrees cursor.callGeneration
+        cursor.predicate cursor.arguments cursor.bindings branch clause)
+    (queryReferenceBelow :
+      GeneratedBelow cursor.reservationStart (queryAlpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ queryAlpha.map Prod.snd →
+        name ∈
+          resolutionOccupiedVars argsv result rest binding qterm)
+    (highWater :
+      resolutionSeedHighWaterNames
+        (resolutionOccupiedVars argsv result rest binding qterm) ≤ seed) :
+    ClauseAlphaMergeSafe queryAlpha argsv result rest binding qterm seed
+      agreement := by
+  cases agreement with
+  | intro reference freshSeed _ base encoding bodySupported =>
+      have startsAbove :
+          cursor.reservationStart ≤
+            (reference.clause.freshCopy freshSeed).firstFresh := by
+        have starts := wellFormed.1.start_le_member_first member
+        simpa [preparedBranchOf] using starts
+      have queryBelowFresh :
+          GeneratedBelow
+            (reference.clause.freshCopy freshSeed).firstFresh
+            (queryAlpha.map Prod.fst) :=
+        queryReferenceBelow.mono startsAbove
+      let clauseAgreement :=
+        freshenClause_alpha_agrees reference.clause freshSeed
+          (resolutionFreshSuffix argsv result rest binding qterm seed)
+          encoding
+      refine .intro reference freshSeed _ base encoding bodySupported ?_ ?_
+      · rw [clauseAgreement.graph_reference]
+        exact
+          referenceFreshTargets_disjoint_of_generatedBelow queryBelowFresh
+      · rw [clauseAgreement.graph_executable]
+        exact
+          executableFreshTargets_disjoint_of_highWater
+            argsv result rest binding qterm seed queryExecutableLive highWater
+
+/-- A retained allocator gap derives the exact cross-disjointness required
+to merge the selected clause graph.
+
+Unlike `ofBelow`, this theorem permits ambient alpha entries allocated after
+the complete retained reservation.  It excludes only the source interval of
+the frozen cursor and the executable seed interval of its alternative bank. -/
+theorem
+    SupportedPreparedCandidateAgrees.ClauseAlphaMergeSafe.ofAllocationGap
+    {ambientAlpha : List (LogicVar × String)}
+    {cursor : PreparedCursor} {branch : ClauseBranch}
+    {clause : PLeaTTa.Clause}
+    {argsv : List Atom} {result : Atom} {rest : List PLeaTTa.Goal}
+    {binding : Subst} {qterm : Atom} {seed executableEnd : Nat}
+    (wellFormed : cursor.WellFormed)
+    (member : branch ∈ cursor.remaining)
+    (agreement :
+      SupportedPreparedCandidateAgrees cursor.callGeneration
+        cursor.predicate cursor.arguments cursor.bindings branch clause)
+    (gap :
+      AlphaAllocationGap ambientAlpha cursor.reservationStart
+        cursor.reservedUntil seed executableEnd)
+    (seedReserved : seed + 1 ≤ executableEnd) :
+    ClauseAlphaMergeSafe ambientAlpha argsv result rest binding qterm seed
+      agreement := by
+  cases agreement with
+  | intro reference freshSeed executable base encoding bodySupported =>
+      let clauseAgreement :=
+        freshenClause_alpha_agrees reference.clause freshSeed
+          (resolutionFreshSuffix argsv result rest binding qterm seed)
+          encoding
+      have selectedStart :
+          cursor.reservationStart ≤
+            (reference.clause.freshCopy freshSeed).firstFresh := by
+        have starts := wellFormed.1.start_le_member_first member
+        simpa [preparedBranchOf] using starts
+      have selectedEnd :
+          (reference.clause.freshCopy freshSeed).nextFresh ≤
+            cursor.reservedUntil := by
+        have ends := wellFormed.1.member_next_le_final member
+        simpa [preparedBranchOf] using ends
+      refine .intro reference freshSeed _ base encoding bodySupported
+        ?_ ?_
+      · rw [clauseAgreement.graph_reference, List.disjoint_left]
+        intro identity ambientMember targetMember
+        obtain ⟨index, identityShape, targetLower⟩ :=
+          referenceFreshTargets_generated_lower targetMember
+        subst identity
+        have targetUpper :
+            index <
+              (reference.clause.freshCopy freshSeed).nextFresh := by
+          simpa [reference.clause.freshCopy_next] using
+            (referenceFreshTargets_generatedBelow
+              (reference.clause.freshCopy freshSeed).firstFresh
+              reference.clause.variables index targetMember)
+        rcases gap.1 index ambientMember with below | above
+        · exact False.elim
+            ((Nat.not_lt_of_ge
+              (Nat.le_trans selectedStart targetLower)) below)
+        · exact False.elim
+            ((Nat.not_lt_of_ge
+              (Nat.le_trans selectedEnd above)) targetUpper)
+      · rw [clauseAgreement.graph_executable, List.disjoint_left]
+        intro name ambientMember targetMember
+        simp only [executableFreshTargets, List.mem_map] at targetMember
+        obtain ⟨source, _sourceMember, targetShape⟩ := targetMember
+        have targetWater :
+            resolutionSeedHighWaterName name = seed + 1 := by
+          rw [← targetShape, resolutionFreshSuffix,
+            resolutionSeedHighWaterName_append_compact]
+        rcases gap.2 name ambientMember with below | above
+        · rw [targetWater] at below
+          omega
+        · rw [targetWater] at above
+          omega
+
 /-- A source-resolved supported clause at the semantic retained frontier
 forces the actual executable head unifier to succeed.
 
@@ -696,17 +868,19 @@ simulation.  Its strongest bridge result is the `TreeSubstitutionVariants`
 certificate between the exact independent successor and the executable
 canonical MGU composed with the same hidden representative. -/
 theorem
-    SupportedPreparedCandidateAgrees.unifyB_representativeWith_of_headResolution
-    {queryAlpha : List (LogicVar × String)}
+    SupportedPreparedCandidateAgrees.unifyB_representativeWith_of_headResolution_extension
+    {payloadAlpha ambientAlpha : List (LogicVar × String)}
     {cursor : PreparedCursor} {branch : ClauseBranch}
     {clause : PLeaTTa.Clause}
     {args : List Atom} {result : Atom} {rest : List PLeaTTa.Goal}
     {binding : Subst} {qterm : Atom} {seed barrier : Nat}
+    {referenceFrontier executableFrontier : Nat}
+    {protectedExecutableEnd : Nat}
     {independentResult : Substitution}
     {residualRepresentative : TreeSubstitution}
     {olderBase : Substitution}
     (query :
-      RepresentativeNormalizedCallAgreesWith queryAlpha cursor
+      RepresentativeNormalizedCallAgreesWith payloadAlpha cursor
         (args.map (PLeaTTa.subst binding))
         (PLeaTTa.subst binding result)
         residualRepresentative olderBase)
@@ -716,25 +890,32 @@ theorem
       SupportedPreparedCandidateAgrees cursor.callGeneration
         cursor.predicate cursor.arguments cursor.bindings branch clause)
     (arity : clause.params.length = args.length)
-    (queryShared : SharedRuntimeAlpha queryAlpha)
-    (queryReferenceBelow :
-      GeneratedBelow cursor.reservationStart (queryAlpha.map Prod.fst))
-    (queryExecutableLive :
-      ∀ name, name ∈ queryAlpha.map Prod.snd →
-        name ∈
-          resolutionOccupiedVars
-            (args.map (PLeaTTa.subst binding)) result rest binding qterm)
+    (payloadIncluded :
+      ∀ pair, pair ∈ payloadAlpha → pair ∈ ambientAlpha)
+    (ambientShared : SharedRuntimeAlpha ambientAlpha)
+    (payloadReferenceBelow :
+      GeneratedBelow cursor.reservationStart (payloadAlpha.map Prod.fst))
     (highWater :
       resolutionSeedHighWaterNames
         (resolutionOccupiedVars
           (args.map (PLeaTTa.subst binding)) result rest binding qterm) ≤
         seed)
+    (ambientFresh :
+      AlphaFreshFrontier ambientAlpha referenceFrontier executableFrontier)
+    (referenceEnd : branch.nextFresh ≤ referenceFrontier)
+    (executableEnd : seed + 1 ≤ executableFrontier)
+    (ambientGap :
+      AlphaAllocationGap ambientAlpha cursor.reservationStart
+        cursor.reservedUntil seed protectedExecutableEnd)
+    (seedReserved : seed + 1 ≤ protectedExecutableEnd)
     (resolved : HeadResolution branch independentResult) :
     ∃ alpha sourceCanonical representative semanticCanonical
         flattened generated installed,
       SharedRuntimeAlpha alpha ∧
-      (∀ pair, pair ∈ queryAlpha → pair ∈ alpha) ∧
-      AlphaFreshFrontier alpha branch.nextFresh (seed + 1) ∧
+      (∀ pair, pair ∈ ambientAlpha → pair ∈ alpha) ∧
+      AlphaFreshFrontier alpha referenceFrontier executableFrontier ∧
+      AlphaAllocationGap alpha branch.nextFresh cursor.reservedUntil
+        (seed + 1) protectedExecutableEnd ∧
       AlphaGoalsAgree alpha barrier branch.body
         (freshenResolutionClause
           (args.map (PLeaTTa.subst binding)) args result rest binding
@@ -796,8 +977,15 @@ theorem
         match generated with
         | [] => binding
         | _ :: _ => Metta.Subst.compose generated binding := by
-  cases agreement with
-  | intro reference freshSeed executable base encoding bodySupported =>
+  have mergeSafe :
+      SupportedPreparedCandidateAgrees.ClauseAlphaMergeSafe ambientAlpha
+        (args.map (PLeaTTa.subst binding)) result rest binding qterm seed
+        agreement :=
+    SupportedPreparedCandidateAgrees.ClauseAlphaMergeSafe.ofAllocationGap
+      wellFormed member agreement ambientGap seedReserved
+  cases mergeSafe with
+  | intro reference freshSeed executable base encoding bodySupported
+      referenceDisjoint executableDisjoint =>
       let representative :=
         residualRepresentative ++ Substitution.denote olderBase
       have baseVariants := query.variants
@@ -812,8 +1000,8 @@ theorem
       have queryBelowFresh :
           GeneratedBelow
             (reference.clause.freshCopy freshSeed).firstFresh
-            (queryAlpha.map Prod.fst) :=
-        queryReferenceBelow.mono startsAbove
+            (payloadAlpha.map Prod.fst) :=
+        payloadReferenceBelow.mono startsAbove
       have cursorBelowStart :
           GeneratedBelow cursor.reservationStart
             (substitutionVariables cursor.bindings) := by
@@ -963,30 +1151,27 @@ theorem
               (args.map (PLeaTTa.subst binding)) result rest binding
               qterm seed)
             reference.clause.variables)
-      let alpha := queryAlpha ++ clauseAlpha
+      let alpha := ambientAlpha ++ clauseAlpha
       have combinedShared : SharedRuntimeAlpha alpha := by
-        simpa [alpha, clauseAlpha] using
-          queryShared.append_resolution_clause
-            reference.clause freshSeed encoding
-            (args.map (PLeaTTa.subst binding)) result rest binding qterm seed
-            queryBelowFresh queryExecutableLive highWater
+        have clauseShared : SharedRuntimeAlpha clauseAlpha := by
+          exact RuntimeAlpha.graph_shared
+            (freshenClause_alpha_agrees reference.clause freshSeed
+              (resolutionFreshSuffix
+                (args.map (PLeaTTa.subst binding)) result rest binding qterm
+                seed)
+              encoding)
+        have cross :
+            List.Disjoint (ambientAlpha.map Prod.fst)
+                (clauseAlpha.map Prod.fst) ∧
+              List.Disjoint (ambientAlpha.map Prod.snd)
+                (clauseAlpha.map Prod.snd) := by
+          exact ⟨referenceDisjoint, executableDisjoint⟩
+        exact ambientShared.append_of_projection_disjoint clauseShared
+          cross.1 cross.2
       have queryIncluded :
-          ∀ pair, pair ∈ queryAlpha → pair ∈ alpha := by
+          ∀ pair, pair ∈ ambientAlpha → pair ∈ alpha := by
         intro pair pairMember
         exact List.mem_append_left clauseAlpha pairMember
-      have queryFresh :
-          AlphaFreshFrontier queryAlpha cursor.reservationStart seed := by
-        constructor
-        · exact queryReferenceBelow
-        · exact Nat.le_trans
-            (resolutionSeedHighWaterNames_le_of_subset queryExecutableLive)
-            highWater
-      have queryEnd :
-          cursor.reservationStart ≤
-            (reference.clause.freshCopy freshSeed).nextFresh := by
-        exact Nat.le_trans startsAbove (by
-          rw [reference.clause.freshCopy_next]
-          exact Nat.le_add_right _ _)
       have clauseFresh :
           AlphaFreshFrontier clauseAlpha
             (reference.clause.freshCopy freshSeed).nextFresh
@@ -998,11 +1183,38 @@ theorem
             reference.clause.variables)
       have combinedFresh :
           AlphaFreshFrontier alpha
-            (reference.clause.freshCopy freshSeed).nextFresh
-            (seed + 1) := by
+            referenceFrontier executableFrontier := by
         exact AlphaFreshFrontier.append
-          (queryFresh.mono queryEnd (Nat.le_add_right seed 1))
-          clauseFresh
+          ambientFresh
+          (clauseFresh.mono
+            (by simpa [preparedBranchOf] using referenceEnd)
+            executableEnd)
+      have referenceAdvance :
+          cursor.reservationStart ≤
+            (preparedBranchOf cursor.callGeneration cursor.arguments
+              cursor.bindings freshSeed reference).nextFresh := by
+        exact Nat.le_trans
+          (wellFormed.1.start_le_member_first member)
+          (wellFormed.1.member_first_le_next member)
+      have ambientNextGap :
+          AlphaAllocationGap ambientAlpha
+            (preparedBranchOf cursor.callGeneration cursor.arguments
+              cursor.bindings freshSeed reference).nextFresh
+            cursor.reservedUntil (seed + 1) protectedExecutableEnd :=
+        ambientGap.advance referenceAdvance (Nat.le_succ seed)
+      have clauseNextGap :
+          AlphaAllocationGap clauseAlpha
+            (preparedBranchOf cursor.callGeneration cursor.arguments
+              cursor.bindings freshSeed reference).nextFresh
+            cursor.reservedUntil (seed + 1) protectedExecutableEnd := by
+        apply AlphaAllocationGap.of_frontier
+        simpa [preparedBranchOf] using clauseFresh
+      have combinedGap :
+          AlphaAllocationGap alpha
+            (preparedBranchOf cursor.callGeneration cursor.arguments
+              cursor.bindings freshSeed reference).nextFresh
+            cursor.reservedUntil (seed + 1) protectedExecutableEnd :=
+        ambientNextGap.append clauseNextGap
       have bodyAgreement :=
         freshenClause_body_alpha_agrees
           base bodySupported freshSeed
@@ -1017,11 +1229,11 @@ theorem
         have enlarged :=
           PLeaTTa.PrologGoalMguVariant.AlphaGoalsAgree.mono
             (fun pair pairMember =>
-              List.mem_append_right queryAlpha pairMember)
+              List.mem_append_right ambientAlpha pairMember)
             bodyAgreement
         simpa [alpha, clauseAlpha, preparedBranchOf] using enlarged
       have queryCanonicalSmall :
-          List.Forall₂ (CanonicalRuntimeAgrees queryAlpha)
+          List.Forall₂ (CanonicalRuntimeAgrees payloadAlpha)
             (cursor.arguments.map fun term =>
               TreeSubstitution.apply representative (Term.denote term))
             (args.map (PLeaTTa.subst binding) ++
@@ -1040,7 +1252,8 @@ theorem
                 [PLeaTTa.subst binding result]) := by
           exact canonicalRuntimeList_mono
             (fun pair pairMember =>
-              List.mem_append_left clauseAlpha pairMember)
+              List.mem_append_left clauseAlpha
+                (payloadIncluded pair pairMember))
             queryCanonicalSmall
         simpa only [List.map_append, List.map_singleton] using enlarged
       have freshened :=
@@ -1079,7 +1292,7 @@ theorem
                 qterm seed barrier clause).result]) := by
         exact canonicalRuntimeList_mono
           (fun pair pairMember =>
-            List.mem_append_right queryAlpha pairMember)
+            List.mem_append_right ambientAlpha pairMember)
           clauseCanonicalSmall
       have stableExecutable :=
         subst_freshenResolutionClause_head_eq_self
@@ -1205,6 +1418,7 @@ theorem
           flattened, generated, installed, combinedShared,
           queryIncluded,
           by simpa [preparedBranchOf] using combinedFresh,
+          by simpa [preparedBranchOf] using combinedGap,
           by simpa [preparedBranchOf] using bodyControl,
           rfl,
           by simpa [sourceExtensionShape] using independentShape,
@@ -1213,6 +1427,178 @@ theorem
           flattenedTopological, generatedTopological, generatedValuation,
           flattenedMgu, flattenedFactors, semanticFactors,
           installedExact, installedShape⟩
+
+/-- Immediate-call specialization of
+`unifyB_representativeWith_of_headResolution_extension`.
+
+When the payload graph is still the ambient graph, the original below/live
+high-water premises derive both cross-disjointness and the exact post-copy
+frontier.  Existing activation callers therefore keep the original API. -/
+theorem
+    SupportedPreparedCandidateAgrees.unifyB_representativeWith_of_headResolution
+    {queryAlpha : List (LogicVar × String)}
+    {cursor : PreparedCursor} {branch : ClauseBranch}
+    {clause : PLeaTTa.Clause}
+    {args : List Atom} {result : Atom} {rest : List PLeaTTa.Goal}
+    {binding : Subst} {qterm : Atom} {seed barrier : Nat}
+    {independentResult : Substitution}
+    {residualRepresentative : TreeSubstitution}
+    {olderBase : Substitution}
+    (query :
+      RepresentativeNormalizedCallAgreesWith queryAlpha cursor
+        (args.map (PLeaTTa.subst binding))
+        (PLeaTTa.subst binding result)
+        residualRepresentative olderBase)
+    (wellFormed : cursor.WellFormed)
+    (member : branch ∈ cursor.remaining)
+    (agreement :
+      SupportedPreparedCandidateAgrees cursor.callGeneration
+        cursor.predicate cursor.arguments cursor.bindings branch clause)
+    (arity : clause.params.length = args.length)
+    (queryShared : SharedRuntimeAlpha queryAlpha)
+    (queryReferenceBelow :
+      GeneratedBelow cursor.reservationStart (queryAlpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ queryAlpha.map Prod.snd →
+        name ∈
+          resolutionOccupiedVars
+            (args.map (PLeaTTa.subst binding)) result rest binding qterm)
+    (highWater :
+      resolutionSeedHighWaterNames
+        (resolutionOccupiedVars
+          (args.map (PLeaTTa.subst binding)) result rest binding qterm) ≤
+        seed)
+    (resolved : HeadResolution branch independentResult) :
+    ∃ alpha sourceCanonical representative semanticCanonical
+        flattened generated installed,
+      SharedRuntimeAlpha alpha ∧
+      (∀ pair, pair ∈ queryAlpha → pair ∈ alpha) ∧
+      AlphaFreshFrontier alpha branch.nextFresh (seed + 1) ∧
+      AlphaGoalsAgree alpha barrier branch.body
+        (freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args result rest binding
+          qterm seed barrier clause).body ∧
+      representative =
+        residualRepresentative ++ Substitution.denote olderBase ∧
+      independentResult =
+        TreeSubstitution.reify sourceCanonical ++ branch.bindings ∧
+      OrderedTreeMgu
+        (denoteEquations branch.normalizedHeadEquations) sourceCanonical ∧
+      TreeSubstitutionVariants
+        (Substitution.denote independentResult)
+        (flattened ++ representative) ∧
+      OrderedTreeMgu
+        (TreeSubstitution.applyEquations representative
+          (denoteEquations branch.headEquations))
+        semanticCanonical ∧
+      SharedCanonicalEquationsAgree alpha
+        (TreeSubstitution.applyEquations representative
+          (denoteEquations branch.headEquations))
+        ((args ++ [result]).map (PLeaTTa.subst binding))
+        (((freshenResolutionClause
+            (args.map (PLeaTTa.subst binding)) args result rest binding
+            qterm seed barrier clause).params ++
+          [(freshenResolutionClause
+            (args.map (PLeaTTa.subst binding)) args result rest binding
+            qterm seed barrier clause).result]).map
+          (PLeaTTa.subst binding)) ∧
+      PLeaTTa.unifyTopExact
+          (.expr ((args ++ [result]).map (PLeaTTa.subst binding)))
+          (.expr
+            (((freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).params ++
+              [(freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).result]).map
+              (PLeaTTa.subst binding))) =
+        some generated ∧
+      AlphaTreeSubstitutionAgrees alpha flattened generated ∧
+      TreeSubstitutionTopological flattened ∧
+      Nonempty (PLeaTTa.SubstTopological generated) ∧
+      AlphaValuationAgrees alpha flattened generated ∧
+      TreeIsMgu flattened
+        (TreeSubstitution.applyEquations representative
+          (denoteEquations branch.headEquations)) ∧
+      TreeFactorsThrough flattened semanticCanonical ∧
+      TreeFactorsThrough semanticCanonical flattened ∧
+      PLeaTTa.unifyB binding (.expr (args ++ [result]))
+          (.expr
+            ((freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).params ++
+              [(freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).result])) =
+        some installed ∧
+      installed =
+        match generated with
+        | [] => binding
+        | _ :: _ => Metta.Subst.compose generated binding := by
+  cases agreement with
+  | intro reference freshSeed _ base encoding bodySupported =>
+      have startsAbove :
+          cursor.reservationStart ≤
+            (reference.clause.freshCopy freshSeed).firstFresh := by
+        have starts := wellFormed.1.start_le_member_first member
+        simpa [preparedBranchOf] using starts
+      have queryBelowFresh :
+          GeneratedBelow
+            (reference.clause.freshCopy freshSeed).firstFresh
+            (queryAlpha.map Prod.fst) :=
+        queryReferenceBelow.mono startsAbove
+      have queryEnd :
+          cursor.reservationStart ≤
+            (reference.clause.freshCopy freshSeed).nextFresh := by
+        exact Nat.le_trans startsAbove (by
+          rw [reference.clause.freshCopy_next]
+          exact Nat.le_add_right _ _)
+      have queryFresh :
+          AlphaFreshFrontier queryAlpha
+            (preparedBranchOf cursor.callGeneration cursor.arguments
+              cursor.bindings freshSeed reference).nextFresh
+            (seed + 1) := by
+        constructor
+        · simpa [preparedBranchOf] using
+            queryReferenceBelow.mono queryEnd
+        · exact Nat.le_trans
+            (Nat.le_trans
+              (resolutionSeedHighWaterNames_le_of_subset
+                queryExecutableLive)
+              highWater)
+            (Nat.le_add_right seed 1)
+      have supported :
+          SupportedPreparedCandidateAgrees cursor.callGeneration
+            cursor.predicate cursor.arguments cursor.bindings
+            (preparedBranchOf cursor.callGeneration cursor.arguments
+              cursor.bindings freshSeed reference)
+            clause :=
+        .intro reference freshSeed clause base encoding bodySupported
+      have queryLowFrontier :
+          AlphaFreshFrontier queryAlpha cursor.reservationStart seed := by
+        constructor
+        · exact queryReferenceBelow
+        · exact Nat.le_trans
+            (resolutionSeedHighWaterNames_le_of_subset
+              queryExecutableLive)
+            highWater
+      have queryGap :
+          AlphaAllocationGap queryAlpha cursor.reservationStart
+            cursor.reservedUntil seed (seed + 1) :=
+        AlphaAllocationGap.of_frontier queryLowFrontier
+      obtain
+        ⟨alpha, sourceCanonical, representative, semanticCanonical,
+          flattened, generated, installed, resultBundle⟩ :=
+        PLeaTTa.PrologRepresentativeActivationBridge.SupportedPreparedCandidateAgrees.unifyB_representativeWith_of_headResolution_extension
+          query wellFormed member supported
+          arity (fun _ member => member) queryShared queryReferenceBelow
+          highWater queryFresh (Nat.le_refl _) (Nat.le_refl _) queryGap
+          (Nat.le_refl _) resolved
+      exact
+        ⟨alpha, sourceCanonical, representative, semanticCanonical,
+          flattened, generated, installed, resultBundle.1,
+          resultBundle.2.1, resultBundle.2.2.1,
+          resultBundle.2.2.2.2⟩
 
 /-- Existential compatibility view of
 `unifyB_representativeWith_of_headResolution`.

@@ -8,6 +8,7 @@ Trusted boundary: none
 Main exports:
   AlphaFreshFrontier,
   AlphaFreshFrontier.append,
+  AlphaAllocationGap,
   clauseAlpha_freshFrontier
 -/
 import PLeaTTa.Proofs.PrologStateBridge
@@ -30,6 +31,95 @@ def AlphaFreshFrontier
     GeneratedBelow referenceFrontier (alpha.map Prod.fst) ∧
       resolutionSeedHighWaterNames (alpha.map Prod.snd) ≤
         executableFrontier
+
+/-- A shared alpha graph avoids two allocator regions which belong to a
+retained resource.
+
+Independent generated identities use half-open intervals
+`[referenceStart, referenceEnd)`.  Executable clause-copy seed `n` is
+observed through names whose terminal-token high-water is `n + 1`, so its
+protected interval is `(executableStart, executableEnd]`.  Entries below an
+interval are historical; entries above it were allocated after the complete
+retained reservation. -/
+def AlphaAllocationGap
+    (alpha : List (LogicVar × String))
+    (referenceStart referenceEnd executableStart executableEnd : Nat) :
+    Prop :=
+  (∀ index, .generated index ∈ alpha.map Prod.fst →
+      index < referenceStart ∨ referenceEnd ≤ index) ∧
+    ∀ name, name ∈ alpha.map Prod.snd →
+      resolutionSeedHighWaterName name ≤ executableStart ∨
+        executableEnd < resolutionSeedHighWaterName name
+
+namespace AlphaAllocationGap
+
+/-- A graph entirely below the two lower bounds avoids every protected
+interval beginning there. -/
+theorem of_frontier
+    {alpha : List (LogicVar × String)}
+    {referenceStart referenceEnd executableStart executableEnd : Nat}
+    (frontier :
+      AlphaFreshFrontier alpha referenceStart executableStart) :
+    AlphaAllocationGap alpha referenceStart referenceEnd executableStart
+      executableEnd := by
+  constructor
+  · intro index member
+    exact Or.inl (frontier.1 index member)
+  · intro name member
+    exact Or.inl
+      ((PersistentSubst.resolutionSeedHighWaterNames_le_iff
+        (alpha.map Prod.snd) executableStart).mp frontier.2 name member)
+
+/-- Moving either lower bound forward preserves a gap when the protected
+upper bounds stay fixed.  This is the allocator fact used after consuming a
+retained alternative. -/
+theorem advance
+    {alpha : List (LogicVar × String)}
+    {referenceStart referenceNext referenceEnd
+      executableStart executableNext executableEnd : Nat}
+    (gap :
+      AlphaAllocationGap alpha referenceStart referenceEnd executableStart
+        executableEnd)
+    (referenceMono : referenceStart ≤ referenceNext)
+    (executableMono : executableStart ≤ executableNext) :
+    AlphaAllocationGap alpha referenceNext referenceEnd executableNext
+      executableEnd := by
+  constructor
+  · intro index member
+    rcases gap.1 index member with below | above
+    · exact Or.inl (Nat.lt_of_lt_of_le below referenceMono)
+    · exact Or.inr above
+  · intro name member
+    rcases gap.2 name member with below | above
+    · exact Or.inl (Nat.le_trans below executableMono)
+    · exact Or.inr above
+
+/-- Concatenating two fragments which avoid the same regions preserves the
+gap. -/
+theorem append
+    {left right : List (LogicVar × String)}
+    {referenceStart referenceEnd executableStart executableEnd : Nat}
+    (leftGap :
+      AlphaAllocationGap left referenceStart referenceEnd executableStart
+        executableEnd)
+    (rightGap :
+      AlphaAllocationGap right referenceStart referenceEnd executableStart
+        executableEnd) :
+    AlphaAllocationGap (left ++ right) referenceStart referenceEnd
+      executableStart executableEnd := by
+  constructor
+  · intro index member
+    rw [List.map_append, List.mem_append] at member
+    rcases member with member | member
+    · exact leftGap.1 index member
+    · exact rightGap.1 index member
+  · intro name member
+    rw [List.map_append, List.mem_append] at member
+    rcases member with member | member
+    · exact leftGap.2 name member
+    · exact rightGap.2 name member
+
+end AlphaAllocationGap
 
 /-- The empty graph is related at every pair of frontiers. -/
 theorem AlphaFreshFrontier.empty
@@ -173,6 +263,45 @@ theorem executable_frontier_cannot_precede_compact_target :
       (logicVarExecutableName (.source "x") ++ resolutionCompactSuffix 4)
       (by simp)
   rw [resolutionSeedHighWaterName_append_compact] at bounded
+  omega
+
+/-- An alpha entry allocated above both retained regions is admitted.  This
+is the positive chronology witness: later nested work need not remain below
+an older call merely to preserve its reservation. -/
+theorem allocation_above_both_regions_preserves_gap :
+    AlphaAllocationGap
+      [(.generated 4, "x" ++ resolutionCompactSuffix 4)]
+      2 4 2 4 := by
+  constructor
+  · intro index member
+    simp only [List.map_cons, List.map_nil, List.mem_singleton] at member
+    injection member with indexEq
+    subst index
+    exact Or.inr (Nat.le_refl 4)
+  · intro name member
+    simp only [List.map_cons, List.map_nil, List.mem_singleton] at member
+    subst name
+    rw [resolutionSeedHighWaterName_append_compact]
+    exact Or.inr (Nat.lt_succ_self 4)
+
+/-- Inserting a generated identity at the protected source interval's lower
+endpoint violates the gap. -/
+theorem allocation_inside_reference_region_breaks_gap :
+    ¬ AlphaAllocationGap [(.generated 2, "plain")] 2 3 0 0 := by
+  intro gap
+  rcases gap.1 2 (by simp) with below | above <;> omega
+
+/-- Executable seed `2` has observable high-water `3`; inserting it into the
+protected runtime interval `(2,3]` violates the gap.  This pins the asymmetric
+endpoint convention used by compact suffixes. -/
+theorem allocation_inside_executable_region_breaks_gap :
+    ¬ AlphaAllocationGap
+      [(.source "x", "x" ++ resolutionCompactSuffix 2)]
+      0 0 2 3 := by
+  intro gap
+  have collision :=
+    gap.2 ("x" ++ resolutionCompactSuffix 2) (by simp)
+  rw [resolutionSeedHighWaterName_append_compact] at collision
   omega
 
 end PLeaTTa.PrologAlphaFreshFrontierBridge

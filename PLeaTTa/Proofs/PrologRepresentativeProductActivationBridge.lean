@@ -85,7 +85,8 @@ structure RepresentativeProductActivationCore
     (copied : PLeaTTa.Clause)
     (referenceRest : List PeTTaSpec.PrologCore.Goal)
     (executableRest : List PLeaTTa.Goal)
-    (qterm : Atom) (barrier : Nat) (callerScope : CutScopeId)
+    (qterm : Atom) (barrier startCounter : Nat)
+    (callerScope : CutScopeId)
     (independentResult : Substitution)
     (representative : TreeSubstitution)
     (nextAlpha : List (LogicVar × String))
@@ -95,6 +96,12 @@ structure RepresentativeProductActivationCore
   alphaIncluded : ∀ pair, pair ∈ alpha → pair ∈ nextAlpha
   freshFrontier :
     AlphaFreshFrontier nextAlpha branch.nextFresh pending.persistent.counter
+  /-- Tight frontier of the selected clause itself, before widening to the
+  complete prefiltered alternative bank.  Retained-payload chronology uses
+  this to place every installed alpha entry below the advanced resource's
+  new lower bounds. -/
+  selectionFresh :
+    AlphaFreshFrontier nextAlpha branch.nextFresh (startCounter + 1)
   persistentAgreement :
     SessionRelatesPersistent (AlphaFreshFrontier nextAlpha)
       opened.session pending.persistent
@@ -168,7 +175,8 @@ structure RepresentativeProductActivation
     (copied : PLeaTTa.Clause)
     (referenceRest : List PeTTaSpec.PrologCore.Goal)
     (executableRest : List PLeaTTa.Goal)
-    (qterm : Atom) (barrier : Nat) (callerScope : CutScopeId)
+    (qterm : Atom) (barrier startCounter : Nat)
+    (callerScope : CutScopeId)
     (independentResult : Substitution)
     (representative : TreeSubstitution)
     (nextAlpha : List (LogicVar × String))
@@ -177,7 +185,7 @@ structure RepresentativeProductActivation
     extends
       RepresentativeProductActivationCore prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
-        referenceRest executableRest qterm barrier callerScope
+        referenceRest executableRest qterm barrier startCounter callerScope
         independentResult representative nextAlpha sourceCanonical
         flattenedRepresentative installed where
   flattenedPayload :
@@ -198,7 +206,7 @@ structure SegmentedRepresentativeProductActivation
     (copied : PLeaTTa.Clause)
     (referenceRest : List PeTTaSpec.PrologCore.Goal)
     (executableRest : List PLeaTTa.Goal)
-    (qterm : Atom) (bodyBarrier callerBarrier : Nat)
+    (qterm : Atom) (bodyBarrier callerBarrier startCounter : Nat)
     (callerScope : CutScopeId)
     (independentResult : Substitution)
     (representative : TreeSubstitution)
@@ -208,7 +216,7 @@ structure SegmentedRepresentativeProductActivation
     extends
       RepresentativeProductActivationCore prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
-        referenceRest executableRest qterm bodyBarrier callerScope
+        referenceRest executableRest qterm bodyBarrier startCounter callerScope
         independentResult representative nextAlpha sourceCanonical
         flattenedRepresentative installed where
   segmentedPayload :
@@ -235,7 +243,7 @@ structure SpinedRepresentativeProductActivation
     (segmentReferenceRest : List PeTTaSpec.PrologCore.Goal)
     (segmentExecutableRest : List PLeaTTa.Goal)
     (outer : List ControlSegment)
-    (qterm : Atom) (bodyBarrier callerBarrier : Nat)
+    (qterm : Atom) (bodyBarrier callerBarrier startCounter : Nat)
     (callerScope : CutScopeId)
     (independentResult : Substitution)
     (representative : TreeSubstitution)
@@ -247,8 +255,9 @@ structure SpinedRepresentativeProductActivation
         referenceBase opened pending finish branch branchTail altTail copied
         segmentReferenceRest
         (segmentExecutableRest ++ flattenExecutables outer)
-        qterm bodyBarrier callerScope independentResult representative nextAlpha
-        sourceCanonical flattenedRepresentative installed where
+        qterm bodyBarrier startCounter callerScope independentResult
+        representative nextAlpha sourceCanonical flattenedRepresentative
+        installed where
   spinePayload :
     TaskSpinePayloadAgrees nextAlpha support
       (sourceCanonical ++ canonical) referenceBase independentResult
@@ -276,7 +285,8 @@ theorem RepresentativeProductActivation.activatedPersistent_eq
     {copied : PLeaTTa.Clause}
     {referenceRest : List PeTTaSpec.PrologCore.Goal}
     {executableRest : List PLeaTTa.Goal}
-    {qterm : Atom} {barrier : Nat} {callerScope : CutScopeId}
+    {qterm : Atom} {barrier startCounter : Nat}
+    {callerScope : CutScopeId}
     {independentResult : Substitution}
     {representative : TreeSubstitution}
     {nextAlpha : List (LogicVar × String)}
@@ -285,7 +295,7 @@ theorem RepresentativeProductActivation.activatedPersistent_eq
     (activation :
       RepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
-        referenceRest executableRest qterm barrier callerScope
+        referenceRest executableRest qterm barrier startCounter callerScope
         independentResult representative nextAlpha sourceCanonical
         flattenedRepresentative installed) :
     (activatedOpenSuccessor pending copied executableRest qterm
@@ -308,7 +318,8 @@ theorem RepresentativeProductActivation.activatedSessionRelates
     {copied : PLeaTTa.Clause}
     {referenceRest : List PeTTaSpec.PrologCore.Goal}
     {executableRest : List PLeaTTa.Goal}
-    {qterm : Atom} {barrier : Nat} {callerScope : CutScopeId}
+    {qterm : Atom} {barrier startCounter : Nat}
+    {callerScope : CutScopeId}
     {independentResult : Substitution}
     {representative : TreeSubstitution}
     {nextAlpha : List (LogicVar × String)}
@@ -317,7 +328,7 @@ theorem RepresentativeProductActivation.activatedSessionRelates
     (activation :
       RepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
-        referenceRest executableRest qterm barrier callerScope
+        referenceRest executableRest qterm barrier startCounter callerScope
         independentResult representative nextAlpha sourceCanonical
         flattenedRepresentative installed) :
     SessionRelatesPersistent (AlphaFreshFrontier nextAlpha) opened.session
@@ -383,7 +394,7 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step_head
         installed,
       RepresentativeProductActivationCore prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
-        referenceRest executableRest qterm barrier callerScope
+        referenceRest executableRest qterm barrier startCounter callerScope
         independentResult representative nextAlpha sourceCanonical
         flattenedRepresentative installed := by
   obtain
@@ -502,8 +513,8 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step_head
   refine
     ⟨representative, nextAlpha, sourceCanonical, flattened, installed, ?_⟩
   exact
-    ⟨nextShared, alphaIncluded, freshFrontier, persistentAgreement,
-      independentShape, sourceOrdered,
+    ⟨nextShared, alphaIncluded, freshFrontier, selectionFresh,
+      persistentAgreement, independentShape, sourceOrdered,
       sourceProductStep, executableStep, fineExecutableStep, cumulative,
       bodyPayload, retainedAlts, retainedCursorOwnership,
       frontier.tailScan.barrierCount_zero,
@@ -564,8 +575,8 @@ theorem RepresentativeRetainedCallFrontier.activate_segmented_product_step
         installed,
       SegmentedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
-        referenceRest executableRest qterm barrier callerBarrier callerScope
-        independentResult representative nextAlpha sourceCanonical
+        referenceRest executableRest qterm barrier callerBarrier startCounter
+        callerScope independentResult representative nextAlpha sourceCanonical
         flattenedRepresentative installed := by
   obtain
     ⟨representative, nextAlpha, sourceCanonical, flattened, installed, core⟩ :=
@@ -659,8 +670,8 @@ theorem RepresentativeRetainedCallFrontier.activate_spined_product_step
       SpinedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
         segmentReferenceRest segmentExecutableRest outer qterm bodyBarrier
-        callerBarrier callerScope independentResult representative nextAlpha
-        sourceCanonical flattenedRepresentative installed := by
+        callerBarrier startCounter callerScope independentResult representative
+        nextAlpha sourceCanonical flattenedRepresentative installed := by
   have headPayload :
       TaskPayloadAgrees alpha support callerBarrier canonical referenceBase
         referenceBindings binding
@@ -751,7 +762,7 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step
         installed,
       RepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
-        referenceRest executableRest qterm barrier callerScope
+        referenceRest executableRest qterm barrier startCounter callerScope
         independentResult representative nextAlpha sourceCanonical
         flattenedRepresentative installed := by
   obtain

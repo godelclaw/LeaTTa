@@ -1,0 +1,913 @@
+-- SPDX-License-Identifier: Apache-2.0
+
+/-
+Module: PLeaTTa.Proofs.PrologRetainedPayloadSnapshotBridge
+Purpose: Preserve the pre-head cumulative logical payload required to
+  reactivate one retained local-clause resource after later backtracking.
+Trusted boundary: none
+Main exports:
+  RetainedCallPayloadSnapshot,
+  RetainedCallPayloadSnapshot.mono,
+  RetainedCallPayloadSnapshot.transportCursor,
+  RetainedCallPayloadSnapshot.afterPulledHead,
+  RetainedCallPayloadSnapshot.sourceBindingShape,
+  RetainedCallPayloadSnapshot.currentRepresentative,
+  SpinedRepresentativeProductActivation.activeResourceStackWithSnapshot
+-/
+import PLeaTTa.Proofs.PrologBodyFailureResourceTransitionBridge
+
+namespace PLeaTTa.PrologRetainedPayloadSnapshotBridge
+
+open Metta (Atom Subst)
+open PeTTaSpec.PrologCore
+open PeTTaSpec.PrologCore.Canonical
+open PeTTaSpec.PrologCore.GoalSemantics
+open PeTTaSpec.PrologCore.OpenSubstitution
+open PeTTaSpec.PrologCore.Resolver
+open DemandDrivenStep
+open PrologRecursiveCallPayloadBridge
+open PrologAlphaFreshFrontierBridge
+open PrologRepresentativeStepActivationBridge
+open PrologControlSegmentSpineBridge
+open PrologMguComposition
+open PrologOrdinaryStepBridge
+open PrologBodyFailureResourceTransitionBridge
+open PrologPrefilterScanBridge
+open PrologProductResourceContextBridge
+open PrologProductResourceTransitionBridge
+open PrologRepresentativeCallFrontierBridge
+open PrologRepresentativeProductActivationBridge
+open PrologRetainedCursorOwnershipBridge
+open PrologSourceProductContextBridge
+open PrologSupportedCursorAlternativeBridge
+
+/-!
+An executable retained alternative stores the pre-head runtime binding by
+value.  Its semantic cursor stores the corresponding independent binding and
+the immutable logical-update snapshot.  Neither object alone retains the
+cumulative source/runtime valuation which justified the call.
+
+This module packages that missing proof data at the only sound point: the
+original call activation, where the pre-head `TaskSpinePayloadAgrees` and the
+literal retained cursor are both present.  The snapshot contains no world,
+database, frame stack, or fresh allocator.  Those persistent components must
+always come from the current state when the resource is reactivated.
+-/
+
+/-- Immutable pre-head logical payload owned by one retained predicate
+resource.
+
+`currentAlpha` may grow while nested calls run.  `snapshotAlpha`,
+`support`, and the cumulative substitution remain the values certified when
+this resource was created; `support` is the fixed finite observation domain
+of that payload, not a runtime occupied-name set.  `alphaIncluded` is the only
+permitted graph transport to a later alpha.  The caller segment and every
+older segment are stored exactly so a later activation cannot retag or
+flatten distinct cut regions. -/
+structure RetainedCallPayloadSnapshot
+    (currentAlpha support : List (LogicVar × String))
+    (resource : RetainedAlternativeSegment)
+    (cursor : PreparedCursor)
+    (caller : ControlSegment)
+    (outer : List ControlSegment) where
+  snapshotAlpha : List (LogicVar × String)
+  canonical : TreeSubstitution
+  referenceBase : Substitution
+  referencePayload : List Term
+  alphaIncluded :
+    ∀ pair, pair ∈ snapshotAlpha → pair ∈ currentAlpha
+  /-- Current alpha entries avoid every source interval and executable seed
+  still owned by this retained cursor/resource pair.  This is the chronology
+  fact which makes later selected-head alpha merging safe. -/
+  allocationGap :
+    AlphaAllocationGap currentAlpha cursor.reservationStart
+      cursor.reservedUntil resource.counter resource.finalCounter
+  cursorArguments : cursor.arguments = referencePayload
+  payloadSupported :
+    AlphaTermsSupported snapshotAlpha support referencePayload
+  queryReferenceBelow :
+    GeneratedBelow cursor.reservationStart (snapshotAlpha.map Prod.fst)
+  queryExecutableLive :
+    ∀ name, name ∈ snapshotAlpha.map Prod.snd →
+      name ∈
+        resolutionOccupiedVars
+          (resource.args.map (PLeaTTa.subst resource.binding))
+          resource.res resource.rest resource.binding resource.qterm
+  queryExecutableBelow :
+    resolutionSeedHighWaterNames
+        (resolutionOccupiedVars
+          (resource.args.map (PLeaTTa.subst resource.binding))
+          resource.res resource.rest resource.binding resource.qterm) ≤
+      resource.counter
+  resourceRest :
+    resource.rest =
+      caller.executables ++ flattenExecutables outer
+  payload :
+    TaskSpinePayloadAgrees snapshotAlpha support canonical referenceBase
+      cursor.bindings resource.binding
+      ({ barrier := caller.barrier
+         references :=
+           .call cursor.predicate referencePayload :: caller.references
+         executables :=
+           .call cursor.predicate resource.args resource.res ::
+             caller.executables } ::
+       outer)
+
+namespace RetainedCallPayloadSnapshot
+
+/-- Nested execution may extend the global alpha, but it cannot mutate a
+retained resource's frozen pre-head payload. -/
+def mono
+    {smaller larger support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {cursor : PreparedCursor}
+    {caller : ControlSegment}
+    {outer : List ControlSegment}
+    (included : ∀ pair, pair ∈ smaller → pair ∈ larger)
+    (largerGap :
+      AlphaAllocationGap larger cursor.reservationStart cursor.reservedUntil
+        resource.counter resource.finalCounter)
+    (snapshot :
+      RetainedCallPayloadSnapshot smaller support resource cursor caller
+        outer) :
+    RetainedCallPayloadSnapshot larger support resource cursor caller outer :=
+  { snapshot with
+    alphaIncluded := fun pair member =>
+      included pair (snapshot.alphaIncluded pair member)
+    allocationGap := largerGap }
+
+/-! ## Frozen-cursor transport
+
+Rejected-prefix execution changes only a prepared cursor's remaining branch
+list and reservation start.  The call identity, carried query, retained
+resource, and payload support remain fixed.  These lemmas make that stronger
+invariance explicit instead of treating `support` as dynamically extensible.
+-/
+
+/-- One advance through a well-formed reservation moves the start to the end
+of the consumed branch's nonempty fresh interval. -/
+theorem advance_reservationStart_le
+    {cursor : PreparedCursor} {branch : ClauseBranch}
+    {branches : List ClauseBranch}
+    (wellFormed : cursor.WellFormed)
+    (remaining : cursor.remaining = branch :: branches) :
+    cursor.reservationStart ≤
+      (cursor.advance branch branches).reservationStart := by
+  rcases wellFormed with
+    ⟨reserved, _dominated, _owned, _targetsReserved⟩
+  unfold PreparedCursor.WellReserved at reserved
+  rw [remaining] at reserved
+  cases reserved with
+  | cons freshSeed entered remaining finalFresh startsAbove nonemptyInterval
+      tailReserved =>
+      exact Nat.le_trans startsAbove nonemptyInterval
+
+/-- A counted rejected prefix preserves the exact call identity and carried
+query of its starting cursor. -/
+theorem RejectedPullsN.preserves_callContext
+    {count : Nat} {before after : PreparedCursor}
+    (pulls : RejectedPullsN count before after) :
+    CursorCallContext after before.callGeneration before.predicate
+      before.arguments before.bindings := by
+  induction pulls with
+  | zero cursor =>
+      exact CursorCallContext.refl cursor
+  | succ count cursor branch branches finish remaining clash tail
+      inductionHypothesis =>
+      exact inductionHypothesis
+
+/-- On a well-formed frozen cursor, consuming a counted rejected prefix never
+rolls its reservation start back. -/
+theorem RejectedPullsN.reservationStart_le
+    {count : Nat} {before after : PreparedCursor}
+    (pulls : RejectedPullsN count before after)
+    (wellFormed : before.WellFormed) :
+    before.reservationStart ≤ after.reservationStart := by
+  induction pulls with
+  | zero cursor =>
+      exact Nat.le_refl _
+  | succ count cursor branch branches finish remaining clash tail
+      inductionHypothesis =>
+      have one :
+          cursor.reservationStart ≤
+            (cursor.advance branch branches).reservationStart := by
+        exact advance_reservationStart_le wellFormed remaining
+      exact
+        Nat.le_trans one
+          (inductionHypothesis
+            (cursor.advance_wellFormed wellFormed remaining))
+
+/-- Retarget a frozen payload snapshot to a cursor reached by cursor-only
+motion.
+
+`support` is intentionally unchanged: it certifies the immutable payload.
+The separate runtime-liveness field is expressed solely through the unchanged
+resource, and the only varying bound is weakened along the cursor reservation
+order. -/
+def transportCursor
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {before after : PreparedCursor}
+    {caller : ControlSegment}
+    {outer : List ControlSegment}
+    (context :
+      CursorCallContext after before.callGeneration before.predicate
+        before.arguments before.bindings)
+    (reservationOrdered :
+      before.reservationStart ≤ after.reservationStart)
+    (reservedUntil :
+      after.reservedUntil = before.reservedUntil)
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support resource before caller
+        outer) :
+    RetainedCallPayloadSnapshot currentAlpha support resource after caller
+      outer :=
+  { snapshot with
+    cursorArguments := context.arguments_eq.trans snapshot.cursorArguments
+    queryReferenceBelow :=
+      snapshot.queryReferenceBelow.mono reservationOrdered
+    allocationGap := by
+      have advanced :=
+        snapshot.allocationGap.advance reservationOrdered (Nat.le_refl _)
+      simpa [reservedUntil] using advanced
+    payload := by
+      simpa [context.predicate_eq, context.bindings_eq] using snapshot.payload }
+
+/-- Consume the executable alternative corresponding to the selected head
+without changing any payload-bearing resource field.
+
+The counter and alternative suffix are operational ownership data only.
+Neither participates in the cumulative logical payload or its fixed support.
+-/
+def afterPulledHead
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {cursor : PreparedCursor}
+    {caller : ControlSegment}
+    {outer : List ControlSegment}
+    (remainingAlts : List PLeaTTa.Alt)
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support resource cursor caller
+        outer) :
+    RetainedCallPayloadSnapshot currentAlpha support
+      (_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead
+        resource remainingAlts)
+      cursor caller outer := by
+  refine
+    { snapshotAlpha := snapshot.snapshotAlpha
+      canonical := snapshot.canonical
+      referenceBase := snapshot.referenceBase
+      referencePayload := snapshot.referencePayload
+      alphaIncluded := snapshot.alphaIncluded
+      allocationGap := by
+        have advanced :=
+          snapshot.allocationGap.advance (Nat.le_refl _)
+            (Nat.le_succ resource.counter)
+        simpa
+          [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
+          using advanced
+      cursorArguments := snapshot.cursorArguments
+      payloadSupported := snapshot.payloadSupported
+      queryReferenceBelow := snapshot.queryReferenceBelow
+      queryExecutableLive := ?_
+      queryExecutableBelow := ?_
+      resourceRest := ?_
+      payload := ?_ }
+  · simpa
+      [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
+      using snapshot.queryExecutableLive
+  · have oldBound := snapshot.queryExecutableBelow
+    simpa
+      [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
+      using Nat.le_trans oldBound (Nat.le_succ resource.counter)
+  · simpa
+      [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
+      using snapshot.resourceRest
+  · simpa
+      [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
+      using snapshot.payload
+
+/-- The semantic binding restored on backtracking is exactly the cumulative
+source substitution certified at resource creation. -/
+theorem sourceBindingShape
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {cursor : PreparedCursor}
+    {caller : ControlSegment}
+    {outer : List ControlSegment}
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support resource cursor caller
+        outer) :
+    cursor.bindings =
+      TreeSubstitution.reify snapshot.canonical ++ snapshot.referenceBase :=
+  snapshot.payload.data.bindingShape
+
+/-- Recover the exact call-headed payload for the retained resource without
+consulting any historical executable configuration. -/
+theorem callPayload
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {cursor : PreparedCursor}
+    {caller : ControlSegment}
+    {outer : List ControlSegment}
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support resource cursor caller
+        outer) :
+    TaskPayloadAgrees snapshot.snapshotAlpha support caller.barrier
+      snapshot.canonical snapshot.referenceBase cursor.bindings
+      resource.binding
+      (.call cursor.predicate snapshot.referencePayload ::
+        caller.references)
+      (.call cursor.predicate resource.args resource.res ::
+        caller.executables) :=
+  snapshot.payload.headPayload
+
+/-- Recover the representative exactly at snapshot creation, before any
+ambient alpha extension caused by nested execution.
+
+This is the payload-side input to retained activation: allocator history may
+extend the ambient graph, but the hidden residual orientation and its
+below-reservation proof remain certified on `snapshotAlpha`. -/
+theorem representative
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {cursor : PreparedCursor}
+    {caller : ControlSegment}
+    {outer : List ControlSegment}
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support resource cursor caller
+        outer) :
+    ∃ representative : TreeSubstitution,
+      AlphaCumulativeResidualVariantAgreesOnWith
+        snapshot.snapshotAlpha support snapshot.canonical
+        snapshot.referenceBase resource.binding representative ∧
+      RepresentativeNormalizedCallAgreesWith snapshot.snapshotAlpha cursor
+        (resource.args.map (PLeaTTa.subst resource.binding))
+        (PLeaTTa.subst resource.binding resource.res)
+        representative snapshot.referenceBase :=
+  PLeaTTa.PrologRecursiveCallPayloadBridge.TaskPayloadAgrees.representativeNormalizedCallAgreesWith
+    snapshot.callPayload snapshot.payloadSupported cursor
+    snapshot.cursorArguments rfl
+
+/-- Recover the one representative selected at snapshot creation and
+transport that exact witness to the current alpha graph.
+
+Only alpha-indexed coverage and valuation leaves are weakened.  The
+representative, canonical substitution, older base, cursor, payload support,
+and runtime binding remain literally unchanged.  `currentShared` is not
+manufactured here; activation must separately obtain sharedness of the
+current graph from the reachable-state invariant. -/
+theorem currentRepresentative
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {cursor : PreparedCursor}
+    {caller : ControlSegment}
+    {outer : List ControlSegment}
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support resource cursor caller
+        outer) :
+    ∃ representative : TreeSubstitution,
+      AlphaCumulativeResidualVariantAgreesOnWith
+        currentAlpha support snapshot.canonical snapshot.referenceBase
+        resource.binding representative ∧
+      RepresentativeNormalizedCallAgreesWith currentAlpha cursor
+        (resource.args.map (PLeaTTa.subst resource.binding))
+        (PLeaTTa.subst resource.binding resource.res)
+        representative snapshot.referenceBase := by
+  obtain ⟨representative, cumulative, query⟩ :=
+    snapshot.representative
+  have currentCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        currentAlpha support snapshot.canonical snapshot.referenceBase
+        resource.binding representative := by
+    refine
+      { variants := cumulative.variants
+        canonicalTopological := cumulative.canonicalTopological
+        representativeCovered := ?_
+        runtimeTopological := cumulative.runtimeTopological
+        valuation := ?_ }
+    · exact
+        PLeaTTa.PrologRepresentativeTaskActivationBridge.TreeSubstitutionVariablesSatisfy.monoAlpha
+          snapshot.alphaIncluded cumulative.representativeCovered
+    · exact
+        PLeaTTa.PrologRepresentativeTaskActivationBridge.AlphaValuationAgreesOn.monoAlpha
+          snapshot.alphaIncluded cumulative.valuation
+  have currentQuery :
+      RepresentativeNormalizedCallAgreesWith currentAlpha cursor
+        (resource.args.map (PLeaTTa.subst resource.binding))
+        (PLeaTTa.subst resource.binding resource.res)
+        representative snapshot.referenceBase := by
+    refine
+      { variants := query.variants
+        residualCovered := ?_
+        olderBaseIncluded := query.olderBaseIncluded
+        arguments := ?_ }
+    · exact
+        PLeaTTa.PrologRepresentativeTaskActivationBridge.TreeSubstitutionVariablesSatisfy.monoAlpha
+          snapshot.alphaIncluded query.residualCovered
+    · exact
+        List.Forall₂.imp
+          (fun _term _atom agreement =>
+            PLeaTTa.PrologRepresentativeActivationBridge.CanonicalRuntimeAgrees.mono
+              snapshot.alphaIncluded agreement)
+          query.arguments
+  exact ⟨representative, currentCumulative, currentQuery⟩
+
+end RetainedCallPayloadSnapshot
+
+/-! ## Exact payload-bearing outer-resource zipper -/
+
+/-- Arbitrary-depth alignment of source frames, executable resource
+descriptors, caller control segments, and the immutable payload snapshot owned
+by each retained predicate.
+
+This strengthens `SourceControlResourceContextAgrees` without changing its
+runtime indices.  Every constructor is one linear cell; there is no separate
+snapshot list which could be permuted, shortened, or paired with a different
+cursor. -/
+inductive SourceControlResourcePayloadContextAgrees
+    (alpha support : List (LogicVar × String)) (qterm : Atom) :
+    Nat → List ControlSegment → List RetainedAlternativeSegment →
+      CutScopeId → ActiveProductContext → CutScopeId → Type where
+  | nil (currentBarrier : Nat) (scope : CutScopeId) :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier [] [] scope [] scope
+  | cons (currentBarrier : Nat)
+      (currentScope nextScope outerScope : CutScopeId)
+      (segment : ControlSegment) (segments : List ControlSegment)
+      (resource : RetainedAlternativeSegment)
+      (resources : List RetainedAlternativeSegment)
+      (cursor : PreparedCursor) (context : ActiveProductContext)
+      (segmentAgrees : segment.Agrees alpha)
+      (resourceRest :
+        resource.rest =
+          segment.executables ++ flattenExecutables segments)
+      (resourceQuery : resource.qterm = qterm)
+      (resourceBarrier : resource.barrier = currentBarrier)
+      (resourceOwnership : resource.Owns alpha cursor)
+      (snapshot :
+        RetainedCallPayloadSnapshot alpha support resource cursor segment
+          segments)
+      (outerAgrees :
+        SourceControlResourcePayloadContextAgrees alpha support qterm
+          segment.barrier segments resources nextScope context outerScope) :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources)
+        currentScope
+        ({ callerScope := nextScope
+           predicateScope := currentScope
+           retained := .clauses currentScope cursor
+           callerRest := segment.references } ::
+         context)
+        outerScope
+
+namespace SourceControlResourcePayloadContextAgrees
+
+/-- Erasing only the immutable payload certificates recovers the exact
+already-audited source/control/resource alignment. -/
+def alignment
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext} :
+    SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer →
+      SourceControlResourceContextAgrees alpha qterm currentBarrier segments
+        resources inner context outer
+  | .nil currentBarrier scope => .nil currentBarrier scope
+  | .cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership _snapshot outerAgrees =>
+      .cons currentBarrier currentScope nextScope outerScope segment segments
+        resource resources cursor context segmentAgrees resourceRest
+        resourceQuery resourceBarrier resourceOwnership outerAgrees.alignment
+
+/-- Nested calls may extend the shared alpha while every retained payload,
+segment, cursor, and resource keeps its exact identity and order. -/
+def mono
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (included : ∀ pair, pair ∈ smaller → pair ∈ larger)
+    (gaps :
+      ∀ {resource cursor segment outerSegments},
+        RetainedCallPayloadSnapshot smaller support resource cursor segment
+            outerSegments →
+          AlphaAllocationGap larger cursor.reservationStart
+            cursor.reservedUntil resource.counter resource.finalCounter) :
+    SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer →
+      SourceControlResourcePayloadContextAgrees larger support qterm
+        currentBarrier segments resources inner context outer
+  | .nil currentBarrier scope => .nil currentBarrier scope
+  | .cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
+      .cons currentBarrier currentScope nextScope outerScope segment segments
+        resource resources cursor context (segmentAgrees.mono included)
+        resourceRest resourceQuery resourceBarrier
+        (resourceOwnership.mono included)
+        (snapshot.mono included (gaps snapshot))
+        (outerAgrees.mono included gaps)
+
+/-- The four spines are one-to-one: no payload certificate can be inserted,
+deleted, or shifted independently of its source frame and executable
+resource. -/
+theorem lengths_eq
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer) :
+    context.length = segments.length ∧
+      segments.length = resources.length := by
+  exact agreement.alignment.lengths_eq
+
+/-- Drop an exact inner prefix while preserving the remaining payload cells
+and all of their typed indices. -/
+def dropAlignedPrefix
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer)
+    (count : Nat) (within : count ≤ segments.length) :
+    Σ nextBarrier, Σ nextInner,
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        nextBarrier (segments.drop count) (resources.drop count) nextInner
+        (context.drop count) outer := by
+  induction count generalizing currentBarrier segments resources inner
+      context with
+  | zero =>
+      exact ⟨currentBarrier, inner, by simpa using agreement⟩
+  | succ count inductionHypothesis =>
+      cases agreement with
+      | nil currentBarrier scope =>
+          simp at within
+      | cons currentBarrier currentScope nextScope outerScope segment
+          segments resource resources cursor context segmentAgrees
+          resourceRest resourceQuery resourceBarrier resourceOwnership
+          snapshot outerAgrees =>
+          have withinTail : count ≤ segments.length := by
+            simpa using Nat.le_of_succ_le_succ within
+          obtain ⟨nextBarrier, nextInner, suffix⟩ :=
+            inductionHypothesis outerAgrees withinTail
+          exact ⟨nextBarrier, nextInner, by simpa using suffix⟩
+
+/-- The first cell of a nonempty payload zipper exposes the exact retained
+cursor and its immutable pre-head payload. -/
+structure HeadCell
+    (alpha support : List (LogicVar × String))
+    (segment : ControlSegment)
+    (segments : List ControlSegment)
+    (resource : RetainedAlternativeSegment)
+    (scope : CutScopeId)
+    (frame : ActiveProductFrame) where
+  cursor : PreparedCursor
+  retainedShape :
+    frame.retained = .clauses scope cursor
+  snapshot :
+    RetainedCallPayloadSnapshot alpha support resource cursor segment segments
+
+/-- Extract the head payload cell without searching or comparing values.
+Its position is forced by the strengthened zipper constructor. -/
+def headCell
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {frame : ActiveProductFrame} {context : ActiveProductContext}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources) inner
+        (frame :: context) outer) :
+    HeadCell alpha support segment segments resource inner frame := by
+  cases agreement with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
+      exact ⟨cursor, rfl, snapshot⟩
+
+end SourceControlResourcePayloadContextAgrees
+
+/-- Move one currently active resource into the typed outer context of a
+newly entered recursive call.
+
+All resource equalities come from the actual active stack.  The caller's
+control spelling and immutable pre-head payload are supplied independently,
+so this constructor cannot manufacture either from a later machine state. -/
+def ActiveProductResourceStackAgrees.prependPayloadContext
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {bodyBarrier callerBarrier : Nat}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {cursor : PreparedCursor}
+    {executableRest : List PLeaTTa.Goal}
+    {altTail : List PLeaTTa.Alt}
+    {active : RetainedAlternativeSegment}
+    {caller : ControlSegment}
+    {outer : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {predicateScope callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt} {state : OpenConf}
+    (stack :
+      ActiveProductResourceStackAgrees alpha qterm bodyBarrier callerBarrier
+        pending cursor executableRest altTail active outer resources
+        callerScope outerScope context baseAlts state)
+    (callerRest : executableRest =
+      caller.executables ++ flattenExecutables outer)
+    (callerBarrierExact : caller.barrier = callerBarrier)
+    (callerAgrees : caller.Agrees alpha)
+    (snapshot :
+      RetainedCallPayloadSnapshot alpha support active cursor caller outer)
+    (outerPayloads :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        callerBarrier outer resources callerScope context outerScope) :
+    SourceControlResourcePayloadContextAgrees alpha support qterm bodyBarrier
+      (caller :: outer) (active :: resources) predicateScope
+      ({ callerScope := callerScope
+         predicateScope := predicateScope
+         retained := .clauses predicateScope cursor
+         callerRest := caller.references } ::
+       context)
+      outerScope := by
+  have outerPayloadsAtCaller :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        caller.barrier outer resources callerScope context outerScope := by
+    simpa [callerBarrierExact] using outerPayloads
+  exact
+    .cons bodyBarrier predicateScope callerScope outerScope caller outer active
+      resources cursor context callerAgrees
+      (stack.activeRest.trans callerRest)
+      stack.activeQuery stack.activeBarrier stack.activeOwnership snapshot
+      outerPayloadsAtCaller
+
+/-! ## Construction at the real activation site -/
+
+/-- One real spined activation creates the active retained resource and its
+immutable pre-head payload in the same construction.
+
+The result uses the exact `RepresentativeRetainedCallFrontier`, rather than
+destructing a later existential ownership proof and attempting to reconstruct
+call-entry history.  Persistent world/session state is deliberately absent
+from the snapshot and remains indexed only by the active state relation. -/
+theorem
+    SpinedRepresentativeProductActivation.activeResourceStackWithSnapshot
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {referenceBindings : Substitution}
+    {opened : OpenedCall} {before : OpenConf}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor}
+    {branch : ClauseBranch} {clause : PLeaTTa.Clause}
+    {branchTail : List ClauseBranch} {clauseTail : List PLeaTTa.Clause}
+    {altTail : List PLeaTTa.Alt} {copied : PLeaTTa.Clause}
+    {referencePayload : List Term}
+    {segmentReferenceRest : List PeTTaSpec.PrologCore.Goal}
+    {argsv args : List Atom} {res : Atom}
+    {segmentExecutableRest : List PLeaTTa.Goal}
+    {outer : List ControlSegment} {binding : Subst}
+    {qterm : Atom} {bodyBarrier callerBarrier startCounter : Nat}
+    {callerScope outerScope : CutScopeId}
+    {independentResult : Substitution}
+    {representative : TreeSubstitution}
+    {nextAlpha : List (LogicVar × String)}
+    {sourceCanonical flattenedRepresentative : TreeSubstitution}
+    {installed : Subst}
+    {resources : List RetainedAlternativeSegment}
+    {context : ActiveProductContext}
+    (frontier :
+      RepresentativeRetainedCallFrontier alpha opened before pending finish
+        branch clause branchTail clauseTail altTail copied argsv args res
+        (segmentExecutableRest ++ flattenExecutables outer)
+        binding qterm bodyBarrier startCounter)
+    (preHeadPayload :
+      TaskSpinePayloadAgrees alpha support canonical referenceBase
+        referenceBindings binding
+        ({ barrier := callerBarrier
+           references :=
+             .call opened.cursor.predicate referencePayload ::
+               segmentReferenceRest
+           executables :=
+             .call opened.cursor.predicate args res ::
+               segmentExecutableRest } ::
+         outer))
+    (payloadSupported :
+      AlphaTermsSupported alpha support referencePayload)
+    (openedArguments : opened.cursor.arguments = referencePayload)
+    (openedBindings : opened.cursor.bindings = referenceBindings)
+    (queryReferenceBelow :
+      GeneratedBelow finish.reservationStart (alpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ alpha.map Prod.snd →
+        name ∈
+          resolutionOccupiedVars
+            (args.map (PLeaTTa.subst binding)) res
+            (segmentExecutableRest ++ flattenExecutables outer)
+            binding qterm)
+    (activation :
+      SpinedRepresentativeProductActivation prog gt alpha support canonical
+        referenceBase opened pending finish branch branchTail altTail copied
+        segmentReferenceRest segmentExecutableRest outer qterm bodyBarrier
+        callerBarrier startCounter callerScope independentResult representative
+        nextAlpha sourceCanonical flattenedRepresentative installed)
+    (outerPayloads :
+      SourceControlResourcePayloadContextAgrees nextAlpha support qterm
+        callerBarrier outer resources callerScope context outerScope)
+    (baseAlts : List PLeaTTa.Alt)
+    (outerAlts :
+      pending.outer.alts = flattenOwnedAlts resources baseAlts) :
+    ∃ active : RetainedAlternativeSegment,
+      ∃ _snapshot : RetainedCallPayloadSnapshot nextAlpha support active
+          (finish.advance branch branchTail)
+          { barrier := callerBarrier
+            references := segmentReferenceRest
+            executables := segmentExecutableRest }
+          outer,
+        ∃ _payloadContext :
+            SourceControlResourcePayloadContextAgrees nextAlpha support qterm
+              bodyBarrier
+              ({ barrier := callerBarrier
+                 references := segmentReferenceRest
+                 executables := segmentExecutableRest } ::
+               outer)
+              (active :: resources) opened.scope
+              ({ callerScope := callerScope
+                 predicateScope := opened.scope
+                 retained :=
+                   .clauses opened.scope
+                     (finish.advance branch branchTail)
+                 callerRest := segmentReferenceRest } ::
+               context)
+              outerScope,
+          ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
+          callerBarrier pending (finish.advance branch branchTail)
+          (segmentExecutableRest ++ flattenExecutables outer)
+          altTail active outer resources callerScope outerScope context
+          baseAlts
+          (activatedOpenSuccessor pending copied
+            (segmentExecutableRest ++ flattenExecutables outer)
+            qterm installed) := by
+  let advanced := finish.advance branch branchTail
+  have advancedRemaining : advanced.remaining = branchTail := by
+    simp [advanced, PreparedCursor.advance]
+  have advancedContext :
+      CursorCallContext advanced opened.cursor.callGeneration
+        opened.cursor.predicate opened.cursor.arguments
+        opened.cursor.bindings :=
+    frontier.finishContext.advance branch branchTail
+  have advancedWellFormed : advanced.WellFormed :=
+    finish.advance_wellFormed frontier.finishWellFormed
+      frontier.finishRemaining
+  have queryAtAdvanced :
+      RepresentativeNormalizedCallAgrees alpha advanced argsv
+        (PLeaTTa.subst binding res) :=
+    PLeaTTa.PrologRepresentativeCallFrontierBridge.CursorCallContext.representativeNormalizedCallAgrees
+      advancedContext frontier.finishContext frontier.query
+  have ownership :
+      RetainedCursorAlternativeOwnership alpha advanced argsv args res
+        (segmentExecutableRest ++ flattenExecutables outer)
+        binding qterm bodyBarrier (startCounter + 1) altTail
+        pending.persistent.counter :=
+    retainedCursorAlternativeOwnership_of_scan advancedRemaining
+      advancedContext advancedWellFormed queryAtAdvanced
+      frontier.substitutedArgs frontier.tailSupported frontier.tailArities
+      frontier.tailScan
+  let active : RetainedAlternativeSegment :=
+    { argsv := argsv
+      args := args
+      res := res
+      rest := segmentExecutableRest ++ flattenExecutables outer
+      binding := binding
+      qterm := qterm
+      barrier := bodyBarrier
+      counter := startCounter + 1
+      alts := altTail
+      finalCounter := pending.persistent.counter }
+  have activeOwnership : active.Owns nextAlpha advanced :=
+    RetainedCursorAlternativeOwnership.mono activation.alphaIncluded ownership
+  have alignment :
+      SourceControlResourceContextAgrees nextAlpha qterm callerBarrier outer
+        resources callerScope context outerScope :=
+    outerPayloads.alignment
+  have actualAlts :
+      (activatedOpenSuccessor pending copied
+        (segmentExecutableRest ++ flattenExecutables outer)
+        qterm installed).control.alts =
+        flattenOwnedAlts (active :: resources) baseAlts := by
+    change
+      (activatedExecutableSuccessor pending copied
+        (segmentExecutableRest ++ flattenExecutables outer)
+        qterm installed).alts =
+          active.alts ++ PLeaTTa.Alt.barrier ::
+            flattenOwnedAlts resources baseAlts
+    rw [activation.retainedAlts, outerAlts]
+  have stack :
+      ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
+        callerBarrier pending advanced
+        (segmentExecutableRest ++ flattenExecutables outer)
+        altTail active outer resources callerScope outerScope context
+        baseAlts
+        (activatedOpenSuccessor pending copied
+          (segmentExecutableRest ++ flattenExecutables outer)
+          qterm installed) := by
+    exact
+      ⟨rfl, rfl, rfl, rfl, rfl, activeOwnership, alignment, outerAlts,
+        actualAlts⟩
+  have advancedArguments : advanced.arguments = referencePayload := by
+    exact advancedContext.arguments_eq.trans openedArguments
+  have advancedBindings : advanced.bindings = referenceBindings := by
+    exact advancedContext.bindings_eq.trans openedBindings
+  have advancedBelow :
+      GeneratedBelow advanced.reservationStart (alpha.map Prod.fst) := by
+    have reserved := frontier.finishWellFormed.1
+    unfold PreparedCursor.WellReserved at reserved
+    rw [frontier.finishRemaining] at reserved
+    cases reserved with
+    | cons _ _ _ _ startsAbove nonemptyInterval _ =>
+        exact
+          queryReferenceBelow.mono
+            (Nat.le_trans startsAbove nonemptyInterval)
+  have snapshot :
+      RetainedCallPayloadSnapshot nextAlpha support active advanced
+        { barrier := callerBarrier
+          references := segmentReferenceRest
+          executables := segmentExecutableRest }
+        outer := by
+    refine
+      { snapshotAlpha := alpha
+        canonical := canonical
+        referenceBase := referenceBase
+        referencePayload := referencePayload
+        alphaIncluded := activation.alphaIncluded
+        allocationGap := by
+          apply AlphaAllocationGap.of_frontier
+          simpa [active, advanced, PreparedCursor.advance] using
+            activation.selectionFresh
+        cursorArguments := advancedArguments
+        payloadSupported := payloadSupported
+        queryReferenceBelow := advancedBelow
+        queryExecutableLive := ?_
+        queryExecutableBelow := ?_
+        resourceRest := rfl
+        payload := ?_ }
+    · simpa [active] using queryExecutableLive
+    · have oldBound :
+          resolutionSeedHighWaterNames
+              (resolutionOccupiedVars
+                (args.map (PLeaTTa.subst binding)) res
+                (segmentExecutableRest ++ flattenExecutables outer)
+                binding qterm) ≤
+            startCounter := by
+        simpa only [frontier.substitutedArgs] using frontier.highWater
+      simpa [active] using
+        Nat.le_trans oldBound (Nat.le_succ startCounter)
+    · simpa [active, advancedContext.predicate_eq, advancedBindings] using
+        preHeadPayload
+  let caller : ControlSegment :=
+    { barrier := callerBarrier
+      references := segmentReferenceRest
+      executables := segmentExecutableRest }
+  have callerAgrees : caller.Agrees nextAlpha := by
+    simpa [caller] using activation.spinePayload.control.tail.head
+  have payloadContext :
+      SourceControlResourcePayloadContextAgrees nextAlpha support qterm
+        bodyBarrier (caller :: outer) (active :: resources) opened.scope
+        ({ callerScope := callerScope
+           predicateScope := opened.scope
+           retained := .clauses opened.scope advanced
+           callerRest := caller.references } ::
+         context)
+        outerScope :=
+    _root_.PLeaTTa.PrologRetainedPayloadSnapshotBridge.ActiveProductResourceStackAgrees.prependPayloadContext
+      stack rfl rfl callerAgrees snapshot outerPayloads
+  have payloadContextExact :
+      SourceControlResourcePayloadContextAgrees nextAlpha support qterm
+        bodyBarrier
+        ({ barrier := callerBarrier
+           references := segmentReferenceRest
+           executables := segmentExecutableRest } ::
+         outer)
+        (active :: resources) opened.scope
+        ({ callerScope := callerScope
+           predicateScope := opened.scope
+           retained := .clauses opened.scope advanced
+           callerRest := segmentReferenceRest } ::
+         context)
+        outerScope := by
+    simpa [caller] using payloadContext
+  exact ⟨active, snapshot, payloadContextExact, stack⟩
+
+end PLeaTTa.PrologRetainedPayloadSnapshotBridge

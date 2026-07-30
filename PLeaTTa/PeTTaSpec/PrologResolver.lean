@@ -647,6 +647,22 @@ theorem FreshReservation.member_next_le_final
       · exact tailReserved.final_ge_start
       · exact inductionHypothesis later
 
+/-- Every retained branch advertises a nonempty (possibly zero-width)
+allocation interval.  This projects the per-cell fact stored by
+`FreshReservation` for an arbitrary member. -/
+theorem FreshReservation.member_first_le_next
+    {freshSeed finalFresh : Nat} {branches : List ClauseBranch}
+    (reserved : FreshReservation freshSeed branches finalFresh)
+    {branch : ClauseBranch} (member : branch ∈ branches) :
+    branch.firstFresh ≤ branch.nextFresh := by
+  induction reserved with
+  | nil => simp at member
+  | cons freshSeed head tail finalFresh startsAbove nonemptyInterval
+      tailReserved inductionHypothesis =>
+      rcases List.mem_cons.mp member with rfl | later
+      · exact nonemptyInterval
+      · exact inductionHypothesis later
+
 /-- Every retained branch starts at or above the reservation's initial
 high-water. -/
 theorem FreshReservation.start_le_member_first

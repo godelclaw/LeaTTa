@@ -268,7 +268,7 @@ theorem
     {segmentReferenceRest : List PeTTaSpec.PrologCore.Goal}
     {segmentExecutableRest : List PLeaTTa.Goal}
     {outer : List ControlSegment}
-    {qterm : Atom} {bodyBarrier callerBarrier : Nat}
+    {qterm : Atom} {bodyBarrier callerBarrier startCounter : Nat}
     {callerScope : CutScopeId}
     {independentResult : Substitution}
     {representative : TreeSubstitution}
@@ -279,8 +279,8 @@ theorem
       SpinedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
         segmentReferenceRest segmentExecutableRest outer qterm bodyBarrier
-        callerBarrier callerScope independentResult representative nextAlpha
-        sourceCanonical flattenedRepresentative installed)
+        callerBarrier startCounter callerScope independentResult representative
+        nextAlpha sourceCanonical flattenedRepresentative installed)
     (context : ActiveProductContext) :
     RawStep opened.session
       (ActiveProductContext.plug context
@@ -314,7 +314,7 @@ theorem
     {segmentReferenceRest : List PeTTaSpec.PrologCore.Goal}
     {segmentExecutableRest : List PLeaTTa.Goal}
     {outer : List ControlSegment}
-    {qterm : Atom} {bodyBarrier callerBarrier : Nat}
+    {qterm : Atom} {bodyBarrier callerBarrier startCounter : Nat}
     {callerScope outerScope : CutScopeId}
     {independentResult : Substitution}
     {representative : TreeSubstitution}
@@ -326,8 +326,8 @@ theorem
       SpinedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
         segmentReferenceRest segmentExecutableRest outer qterm bodyBarrier
-        callerBarrier callerScope independentResult representative nextAlpha
-        sourceCanonical flattenedRepresentative installed)
+        callerBarrier startCounter callerScope independentResult representative
+        nextAlpha sourceCanonical flattenedRepresentative installed)
     (alignment :
       SourceControlContextAgrees nextAlpha callerScope outer context
         outerScope) :

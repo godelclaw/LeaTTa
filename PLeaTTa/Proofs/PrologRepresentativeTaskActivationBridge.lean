@@ -21,6 +21,7 @@ open PeTTaSpec.PrologCore.Resolver
 open PrologGoalAlpha
 open PrologAlphaFreshFrontierBridge
 open PrologCallPayloadBridge
+open PrologCallEntryBridge
 open PrologMguBridge
 open PrologMguComposition
 open PrologMguOpenAgreement
@@ -92,6 +93,319 @@ recursive call.
 The result is deliberately stronger than a bare `TaskPayloadAgrees`: the
 selected successor representative remains visible, so a later call or
 backtracking proof cannot silently choose a different variant witness. -/
+theorem
+    SupportedPreparedCandidateAgrees.unifyB_body_cumulativeWith_of_headResolution_extension
+    {payloadAlpha ambientAlpha support : List (LogicVar × String)}
+    {oldCanonical residualRepresentative : TreeSubstitution}
+    {referenceBase : Substitution}
+    {cursor : PreparedCursor} {branch : ClauseBranch}
+    {clause : PLeaTTa.Clause}
+    {args : List Atom} {result : Atom} {rest : List PLeaTTa.Goal}
+    {binding : Subst} {qterm : Atom} {seed barrier : Nat}
+    {referenceFrontier executableFrontier : Nat}
+    {protectedExecutableEnd : Nat}
+    {independentResult : Substitution}
+    (oldCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        payloadAlpha support oldCanonical referenceBase binding
+        residualRepresentative)
+    (query :
+      RepresentativeNormalizedCallAgreesWith payloadAlpha cursor
+        (args.map (PLeaTTa.subst binding))
+        (PLeaTTa.subst binding result)
+        residualRepresentative referenceBase)
+    (cursorBindingShape :
+      cursor.bindings =
+        TreeSubstitution.reify oldCanonical ++ referenceBase)
+    (oldCanonicalWellFormed : oldCanonical.WellFormed)
+    (wellFormed : cursor.WellFormed)
+    (member : branch ∈ cursor.remaining)
+    (agreement :
+      SupportedPreparedCandidateAgrees cursor.callGeneration
+        cursor.predicate cursor.arguments cursor.bindings branch clause)
+    (arity : clause.params.length = args.length)
+    (payloadIncluded :
+      ∀ pair, pair ∈ payloadAlpha → pair ∈ ambientAlpha)
+    (ambientShared : SharedRuntimeAlpha ambientAlpha)
+    (payloadReferenceBelow :
+      GeneratedBelow cursor.reservationStart (payloadAlpha.map Prod.fst))
+    (highWater :
+      resolutionSeedHighWaterNames
+        (resolutionOccupiedVars
+          (args.map (PLeaTTa.subst binding)) result rest binding qterm) ≤
+        seed)
+    (ambientFresh :
+      AlphaFreshFrontier ambientAlpha referenceFrontier executableFrontier)
+    (referenceEnd : branch.nextFresh ≤ referenceFrontier)
+    (executableEnd : seed + 1 ≤ executableFrontier)
+    (ambientGap :
+      AlphaAllocationGap ambientAlpha cursor.reservationStart
+        cursor.reservedUntil seed protectedExecutableEnd)
+    (seedReserved : seed + 1 ≤ protectedExecutableEnd)
+    (live :
+      AlphaRuntimeNamesLive support
+        ((freshenResolutionClause
+            (args.map (PLeaTTa.subst binding)) args result rest binding
+            qterm seed barrier clause).body ++ rest)
+        qterm)
+    (resolved : HeadResolution branch independentResult) :
+    ∃ alpha sourceCanonical flattened generated installed,
+      SharedRuntimeAlpha alpha ∧
+      (∀ pair, pair ∈ ambientAlpha → pair ∈ alpha) ∧
+      AlphaFreshFrontier alpha referenceFrontier executableFrontier ∧
+      AlphaAllocationGap alpha branch.nextFresh cursor.reservedUntil
+        (seed + 1) protectedExecutableEnd ∧
+      independentResult =
+        TreeSubstitution.reify (sourceCanonical ++ oldCanonical) ++
+          referenceBase ∧
+      OrderedTreeMgu
+        (denoteEquations branch.normalizedHeadEquations) sourceCanonical ∧
+      PLeaTTa.unifyTopExact
+          (.expr ((args ++ [result]).map (PLeaTTa.subst binding)))
+          (.expr
+            (((freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).params ++
+              [(freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).result]).map
+              (PLeaTTa.subst binding))) =
+        some generated ∧
+      PLeaTTa.unifyB binding (.expr (args ++ [result]))
+          (.expr
+            ((freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).params ++
+              [(freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).result])) =
+        some installed ∧
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support (sourceCanonical ++ oldCanonical) referenceBase
+        (PLeaTTa.trimFor
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body ++ rest)
+          qterm installed)
+        (flattened ++ residualRepresentative) ∧
+      TaskPayloadAgrees alpha support barrier
+        (sourceCanonical ++ oldCanonical) referenceBase independentResult
+        (PLeaTTa.trimFor
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body ++ rest)
+          qterm installed)
+        branch.body
+        (freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args result rest binding
+          qterm seed barrier clause).body := by
+  obtain
+    ⟨alpha, sourceCanonical, representative, _semanticCanonical,
+      flattened, generated, installed, shared, queryIncluded, freshFrontier,
+      allocationGap, bodyControl, representativeExact, independentShape,
+      sourceOrdered,
+      successorVariants, _semanticOrdered, _equationAgreement,
+      generatedExact, generatedAgreement, flattenedTopological,
+      ⟨generatedTopological⟩, generatedValuation, _flattenedMgu,
+      _flattenedFactors, _semanticFactors, installedExact,
+      installedShape⟩ :=
+    PLeaTTa.PrologRepresentativeActivationBridge.SupportedPreparedCandidateAgrees.unifyB_representativeWith_of_headResolution_extension
+      (barrier := barrier) query wellFormed member agreement arity
+      payloadIncluded ambientShared payloadReferenceBelow highWater
+      ambientFresh referenceEnd executableEnd ambientGap seedReserved resolved
+  have branchBindings : branch.bindings = cursor.bindings :=
+    PLeaTTa.PrologRepresentativeTaskActivationBridge.SupportedPreparedCandidateAgrees.branch_bindings_eq
+      agreement
+  have sourceWellFormed : sourceCanonical.WellFormed :=
+    sourceOrdered.binding_wellFormed
+      (denoteEquations_wellFormed branch.normalizedHeadEquations)
+  have compositeWellFormed :
+      (sourceCanonical ++ oldCanonical).WellFormed :=
+    sourceWellFormed.append oldCanonicalWellFormed
+  have compositeResultShape :
+      independentResult =
+        TreeSubstitution.reify (sourceCanonical ++ oldCanonical) ++
+          referenceBase := by
+    calc
+      independentResult =
+          TreeSubstitution.reify sourceCanonical ++ branch.bindings :=
+        independentShape
+      _ =
+          TreeSubstitution.reify sourceCanonical ++
+            (TreeSubstitution.reify oldCanonical ++ referenceBase) := by
+        rw [branchBindings, cursorBindingShape]
+      _ =
+          TreeSubstitution.reify (sourceCanonical ++ oldCanonical) ++
+            referenceBase := by
+        rw [
+          PLeaTTa.PrologSequentialMgu.TreeSubstitution.reify_append]
+        simp only [List.append_assoc]
+  have normalizedEquationShape :
+      denoteEquations branch.normalizedHeadEquations =
+        TreeSubstitution.applyEquations
+          (oldCanonical ++ Substitution.denote referenceBase)
+          (denoteEquations branch.headEquations) := by
+    rw [ClauseBranch.denote_normalizedHeadEquations, branchBindings,
+      cursorBindingShape, Substitution.denote_append,
+      TreeSubstitution.denote_reify oldCanonicalWellFormed]
+  have sourceEquationsAvoidOld :
+      TreeEquationsVariablesSatisfy
+        (fun identity =>
+          identity ∉ TreeSubstitution.keys oldCanonical)
+        (denoteEquations branch.normalizedHeadEquations) := by
+    rw [normalizedEquationShape]
+    exact
+      PLeaTTa.PrologMguComposition.TreeSubstitutionTopological.applyEquations_append_avoids
+        (older := Substitution.denote referenceBase)
+        oldCumulative.canonicalTopological
+        (denoteEquations branch.headEquations)
+  have sourceCompositeTopological :
+      TreeSubstitutionTopological (sourceCanonical ++ oldCanonical) :=
+    PrologSequentialMgu.OrderedTreeMgu.prepend_topological_of_equations_avoid
+      oldCumulative.canonicalTopological sourceOrdered
+      sourceEquationsAvoidOld
+  have cumulativeVariants :
+      TreeSubstitutionVariants
+        ((sourceCanonical ++ oldCanonical) ++
+          Substitution.denote referenceBase)
+        ((flattened ++ residualRepresentative) ++
+          Substitution.denote referenceBase) := by
+    have variants := successorVariants
+    rw [compositeResultShape, Substitution.denote_append,
+      TreeSubstitution.denote_reify compositeWellFormed,
+      representativeExact] at variants
+    simpa [List.append_assoc] using variants
+  have successorRepresentativeCovered :
+      TreeSubstitutionVariablesSatisfy
+        (AlphaCovers alpha)
+        (flattened ++ residualRepresentative) :=
+    treeSubstitutionVariablesSatisfy_append
+      generatedAgreement.variablesSatisfy
+      (PLeaTTa.PrologRepresentativeTaskActivationBridge.TreeSubstitutionVariablesSatisfy.monoAlpha
+        (fun pair member =>
+          queryIncluded pair (payloadIncluded pair member))
+        oldCumulative.representativeCovered)
+  rcases oldCumulative.runtimeTopological with ⟨bindingTopological⟩
+  have resolvedAvoids (atom : Atom) :
+      PLeaTTa.AtomAvoids binding (PLeaTTa.subst binding atom) := by
+    intro name nameMember
+    exact bindingTopological.subst_resolvesDomain
+      binding atom name nameMember
+  have leftAvoids :
+      PLeaTTa.AtomAvoids binding
+        (.expr ((args ++ [result]).map (PLeaTTa.subst binding))) := by
+    simpa only [PLeaTTa.subst_expr] using
+      resolvedAvoids (.expr (args ++ [result]))
+  have rightAvoids :
+      PLeaTTa.AtomAvoids binding
+        (.expr
+          (((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).params ++
+            [(freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).result]).map
+            (PLeaTTa.subst binding))) := by
+    simpa only [PLeaTTa.subst_expr] using
+      resolvedAvoids
+        (.expr
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).params ++
+            [(freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).result]))
+  have generatedAvoidsBinding :
+      PLeaTTa.SubstEntriesAvoid binding generated :=
+    PLeaTTa.unifyTopExact_avoidsExternal binding
+      (.expr ((args ++ [result]).map (PLeaTTa.subst binding)))
+      (.expr
+        (((freshenResolutionClause
+            (args.map (PLeaTTa.subst binding)) args result rest binding
+            qterm seed barrier clause).params ++
+          [(freshenResolutionClause
+            (args.map (PLeaTTa.subst binding)) args result rest binding
+            qterm seed barrier clause).result]).map
+          (PLeaTTa.subst binding)))
+      generated leftAvoids rightAvoids generatedExact
+  have installedShape' :
+      installed = installGenerated generated binding := by
+    cases generated with
+    | nil =>
+        simpa [installGenerated] using installedShape
+    | cons head tail =>
+        simpa [installGenerated] using installedShape
+  have installedTopological :
+      PLeaTTa.SubstTopological installed := by
+    rw [installedShape']
+    exact
+      installGeneratedTopological bindingTopological generatedTopological
+        generatedAvoidsBinding
+  have oldValuation :
+      AlphaValuationAgreesOn alpha support
+        (residualRepresentative ++ Substitution.denote referenceBase)
+        binding :=
+    PLeaTTa.PrologRepresentativeTaskActivationBridge.AlphaValuationAgreesOn.monoAlpha
+      (fun pair member =>
+        queryIncluded pair (payloadIncluded pair member))
+      oldCumulative.valuation
+  have installedValuation :
+      AlphaValuationAgreesOn alpha support
+        ((flattened ++ residualRepresentative) ++
+          Substitution.denote referenceBase)
+        installed := by
+    have lifted :
+        AlphaValuationAgreesOn alpha support
+          (flattened ++
+            (residualRepresentative ++ Substitution.denote referenceBase))
+          (installGenerated generated binding) :=
+      AlphaValuationAgreesOn.installGenerated_compose
+        oldValuation bindingTopological generatedTopological
+        generatedAvoidsBinding generatedValuation
+    intro identity name linked
+    rw [installedShape']
+    simpa [List.append_assoc] using lifted linked
+  have installedCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support (sourceCanonical ++ oldCanonical) referenceBase
+        installed (flattened ++ residualRepresentative) :=
+    ⟨cumulativeVariants, sourceCompositeTopological,
+      successorRepresentativeCovered, ⟨installedTopological⟩,
+      installedValuation⟩
+  have trimmedCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support (sourceCanonical ++ oldCanonical) referenceBase
+        (PLeaTTa.trimFor
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body ++ rest)
+          qterm installed)
+        (flattened ++ residualRepresentative) :=
+    installedCumulative.trimFor live
+  have task :
+      TaskPayloadAgrees alpha support barrier
+        (sourceCanonical ++ oldCanonical) referenceBase independentResult
+        (PLeaTTa.trimFor
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body ++ rest)
+          qterm installed)
+        branch.body
+        (freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args result rest binding
+          qterm seed barrier clause).body :=
+    ⟨shared, compositeWellFormed, compositeResultShape,
+      NormalizedAlphaGoalsAgree.ofAlphaGoalsAgree bodyControl,
+      trimmedCumulative.weak⟩
+  exact
+    ⟨alpha, sourceCanonical, flattened, generated, installed,
+      shared, queryIncluded, freshFrontier, allocationGap,
+      compositeResultShape,
+      sourceOrdered,
+      generatedExact, installedExact, trimmedCumulative, task⟩
+
+/-- Immediate-call compatibility view of
+`unifyB_body_cumulativeWith_of_headResolution_extension`. -/
 theorem
     SupportedPreparedCandidateAgrees.unifyB_body_cumulativeWith_of_headResolution
     {queryAlpha support : List (LogicVar × String)}
@@ -189,203 +503,65 @@ theorem
         (freshenResolutionClause
           (args.map (PLeaTTa.subst binding)) args result rest binding
           qterm seed barrier clause).body := by
-  obtain
-    ⟨alpha, sourceCanonical, representative, _semanticCanonical,
-      flattened, generated, installed, shared, queryIncluded, freshFrontier,
-      bodyControl, representativeExact, independentShape, sourceOrdered,
-      successorVariants, _semanticOrdered, _equationAgreement,
-      generatedExact, generatedAgreement, flattenedTopological,
-      ⟨generatedTopological⟩, generatedValuation, _flattenedMgu,
-      _flattenedFactors, _semanticFactors, installedExact,
-      installedShape⟩ :=
-    PLeaTTa.PrologRepresentativeActivationBridge.SupportedPreparedCandidateAgrees.unifyB_representativeWith_of_headResolution
-      (barrier := barrier) query wellFormed member agreement arity queryShared
-      queryReferenceBelow queryExecutableLive highWater resolved
-  have branchBindings : branch.bindings = cursor.bindings :=
-    PLeaTTa.PrologRepresentativeTaskActivationBridge.SupportedPreparedCandidateAgrees.branch_bindings_eq
-      agreement
-  have sourceWellFormed : sourceCanonical.WellFormed :=
-    sourceOrdered.binding_wellFormed
-      (denoteEquations_wellFormed branch.normalizedHeadEquations)
-  have compositeWellFormed :
-      (sourceCanonical ++ oldCanonical).WellFormed :=
-    sourceWellFormed.append oldCanonicalWellFormed
-  have compositeResultShape :
-      independentResult =
-        TreeSubstitution.reify (sourceCanonical ++ oldCanonical) ++
-          referenceBase := by
-    calc
-      independentResult =
-          TreeSubstitution.reify sourceCanonical ++ branch.bindings :=
-        independentShape
-      _ =
-          TreeSubstitution.reify sourceCanonical ++
-            (TreeSubstitution.reify oldCanonical ++ referenceBase) := by
-        rw [branchBindings, cursorBindingShape]
-      _ =
-          TreeSubstitution.reify (sourceCanonical ++ oldCanonical) ++
-            referenceBase := by
-        rw [
-          PLeaTTa.PrologSequentialMgu.TreeSubstitution.reify_append]
-        simp only [List.append_assoc]
-  have normalizedEquationShape :
-      denoteEquations branch.normalizedHeadEquations =
-        TreeSubstitution.applyEquations
-          (oldCanonical ++ Substitution.denote referenceBase)
-          (denoteEquations branch.headEquations) := by
-    rw [ClauseBranch.denote_normalizedHeadEquations, branchBindings,
-      cursorBindingShape, Substitution.denote_append,
-      TreeSubstitution.denote_reify oldCanonicalWellFormed]
-  have sourceEquationsAvoidOld :
-      TreeEquationsVariablesSatisfy
-        (fun identity =>
-          identity ∉ TreeSubstitution.keys oldCanonical)
-        (denoteEquations branch.normalizedHeadEquations) := by
-    rw [normalizedEquationShape]
-    exact
-      PLeaTTa.PrologMguComposition.TreeSubstitutionTopological.applyEquations_append_avoids
-        (older := Substitution.denote referenceBase)
-        oldCumulative.canonicalTopological
-        (denoteEquations branch.headEquations)
-  have sourceCompositeTopological :
-      TreeSubstitutionTopological (sourceCanonical ++ oldCanonical) :=
-    PrologSequentialMgu.OrderedTreeMgu.prepend_topological_of_equations_avoid
-      oldCumulative.canonicalTopological sourceOrdered
-      sourceEquationsAvoidOld
-  have cumulativeVariants :
-      TreeSubstitutionVariants
-        ((sourceCanonical ++ oldCanonical) ++
-          Substitution.denote referenceBase)
-        ((flattened ++ residualRepresentative) ++
-          Substitution.denote referenceBase) := by
-    have variants := successorVariants
-    rw [compositeResultShape, Substitution.denote_append,
-      TreeSubstitution.denote_reify compositeWellFormed,
-      representativeExact] at variants
-    simpa [List.append_assoc] using variants
-  have successorRepresentativeCovered :
-      TreeSubstitutionVariablesSatisfy
-        (AlphaCovers alpha)
-        (flattened ++ residualRepresentative) :=
-    treeSubstitutionVariablesSatisfy_append
-      generatedAgreement.variablesSatisfy
-      (PLeaTTa.PrologRepresentativeTaskActivationBridge.TreeSubstitutionVariablesSatisfy.monoAlpha
-        queryIncluded oldCumulative.representativeCovered)
-  rcases oldCumulative.runtimeTopological with ⟨bindingTopological⟩
-  have resolvedAvoids (atom : Atom) :
-      PLeaTTa.AtomAvoids binding (PLeaTTa.subst binding atom) := by
-    intro name nameMember
-    exact bindingTopological.subst_resolvesDomain
-      binding atom name nameMember
-  have leftAvoids :
-      PLeaTTa.AtomAvoids binding
-        (.expr ((args ++ [result]).map (PLeaTTa.subst binding))) := by
-    simpa only [PLeaTTa.subst_expr] using
-      resolvedAvoids (.expr (args ++ [result]))
-  have rightAvoids :
-      PLeaTTa.AtomAvoids binding
-        (.expr
-          (((freshenResolutionClause
-              (args.map (PLeaTTa.subst binding)) args result rest binding
-              qterm seed barrier clause).params ++
-            [(freshenResolutionClause
-              (args.map (PLeaTTa.subst binding)) args result rest binding
-              qterm seed barrier clause).result]).map
-            (PLeaTTa.subst binding))) := by
-    simpa only [PLeaTTa.subst_expr] using
-      resolvedAvoids
-        (.expr
-          ((freshenResolutionClause
-              (args.map (PLeaTTa.subst binding)) args result rest binding
-              qterm seed barrier clause).params ++
-            [(freshenResolutionClause
-              (args.map (PLeaTTa.subst binding)) args result rest binding
-              qterm seed barrier clause).result]))
-  have generatedAvoidsBinding :
-      PLeaTTa.SubstEntriesAvoid binding generated :=
-    PLeaTTa.unifyTopExact_avoidsExternal binding
-      (.expr ((args ++ [result]).map (PLeaTTa.subst binding)))
-      (.expr
-        (((freshenResolutionClause
-            (args.map (PLeaTTa.subst binding)) args result rest binding
-            qterm seed barrier clause).params ++
-          [(freshenResolutionClause
-            (args.map (PLeaTTa.subst binding)) args result rest binding
-            qterm seed barrier clause).result]).map
-          (PLeaTTa.subst binding)))
-      generated leftAvoids rightAvoids generatedExact
-  have installedShape' :
-      installed = installGenerated generated binding := by
-    cases generated with
-    | nil =>
-        simpa [installGenerated] using installedShape
-    | cons head tail =>
-        simpa [installGenerated] using installedShape
-  have installedTopological :
-      PLeaTTa.SubstTopological installed := by
-    rw [installedShape']
-    exact
-      installGeneratedTopological bindingTopological generatedTopological
-        generatedAvoidsBinding
-  have oldValuation :
-      AlphaValuationAgreesOn alpha support
-        (residualRepresentative ++ Substitution.denote referenceBase)
-        binding :=
-    PLeaTTa.PrologRepresentativeTaskActivationBridge.AlphaValuationAgreesOn.monoAlpha
-      queryIncluded oldCumulative.valuation
-  have installedValuation :
-      AlphaValuationAgreesOn alpha support
-        ((flattened ++ residualRepresentative) ++
-          Substitution.denote referenceBase)
-        installed := by
-    have lifted :
-        AlphaValuationAgreesOn alpha support
-          (flattened ++
-            (residualRepresentative ++ Substitution.denote referenceBase))
-          (installGenerated generated binding) :=
-      AlphaValuationAgreesOn.installGenerated_compose
-        oldValuation bindingTopological generatedTopological
-        generatedAvoidsBinding generatedValuation
-    intro identity name linked
-    rw [installedShape']
-    simpa [List.append_assoc] using lifted linked
-  have installedCumulative :
-      AlphaCumulativeResidualVariantAgreesOnWith
-        alpha support (sourceCanonical ++ oldCanonical) referenceBase
-        installed (flattened ++ residualRepresentative) :=
-    ⟨cumulativeVariants, sourceCompositeTopological,
-      successorRepresentativeCovered, ⟨installedTopological⟩,
-      installedValuation⟩
-  have trimmedCumulative :
-      AlphaCumulativeResidualVariantAgreesOnWith
-        alpha support (sourceCanonical ++ oldCanonical) referenceBase
-        (PLeaTTa.trimFor
-          ((freshenResolutionClause
-              (args.map (PLeaTTa.subst binding)) args result rest binding
-              qterm seed barrier clause).body ++ rest)
-          qterm installed)
-        (flattened ++ residualRepresentative) :=
-    installedCumulative.trimFor live
-  have task :
-      TaskPayloadAgrees alpha support barrier
-        (sourceCanonical ++ oldCanonical) referenceBase independentResult
-        (PLeaTTa.trimFor
-          ((freshenResolutionClause
-              (args.map (PLeaTTa.subst binding)) args result rest binding
-              qterm seed barrier clause).body ++ rest)
-          qterm installed)
-        branch.body
-        (freshenResolutionClause
-          (args.map (PLeaTTa.subst binding)) args result rest binding
-          qterm seed barrier clause).body :=
-    ⟨shared, compositeWellFormed, compositeResultShape,
-      NormalizedAlphaGoalsAgree.ofAlphaGoalsAgree bodyControl,
-      trimmedCumulative.weak⟩
-  exact
-    ⟨alpha, sourceCanonical, flattened, generated, installed,
-      shared, queryIncluded, freshFrontier, compositeResultShape,
-      sourceOrdered,
-      generatedExact, installedExact, trimmedCumulative, task⟩
+  cases agreement with
+  | intro reference freshSeed _ base encoding bodySupported =>
+      have startsAbove :
+          cursor.reservationStart ≤
+            (reference.clause.freshCopy freshSeed).firstFresh := by
+        have starts := wellFormed.1.start_le_member_first member
+        simpa [preparedBranchOf] using starts
+      have queryEnd :
+          cursor.reservationStart ≤
+            (reference.clause.freshCopy freshSeed).nextFresh := by
+        exact Nat.le_trans startsAbove (by
+          rw [reference.clause.freshCopy_next]
+          exact Nat.le_add_right _ _)
+      have queryFresh :
+          AlphaFreshFrontier queryAlpha
+            (preparedBranchOf cursor.callGeneration cursor.arguments
+              cursor.bindings freshSeed reference).nextFresh
+            (seed + 1) := by
+        constructor
+        · simpa [preparedBranchOf] using
+            queryReferenceBelow.mono queryEnd
+        · exact Nat.le_trans
+            (Nat.le_trans
+              (resolutionSeedHighWaterNames_le_of_subset
+                queryExecutableLive)
+              highWater)
+            (Nat.le_add_right seed 1)
+      have supported :
+          SupportedPreparedCandidateAgrees cursor.callGeneration
+            cursor.predicate cursor.arguments cursor.bindings
+            (preparedBranchOf cursor.callGeneration cursor.arguments
+              cursor.bindings freshSeed reference)
+            clause :=
+        .intro reference freshSeed clause base encoding bodySupported
+      have queryLowFrontier :
+          AlphaFreshFrontier queryAlpha cursor.reservationStart seed := by
+        constructor
+        · exact queryReferenceBelow
+        · exact Nat.le_trans
+            (resolutionSeedHighWaterNames_le_of_subset
+              queryExecutableLive)
+            highWater
+      have queryGap :
+          AlphaAllocationGap queryAlpha cursor.reservationStart
+            cursor.reservedUntil seed (seed + 1) :=
+        AlphaAllocationGap.of_frontier queryLowFrontier
+      obtain
+        ⟨alpha, sourceCanonical, flattened, generated, installed,
+          resultBundle⟩ :=
+        SupportedPreparedCandidateAgrees.unifyB_body_cumulativeWith_of_headResolution_extension
+          oldCumulative query cursorBindingShape oldCanonicalWellFormed
+          wellFormed member supported arity (fun _ member => member)
+          queryShared queryReferenceBelow highWater queryFresh
+          (Nat.le_refl _) (Nat.le_refl _) queryGap (Nat.le_refl _) live
+          resolved
+      exact
+        ⟨alpha, sourceCanonical, flattened, generated, installed,
+          resultBundle.1, resultBundle.2.1, resultBundle.2.2.1,
+          resultBundle.2.2.2.2⟩
 
 /-! ## Anti-vacuity: previously bound support really composes -/
 

@@ -489,7 +489,7 @@ theorem
     {callerReferences : List PeTTaSpec.PrologCore.Goal}
     {callerExecutables : List PLeaTTa.Goal}
     {outer : List ControlSegment}
-    {qterm : Atom} {bodyBarrier callerBarrier : Nat}
+    {qterm : Atom} {bodyBarrier callerBarrier startCounter : Nat}
     {callerScope : CutScopeId}
     {independentResult : Substitution}
     {representative : TreeSubstitution}
@@ -500,8 +500,8 @@ theorem
       SpinedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
         callerReferences callerExecutables outer qterm bodyBarrier
-        callerBarrier callerScope independentResult representative nextAlpha
-        sourceCanonical flattenedRepresentative installed) :
+        callerBarrier startCounter callerScope independentResult representative
+        nextAlpha sourceCanonical flattenedRepresentative installed) :
     SpinedActiveProductRelates (AlphaFreshFrontier nextAlpha) nextAlpha support
       (sourceCanonical ++ canonical) referenceBase opened pending finish branch
       branchTail altTail bodyBarrier callerBarrier branch.body copied.body
@@ -559,7 +559,7 @@ theorem
     {callerReferences : List PeTTaSpec.PrologCore.Goal}
     {callerExecutables : List PLeaTTa.Goal}
     {outer : List ControlSegment}
-    {qterm : Atom} {bodyBarrier callerBarrier : Nat}
+    {qterm : Atom} {bodyBarrier callerBarrier startCounter : Nat}
     {callerScope outerScope : CutScopeId}
     {independentResult : Substitution}
     {representative : TreeSubstitution}
@@ -572,8 +572,8 @@ theorem
       SpinedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
         callerReferences callerExecutables outer qterm bodyBarrier
-        callerBarrier callerScope independentResult representative nextAlpha
-        sourceCanonical flattenedRepresentative installed)
+        callerBarrier startCounter callerScope independentResult representative
+        nextAlpha sourceCanonical flattenedRepresentative installed)
     (alignment :
       SourceControlResourceContextAgrees nextAlpha qterm callerBarrier outer
         resources callerScope context outerScope)
@@ -612,7 +612,7 @@ theorem
     {callerReferences : List PeTTaSpec.PrologCore.Goal}
     {callerExecutables : List PLeaTTa.Goal}
     {outer : List ControlSegment}
-    {qterm : Atom} {bodyBarrier callerBarrier : Nat}
+    {qterm : Atom} {bodyBarrier callerBarrier startCounter : Nat}
     {callerScope outerScope : CutScopeId}
     {independentResult : Substitution}
     {representative : TreeSubstitution}
@@ -625,8 +625,8 @@ theorem
       SpinedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
         callerReferences callerExecutables outer qterm bodyBarrier
-        callerBarrier callerScope independentResult representative nextAlpha
-        sourceCanonical flattenedRepresentative installed)
+        callerBarrier startCounter callerScope independentResult representative
+        nextAlpha sourceCanonical flattenedRepresentative installed)
     (alignment :
       SourceControlResourceContextAgrees nextAlpha qterm callerBarrier outer
         resources callerScope context outerScope)

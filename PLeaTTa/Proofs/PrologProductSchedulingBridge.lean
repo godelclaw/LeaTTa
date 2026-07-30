@@ -165,7 +165,7 @@ theorem
     {copied : PLeaTTa.Clause}
     {referenceRest : List PeTTaSpec.PrologCore.Goal}
     {executableRest : List PLeaTTa.Goal}
-    {qterm : Metta.Atom} {bodyBarrier callerBarrier : Nat}
+    {qterm : Metta.Atom} {bodyBarrier callerBarrier startCounter : Nat}
     {callerScope : CutScopeId}
     {independentResult : Substitution}
     {representative : TreeSubstitution}
@@ -176,8 +176,8 @@ theorem
       SegmentedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
         referenceRest executableRest qterm bodyBarrier callerBarrier
-        callerScope independentResult representative nextAlpha sourceCanonical
-        flattenedRepresentative installed) :
+        startCounter callerScope independentResult representative nextAlpha
+        sourceCanonical flattenedRepresentative installed) :
     SegmentedActiveProductRelates (AlphaFreshFrontier nextAlpha) nextAlpha
       support bodyBarrier callerBarrier (sourceCanonical ++ canonical)
       referenceBase opened pending finish branch branchTail altTail

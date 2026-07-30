@@ -449,7 +449,8 @@ theorem
     {copied : PLeaTTa.Clause}
     {referenceRest : List PeTTaSpec.PrologCore.Goal}
     {executableRest : List PLeaTTa.Goal}
-    {qterm : Metta.Atom} {barrier : Nat} {callerScope : CutScopeId}
+    {qterm : Metta.Atom} {barrier startCounter : Nat}
+    {callerScope : CutScopeId}
     {independentResult : Substitution}
     {representative : TreeSubstitution}
     {nextAlpha : List (LogicVar × String)}
@@ -458,7 +459,7 @@ theorem
     (activation :
       RepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
-        referenceRest executableRest qterm barrier callerScope
+        referenceRest executableRest qterm barrier startCounter callerScope
         independentResult representative nextAlpha sourceCanonical
         flattenedRepresentative installed) :
     ActiveProductRelates (AlphaFreshFrontier nextAlpha) nextAlpha support
