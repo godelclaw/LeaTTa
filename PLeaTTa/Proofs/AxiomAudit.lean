@@ -75,6 +75,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.machineMirrorsSpecTotal_proved
 #print axioms PLeaTTa.localGetTypeExtensionAlts_below
 #print axioms PLeaTTa.Step.preserves_belowResolutionCounter
+#print axioms PLeaTTa.ConfBelowResolutionCounter.resolutionOccupied_of_call
 #print axioms PLeaTTa.barrierCount_localGetTypeExtensionAlts
 #print axioms PLeaTTa.SubstEngine.mapAlt_localGetTypeExtensionAlts
 #print axioms PLeaTTa.SubstEngine.localGetTypeExtensionAlts_valid

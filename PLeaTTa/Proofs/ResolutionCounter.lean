@@ -881,6 +881,58 @@ theorem resolutionSeedHighWaterAtomList_subst_le (binding : Subst)
   · exact (PersistentSubst.resolutionSeedHighWaterNames_le_iff _ counter).mp
       hbinding name hbindingOrigin
 
+/-- An active local-call head already places the complete clause-copy
+freshness surface below the configuration counter.
+
+This is stronger than merely bounding the raw goal variables: substituted
+arguments may acquire variables from the current binding range, while
+`resolutionOccupiedVars` also retains the binding domain/range and the
+observable query term.  All four sources are discharged from the sealed
+configuration invariant rather than supplied as an independent freshness
+assumption. -/
+theorem ConfBelowResolutionCounter.resolutionOccupied_of_call
+    {conf : Conf} (below : ConfBelowResolutionCounter conf)
+    (function : String) (args : List Atom) (res : Atom)
+    (rest : List Goal) (binding : Subst)
+    (hcur :
+      conf.cur = some (Goal.call function args res :: rest, binding)) :
+    resolutionSeedHighWaterNames
+        (resolutionOccupiedVars
+          (args.map (subst binding)) res rest binding conf.qterm) ≤
+      conf.counter := by
+  have hactive := below.active
+    (Goal.call function args res :: rest) binding hcur
+  simp only [specializationGoalsVars, specializationGoalVars,
+    resolutionSeedHighWaterNames_append] at hactive
+  have hrawArgs :
+      resolutionSeedHighWaterNames (args.flatMap Atom.vars) ≤
+        conf.counter := by
+    omega
+  have hres :
+      resolutionSeedHighWaterNames res.vars ≤ conf.counter := by
+    omega
+  have hrest :
+      resolutionSeedHighWaterNames (specializationGoalsVars rest) ≤
+        conf.counter := by
+    omega
+  have hbinding :
+      resolutionSeedHighWaterNames (resolutionSubstVars binding) ≤
+        conf.counter := by
+    omega
+  have hsubArgs :=
+    resolutionSeedHighWaterAtomList_subst_le binding args conf.counter
+      hrawArgs hbinding
+  have hqterm := below.qterm
+  unfold resolutionOccupiedVars
+  change
+    resolutionSeedHighWaterNames
+        ((args.map (subst binding)).flatMap Atom.vars ++ res.vars ++
+          specializationGoalsVars rest ++ resolutionSubstVars binding ++
+          conf.qterm.vars) ≤
+      conf.counter
+  simp only [resolutionSeedHighWaterNames_append]
+  omega
+
 theorem canonBool_vars_subset (atom : Atom) (name : String)
     (member : name ∈ (canonBool atom).vars) : name ∈ atom.vars := by
   cases atom with
