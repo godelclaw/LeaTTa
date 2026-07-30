@@ -534,6 +534,9 @@ structure RepresentativeRetainedCallFrontier
     SupportedPreparedCandidateAgrees finish.callGeneration finish.predicate
       finish.arguments finish.bindings branch clause
   arity : clause.params.length = args.length
+  tailArities :
+    ∀ candidate, candidate ∈ clauseTail →
+      candidate.params.length = argsv.length
   retained :
     resolutionClauseRetained argsv (PLeaTTa.subst binding res) clause = true
   tailSupported :
@@ -696,6 +699,18 @@ theorem
       _ = (args.map (PLeaTTa.subst binding)).length :=
         congrArg List.length agreement.entry.substitutedArgs
       _ = args.length := List.length_map ..
+  have tailArities :
+      ∀ candidate, candidate ∈ clauseTail →
+        candidate.params.length = argsv.length := by
+    intro candidate member
+    apply arities candidate
+    have candidateMember :
+        candidate ∈
+          pending.persistent.world.resolutionCandidates
+            opened.cursor.predicate args.length := by
+      rw [clausesEq, readyClausesEq]
+      simp [member]
+    simpa [executableCandidates] using candidateMember
   have highWater :
       resolutionSeedHighWaterNames
           (resolutionOccupiedVars argsv res rest binding qterm) ≤
@@ -722,9 +737,9 @@ theorem
         rw [readyClausesEq]
   · exact
       ⟨by simpa [readyBranchesEq] using finishRemaining,
-        finishWellFormed, finishReservedUntil, finishContext, queryAtFinish,
-        supportedAtFinish,
-        executableArity, retained, tailSupported, tailScan,
+        finishWellFormed, finishReservedUntil, finishContext,
+        queryAtFinish, supportedAtFinish,
+        executableArity, tailArities, retained, tailSupported, tailScan,
         agreement.entry.substitutedArgs, agreement.entry.queryTerm,
         agreement.entry.startCounterExact, rfl, pulledExact, highWater⟩
 
