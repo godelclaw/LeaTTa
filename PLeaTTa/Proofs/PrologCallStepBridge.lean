@@ -180,6 +180,9 @@ theorem taskCall_callEnter_bank_correspondence
     (branches : List Alt) (finalCounter : Nat)
     (arity : referenceArguments.length = args.length + 1)
     (notThrow : ¬ BuiltinThrowCall predicate referenceArguments)
+    (notDatabase :
+      DatabaseActions.recognizeDatabaseAction predicate
+        referenceArguments = none)
     (nonempty :
       session.resolver.database.visibleClausesAt
         session.resolver.database.generation predicate
@@ -227,7 +230,7 @@ theorem taskCall_callEnter_bank_correspondence
       database ready predicate args.length
       (by simpa [arity] using nonempty)
   refine ⟨.taskCall scope predicate referenceArguments referenceRest
-      referenceBindings session notThrow,
+      referenceBindings session notThrow notDatabase,
     .callEnter state predicate args res rest binding branches finalCounter
       head dispatch.1 dispatch.2 scanned, ?_⟩
   exact openedFor_pendingCallOf_relates database ready predicate

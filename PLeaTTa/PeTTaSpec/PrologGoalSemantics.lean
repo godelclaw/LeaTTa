@@ -5,6 +5,7 @@ Trusted boundary: none for the local core developed here
 Main exports: Session, Search, RawStep, Transition, StepsN
 -/
 import PLeaTTa.PeTTaSpec.PrologCopy
+import PLeaTTa.PeTTaSpec.PrologDatabaseActions
 
 namespace PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics
 
@@ -12,6 +13,7 @@ open OpenSubstitution
 open Resolver
 open Canonical
 open Copy
+open DatabaseActions
 
 /-!
 `Trace.Process` deliberately contains no Prolog terms or substitutions.  That
@@ -53,11 +55,34 @@ structure CursorToken where
   cursor : PreparedCursor
 deriving Repr, Inhabited
 
-/-- Ordered observations of the certified local lane.  `Empty` in the effect
-slot is intentional for this first core: world actions receive a distinct
-typed extension rather than being smuggled through a clause reply. -/
+/-- Ordered observations of the certified local lane.  Dynamic database
+mutations have their own typed effect vocabulary.  The clause-provider reply
+protocol remains `Empty`-effect below, so an oracle still cannot manufacture
+one of these effects. -/
 abbrev Observation :=
-  Trace.Observation CallRequest CursorToken Substitution Empty Term
+  Trace.Observation CallRequest CursorToken Substitution
+    LocalDatabaseEffect Term
+
+/-- Retain only database mutations from one exact ordered observation batch. -/
+def databaseEffects : List Observation → List LocalDatabaseEffect
+  | [] => []
+  | .effect effect :: rest => effect :: databaseEffects rest
+  | _ :: rest => databaseEffects rest
+
+@[simp] theorem databaseEffects_append (left right : List Observation) :
+    databaseEffects (left ++ right) =
+      databaseEffects left ++ databaseEffects right := by
+  induction left with
+  | nil => rfl
+  | cons event rest inductionHypothesis =>
+      cases event <;> simp [databaseEffects, inductionHypothesis]
+
+@[simp] theorem databaseEffects_pruned (cursors : List CursorToken) :
+    databaseEffects (cursors.map Trace.Observation.pruned) = [] := by
+  induction cursors with
+  | nil => rfl
+  | cons cursor rest inductionHypothesis =>
+      simp [databaseEffects, inductionHypothesis]
 
 /-- Internal evidence retained while a finite-tree exception unwinds.
 
@@ -107,6 +132,49 @@ structure Session where
   nextExceptionScope : Nat := 1
   nextCollectionScope : Nat := 1
 deriving Repr, Inhabited
+
+/-- Reachability invariant for the persistent logical-update history. -/
+def Session.DatabaseClosed (session : Session) : Prop :=
+  DatabaseReachable session.resolver.database
+
+/-- Replace the persistent database and fresh frontier together, leaving all
+three typed control allocators untouched. -/
+def Session.withDatabaseAndFresh (session : Session) (database : Database)
+    (nextFresh : Nat) : Session :=
+  { session with
+    resolver :=
+      { session.resolver with
+        database := database
+        nextFresh := nextFresh } }
+
+/-- Replace only the persistent database. -/
+def Session.withDatabase (session : Session) (database : Database) : Session :=
+  session.withDatabaseAndFresh database session.resolver.nextFresh
+
+@[simp] theorem Session.withDatabaseAndFresh_database
+    (session : Session) (database : Database) (nextFresh : Nat) :
+    (session.withDatabaseAndFresh database nextFresh).resolver.database =
+      database := rfl
+
+@[simp] theorem Session.withDatabaseAndFresh_nextFresh
+    (session : Session) (database : Database) (nextFresh : Nat) :
+    (session.withDatabaseAndFresh database nextFresh).resolver.nextFresh =
+      nextFresh := rfl
+
+@[simp] theorem Session.withDatabaseAndFresh_nextCutScope
+    (session : Session) (database : Database) (nextFresh : Nat) :
+    (session.withDatabaseAndFresh database nextFresh).nextCutScope =
+      session.nextCutScope := rfl
+
+@[simp] theorem Session.withDatabaseAndFresh_nextExceptionScope
+    (session : Session) (database : Database) (nextFresh : Nat) :
+    (session.withDatabaseAndFresh database nextFresh).nextExceptionScope =
+      session.nextExceptionScope := rfl
+
+@[simp] theorem Session.withDatabaseAndFresh_nextCollectionScope
+    (session : Session) (database : Database) (nextFresh : Nat) :
+    (session.withDatabaseAndFresh database nextFresh).nextCollectionScope =
+      session.nextCollectionScope := rfl
 
 /-- The complete result of opening one locally owned call. -/
 structure OpenedCall where
@@ -576,6 +644,55 @@ step from the same task. -/
 def BuiltinThrowCall (predicate : String) (arguments : List Term) : Prop :=
   ∃ ball, predicate = "throw" ∧ arguments = [ball]
 
+/-- Exact ball witness for the total throw/DB-action/ordinary-call partition.
+Keeping the predicate and argument indices generic avoids relying on
+dependent elimination between distinct string literals. -/
+def BuiltinThrowCall.Witness (predicate : String) (arguments : List Term)
+    (ball : Term) : Prop :=
+  predicate = "throw" ∧ arguments = [ball]
+
+theorem BuiltinThrowCall.Witness.call
+    {predicate : String} {arguments : List Term} {ball : Term}
+    (recognized : BuiltinThrowCall.Witness predicate arguments ball) :
+    BuiltinThrowCall predicate arguments :=
+  ⟨ball, recognized⟩
+
+theorem BuiltinThrowCall.Witness.conflicts
+    {predicate : String} {arguments : List Term} {ball : Term}
+    (recognized : BuiltinThrowCall.Witness predicate arguments ball)
+    (excluded : ¬ BuiltinThrowCall predicate arguments) : False :=
+  excluded recognized.call
+
+/-- `throw/1`, recognized database actions, and ordinary clause calls are
+pairwise separated by their total recognizers. -/
+theorem DatabaseActionCall.Recognized.notThrow
+    {predicate : String} {arguments : List Term}
+    {action : DatabaseActionCall}
+    (recognized : action.Recognized predicate arguments) :
+    ¬ BuiltinThrowCall predicate arguments := by
+  rintro ⟨ball, predicateEq, argumentsEq⟩
+  subst predicate
+  subst arguments
+  simp [DatabaseActionCall.Recognized, recognizeDatabaseAction] at recognized
+
+/-- Every call has exactly one operational family available: built-in throw,
+typed database action, or ordinary local clause lookup. -/
+theorem call_family_exhaustive (predicate : String) (arguments : List Term) :
+    BuiltinThrowCall predicate arguments ∨
+      (∃ action : DatabaseActionCall,
+        action.Recognized predicate arguments) ∨
+      (¬ BuiltinThrowCall predicate arguments ∧
+        recognizeDatabaseAction predicate arguments = none) := by
+  by_cases throwCall : BuiltinThrowCall predicate arguments
+  · exact Or.inl throwCall
+  · cases databaseEq :
+      recognizeDatabaseAction predicate arguments with
+    | none => exact Or.inr (Or.inr ⟨throwCall, rfl⟩)
+    | some action =>
+        exact Or.inr (Or.inl
+          ⟨action, by
+            simpa [DatabaseActionCall.Recognized] using databaseEq⟩)
+
 /-- One deterministic ordered-MGU extension of a primitive equality. -/
 def UnifyResolution (bindings : Substitution) (left right : Term)
     (result : Substitution) : Prop :=
@@ -1039,15 +1156,109 @@ inductive RawStep : Session → Search → List Observation → Trace.CutSignal 
       RawStep session (.task scope (.cut :: rest) bindings) [] (.commit scope)
         session (.running (.task scope rest bindings))
   | taskThrow (scope : CutScopeId) (ball : Term) (rest : List Goal)
-      (bindings : Substitution) (session : Session) :
+      (bindings : Substitution) (session : Session)
+      {predicate : String} {arguments : List Term}
+      (recognized : BuiltinThrowCall.Witness predicate arguments ball) :
       RawStep session
-        (.task scope (.call "throw" [ball] :: rest) bindings) [] .none
+        (.task scope (.call predicate arguments :: rest) bindings) [] .none
         (openThrow session ball bindings).session
         (.running (.raise (openThrow session ball bindings).exception))
+  | taskAsserta (scope : CutScopeId) (payload result : Term)
+      (rest : List Goal) (bindings : Substitution) (session : Session)
+      (clause : LocalClause)
+      {predicate : String} {arguments : List Term}
+      (recognized :
+        ({ kind := .asserta, payload := payload, result := result } :
+          DatabaseActionCall).Recognized predicate arguments)
+      (decoded :
+        decodePredicateClause (bindings.applyTerm payload) = some clause) :
+      RawStep session
+        (.task scope
+          (.call predicate arguments :: rest) bindings)
+        [.effect
+          (.asserta (session.resolver.database.allocate clause))]
+        .none
+        (session.withDatabase (session.resolver.database.asserta clause))
+        (.running
+          (.task scope (.unify result (.atom "true") :: rest) bindings))
+  | taskAssertz (scope : CutScopeId) (payload result : Term)
+      (rest : List Goal) (bindings : Substitution) (session : Session)
+      (clause : LocalClause)
+      {predicate : String} {arguments : List Term}
+      (recognized :
+        ({ kind := .assertz, payload := payload, result := result } :
+          DatabaseActionCall).Recognized predicate arguments)
+      (decoded :
+        decodePredicateClause (bindings.applyTerm payload) = some clause) :
+      RawStep session
+        (.task scope
+          (.call predicate arguments :: rest) bindings)
+        [.effect
+          (.assertz (session.resolver.database.allocate clause))]
+        .none
+        (session.withDatabase (session.resolver.database.assertz clause))
+        (.running
+          (.task scope (.unify result (.atom "true") :: rest) bindings))
+  | taskRetractMatched (scope : CutScopeId) (payload result : Term)
+      (rest : List Goal) (bindings : Substitution) (session : Session)
+      (pattern : LocalClause) (entry : VersionedClause)
+      (extension : Substitution) (nextFresh : Nat) (afterDatabase : Database)
+      {predicate : String} {arguments : List Term}
+      (recognized :
+        ({ kind := .retract, payload := payload, result := result } :
+          DatabaseActionCall).Recognized predicate arguments)
+      (decoded :
+        decodePredicateClause (bindings.applyTerm payload) = some pattern)
+      (scan :
+        RetractScan pattern session.resolver.nextFresh
+          (currentEntries session.resolver.database)
+          (.matched entry extension nextFresh))
+      (reachable : DatabaseReachable session.resolver.database)
+      (retracted :
+        session.resolver.database.retractId entry.id = some afterDatabase) :
+      RawStep session
+        (.task scope
+          (.call predicate arguments :: rest) bindings)
+        [.effect (.retract entry)] .none
+        (session.withDatabaseAndFresh afterDatabase nextFresh)
+        (.running
+          (.task scope (.unify result (.atom "true") :: rest)
+            (extension ++ bindings)))
+  | taskRetractMissing (scope : CutScopeId) (payload result : Term)
+      (rest : List Goal) (bindings : Substitution) (session : Session)
+      (pattern : LocalClause) (nextFresh : Nat)
+      {predicate : String} {arguments : List Term}
+      (recognized :
+        ({ kind := .retract, payload := payload, result := result } :
+          DatabaseActionCall).Recognized predicate arguments)
+      (decoded :
+        decodePredicateClause (bindings.applyTerm payload) = some pattern)
+      (scan :
+        RetractScan pattern session.resolver.nextFresh
+          (currentEntries session.resolver.database) (.missing nextFresh)) :
+      RawStep session
+        (.task scope
+          (.call predicate arguments :: rest) bindings)
+        [] .none
+        (session.withDatabaseAndFresh session.resolver.database nextFresh)
+        (.running
+          (.task scope (.unify result (.atom "false") :: rest) bindings))
+  | taskDatabaseDecodeFailure (scope : CutScopeId) (predicate : String)
+      (arguments : List Term) (rest : List Goal)
+      (bindings : Substitution) (session : Session)
+      (action : DatabaseActionCall)
+      (recognized : action.Recognized predicate arguments)
+      (malformed :
+        decodePredicateClause
+          (bindings.applyTerm action.payload) = none) :
+      RawStep session
+        (.task scope (.call predicate arguments :: rest) bindings)
+        [.completed] .none session (.terminal .completed)
   | taskCall (scope : CutScopeId) (predicate : String)
       (arguments : List Term) (rest : List Goal) (bindings : Substitution)
       (session : Session)
-      (notThrow : ¬ BuiltinThrowCall predicate arguments) :
+      (notThrow : ¬ BuiltinThrowCall predicate arguments)
+      (notDatabase : recognizeDatabaseAction predicate arguments = none) :
       RawStep session (.task scope (.call predicate arguments :: rest) bindings)
         [.opened (requestFor predicate arguments bindings)] .none
         (openedFor session predicate arguments bindings).session
@@ -1343,7 +1554,8 @@ theorem cursor_scope_old_or_fresh {before after : Session} {search : Search}
     · exact Or.inl (Or.inr member)
   | taskDisjunction scope branches rest bindings session =>
       simp [RawTarget.liveCursorScopes, Search.liveCursorScopes]
-  | taskCall scope predicate arguments rest bindings session notThrow =>
+  | taskCall scope predicate arguments rest bindings session notThrow
+      notDatabase =>
       simp [RawTarget.liveCursorScopes, Search.liveCursorScopes,
         openedFor, openLocalCall]
   | _ =>
@@ -1570,9 +1782,150 @@ theorem task_deterministic {before : Session} {scope : CutScopeId}
     rename_i different same
     exact False.elim (different same)
   case taskThrow.taskCall =>
-    simp [BuiltinThrowCall] at *
+    exact False.elim
+      (BuiltinThrowCall.Witness.conflicts (by assumption) (by assumption))
   case taskCall.taskThrow =>
-    simp [BuiltinThrowCall] at *
+    exact False.elim
+      (BuiltinThrowCall.Witness.conflicts (by assumption) (by assumption))
+  all_goals
+    try simp_all [BuiltinThrowCall, BuiltinThrowCall.Witness,
+      DatabaseActionCall.Recognized, recognizeDatabaseAction]
+  all_goals
+    try
+      subst_vars
+      simp_all
+  case taskRetractMatched.taskRetractMatched =>
+    rename_i payloadOne resultOne rest patternOne entryOne extensionOne
+      nextFreshOne afterDatabaseOne predicate arguments scanOne retractedOne
+      payloadTwo resultTwo patternTwo entryTwo extensionTwo nextFreshTwo
+      afterDatabaseTwo patternEquality scanTwo reachableTwo retractedTwo
+      actionEquality decodedTwo
+    have outcomeEquality := RetractScan.deterministic scanOne scanTwo
+    cases outcomeEquality
+    rw [retractedOne] at retractedTwo
+    cases retractedTwo
+    exact ⟨rfl, rfl, rfl⟩
+  case taskRetractMatched.taskRetractMissing =>
+    rename_i payloadOne resultOne rest patternOne entry extension nextFreshOne
+      afterDatabase predicate arguments scanOne reachable retracted payloadTwo
+      resultTwo patternTwo nextFreshTwo patternEquality scanTwo actionEquality
+      decodedTwo
+    have outcomeEquality := RetractScan.deterministic scanOne scanTwo
+    cases outcomeEquality
+  case taskRetractMissing.taskRetractMatched =>
+    rename_i payloadOne resultOne rest patternOne nextFreshOne predicate
+      arguments scanOne payloadTwo resultTwo patternTwo entry extension
+      nextFreshTwo afterDatabase patternEquality scanTwo reachable retracted
+      actionEquality decodedTwo
+    have outcomeEquality := RetractScan.deterministic scanOne scanTwo
+    cases outcomeEquality
+  case taskRetractMissing.taskRetractMissing =>
+    rename_i payloadOne resultOne rest patternOne nextFreshOne predicate
+      arguments scanOne payloadTwo resultTwo patternTwo nextFreshTwo
+      patternEquality scanTwo actionEquality decodedTwo
+    have outcomeEquality := RetractScan.deterministic scanOne scanTwo
+    cases outcomeEquality
+    rfl
+
+/-- Every recognized database-action call has one concrete successor on a
+reachable database.  Ordered retract scanning is total; a matched current
+occurrence is retractable by complete database reachability; missing and
+malformed inputs have explicit transitions rather than stuck states. -/
+theorem databaseAction_progress
+    {scope : CutScopeId} {predicate : String} {arguments : List Term}
+    {rest : List Goal} {bindings : Substitution} {session : Session}
+    {action : DatabaseActionCall}
+    (recognized : action.Recognized predicate arguments)
+    (closed : session.DatabaseClosed) :
+    ∃ events after target,
+      RawStep session
+        (.task scope (.call predicate arguments :: rest) bindings)
+        events .none after target := by
+  cases action with
+  | mk kind payload result =>
+      cases kind with
+      | asserta =>
+          cases decoded :
+              decodePredicateClause (bindings.applyTerm payload) with
+          | none =>
+              exact
+                ⟨[.completed], session, .terminal .completed,
+                  .taskDatabaseDecodeFailure scope predicate arguments rest
+                    bindings session
+                    { kind := .asserta, payload := payload, result := result }
+                    recognized decoded⟩
+          | some clause =>
+              exact
+                ⟨[.effect
+                    (.asserta
+                      (session.resolver.database.allocate clause))],
+                  session.withDatabase
+                    (session.resolver.database.asserta clause),
+                  .running
+                    (.task scope (.unify result (.atom "true") :: rest)
+                      bindings),
+                  .taskAsserta scope payload result rest bindings session
+                    clause recognized decoded⟩
+      | assertz =>
+          cases decoded :
+              decodePredicateClause (bindings.applyTerm payload) with
+          | none =>
+              exact
+                ⟨[.completed], session, .terminal .completed,
+                  .taskDatabaseDecodeFailure scope predicate arguments rest
+                    bindings session
+                    { kind := .assertz, payload := payload, result := result }
+                    recognized decoded⟩
+          | some clause =>
+              exact
+                ⟨[.effect
+                    (.assertz
+                      (session.resolver.database.allocate clause))],
+                  session.withDatabase
+                    (session.resolver.database.assertz clause),
+                  .running
+                    (.task scope (.unify result (.atom "true") :: rest)
+                      bindings),
+                  .taskAssertz scope payload result rest bindings session
+                    clause recognized decoded⟩
+      | retract =>
+          cases decoded :
+              decodePredicateClause (bindings.applyTerm payload) with
+          | none =>
+              exact
+                ⟨[.completed], session, .terminal .completed,
+                  .taskDatabaseDecodeFailure scope predicate arguments rest
+                    bindings session
+                    { kind := .retract, payload := payload, result := result }
+                    recognized decoded⟩
+          | some pattern =>
+              obtain ⟨outcome, scan⟩ :=
+                RetractScan.exists_scan pattern session.resolver.nextFresh
+                  (currentEntries session.resolver.database)
+              cases outcome with
+              | matched entry extension nextFresh =>
+                  have member := RetractScan.matched_mem scan
+                  obtain ⟨afterDatabase, retracted⟩ :=
+                    exists_retractId_of_mem_currentEntries closed member
+                  exact
+                    ⟨[.effect (.retract entry)],
+                      session.withDatabaseAndFresh afterDatabase nextFresh,
+                      .running
+                        (.task scope (.unify result (.atom "true") :: rest)
+                          (extension ++ bindings)),
+                      .taskRetractMatched scope payload result rest bindings
+                        session pattern entry extension nextFresh afterDatabase
+                        recognized decoded scan closed retracted⟩
+              | missing nextFresh =>
+                  exact
+                    ⟨[],
+                      session.withDatabaseAndFresh
+                        session.resolver.database nextFresh,
+                      .running
+                        (.task scope (.unify result (.atom "false") :: rest)
+                          bindings),
+                      .taskRetractMissing scope payload result rest bindings
+                        session pattern nextFresh recognized decoded scan⟩
 
 set_option linter.unnecessarySeqFocus false in
 /-- Pulling the same frozen local cursor has one exact small-step outcome.
@@ -1641,6 +1994,8 @@ theorem preserves_bindingLineage_target {entryBindings : Substitution}
     constructor
     · exact BindingLineage.trans lineage (openThrow_extends_current _ _ _)
     · exact openThrow_ballStable _ _ _
+  case taskRetractMatched =>
+    exact BindingLineage.trans lineage (BindingLineage.prepend _ _)
   case taskCall =>
     constructor
     · exact prepareCall_bindingsAligned _ _
@@ -1799,7 +2154,25 @@ theorem preserves_wellScoped_target {active : CutScopeId}
   | taskThrow scope ball rest bindings session =>
       cases wellFormed
       exact .raise scope (openThrow session ball bindings).exception
-  | taskCall scope predicate arguments rest bindings session notThrow =>
+  | taskAsserta scope payload result rest bindings session clause decoded =>
+      cases wellFormed
+      exact .task scope (.unify result (.atom "true") :: rest) bindings
+  | taskAssertz scope payload result rest bindings session clause decoded =>
+      cases wellFormed
+      exact .task scope (.unify result (.atom "true") :: rest) bindings
+  | taskRetractMatched scope payload result rest bindings session pattern
+      entry extension nextFresh afterDatabase decoded scan retracted =>
+      cases wellFormed
+      exact .task scope (.unify result (.atom "true") :: rest)
+        (extension ++ bindings)
+  | taskRetractMissing scope payload result rest bindings session pattern
+      nextFresh decoded scan =>
+      cases wellFormed
+      exact .task scope (.unify result (.atom "false") :: rest) bindings
+  | taskDatabaseDecodeFailure =>
+      exact True.intro
+  | taskCall scope predicate arguments rest bindings session notThrow
+      notDatabase =>
       cases wellFormed
       exact .product scope _ rest
         (.cutBoundary scope
@@ -1992,9 +2365,16 @@ theorem nextFresh_mono {before after : Session} {search : Search}
     (step : RawStep before search events signal after target) :
     before.resolver.nextFresh ≤ after.resolver.nextFresh := by
   induction step <;> try exact Nat.le_refl _
-  case taskThrow scope ball rest bindings session =>
-    exact openThrow_nextFresh_mono session ball bindings
-  case taskCall scope predicate arguments rest bindings session notThrow =>
+  case taskThrow =>
+    exact openThrow_nextFresh_mono _ _ _
+  case taskRetractMatched =>
+    simpa [RetractOutcome.nextFresh] using
+      RetractScan.nextFresh_mono (by assumption)
+  case taskRetractMissing =>
+    simpa [RetractOutcome.nextFresh] using
+      RetractScan.nextFresh_mono (by assumption)
+  case taskCall scope predicate arguments rest bindings session notThrow
+      notDatabase =>
     simpa only [openedFor] using
       (openLocalCall_nextFresh_mono session
         (requestFor predicate arguments bindings))
@@ -2013,7 +2393,8 @@ theorem nextCutScope_mono {before after : Session} {search : Search}
     (step : RawStep before search events signal after target) :
     before.nextCutScope ≤ after.nextCutScope := by
   induction step <;> try exact Nat.le_refl _
-  case taskCall scope predicate arguments rest bindings session notThrow =>
+  case taskCall scope predicate arguments rest bindings session notThrow
+      notDatabase =>
     simp only [openedFor, openLocalCall_nextCutScope]
     omega
   case taskCatch scope protectedGoal catcher handler rest bindings session =>
@@ -2167,17 +2548,50 @@ theorem preserves_cursorOwnership {before after : Session}
     next.CursorOwnership after.nextCutScope :=
   preserves_cursorOwnership_target step owned
 
-/-- The present pure local core never rewinds or mutates the database.  When
-dynamic world-action rules are added this equality will be replaced by a
-generation-monotone extension relation; the database will remain in this
-same non-backtrackable session channel. -/
-theorem database_eq {before after : Session} {search : Search}
+/-- Every raw transition carries an exact ordered chronology for its
+persistent database mutations.  Search backtracking can restore goals and
+substitutions, but it cannot restore this session component: wrappers inherit
+their child's chronology and discarded cursors add only prune observations. -/
+theorem database_chronology {before after : Session} {search : Search}
     {events : List Observation} {signal : Trace.CutSignal}
     {target : RawTarget}
     (step : RawStep before search events signal after target) :
-    after.resolver.database = before.resolver.database := by
-  induction step <;> try rfl
-  all_goals assumption
+    DatabaseChronology before.resolver.database
+      (databaseEffects events) after.resolver.database := by
+  induction step with
+  | taskAsserta =>
+      exact .step (.asserta _ _) (.refl _)
+  | taskAssertz =>
+      exact .step (.assertz _ _) (.refl _)
+  | taskRetractMatched _ _ _ _ _ _ _ _ _ _ _ _ _ scan reachable retracted =>
+      exact .step
+        (.retract reachable (RetractScan.matched_mem scan) retracted)
+        (.refl _)
+  | clausesPull scope cursor outcome session pulled =>
+      cases outcome with
+      | silent next => exact .refl _
+      | reply entered next => exact .refl _
+      | effect effect next => exact Empty.elim effect
+      | exhausted => exact .refl _
+      | raised exception => exact Empty.elim exception
+  | collectionAnswer collectionScope scope body next template output
+      entryBindings tail reversed answerBindings before after child
+      inductionHypothesis =>
+      simpa [databaseEffects] using inductionHypothesis
+  | _ =>
+      first
+      | exact .refl _
+      | simpa [databaseEffects, databaseEffects_append] using
+          (by assumption : DatabaseChronology _ _ _)
+
+/-- Database histories stay completely reachable across every raw transition,
+including failure, backtracking, and exception unwinding. -/
+theorem preserves_databaseClosed {before after : Session} {search : Search}
+    {events : List Observation} {signal : Trace.CutSignal}
+    {target : RawTarget}
+    (step : RawStep before search events signal after target)
+    (closed : before.DatabaseClosed) : after.DatabaseClosed :=
+  step.database_chronology.preserves_reachable closed
 
 set_option linter.unnecessarySeqFocus false in
 set_option maxHeartbeats 2000000 in
@@ -2636,6 +3050,12 @@ def collectionHighWater : State → Nat
   | .running session _ => session.nextCollectionScope
   | .uncaughtCut session _ _ => session.nextCollectionScope
 
+/-- Persistent logical-update database carried by every public state. -/
+def database : State → Database
+  | .terminal session _ => session.resolver.database
+  | .running session _ => session.resolver.database
+  | .uncaughtCut session _ _ => session.resolver.database
+
 /-- Live cursor activations carried by every public state. -/
 def liveCursorScopes : State → List CutScopeId
   | .terminal _ _ => []
@@ -2644,6 +3064,12 @@ def liveCursorScopes : State → List CutScopeId
 
 /-- Complete public structural invariant used by reachability theorems. -/
 def WellFormed (state : State) : Prop := state.Rooted ∧ state.CursorOwned
+
+/-- Reachability invariant for the persistent database component of a public
+state.  It is kept separate from cursor/scope well-formedness so each theorem
+states exactly which resource discipline it consumes. -/
+def DatabaseClosed (state : State) : Prop :=
+  DatabaseReachable state.database
 
 /-- Public running and diagnostic states retain cumulative substitution
 lineage.  Public terminals have already erased the internal exception packet,
@@ -2791,6 +3217,24 @@ theorem collectionHighWater_mono {start finish : State}
   | uncaught search next events before after scope raw =>
       exact raw.nextCollectionScope_mono
 
+/-- One public transition changes the persistent database exactly according
+to its ordered typed mutation observations. -/
+theorem database_chronology {start finish : State}
+    {events : List Observation} (step : Transition start events finish) :
+    DatabaseChronology start.database (databaseEffects events)
+      finish.database := by
+  cases step with
+  | ordinary search events before after target raw =>
+      cases target <;> exact raw.database_chronology
+  | uncaught search next events before after scope raw =>
+      exact raw.database_chronology
+
+/-- Public transitions preserve reachable database histories. -/
+theorem preserves_databaseClosed {start finish : State}
+    {events : List Observation} (step : Transition start events finish)
+    (closed : start.DatabaseClosed) : finish.DatabaseClosed :=
+  step.database_chronology.preserves_reachable closed
+
 /-- Every public prune event names a cursor live in the source state. -/
 theorem pruned_scope_origin {start finish : State}
     {events : List Observation} (step : Transition start events finish) :
@@ -2921,6 +3365,26 @@ theorem preserves_bindingLineage {count : Nat} {start finish : State}
       have restLineage := inductionHypothesis firstLineage.2
       exact ⟨EventsBindingLineage.append firstLineage.1 restLineage.1,
         restLineage.2⟩
+
+/-- Every finite exact prefix preserves the complete ordered database
+chronology; no backtracking transition can erase an earlier mutation. -/
+theorem database_chronology {count : Nat} {start finish : State}
+    {events : List Observation} (execution : StepsN count start events finish) :
+    DatabaseChronology start.database (databaseEffects events)
+      finish.database := by
+  induction execution with
+  | zero state => exact .refl _
+  | succ count start middle finish first rest head tail
+      inductionHypothesis =>
+      simpa [databaseEffects_append] using
+        DatabaseChronology.trans head.database_chronology inductionHypothesis
+
+/-- Every finite exact execution prefix preserves complete database
+reachability, including prefixes that cross failure and backtracking. -/
+theorem preserves_databaseClosed {count : Nat} {start finish : State}
+    {events : List Observation} (execution : StepsN count start events finish)
+    (closed : start.DatabaseClosed) : finish.DatabaseClosed :=
+  execution.database_chronology.preserves_reachable closed
 
 theorem toSteps {count : Nat} {start finish : State}
     {events : List Observation}
@@ -3256,7 +3720,7 @@ private theorem leftRecursivePulled_open (depth : Nat)
   induction depth generalizing scope with
   | zero =>
       have opened := RawStep.taskCall scope leftRecursivePredicate [] [] []
-        (leftRecursiveSession (scope + 1)) leftRecursive_notThrow
+        (leftRecursiveSession (scope + 1)) leftRecursive_notThrow rfl
       simpa [leftRecursivePulled, leftRecursiveChain, leftRecursiveRequest,
         openedFor_leftRecursive, Nat.add_assoc] using
         (RawStep.cutBoundaryProgress scope _ _
@@ -3387,7 +3851,7 @@ private theorem leftRecursive_initial_open :
     (.cutBoundaryProgress 0 _ _ [.opened leftRecursiveRequest]
       (leftRecursiveSession 1) (leftRecursiveSession 2)
       (.taskCall 0 leftRecursivePredicate [] [] []
-        (leftRecursiveSession 1) leftRecursive_notThrow))
+        (leftRecursiveSession 1) leftRecursive_notThrow rfl))
 
 /-- The actual local clause `loop :- loop` has exact arbitrarily long finite
 prefixes containing only call-open observations.  After every such positive
@@ -3546,7 +4010,8 @@ boundary under `product`. -/
 theorem call_opens_finite_activation (scope : CutScopeId)
     (predicate : String) (arguments : List Term) (rest : List Goal)
     (bindings : Substitution) (session : Session)
-    (notThrow : ¬ BuiltinThrowCall predicate arguments) :
+    (notThrow : ¬ BuiltinThrowCall predicate arguments)
+    (notDatabase : recognizeDatabaseAction predicate arguments = none) :
     RawStep session
       (.task scope (.call predicate arguments :: rest) bindings)
       [.opened (requestFor predicate arguments bindings)] .none
@@ -3560,6 +4025,7 @@ theorem call_opens_finite_activation (scope : CutScopeId)
               (openedFor session predicate arguments bindings).cursor))
           rest)) := by
   exact .taskCall scope predicate arguments rest bindings session notThrow
+    notDatabase
 
 /-! ## Local `findall/3` specialization -/
 
@@ -4342,7 +4808,7 @@ private theorem findallLoop_call_transition :
         [.opened leftRecursiveRequest]
         (leftRecursiveSession 2) (leftRecursiveSession 3)
         (RawStep.taskCall 1 leftRecursivePredicate [] [] []
-          (leftRecursiveSession 2) leftRecursive_notThrow))
+          (leftRecursiveSession 2) leftRecursive_notThrow rfl))
   have raw : RawStep (leftRecursiveSession 2)
       (.collectionBoundary { index := 0 } 0
         (.cutBoundary 1
@@ -4438,7 +4904,7 @@ theorem throw_enters_fresh_raise (scope : CutScopeId) (ball : Term)
       (.task scope (.call "throw" [ball] :: rest) bindings) [] .none
       (openThrow session ball bindings).session
       (.running (.raise (openThrow session ball bindings).exception)) := by
-  exact .taskThrow scope ball rest bindings session
+  exact .taskThrow scope ball rest bindings session ⟨rfl, rfl⟩
 
 /-- The packet installed by `throw/1` is a certified injective alpha-copy of
 the materialized exception term and already satisfies the catch transport
@@ -4472,7 +4938,7 @@ theorem local_throw_exact_two_steps (scope : CutScopeId) (ball : Term)
   let finish : State := .terminal opened.session (.raised opened.exception.ball)
   have first : Transition start [] middle := by
     exact .ordinary _ _ _ _ _
-      (.taskThrow scope ball [] bindings session)
+      (.taskThrow scope ball [] bindings session ⟨rfl, rfl⟩)
   have second : Transition middle [.raised opened.exception.ball] finish := by
     exact .ordinary _ _ _ _ _ (.raise opened.exception opened.session)
   have tail : StepsN 1 middle [.raised opened.exception.ball] finish := by
@@ -4688,6 +5154,7 @@ theorem ground_throw_caught_exact_trace (scope : CutScopeId)
       · apply RawStep.cutBoundaryProgress
         apply RawStep.catchProgress
         exact .taskThrow inner catchWitnessException [] [] caught.session
+          ⟨rfl, rfl⟩
       · simp [Trace.AnswerFree]
     exact .ordinary _ _ _ _ _ raw
   have selected : CatchSelection thrown.exception catcher := by
@@ -4994,6 +5461,115 @@ theorem equal_snapshots_distinct_activations_owned
         highWater := by
   simp [Search.CursorOwnership, Search.liveCursorScopes, different,
     firstBound, secondBound]
+
+/-! ## Dynamic-update persistence anti-vacuity -/
+
+private def databaseActionWitnessPayload : Term :=
+  .compound "p" [.atom "late"]
+
+private def databaseActionWitnessResult : Term :=
+  .atom "$not_true"
+
+private def databaseActionWitnessSession : Session :=
+  { resolver := Resolver.witnessSession, nextCutScope := 2 }
+
+private def databaseActionWitnessAfterSession : Session :=
+  databaseActionWitnessSession.withDatabase Resolver.witnessAfterAssert
+
+private def databaseActionWitnessEffect : LocalDatabaseEffect :=
+  .assertz
+    (Resolver.witnessBefore.allocate (Resolver.witnessClause "late"))
+
+private def databaseActionWitnessStart : State :=
+  .running databaseActionWitnessSession
+    (.choice 0
+      (.task 1
+        [.call "assertzPredicate"
+          [databaseActionWitnessPayload, databaseActionWitnessResult]]
+        [])
+      (.clauses 1 Resolver.witnessPreparedCursor))
+
+private def databaseActionWitnessMiddle : State :=
+  .running databaseActionWitnessAfterSession
+    (.choice 0
+      (.task 1
+        [.unify databaseActionWitnessResult (.atom "true")]
+        [])
+      (.clauses 1 Resolver.witnessPreparedCursor))
+
+private def databaseActionWitnessFinish : State :=
+  .running databaseActionWitnessAfterSession
+    (.clauses 1 Resolver.witnessPreparedCursor)
+
+private theorem databaseActionWitnessResult_clash :
+    ¬ ∃ result,
+      UnifyResolution [] databaseActionWitnessResult (.atom "true")
+        result := by
+  rintro ⟨result, extension, computed, resultEquality⟩
+  have unifies :
+      DenotationalUnifier extension
+        databaseActionWitnessResult (.atom "true") := by
+    have raw := computed.isMostGeneral.1
+      (databaseActionWitnessResult, .atom "true") (by simp)
+    simpa [databaseActionWitnessResult] using raw
+  exact distinct_atoms_have_no_denotational_unifier "$not_true" "true"
+    (by decide) ⟨extension, by simpa [databaseActionWitnessResult] using unifies⟩
+
+/-- A dynamic assertion is observed and remains in the persistent session
+even when its generated result equality fails and DFS backtracks into a
+previously retained right branch.  The failure's completion marker is
+correctly consumed by the choice rather than being exposed as whole-query
+completion. -/
+theorem assertz_effect_survives_failed_branch :
+    StepsN 2 databaseActionWitnessStart
+      [.effect databaseActionWitnessEffect]
+      databaseActionWitnessFinish := by
+  have actionStep :
+      Transition databaseActionWitnessStart
+        [.effect databaseActionWitnessEffect]
+        databaseActionWitnessMiddle := by
+    exact .ordinary _ _ _ _ _
+      (.choiceProgress 0 _ _ _
+        [.effect databaseActionWitnessEffect]
+        databaseActionWitnessSession databaseActionWitnessAfterSession
+        (.taskAssertz 1 databaseActionWitnessPayload
+          databaseActionWitnessResult [] [] databaseActionWitnessSession
+          (Resolver.witnessClause "late")
+          (predicate := "assertzPredicate")
+          (arguments :=
+            [databaseActionWitnessPayload, databaseActionWitnessResult])
+          rfl rfl))
+  have backtrackStep :
+      Transition databaseActionWitnessMiddle []
+        databaseActionWitnessFinish := by
+    exact .ordinary _ _ _ _ _
+      (.choiceComplete 0 _ _
+        databaseActionWitnessAfterSession databaseActionWitnessAfterSession
+        (.taskUnifyFailure 1 databaseActionWitnessResult (.atom "true")
+          [] [] databaseActionWitnessAfterSession
+          databaseActionWitnessResult_clash))
+  simpa [databaseActionWitnessStart, databaseActionWitnessMiddle,
+    databaseActionWitnessFinish] using
+    (StepsN.succ 1 databaseActionWitnessStart databaseActionWitnessMiddle
+      databaseActionWitnessFinish
+      [.effect databaseActionWitnessEffect] [] actionStep
+      (StepsN.succ 0 databaseActionWitnessMiddle
+        databaseActionWitnessFinish databaseActionWitnessFinish
+        [] [] backtrackStep (.zero databaseActionWitnessFinish)))
+
+/-- The preceding real execution distinguishes persistent LUV state from
+backtrackable control: the parked cursor retains its old ordered snapshot,
+while a call prepared from the post-backtrack session sees the assertion. -/
+theorem assertz_backtrack_preserves_snapshot_and_updates_future_calls :
+    databaseActionWitnessFinish.database =
+        Resolver.witnessAfterAssert ∧
+      Resolver.witnessPreparedCursor.remaining.map
+          (fun branch => branch.sourceId) = [0, 1] ∧
+      (prepareCall databaseActionWitnessAfterSession.resolver
+          Resolver.witnessRequest).1.remaining.map
+          (fun branch => branch.sourceId) = [0, 1, 2] := by
+  exact ⟨rfl, Resolver.witness_prepared_snapshot_ids,
+    Resolver.witness_prepared_new_call_sees_assertion⟩
 
 /-- The smallest successful query demonstrates the answer/completion split:
 the answer is observed first and whole-search exhaustion is a later event. -/

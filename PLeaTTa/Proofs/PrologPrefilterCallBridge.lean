@@ -654,6 +654,9 @@ theorem taskCall_callEnter_prefilter_correspondence
     (branches : List Alt) (finalCounter : Nat)
     (arity : referenceArguments.length = args.length + 1)
     (notThrow : ¬ BuiltinThrowCall predicate referenceArguments)
+    (notDatabase :
+      DatabaseActions.recognizeDatabaseAction predicate
+        referenceArguments = none)
     (nonempty :
       session.resolver.database.visibleClausesAt
         session.resolver.database.generation predicate
@@ -712,7 +715,7 @@ theorem taskCall_callEnter_prefilter_correspondence
     taskCall_callEnter_bank_correspondence (prog := prog) (gt := gt)
       database ready scope predicate referenceArguments referenceRest
       referenceBindings args res rest binding branches finalCounter arity
-      notThrow nonempty head scanned
+      notThrow notDatabase nonempty head scanned
   exact ⟨paired.1, paired.2.1,
     openedFor_pendingCallOf_prefilter_relates database ready predicate
       referenceArguments referenceBindings queryAlpha args res rest binding

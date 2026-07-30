@@ -22,6 +22,9 @@ UNIFICATION_PROOFS = ROOT / "PLeaTTa" / "Proofs" / "Unification.lean"
 PERSISTENT_SUBST = ROOT / "PLeaTTa" / "PersistentSubst.lean"
 ORDERED_MGU = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologMgu.lean"
 LOCAL_RESOLVER = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologResolver.lean"
+DATABASE_ACTIONS = (
+    ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologDatabaseActions.lean"
+)
 PROLOG_COPY = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologCopy.lean"
 GOAL_SEMANTICS = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologGoalSemantics.lean"
 DEMAND_DRIVEN_STEP = ROOT / "PLeaTTa" / "Proofs" / "DemandDrivenStep.lean"
@@ -296,6 +299,7 @@ def check() -> list[str]:
         "persistent_subst_sha256": digest(PERSISTENT_SUBST),
         "ordered_mgu_sha256": digest(ORDERED_MGU),
         "local_resolver_sha256": digest(LOCAL_RESOLVER),
+        "database_actions_sha256": digest(DATABASE_ACTIONS),
         "prolog_copy_sha256": digest(PROLOG_COPY),
         "goal_semantics_sha256": digest(GOAL_SEMANTICS),
         "demand_driven_step_sha256": digest(DEMAND_DRIVEN_STEP),

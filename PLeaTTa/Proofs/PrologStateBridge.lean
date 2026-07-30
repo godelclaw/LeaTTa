@@ -309,22 +309,44 @@ private theorem retireFirst_live_projection
 at the database's current generation.  This excludes forged future erasure
 stamps and makes the current logical-update view exactly the unerased
 occurrences. -/
-def DatabaseGenerationClosed (database : Database) : Prop :=
-  ∀ entry ∈ database.history,
-    entry.created ≤ database.generation ∧
-      ∀ erased, entry.erased = some erased →
-        erased ≤ database.generation
+abbrev DatabaseGenerationClosed :=
+  PeTTaSpec.PrologCore.DatabaseActions.DatabaseGenerationClosed
+
+/-- Stable occurrence identities are unique and lie below the allocator
+frontier. -/
+abbrev DatabaseIdsClosed :=
+  PeTTaSpec.PrologCore.DatabaseActions.DatabaseIdsClosed
+
+/-- Complete source-database reachability: timestamp closure together with
+stable, allocator-bounded occurrence identities. -/
+abbrev DatabaseReachable :=
+  PeTTaSpec.PrologCore.DatabaseActions.DatabaseReachable
 
 /-- The executable world's canonical live clause list is exactly the current
 projection of the independent logical-update history.  Derived executable
 index coherence is included because call dispatch may use the index rather
 than the canonical list. -/
 structure DatabaseRelatesWorld (database : Database) (world : PWorld) : Prop where
-  generationClosed : DatabaseGenerationClosed database
+  reachable : DatabaseReachable database
   liveClauses :
     List.Forall₂ VersionedClauseAgrees
       (currentVisibleEntries database) world.progClauses
   clauseIndex : world.ClauseIndexCoherent
+
+/-- Timestamp closure remains available as an explicit projection of the
+stronger reachability contract. -/
+theorem DatabaseRelatesWorld.generationClosed
+    {database : Database} {world : PWorld}
+    (agreement : DatabaseRelatesWorld database world) :
+    DatabaseGenerationClosed database :=
+  agreement.reachable.generationClosed
+
+/-- Stable-ID closure is the second load-bearing projection. -/
+theorem DatabaseRelatesWorld.idsClosed
+    {database : Database} {world : PWorld}
+    (agreement : DatabaseRelatesWorld database world) :
+    DatabaseIdsClosed database :=
+  agreement.reachable.idsClosed
 
 /-- A relation between the two fresh-allocation frontiers.  It is deliberately
 abstract at the persistent-only layer: its sound instantiation depends on the
@@ -587,7 +609,7 @@ theorem DatabaseRelatesWorld.reindex
     {database : Database} {world : PWorld}
     (agreement : DatabaseRelatesWorld database world) :
     DatabaseRelatesWorld database world.reindexClauses := by
-  refine ⟨agreement.generationClosed, ?_, world.reindexClauses_coherent⟩
+  refine ⟨agreement.reachable, ?_, world.reindexClauses_coherent⟩
   simpa [PWorld.reindexClauses] using agreement.liveClauses
 
 /-- Appending matching source/executable clauses preserves the exact live
@@ -606,7 +628,7 @@ theorem DatabaseRelatesWorld.assertz
         world.progClauses ++ [executable] := by
     unfold PWorld.appendProgClause
     split <;> rfl
-  refine ⟨agreement.generationClosed.assertz reference, ?_,
+  refine ⟨agreement.reachable.assertz reference, ?_,
     world.appendProgClause_coherent executable agreement.clauseIndex⟩
   rw [currentVisibleEntries_assertz agreement.generationClosed reference,
     executableClauses]
@@ -626,7 +648,7 @@ theorem DatabaseRelatesWorld.asserta
     (clause : LocalClauseAgrees reference executable) :
     DatabaseRelatesWorld (database.asserta reference)
       (world.replaceProgClauses (executable :: world.progClauses)) := by
-  refine ⟨agreement.generationClosed.asserta reference, ?_,
+  refine ⟨agreement.reachable.asserta reference, ?_,
     world.replaceProgClauses_coherent _ agreement.clauseIndex⟩
   rw [currentVisibleEntries_asserta agreement.generationClosed reference,
     PWorld.replaceProgClauses_progClauses]
@@ -710,7 +732,7 @@ theorem DatabaseRelatesWorld.retractId
           ⟨?_, ?_,
             world.replaceProgClauses_coherent
               (executableLeft ++ executableRight) agreement.clauseIndex⟩
-        · exact retiredClosed
+        · exact agreement.reachable.retractId retracted
         · rw [PWorld.replaceProgClauses_progClauses]
           simpa [currentVisibleEntries, afterProjection] using
             retainedAgreement
@@ -773,8 +795,8 @@ theorem empty_session_relates
       ({} : Session) ({ world := {}, counter := 0 } : Persistent) := by
   constructor
   · constructor
-    · intro entry member
-      simp [Database.empty] at member
+    · exact
+        PeTTaSpec.PrologCore.DatabaseActions.DatabaseReachable.empty
     · exact .nil
     · intro ready
       simp at ready
