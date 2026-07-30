@@ -114,6 +114,54 @@ theorem TreeMayUnify.of_denotationalUnifier
     (PeTTaSpec.PrologCore.Canonical.Substitution.denote binding)
     (Term.denote left) (Term.denote right) unifies
 
+mutual
+
+/-- Removing an instantiation from the left operand preserves structural
+compatibility.  Substitution can expose a rigid clash hidden behind a
+variable, but it cannot make the original, more-general tree less able to
+match the unchanged right operand. -/
+theorem TreeMayUnify.of_left_apply (bindings : TreeSubstitution) :
+    ∀ left right,
+      TreeMayUnify (TreeSubstitution.apply bindings left) right →
+      TreeMayUnify left right
+  | .variable identity, right, _ =>
+      .leftVariable identity right
+  | .node leftSymbol leftChildren, .variable identity, _ =>
+      .rightVariable (.node leftSymbol leftChildren) identity
+  | .node leftSymbol leftChildren, .node rightSymbol rightChildren,
+      compatible => by
+      simp only [TreeSubstitution.apply_node] at compatible
+      cases compatible with
+      | node _ children =>
+          exact .node leftSymbol
+            (TreesMayUnify.of_left_apply bindings
+              leftChildren rightChildren children)
+
+/-- Ordered child-list companion to `TreeMayUnify.of_left_apply`. -/
+theorem TreesMayUnify.of_left_apply (bindings : TreeSubstitution) :
+    ∀ left right,
+      TreesMayUnify (TreeSubstitution.applyTrees bindings left) right →
+      TreesMayUnify left right
+  | [], [], _ =>
+      .nil
+  | [], _ :: _, compatible => by
+      simp only [TreeSubstitution.applyTrees_nil] at compatible
+      cases compatible
+  | _ :: _, [], compatible => by
+      simp only [TreeSubstitution.applyTrees_cons] at compatible
+      cases compatible
+  | leftHead :: leftTail, rightHead :: rightTail, compatible => by
+      simp only [TreeSubstitution.applyTrees_cons] at compatible
+      cases compatible with
+      | cons head tail =>
+          exact .cons
+            (TreeMayUnify.of_left_apply bindings
+              leftHead rightHead head)
+            (TreesMayUnify.of_left_apply bindings
+              leftTail rightTail tail)
+
+end
+
 /-- Inversion for a compatible pair of two-child rigid nodes. -/
 theorem TreeMayUnify.node₂
     {symbol : RigidSymbol}

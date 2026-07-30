@@ -108,6 +108,10 @@ PROLOG_RECURSIVE_CALL_PAYLOAD_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRecursiveCallPayloadBridge.lean"
 )
+PROLOG_REPRESENTATIVE_CALL_PREFILTER_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologRepresentativeCallPrefilterBridge.lean"
+)
 PROLOG_ACTIVATION_FAILURE_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationFailureBridge.lean"
 )
@@ -229,6 +233,8 @@ def check() -> list[str]:
             digest(PROLOG_ORDINARY_STEP_BRIDGE),
         "prolog_recursive_call_payload_bridge_sha256":
             digest(PROLOG_RECURSIVE_CALL_PAYLOAD_BRIDGE),
+        "prolog_representative_call_prefilter_bridge_sha256":
+            digest(PROLOG_REPRESENTATIVE_CALL_PREFILTER_BRIDGE),
         "prolog_activation_failure_bridge_sha256":
             digest(PROLOG_ACTIVATION_FAILURE_BRIDGE),
         "prolog_canonical_runtime_reading_sha256":

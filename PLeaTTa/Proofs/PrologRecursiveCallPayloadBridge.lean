@@ -21,7 +21,9 @@ open Metta (Atom Subst)
 open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.Canonical
 open PeTTaSpec.PrologCore.OpenSubstitution
+open PeTTaSpec.PrologCore.Resolver
 open PrologGoalAlpha
+open PrologCallPayloadBridge
 open PrologMguBridge
 open PrologMguComposition
 open PrologMguOpenAgreement
@@ -203,6 +205,118 @@ theorem TaskPayloadAgrees.applyLocalCall
   exact
     ⟨referenceArguments, referenceResult, representative, rfl,
       variants, leaves⟩
+
+/-! ## Representation-independent normalized calls -/
+
+/-- A normalized local-call payload interpreted through one semantic
+representative of the carried source substitution.
+
+Unlike `NormalizedCallAgrees`, this relation does not require the
+independent ordered MGU and the executable MGU to choose the same residual
+alias orientation.  The representative is selected once for the whole
+ordered output-last payload, and mutual factorization keeps it tied to the
+actual source cursor binding. -/
+def RepresentativeNormalizedCallAgrees
+    (alpha : List (LogicVar × String))
+    (cursor : PreparedCursor) (argsv : List Atom) (resv : Atom) : Prop :=
+  ∃ representative : TreeSubstitution,
+    TreeSubstitutionVariants
+        (Substitution.denote cursor.bindings) representative ∧
+    List.Forall₂
+      (fun term atom =>
+        CanonicalRuntimeAgrees alpha
+          (TreeSubstitution.apply representative (Term.denote term))
+          atom)
+      cursor.arguments (argsv ++ [resv])
+
+/-- Pointwise syntactic alpha agreement after applying a source
+substitution embeds into the representative relation with that exact
+source substitution as its own representative. -/
+theorem AlphaTermsAgree.appliedCanonicalRuntimeAgrees
+    {alpha : List (LogicVar × String)}
+    {bindings : Substitution}
+    {references : List Term} {executables : List Atom}
+    (agreement :
+      AlphaTermsAgree alpha
+        (bindings.applyTerms references) executables) :
+    List.Forall₂
+      (fun term atom =>
+        CanonicalRuntimeAgrees alpha
+          (TreeSubstitution.apply
+            (Substitution.denote bindings) (Term.denote term))
+          atom)
+      references executables := by
+  induction references generalizing executables with
+  | nil =>
+      simp only [Substitution.applyTerms_empty] at agreement
+      cases agreement
+      exact .nil
+  | cons term terms inductionHypothesis =>
+      simp only [Substitution.applyTerms_cons] at agreement
+      cases agreement with
+      | cons head tail =>
+          exact .cons
+            (by
+              rw [← Substitution.denote_applyTerm]
+              exact
+                PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.canonicalRuntimeAgrees
+                  head)
+            (inductionHypothesis tail)
+
+/-- The original syntactic call relation is a strict special case of the
+semantic representative relation. -/
+theorem NormalizedCallAgrees.representative
+    {alpha : List (LogicVar × String)}
+    {cursor : PreparedCursor} {argsv : List Atom} {resv : Atom}
+    (agreement :
+      NormalizedCallAgrees alpha cursor argsv resv) :
+    RepresentativeNormalizedCallAgrees alpha cursor argsv resv :=
+  ⟨Substitution.denote cursor.bindings,
+    TreeSubstitutionVariants.refl _,
+    PLeaTTa.PrologRecursiveCallPayloadBridge.AlphaTermsAgree.appliedCanonicalRuntimeAgrees
+      agreement.arguments⟩
+
+/-- A recursive local call in an active task constructs the semantic
+normalized-call relation at the exact runtime values inspected by the
+resolver prefilter.
+
+The source cursor equalities are the only connection requested from call
+opening.  Residual orientation remains hidden behind the representative
+already supplied by `TaskPayloadAgrees.applyLocalCall`. -/
+theorem TaskPayloadAgrees.representativeNormalizedCallAgrees
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Subst}
+    {predicate : String} {referencePayload : List Term}
+    {executableArguments : List Atom} {executableResult : Atom}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (payload :
+      TaskPayloadAgrees alpha support barrier canonical referenceBase current
+        runtime
+        (.call predicate referencePayload :: references)
+        (.call predicate executableArguments executableResult ::
+          executables))
+    (supported :
+      AlphaTermsSupported alpha support referencePayload)
+    (cursor : PreparedCursor)
+    (cursorArguments : cursor.arguments = referencePayload)
+    (cursorBindings : cursor.bindings = current) :
+    RepresentativeNormalizedCallAgrees alpha cursor
+      (executableArguments.map (PLeaTTa.subst runtime))
+      (PLeaTTa.subst runtime executableResult) := by
+  obtain
+    ⟨_referenceArguments, _referenceResult, representative,
+      _payloadShape, variants, leaves⟩ :=
+    PLeaTTa.PrologRecursiveCallPayloadBridge.TaskPayloadAgrees.applyLocalCall
+      payload supported
+  refine
+    ⟨representative ++ Substitution.denote referenceBase, ?_, ?_⟩
+  · rw [cursorBindings, payload.denoteCurrent]
+    exact variants
+  · rw [cursorArguments]
+    simpa only [List.map_append, List.map_singleton] using
+      (List.forall₂_map_right_iff.mpr leaves)
 
 /-! ## Anti-vacuity: recursive calls really need the representative -/
 
@@ -390,5 +504,54 @@ theorem recursive_call_orientation_requires_representative :
   cases impossible with
   | «variable» linked =>
       simp [recursiveWitnessAlpha, recursiveWitnessX, recursiveWitnessY] at linked
+
+/-- Minimal call token used to show that the representative relation is
+strictly more expressive than syntactic normalized-call agreement. -/
+private def recursiveWitnessCursor : PreparedCursor where
+  callGeneration := 0
+  predicate := "recursive"
+  arguments := [.variable recursiveWitnessX]
+  bindings := [(recursiveWitnessX, .variable recursiveWitnessY)]
+  reservationStart := 0
+  remaining := []
+  reservedUntil := 0
+
+/-- The representation-independent call relation is inhabited on the
+opposite-orientation recursive witness, while the old syntactic relation is
+not.
+
+This is an anti-vacuity check on the new abstraction itself: it accepts a
+real semantic residual variant that `NormalizedCallAgrees` provably cannot
+express, rather than merely renaming the older premise. -/
+theorem representative_call_strictly_extends_normalized_call :
+    RepresentativeNormalizedCallAgrees recursiveWitnessAlpha
+        recursiveWitnessCursor []
+        (PLeaTTa.subst recursiveWitnessRuntime (.var "$runtime_x")) ∧
+      ¬ NormalizedCallAgrees recursiveWitnessAlpha
+        recursiveWitnessCursor []
+        (PLeaTTa.subst recursiveWitnessRuntime (.var "$runtime_x")) := by
+  rcases recursive_call_orientation_requires_representative with
+    ⟨_cumulative, ⟨representative, variants, reading⟩, notDirect⟩
+  constructor
+  · refine ⟨representative, ?_, ?_⟩
+    · simpa [recursiveWitnessCursor, recursiveWitnessCanonical,
+        Substitution.denote, Term.denote] using variants
+    · exact .cons reading .nil
+  · intro syntactic
+    have direct :
+        CanonicalRuntimeAgrees recursiveWitnessAlpha
+          (TreeSubstitution.apply recursiveWitnessCanonical
+            (.variable recursiveWitnessX))
+          (PLeaTTa.subst recursiveWitnessRuntime
+            (.var "$runtime_x")) := by
+      cases syntactic.arguments with
+      | cons head tail =>
+          simpa [recursiveWitnessCursor, recursiveWitnessCanonical,
+              recursiveWitnessX, recursiveWitnessY,
+              TreeSubstitution.apply, Tree.instantiateOne,
+              Term.instantiateOne, Term.denote] using
+            (PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.canonicalRuntimeAgrees
+              head)
+    exact notDirect direct
 
 end PLeaTTa.PrologRecursiveCallPayloadBridge
