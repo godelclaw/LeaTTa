@@ -8,6 +8,7 @@ import PLeaTTa.Proofs.DemandDrivenCallStep
 import PLeaTTa.Proofs.PrologStateBridge
 import PLeaTTa.Proofs.PrologCallEntryBridge
 import PLeaTTa.Proofs.PrologCallStepBridge
+import PLeaTTa.Proofs.PrologOrdinaryStepBridge
 import PLeaTTa.Proofs.PrologPrefilterBridge
 import PLeaTTa.Proofs.PrologPrefilterScanBridge
 import PLeaTTa.Proofs.PrologCallPayloadBridge
@@ -1312,6 +1313,17 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.DemandDrivenCallStep.local_call_exact_two_steps
 #print axioms PLeaTTa.PrologCallStepBridge.openedFor_pendingCallOf_relates
 #print axioms PLeaTTa.PrologCallStepBridge.taskCall_callEnter_bank_correspondence
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.NormalizedAlphaGoalsAgree.append
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.NormalizedAlphaGoalsAgree.ofAlphaGoalsAgree
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.AdministrativeStep.rank_exact
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.AdministrativeStepsN.rank_exact
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.AdministrativeStepsN.sourceSteps
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.TaskPayloadAgrees.ofActivated
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.ReadyTaskRelates.ofActivated
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.ReadyTaskRelates.afterAdministrativeSteps
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.administrative_prefix_correspondence
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.three_administrative_steps_are_exact
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.three_administrative_steps_are_not_two
 #print axioms PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.prologMatchCompat_of_denotationalUnifier
 #print axioms PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.no_denotationalUnifier_of_prologMatchCompat_false
 #print axioms PLeaTTa.PrologPrefilterBridge.AlphaEquationsAgree.prologMatchCompatList_of_unifier
