@@ -226,7 +226,12 @@ def prefix_through_sleep(
     seen = 0
     for index, exchange in enumerate(transcript):
         request = exchange.get("request", {})
-        if effect_tag(request) == "sleep":
+        call = request.get("call", {})
+        interruptible_sleep = (
+            isinstance(call, dict) and
+            call.get("spec") == "telegram.sleep_until_message"
+        )
+        if effect_tag(request) == "sleep" or interruptible_sleep:
             seen += 1
             if seen == sleep_count:
                 return transcript[:index + 1]

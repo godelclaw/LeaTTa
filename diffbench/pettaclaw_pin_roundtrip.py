@@ -41,17 +41,16 @@ def strings_in(value):
             yield from strings_in(item)
 
 
-def request_calls(transcript: list[dict], name: str) -> list[dict]:
-    return [
-        request["call"]
-        for exchange in transcript
-        for request in [exchange.get("request", {})]
-        if request.get("call", {}).get("spec") == name
-    ]
-
-
 def validate_pin_path(transcript: list[dict], history: str) -> dict:
-    chats = request_calls(transcript, "synthetic_llm.chat")
+    indexed_calls = [
+        (index, exchange["request"]["call"], exchange["response"])
+        for index, exchange in enumerate(transcript)
+        if "call" in exchange.get("request", {})
+    ]
+    chats = [
+        call for _index, call, _response in indexed_calls
+        if call.get("spec") == "synthetic_llm.chat"
+    ]
     if len(chats) != 2:
         raise SystemExit(f"expected two synthetic turns, got {len(chats)}")
     second_prompt = next(
@@ -69,11 +68,24 @@ def validate_pin_path(transcript: list[dict], history: str) -> dict:
     dynamic = second_prompt.split(history_marker, 1)[1]
     history_part, last_part = dynamic.split(results_marker, 1)
     last_results = last_part.rsplit(time_marker, 1)[0]
-    normalizations = request_calls(transcript, "helper.normalize_string")
+    pin_calls = [
+        (index, call, response)
+        for index, call, response in indexed_calls
+        if call.get("spec") == "pins.pin" and
+        any(PIN_TOKEN in value for value in strings_in(call.get("args", [])))
+    ]
+    if len(pin_calls) != 1:
+        raise SystemExit(
+            f"expected one generic pins.pin call, got {len(pin_calls)}")
+    pin_index, _pin_call, pin_response = pin_calls[0]
+    pin_value = pin_response.get("returned", {}).get("value")
+    if pin_value is None:
+        raise SystemExit("pins.pin response omitted its returned HostValue")
     pin_reached_normalizer = any(
-        PIN_TOKEN in value
-        for call in normalizations
-        for value in strings_in(call.get("args", []))
+        index > pin_index and
+        call.get("spec") == "helper.normalize_string" and
+        call.get("args") == [pin_value]
+        for index, call, _response in indexed_calls
     )
     pin_in_history = PIN_TOKEN in history_part and PIN_TOKEN in history
     pin_in_last_results = (
@@ -132,6 +144,10 @@ def main() -> int:
     data_fixture = repo / "diffbench" / "host-fixtures" / "pettaclaw"
     for root in [live_root, replay_root, profile_root]:
         stage(data_fixture, root)
+        # The shared fixture carries the cooperative one-turn recycle
+        # sentinel.  This gate instead needs two genuine sleep-delimited
+        # turns, so stage the same data without requesting a recycle.
+        (root / "recycle.requested").unlink()
 
     environment = os.environ.copy()
     transcript = live_root / "transcript.json"

@@ -2,6 +2,9 @@
   "allow": [
     "dict",
     "eval",
+    "fsops.read_file",
+    "goals.goals_view",
+    "goals.kernel_pass",
     "helper.balance_parentheses",
     "helper.decode_safe_text",
     "helper.history_window",
@@ -11,7 +14,10 @@
     "helper.recycle_requested",
     "helper.strip_trailing_affect",
     "operator.add",
-    "str"
+    "pins.pin",
+    "pins.view",
+    "str",
+    "telegram.sleep_until_message"
   ],
   "responses": [
     {
@@ -31,6 +37,10 @@
       "value": {"integer": {"value": 1}}
     },
     {
+      "spec": "telegram.lastMessageArmLoops",
+      "value": {"integer": {"value": 50}}
+    },
+    {
       "spec": "synthetic_llm.current_model",
       "value": {"string": {"value": "fixture-model"}}
     },
@@ -41,6 +51,26 @@
     {
       "spec": "synthetic_llm.chat",
       "value": {"string": {"value": "((pin \"pin-roundtrip-fixture\"))"}}
+    },
+    {
+      "spec": "telegram.getLastMessage",
+      "value": {"string": {"value": "fixture human message"}}
+    },
+    {
+      "spec": "telegram.lastMessageIsHuman",
+      "value": {"integer": {"value": 1}}
+    },
+    {
+      "spec": "synthetic_llm.current_model",
+      "value": {"string": {"value": "fixture-model"}}
+    },
+    {
+      "spec": "telegram.recent_activity",
+      "value": {"string": {"value": "fixture recent activity"}}
+    },
+    {
+      "spec": "synthetic_llm.chat",
+      "value": {"string": {"value": "((rest))"}}
     },
     {
       "spec": "telegram.getLastMessage",
