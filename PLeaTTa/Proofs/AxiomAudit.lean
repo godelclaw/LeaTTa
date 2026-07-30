@@ -20,6 +20,7 @@ import PLeaTTa.Proofs.PrologMguExecutableOpenFactor
 import PLeaTTa.Proofs.PrologMguDirectSimulation
 import PLeaTTa.Proofs.PrologMguVariant
 import PLeaTTa.Proofs.PrologActivationUnifierBridge
+import PLeaTTa.Proofs.PrologActivationFailureBridge
 import PLeaTTa.Proofs.PrologGoalAlpha
 import PLeaTTa.Proofs.PrologActivationMacro
 import PLeaTTa.Proofs.PrologActivationBridge
@@ -1046,6 +1047,10 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologActivationUnifierBridge.SupportedPreparedCandidateAgrees.unifyB_ne_none_of_headResolution
 #print axioms PLeaTTa.PrologActivationUnifierBridge.matched_clause_eq_ok_correspondence
 #print axioms PLeaTTa.PrologActivationUnifierBridge.matched_clause_eq_ok_task_correspondence
+#print axioms PLeaTTa.PrologActivationFailureBridge.RetainedHeadFailureAgrees.not_encodingLeak
+#print axioms PLeaTTa.PrologActivationFailureBridge.RetainedHeadFailureAgrees.step_correspondence
+#print axioms PLeaTTa.PrologActivationFailureBridge.repeated_variable_false_positive_agrees
+#print axioms PLeaTTa.PrologActivationFailureBridge.repeated_variable_false_positive_steps_together
 #print axioms PLeaTTa.ClauseIndex.build_candidates
 #print axioms PLeaTTa.ClauseIndex.naiveCandidates_eq_head_filter
 #print axioms PLeaTTa.ClauseIndex.Valid.push
