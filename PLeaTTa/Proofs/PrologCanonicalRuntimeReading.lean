@@ -32,6 +32,88 @@ than the ordinary source-list spine, and the internal compound is not a
 runtime unification happens to reflect source unification.
 -/
 
+mutual
+
+/-- A canonical tree contains no literal use of the runtime spellings
+`True` or `False`.
+
+Pinned PeTTa's reader normalizes both source spellings `True`/`true` to the
+Prolog atom `true` (and likewise for false).  The executable runtime then
+uses `True`/`False` as its private spellings for those normalized atoms.
+Consequently a canonical source tree which literally contains the rigid
+atom `True` or `False` is not in the image of the supported reader/compiler
+pipeline.  The predicate is recursive because a reserved spelling hidden
+inside a list or partial value is just as ambiguous as one at the root. -/
+def NoRuntimeBooleanAliases : Tree → Prop
+  | .variable _ => True
+  | .node symbol children =>
+      symbol ≠ .atom "True" ∧
+        symbol ≠ .atom "False" ∧
+        NoRuntimeBooleanAliasesList children
+
+/-- Ordered-child companion to `NoRuntimeBooleanAliases`. -/
+def NoRuntimeBooleanAliasesList : List Tree → Prop
+  | [] => True
+  | tree :: trees =>
+      NoRuntimeBooleanAliases tree ∧
+        NoRuntimeBooleanAliasesList trees
+
+end
+
+mutual
+
+/-- Substitution cannot erase a rigid reserved Boolean spelling.  It may
+replace variables, but every rigid node and its ordered children survive.
+This backwards closure is the key fact used to move alias-safety across
+mutually factoring MGU representatives. -/
+theorem noRuntimeBooleanAliases_of_apply
+    (bindings : TreeSubstitution) :
+    (tree : Tree) →
+      NoRuntimeBooleanAliases (TreeSubstitution.apply bindings tree) →
+      NoRuntimeBooleanAliases tree
+  | .variable _, _ => trivial
+  | .node symbol children, safe => by
+      simp only [TreeSubstitution.apply_node,
+        NoRuntimeBooleanAliases] at safe ⊢
+      exact
+        ⟨safe.1, safe.2.1,
+          noRuntimeBooleanAliasesList_of_applyTrees bindings children
+            safe.2.2⟩
+
+/-- Ordered-child counterpart to
+`noRuntimeBooleanAliases_of_apply`. -/
+theorem noRuntimeBooleanAliasesList_of_applyTrees
+    (bindings : TreeSubstitution) :
+    (trees : List Tree) →
+      NoRuntimeBooleanAliasesList
+          (TreeSubstitution.applyTrees bindings trees) →
+      NoRuntimeBooleanAliasesList trees
+  | [], _ => trivial
+  | tree :: trees, safe => by
+      simp only [TreeSubstitution.applyTrees_cons,
+        NoRuntimeBooleanAliasesList] at safe ⊢
+      exact
+        ⟨noRuntimeBooleanAliases_of_apply bindings tree safe.1,
+          noRuntimeBooleanAliasesList_of_applyTrees bindings trees safe.2⟩
+
+end
+
+/-- Every member of an alias-safe ordered child list is alias-safe. -/
+theorem noRuntimeBooleanAliases_of_mem
+    {tree : Tree} {trees : List Tree}
+    (safe : NoRuntimeBooleanAliasesList trees)
+    (member : tree ∈ trees) :
+    NoRuntimeBooleanAliases tree := by
+  induction trees with
+  | nil =>
+      simp at member
+  | cons head tail inductionHypothesis =>
+      simp only [NoRuntimeBooleanAliasesList] at safe
+      simp only [List.mem_cons] at member
+      rcases member with rfl | member
+      · exact safe.1
+      · exact inductionHypothesis safe.2 member
+
 /-- One source-guided, canonical reading of the supported open runtime
 encoding.
 
@@ -105,6 +187,73 @@ theorem CanonicalRuntimeReading.toCanonicalRuntimeAgrees
   | cons head tail headIH tailIH =>
       exact .cons headIH tailIH
 
+/-- Broad forward agreement becomes the unique supported runtime reading
+once the source tree is known not to contain the private runtime Boolean
+spellings.
+
+The premise is deliberately source-side.  It excludes the only remaining
+intentional non-injectivity (`.atom "True"` versus normalized
+`.atom "true"`) without asking the runtime or an oracle to choose which
+source term it meant. -/
+theorem CanonicalRuntimeAgrees.toCanonicalRuntimeReading
+    {alpha : List (LogicVar × String)}
+    {tree : Tree} {atom : Atom}
+    (agreement : CanonicalRuntimeAgrees alpha tree atom) :
+    NoRuntimeBooleanAliases tree →
+      CanonicalRuntimeReading alpha tree atom := by
+  induction agreement with
+  | «variable» linked =>
+      intro _safe
+      exact .variable linked
+  | atom notLowerTrue notLowerFalse =>
+      intro safe
+      simp only [NoRuntimeBooleanAliases,
+        NoRuntimeBooleanAliasesList] at safe
+      exact .atom notLowerTrue notLowerFalse
+        (by
+          intro equality
+          apply safe.1
+          simp [equality])
+        (by
+          intro equality
+          apply safe.2.1
+          simp [equality])
+  | trueAtom =>
+      intro _safe
+      exact .trueAtom
+  | falseAtom =>
+      intro _safe
+      exact .falseAtom
+  | integer value =>
+      intro _safe
+      exact .integer value
+  | float value =>
+      intro _safe
+      exact .float value
+  | string value =>
+      intro _safe
+      exact .string value
+  | @partialValue head argumentsTree encodedArguments arguments
+      inductionHypothesis =>
+      intro safe
+      exact .partialValue
+        (inductionHypothesis
+          (noRuntimeBooleanAliases_of_mem safe.2.2
+            (by simp)))
+  | nil =>
+      intro _safe
+      exact .nil
+  | @cons headTree tailTree headAtom tailAtom head tail
+      headInduction tailInduction =>
+      intro safe
+      exact .cons
+        (headInduction
+          (noRuntimeBooleanAliases_of_mem safe.2.2
+            (by simp)))
+        (tailInduction
+          (noRuntimeBooleanAliases_of_mem safe.2.2
+            (by simp)))
+
 /-- The source-guided relation is a partial function from runtime atoms to
 canonical open trees.  Inverse functionality of the shared alpha graph is
 the only premise: without it, one runtime variable name could still denote
@@ -177,6 +326,14 @@ theorem literal_runtime_true_is_excluded :
       CanonicalRuntimeReading.functional shared reading
         (CanonicalRuntimeReading.trueAtom (alpha := []))
     simp at equal
+
+/-- Alias-safety distinguishes the normalized source Boolean from the
+unreachable literal use of the runtime spelling.  This keeps the source-side
+premise above non-vacuous. -/
+theorem runtime_true_alias_safety_is_discriminating :
+    NoRuntimeBooleanAliases (.node (.atom "true") []) ∧
+      ¬ NoRuntimeBooleanAliases (.node (.atom "True") []) := by
+  simp [NoRuntimeBooleanAliases, NoRuntimeBooleanAliasesList]
 
 /-- The forgeable source atom `#nil` and the internal empty-list sentinel
 now have distinct canonical readings and distinct runtime constructors. -/
