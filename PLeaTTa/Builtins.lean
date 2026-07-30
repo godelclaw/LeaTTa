@@ -20,7 +20,7 @@ namespace PLeaTTa
 open Metta (Atom Ground GroundingTable GroundMode ReduceResult)
 
 private def chainList : Atom → Option (List Atom)
-  | Atom.sym "#nil" => some []
+  | Atom.gnd (.external "PLeaTTa.internal" "nil") => some []
   | Atom.expr [Atom.sym "#c", h, t] => (chainList t).map (h :: ·)
   | _ => none
 

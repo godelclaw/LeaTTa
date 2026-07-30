@@ -91,6 +91,7 @@ partial def atomToPrologTerm : Atom → Option PrologTerm
   | .gnd (.int v) => some (.int v)
   | .gnd (.float v) => some (.floating v.toBits)
   | .gnd (.str v) => some (.str v)
+  | .gnd (.external "PLeaTTa.internal" "nil") => some (.list [])
   | .gnd (.external kind payload) =>
       payload.toNat?.map (PrologTerm.resource kind)
   | .sym name => some (.atom name)
@@ -430,6 +431,8 @@ def HostValue.ofAtomFuel : Nat → Atom → Except String HostValue
   | _ + 1, Atom.gnd (.str value) => .ok (.string value)
   | _ + 1, Atom.gnd (.bool true) => .ok (.string "true")
   | _ + 1, Atom.gnd (.bool false) => .ok (.string "false")
+  | _ + 1, Atom.gnd (.external "PLeaTTa.internal" "nil") =>
+      .ok (.list [])
   | _ + 1, Atom.gnd (.external "python" payload) =>
       match payload.toNat? with
       | some id => .ok (.handle id)

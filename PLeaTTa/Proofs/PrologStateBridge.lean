@@ -474,7 +474,7 @@ theorem renameAtomSuffix_chainOf (suffix : String) (atoms : List Atom) :
       chainOf (atoms.map (renameAtomSuffix suffix)) := by
   induction atoms with
   | nil =>
-      simp [chainOf, nilA, renameAtomSuffix_sym]
+      simp [chainOf, nilA, renameAtomSuffix_gnd]
   | cons head tail inductionHypothesis =>
       change renameAtomSuffix suffix (consC head (chainOf tail)) =
         consC (renameAtomSuffix suffix head)
@@ -554,7 +554,7 @@ theorem termAgrees_alpha_freshen
     simpa using
       (AlphaTermAgrees.properList (inductionHypothesis itemsSupport))
   · intro _supported
-    simpa [nilA, renameAtomSuffix_sym] using
+    simpa [nilA, renameAtomSuffix_gnd] using
       (AlphaProperListAgrees.nil (alpha := alpha))
   · intro term atom terms tail head rest headInduction tailInduction support
     simpa [consC, renameAtomSuffix_expr, renameAtomSuffix_sym] using

@@ -91,7 +91,7 @@ def binRel : String → String
   | "isnan-math" => "isnan_math" | "isinf-math" => "isinf_math"
   | op => "bop§" ++ op    -- no oracle entry: honestly uncertifiable leaf
 
-def nilA' : Atom := Atom.sym "#nil"
+def nilA' : Atom := nilA
 def consC' (h t : Atom) : Atom := Atom.expr [Atom.sym "#c", h, t]
 
 /-! ## Projection: compiled Goals → wire body atoms + aux clauses -/

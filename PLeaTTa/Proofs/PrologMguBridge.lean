@@ -664,7 +664,7 @@ private theorem chainOf_equivalent
   induction left generalizing right with
   | nil =>
       cases equivalent
-      exact .symbol "#nil"
+      exact .ground (PLeaTTa.prologGroundIdentical_self _)
   | cons leftHead leftTail inductionHypothesis =>
       cases equivalent with
       | cons head tail =>
@@ -863,7 +863,7 @@ theorem CanonicalRuntimeAgrees.equivalent_of_same
   | nil =>
       cases rightAgreement with
       | nil =>
-          exact .symbol _
+          exact .ground (PLeaTTa.prologGroundIdentical_self _)
   | cons head tail headInduction tailInduction =>
       cases rightAgreement with
       | cons rightHead rightTail =>

@@ -208,7 +208,7 @@ theorem termAgrees_alpha_rename
     simpa [Term.renameVariables] using
       (AlphaTermAgrees.properList (inductionHypothesis itemsSupport))
   · intro _supported
-    simpa [Terms.renameVariables, nilA, renameAtomSuffix_sym] using
+    simpa [Terms.renameVariables, nilA, renameAtomSuffix_gnd] using
       (AlphaProperListAgrees.nil (alpha := alpha))
   · intro term atom terms tail head rest headInduction tailInduction support
     simpa [Terms.renameVariables, consC, renameAtomSuffix_expr,

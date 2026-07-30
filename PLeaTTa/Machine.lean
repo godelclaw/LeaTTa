@@ -778,7 +778,7 @@ inductive Alt (Binding : Type := Subst) where
 deriving Repr, Inhabited
 
 def nilExactKey : PersistentSubst.AtomExactKey :=
-  mixHash 1 (hash "#nil")
+  mixHash 7 (mixHash (hash "PLeaTTa.internal") (hash "nil"))
 
 def consExactKey (head tail : PersistentSubst.AtomExactKey) :
     PersistentSubst.AtomExactKey :=
@@ -1964,7 +1964,9 @@ private def chainHead? : Atom → Option Atom
 
 private def shallowRuleChain? : Atom → Bool
   | Atom.expr [Atom.sym "#c", Atom.sym "=", Atom.expr
-      [Atom.sym "#c", head, Atom.expr [Atom.sym "#c", _, Atom.sym "#nil"]]] =>
+      [Atom.sym "#c", head, Atom.expr
+        [Atom.sym "#c", _, Atom.gnd
+          (.external "PLeaTTa.internal" "nil")]]] =>
       match chainHead? head with
       | some (Atom.sym _) => true
       | _ => false

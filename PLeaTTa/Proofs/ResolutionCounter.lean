@@ -965,18 +965,25 @@ theorem chainListM_vars_subset (atom : Atom) :
   induction atom using resolutionAtomRecAux with
   | sym symbol =>
       intro items hitems name member
-      by_cases hnil : symbol = "#nil"
-      · subst symbol
-        simp [chainListM] at hitems
-        subst items
-        simp at member
-      · simp [chainListM, hnil] at hitems
+      simp [chainListM] at hitems
   | var source =>
       intro items hitems
       simp [chainListM] at hitems
   | gnd ground =>
-      intro items hitems
-      simp [chainListM] at hitems
+      intro items hitems name member
+      cases ground with
+      | int | float | str | bool | unit | error =>
+          simp [chainListM] at hitems
+      | external kind payload =>
+          by_cases kindEq : kind = "PLeaTTa.internal"
+          · subst kind
+            by_cases payloadEq : payload = "nil"
+            · subst payload
+              simp [chainListM] at hitems
+              subst items
+              simp at member
+            · simp [chainListM, payloadEq] at hitems
+          · simp [chainListM, kindEq] at hitems
   | expr atoms ih =>
       intro items hitems name member
       rcases atoms with _ | ⟨first, tail⟩

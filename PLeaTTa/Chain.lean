@@ -7,7 +7,7 @@ tuple VALUES as cons-chains internally, so `(cons $a $rest)` and friends
 narrow STRUCTURALLY through ordinary unification (no moded builtins).
 Surface tuples chainify at compile/world boundaries and unchainify at print.
 
-Encoding: nil = `#nil`, cons = `(#c h t)`.
+Encoding: nil = one source-unforgeable tag, cons = `(#c h t)`.
 -/
 import MettaHyperonFull.Core.Atom
 
@@ -15,7 +15,14 @@ namespace PLeaTTa
 
 open Metta (Atom)
 
-def nilA : Atom := Atom.sym "#nil"
+/-- Source-unforgeable tag for pinned PeTTa's empty Prolog list.
+
+The source atom `#nil` is an ordinary atom in pinned PeTTa and is distinct
+from `()`.  Using that spelling as the internal empty-list sentinel aliases
+the two source values during unification.  The external payload is erased by
+`unchainify` before any user observation. -/
+def nilA : Atom :=
+  Atom.gnd (.external "PLeaTTa.internal" "nil")
 
 /-- One boolean representation everywhere: the symbols `True`/`False`
     (the parser produces `Ground.bool`; builtins may too). -/
@@ -28,7 +35,7 @@ def canonBool : Atom → Atom
 
 def consC (h t : Atom) : Atom := Atom.expr [Atom.sym "#c", h, t]
 
-/-- Chainify one tuple level: `(a b c)` → `(#c a (#c b (#c c #nil)))`. -/
+/-- Chainify one tuple level into the private nil/cons representation. -/
 def chainOf (es : List Atom) : Atom := es.foldr consC nilA
 
 /-- Source-unforgeable tag for pinned PeTTa's `partial(Fun, Args)` compound.
@@ -52,9 +59,19 @@ def partialC (functor : String) (encodedArgs : Atom) : Atom :=
 /-- Decode one complete internal cons-chain.  Compilation, specialization,
     and execution share this exact inverse view of `chainOf`. -/
 def chainListM : Atom → Option (List Atom)
-  | Atom.sym "#nil" => some []
+  | Atom.gnd (.external "PLeaTTa.internal" "nil") => some []
   | Atom.expr [Atom.sym "#c", h, t] => (chainListM t).map (h :: ·)
   | _ => none
+
+/-- The internal empty-list sentinel cannot alias the forgeable source atom
+`#nil`.  This is the discriminator that the previous representation lacked. -/
+theorem nilA_ne_source_nil : nilA ≠ Atom.sym "#nil" := by
+  simp [nilA]
+
+/-- A literal source `#nil` is not decoded as an empty proper list. -/
+@[simp] theorem chainListM_source_nil :
+    chainListM (Atom.sym "#nil") = none := by
+  rfl
 
 /-- Recognize only the source-unforgeable partial compound encoding. -/
 def partialView? : Atom → Option (String × Atom)
@@ -116,7 +133,8 @@ def unchainify (fuel : Nat) (a : Atom) : Atom :=
                 (acc : List Atom) : List Atom × Option Atom :=
               match fu, x with
               | 0, x => (acc, some x)
-              | _, Atom.sym "#nil" => (acc, none)
+              | _, Atom.gnd
+                  (.external "PLeaTTa.internal" "nil") => (acc, none)
               | fu + 1, Atom.expr [Atom.sym "#c", h', t'] =>
                   walk fu t' (acc ++ [unchainify fu h'])
               | _, other => (acc, some other)
@@ -125,7 +143,7 @@ def unchainify (fuel : Nat) (a : Atom) : Atom :=
             | none => Atom.expr items
             | some tl =>
                 Atom.expr (items ++ [Atom.sym ".", unchainify fuel tl])
-        | Atom.sym "#nil" => Atom.expr []
+        | Atom.gnd (.external "PLeaTTa.internal" "nil") => Atom.expr []
         | Atom.expr es => Atom.expr (es.map (unchainify fuel))
         | a => a
 

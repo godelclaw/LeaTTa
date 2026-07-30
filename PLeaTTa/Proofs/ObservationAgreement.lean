@@ -54,7 +54,7 @@ one source reading. Literal uses of the reserved executable spellings are
 excluded; improper lists and compounds remain outside the proved bridge until
 their executable encodings are added. -/
 def CanonicalGroundTerm : GroundTerm → Prop
-  | .atom name => name ≠ "True" ∧ name ≠ "False" ∧ name ≠ "#nil"
+  | .atom name => name ≠ "True" ∧ name ≠ "False"
   | .integer _ | .float _ | .string _ => True
   | .compound _ _ => False
   | .list items none => CanonicalGroundTerms items
@@ -97,7 +97,7 @@ inductive AtomDenotes (valuation : ExecutableValuation) :
         (partialC head encoded)
         (.compound "partial" [.atom head, .list items none])
 
-/-- Denotation of PLeaTTa's internal `#c`/`#nil` proper-list encoding. -/
+/-- Denotation of PLeaTTa's private nil/cons proper-list encoding. -/
 inductive ChainDenotes (valuation : ExecutableValuation) :
     List GroundTerm → Atom → Prop where
   | nil : ChainDenotes valuation [] nilA
@@ -109,14 +109,11 @@ inductive ChainDenotes (valuation : ExecutableValuation) :
 
 end
 
-private theorem chainDenotes_symbol {valuation : ExecutableValuation}
+private theorem chainDenotes_symbol_false {valuation : ExecutableValuation}
     {items : List GroundTerm} {name : String}
-    (denotes : ChainDenotes valuation items (.sym name)) :
-    name = "#nil" ∧ items = [] := by
+    (denotes : ChainDenotes valuation items (.sym name)) : False := by
   generalize encodedEq : Atom.sym name = encoded at denotes
-  cases denotes with
-  | nil => simpa [nilA] using encodedEq
-  | cons head rest => simp [consC] at encodedEq
+  cases denotes <;> simp [nilA, consC] at encodedEq
 
 private theorem chainDenotes_variable_false
     {valuation : ExecutableValuation} {items : List GroundTerm}
@@ -125,12 +122,17 @@ private theorem chainDenotes_variable_false
   generalize encodedEq : Atom.var name = encoded at denotes
   cases denotes <;> simp [nilA, consC] at encodedEq
 
-private theorem chainDenotes_ground_false
+private theorem chainDenotes_ground
     {valuation : ExecutableValuation} {items : List GroundTerm}
     {ground : Metta.Ground}
-    (denotes : ChainDenotes valuation items (.gnd ground)) : False := by
+    (denotes : ChainDenotes valuation items (.gnd ground)) :
+    ground = .external "PLeaTTa.internal" "nil" ∧ items = [] := by
   generalize encodedEq : Atom.gnd ground = encoded at denotes
-  cases denotes <;> simp [nilA, consC] at encodedEq
+  cases denotes with
+  | nil =>
+      simp [nilA] at encodedEq
+      exact ⟨encodedEq, rfl⟩
+  | cons head rest => simp [consC] at encodedEq
 
 private theorem chainDenotes_cons {valuation : ExecutableValuation}
     {items : List GroundTerm} {atom tail : Atom}
@@ -173,8 +175,7 @@ private theorem atomDenotes_symbol {valuation : ExecutableValuation}
     (denotes : AtomDenotes valuation (.sym name) value) :
     value = .atom name ∨
       (name = "True" ∧ value = .atom "true") ∨
-      (name = "False" ∧ value = .atom "false") ∨
-      (name = "#nil" ∧ value = .list [] none) := by
+      (name = "False" ∧ value = .atom "false") := by
   generalize encodedEq : Atom.sym name = encoded at denotes
   cases denotes with
   | «variable» => simp at encodedEq
@@ -187,15 +188,13 @@ private theorem atomDenotes_symbol {valuation : ExecutableValuation}
       exact Or.inr (Or.inl ⟨encodedEq, rfl⟩)
   | falseAtom =>
       simp at encodedEq
-      exact Or.inr (Or.inr (Or.inl ⟨encodedEq, rfl⟩))
+      exact Or.inr (Or.inr ⟨encodedEq, rfl⟩)
   | integer => simp at encodedEq
   | float => simp at encodedEq
   | string => simp at encodedEq
   | properList elements =>
       rw [← encodedEq] at elements
-      obtain ⟨nameEq, itemsEq⟩ := chainDenotes_symbol elements
-      exact Or.inr (Or.inr (Or.inr ⟨nameEq,
-        congrArg (fun items => GroundTerm.list items none) itemsEq⟩))
+      exact False.elim (chainDenotes_symbol_false elements)
   | partialValue arguments =>
       simp [partialC, partialTagA] at encodedEq
 
@@ -205,7 +204,9 @@ private theorem atomDenotes_ground {valuation : ExecutableValuation}
     (∃ integer, ground = .int integer ∧ value = .integer integer) ∨
       (∃ float, ground = .float float ∧
         value = .float (PLeaTTa.PrologFloatIdentity.ofFloat float)) ∨
-      (∃ string, ground = .str string ∧ value = .string string) := by
+      (∃ string, ground = .str string ∧ value = .string string) ∨
+      (ground = .external "PLeaTTa.internal" "nil" ∧
+        value = .list [] none) := by
   generalize encodedEq : Atom.gnd ground = encoded at denotes
   cases denotes with
   | «variable» => simp at encodedEq
@@ -220,10 +221,12 @@ private theorem atomDenotes_ground {valuation : ExecutableValuation}
       exact Or.inr (Or.inl ⟨float, encodedEq, rfl⟩)
   | string string =>
       simp at encodedEq
-      exact Or.inr (Or.inr ⟨string, encodedEq, rfl⟩)
+      exact Or.inr (Or.inr (Or.inl ⟨string, encodedEq, rfl⟩))
   | properList elements =>
       rw [← encodedEq] at elements
-      exact False.elim (chainDenotes_ground_false elements)
+      obtain ⟨groundEq, itemsEq⟩ := chainDenotes_ground elements
+      cases itemsEq
+      exact Or.inr (Or.inr (Or.inr ⟨groundEq, rfl⟩))
   | partialValue arguments =>
       simp [partialC, partialTagA] at encodedEq
 
@@ -262,50 +265,49 @@ private theorem atomDenotes_canonical_functional_aux
     exact (atomDenotes_variable rightDenotes).symm
   · intro name right leftCanonical _ rightDenotes
     rcases atomDenotes_symbol rightDenotes with
-      same | trueReading | falseReading | nilReading
+      same | trueReading | falseReading
     · exact same.symm
     · exact False.elim (leftCanonical.1 trueReading.1)
-    · exact False.elim (leftCanonical.2.1 falseReading.1)
-    · exact False.elim (leftCanonical.2.2 nilReading.1)
+    · exact False.elim (leftCanonical.2 falseReading.1)
   · intro right _ rightCanonical rightDenotes
     rcases atomDenotes_symbol rightDenotes with
-      same | trueReading | falseReading | nilReading
+      same | trueReading | falseReading
     · rw [same] at rightCanonical
       simp [CanonicalGroundTerm] at rightCanonical
     · exact trueReading.2.symm
     · simp at falseReading
-    · simp at nilReading
   · intro right _ rightCanonical rightDenotes
     rcases atomDenotes_symbol rightDenotes with
-      same | trueReading | falseReading | nilReading
+      same | trueReading | falseReading
     · rw [same] at rightCanonical
       simp [CanonicalGroundTerm] at rightCanonical
     · simp at trueReading
     · exact falseReading.2.symm
+  · intro value right _ _ rightDenotes
+    rcases atomDenotes_ground rightDenotes with
+      intReading | floatReading | stringReading | nilReading
+    · obtain ⟨other, groundEq, valueEq⟩ := intReading
+      cases groundEq
+      exact valueEq.symm
+    · obtain ⟨other, groundEq, valueEq⟩ := floatReading
+      cases groundEq
+    · obtain ⟨other, groundEq, valueEq⟩ := stringReading
+      cases groundEq
     · simp at nilReading
   · intro value right _ _ rightDenotes
     rcases atomDenotes_ground rightDenotes with
-      intReading | floatReading | stringReading
+      intReading | floatReading | stringReading | nilReading
     · obtain ⟨other, groundEq, valueEq⟩ := intReading
       cases groundEq
-      exact valueEq.symm
     · obtain ⟨other, groundEq, valueEq⟩ := floatReading
       cases groundEq
+      exact valueEq.symm
     · obtain ⟨other, groundEq, valueEq⟩ := stringReading
       cases groundEq
+    · simp at nilReading
   · intro value right _ _ rightDenotes
     rcases atomDenotes_ground rightDenotes with
-      intReading | floatReading | stringReading
-    · obtain ⟨other, groundEq, valueEq⟩ := intReading
-      cases groundEq
-    · obtain ⟨other, groundEq, valueEq⟩ := floatReading
-      cases groundEq
-      exact valueEq.symm
-    · obtain ⟨other, groundEq, valueEq⟩ := stringReading
-      cases groundEq
-  · intro value right _ _ rightDenotes
-    rcases atomDenotes_ground rightDenotes with
-      intReading | floatReading | stringReading
+      intReading | floatReading | stringReading | nilReading
     · obtain ⟨other, groundEq, valueEq⟩ := intReading
       cases groundEq
     · obtain ⟨other, groundEq, valueEq⟩ := floatReading
@@ -313,16 +315,16 @@ private theorem atomDenotes_canonical_functional_aux
     · obtain ⟨other, groundEq, valueEq⟩ := stringReading
       cases groundEq
       exact valueEq.symm
+    · simp at nilReading
   · intro items encoded elements elementsIH right leftCanonical
       rightCanonical rightDenotes
     cases elements with
     | nil =>
-        rcases atomDenotes_symbol rightDenotes with
-          same | trueReading | falseReading | nilReading
-        · rw [same] at rightCanonical
-          simp [CanonicalGroundTerm] at rightCanonical
-        · simp at trueReading
-        · simp at falseReading
+        rcases atomDenotes_ground rightDenotes with
+          intReading | floatReading | stringReading | nilReading
+        · simp at intReading
+        · simp at floatReading
+        · simp at stringReading
         · exact nilReading.2.symm
     | cons head rest =>
         obtain ⟨rightItems, rightEq, rightElements⟩ :=
@@ -335,7 +337,7 @@ private theorem atomDenotes_canonical_functional_aux
       _rightCanonical _rightDenotes
     simp [CanonicalGroundTerm] at leftCanonical
   · intro right _ _ rightDenotes
-    exact (chainDenotes_symbol rightDenotes).2.symm
+    exact (chainDenotes_ground rightDenotes).2.symm
   · intro value atom values tail head rest headIH restIH right
       leftCanonical rightCanonical rightDenotes
     obtain ⟨rightValue, rightValues, rightEq, rightHead, rightRest⟩ :=
@@ -346,8 +348,8 @@ private theorem atomDenotes_canonical_functional_aux
       restIH leftCanonical.2 rightCanonical.2 rightRest]
 
 /-- The relational executable denotation is a function on canonical source
-observations. The premises are necessary: the executable symbols `True`,
-`False`, and `#nil` each permit a second noncanonical source reading. -/
+observations. The premises are necessary only for PeTTa's normalized boolean
+spellings; the private nil constructor is unambiguous. -/
 theorem AtomDenotes.canonical_functional {valuation : ExecutableValuation}
     {atom : Atom} {left right : GroundTerm}
     (leftCanonical : CanonicalGroundTerm left)
@@ -752,7 +754,7 @@ theorem ordered_integer_answers_not_swapped :
   | cons head _ =>
       rcases head with ⟨executable, variables, denotes⟩
       rcases atomDenotes_ground denotes with
-        integerReading | floatReading | stringReading
+        integerReading | floatReading | stringReading | nilReading
       · obtain ⟨integer, groundEq, valueEq⟩ := integerReading
         simp at groundEq
         subst integer
@@ -761,6 +763,7 @@ theorem ordered_integer_answers_not_swapped :
         simp at groundEq
       · obtain ⟨string, groundEq, _valueEq⟩ := stringReading
         simp at groundEq
+      · simp at nilReading
 
 /-- The canonical truth encoding also denotes the literal source atom
 `True`; a later supported-source condition must exclude this ambiguity. -/
@@ -770,13 +773,22 @@ theorem true_encoding_has_two_atom_readings
       AtomDenotes valuation (.sym "True") (.atom "True") := by
   exact ⟨.trueAtom, .symbol "True"⟩
 
-/-- The internal nil sentinel can also be read as a literal source atom;
-canonical source terms must reserve the sentinel spelling. -/
-theorem nil_encoding_has_atom_and_list_readings
+/-- The internal nil sentinel denotes the empty list but cannot denote the
+ordinary source atom `#nil`. -/
+theorem nil_encoding_excludes_source_atom
     (valuation : ExecutableValuation) :
-    AtomDenotes valuation nilA (.atom "#nil") ∧
-      AtomDenotes valuation nilA (.list [] none) := by
-  exact ⟨.symbol "#nil", .properList .nil⟩
+    AtomDenotes valuation nilA (.list [] none) ∧
+      ¬ AtomDenotes valuation nilA (.atom "#nil") := by
+  constructor
+  · exact .properList .nil
+  · intro sourceReading
+    have impossible :
+        (.list [] none : GroundTerm) = .atom "#nil" :=
+      AtomDenotes.canonical_functional
+        (by simp [CanonicalGroundTerm, CanonicalGroundTerms])
+        (by simp [CanonicalGroundTerm])
+        (.properList .nil) sourceReading
+    simp at impossible
 
 /-- A source variable named like a generated compiler variable forces the two
 independent variables to alias under the current executable encoding. This is

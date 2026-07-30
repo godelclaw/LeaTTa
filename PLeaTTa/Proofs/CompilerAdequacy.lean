@@ -4739,11 +4739,16 @@ theorem compileExpr_initial_complete {state : TranslatorState} (env : CEnv)
   cases resultEquality
   exact ⟨term, goals, native, termAgreement, goalsAgreement⟩
 
-/-- A host external value cannot masquerade as any certified Prolog term. -/
-theorem external_not_term_agreement (tag payload : String) (term : Term) :
+/-- A host external value other than the private nil sentinel cannot
+masquerade as any certified Prolog term. -/
+theorem external_not_term_agreement (tag payload : String) (term : Term)
+    (notNil :
+      tag ≠ "PLeaTTa.internal" ∨ payload ≠ "nil") :
     ¬ TermAgrees term (.gnd (.external tag payload)) := by
   intro agreement
   cases agreement with
-  | properList elements => cases elements
+  | properList elements =>
+      cases elements with
+      | nil => simp at notNil
 
 end PLeaTTa.CompilerAdequacy

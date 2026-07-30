@@ -805,7 +805,7 @@ private def preparedChainView? (atom : Atom)
     (prepared : PersistentSubst.PreparedAtom) :
     Option (PreparedChainView atom) :=
   match atom, prepared.children with
-  | .sym "#nil", _ =>
+  | .gnd (.external "PLeaTTa.internal" "nil"), _ =>
       some
         { items := []
           sound := rfl }

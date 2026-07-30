@@ -208,7 +208,7 @@ def partialValue (f : String) (args : List Atom) : Atom :=
   partialC f (chainOf args)
 
 private def chainListC : Atom → Option (List Atom)
-  | Atom.sym "#nil" => some []
+  | Atom.gnd (.external "PLeaTTa.internal" "nil") => some []
   | Atom.expr [Atom.sym "#c", h, t] => (chainListC t).map (h :: ·)
   | _ => none
 

@@ -215,28 +215,28 @@ theorem unifyTopExact_result_subst_runtimeAlphaCovered
       (unifyTopExact_result_runtimeAlphaCovered agreement returned)
       atomCovered
 
-/-- Variable support has a genuine boundary: it cannot by itself invert rigid
-runtime encodings.  Both `True` and `#nil` have two distinct independent
-readings at the PeTTa boundary, so the remaining output theorem must retain
-the source-guided equation derivation rather than choose a context-free
-runtime decoder. -/
-theorem rigid_runtime_inverse_is_not_functional :
-    (CanonicalRuntimeAgrees []
+/-- Variable support cannot by itself choose between PeTTa's two accepted
+boolean source spellings.  Pinned PeTTa normalizes `True` and `true` to the
+same Prolog atom, so the remaining theorem must obtain this normalization
+from the supported source producer rather than inventing a runtime
+distinction. -/
+theorem boolean_runtime_inverse_is_not_functional :
+    CanonicalRuntimeAgrees []
         (.node (.atom "True") []) (.sym "True") ∧
       CanonicalRuntimeAgrees []
         (.node (.atom "true") []) (.sym "True") ∧
       (.node (.atom "True") [] : Tree) ≠
-        .node (.atom "true") []) ∧
-    (CanonicalRuntimeAgrees []
-        (.node (.atom "#nil") []) nilA ∧
-      CanonicalRuntimeAgrees []
-        (.node .nil []) nilA ∧
-      (.node (.atom "#nil") [] : Tree) ≠ .node .nil []) := by
-  constructor
-  · exact
-      ⟨.atom (by decide) (by decide), .trueAtom, by simp⟩
-  · exact
-      ⟨.atom (by decide) (by decide), .nil, by simp⟩
+        .node (.atom "true") [] := by
+  exact ⟨.atom (by decide) (by decide), .trueAtom, by simp⟩
+
+/-- In contrast, the forgeable source atom `#nil` and the internal empty-list
+sentinel now have different runtime constructors. -/
+theorem nil_runtime_encoding_is_distinct :
+    CanonicalRuntimeAgrees []
+        (.node (.atom "#nil") []) (.sym "#nil") ∧
+      CanonicalRuntimeAgrees [] (.node .nil []) nilA ∧
+      (Atom.sym "#nil" : Atom) ≠ nilA := by
+  exact ⟨.atom (by decide) (by decide), .nil, nilA_ne_source_nil.symm⟩
 
 /-- A tree-level canonical unifier and its open alpha valuation make every
 runtime equation pair comparator-equivalent.  This avoids reifying the

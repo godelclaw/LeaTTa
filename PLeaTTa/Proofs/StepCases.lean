@@ -336,7 +336,6 @@ theorem step_callDyn (c : Conf) (hd : Atom) (args : List Atom) (res : Atom)
         simp [partialView?]
       · rw [hhd]
   | gnd gr =>
-      have hcl : chainListM (Atom.gnd gr) = none := rfl
       have hstep : step prog gt fuel c
           = { c with cur := some (Goal.eq res
                 (chainOf (Atom.gnd gr :: args)) :: rest, b) } := by

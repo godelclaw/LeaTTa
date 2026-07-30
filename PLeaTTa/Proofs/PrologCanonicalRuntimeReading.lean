@@ -21,8 +21,9 @@ open PrologPrefilterBridge
 
 /-!
 `CanonicalRuntimeAgrees` is deliberately relational: the runtime symbols
-`True`, `False`, and `#nil` also spell literal source atoms.  That relation
-is suitable for forward simulation but has no global inverse.
+`True` and `False` also spell accepted source boolean aliases.  That relation
+is suitable for forward simulation but has no global inverse until the
+supported reader normalizes those aliases.
 
 This file makes the supported inverse explicit.  Reserved encodings have
 their PeTTa meanings.  Partial values use the internal `partialC` tag rather
@@ -35,10 +36,10 @@ runtime unification happens to reflect source unification.
 encoding.
 
 The negative fields on `atom` reserve the runtime spellings used for
-booleans and nil.  Partial values and proper lists use structurally distinct
-runtime constructors, so no negative side condition is needed to separate
-them.  Variables remain open and are interpreted through the shared alpha
-graph. -/
+booleans.  Empty lists, partial values, and proper-list cells use
+structurally distinct runtime constructors, so no negative side condition is
+needed to separate them.  Variables remain open and are interpreted through
+the shared alpha graph. -/
 inductive CanonicalRuntimeReading
     (alpha : List (LogicVar × String)) : Tree → Atom → Prop where
   | variable {identity : LogicVar} {name : String}
@@ -48,8 +49,7 @@ inductive CanonicalRuntimeReading
       (notLowerTrue : name ≠ "true")
       (notLowerFalse : name ≠ "false")
       (notRuntimeTrue : name ≠ "True")
-      (notRuntimeFalse : name ≠ "False")
-      (notRuntimeNil : name ≠ "#nil") :
+      (notRuntimeFalse : name ≠ "False") :
       CanonicalRuntimeReading alpha (.node (.atom name) []) (.sym name)
   | trueAtom :
       CanonicalRuntimeReading alpha
@@ -92,7 +92,7 @@ theorem CanonicalRuntimeReading.toCanonicalRuntimeAgrees
     CanonicalRuntimeAgrees alpha tree atom := by
   induction reading with
   | «variable» linked => exact .variable linked
-  | atom notLowerTrue notLowerFalse _ _ _ =>
+  | atom notLowerTrue notLowerFalse _ _ =>
       exact .atom notLowerTrue notLowerFalse
   | trueAtom => exact .trueAtom
   | falseAtom => exact .falseAtom
@@ -121,12 +121,11 @@ theorem CanonicalRuntimeReading.functional
       cases rightReading with
       | «variable» rightLinked =>
           simp [shared.backward leftLinked rightLinked]
-  | atom _ _ notRuntimeTrue notRuntimeFalse notRuntimeNil =>
+  | atom _ _ notRuntimeTrue notRuntimeFalse =>
       cases rightReading with
-      | atom _ _ _ _ _ => rfl
+      | atom _ _ _ _ => rfl
       | trueAtom => exact False.elim (notRuntimeTrue rfl)
       | falseAtom => exact False.elim (notRuntimeFalse rfl)
-      | nil => exact False.elim (notRuntimeNil rfl)
   | trueAtom =>
       generalize atomEq : (Atom.sym "True") = runtimeAtom at rightReading
       cases rightReading <;>
@@ -179,22 +178,16 @@ theorem literal_runtime_true_is_excluded :
         (CanonicalRuntimeReading.trueAtom (alpha := []))
     simp at equal
 
-/-- The broad relation admits the literal `#nil`; the canonical reading
-rejects it in favor of the empty-list node. -/
-theorem literal_runtime_nil_is_excluded :
-    CanonicalRuntimeAgrees []
-        (.node (.atom "#nil") []) nilA ∧
-      ¬ CanonicalRuntimeReading []
-        (.node (.atom "#nil") []) nilA := by
+/-- The forgeable source atom `#nil` and the internal empty-list sentinel
+now have distinct canonical readings and distinct runtime constructors. -/
+theorem source_nil_and_empty_list_are_distinct :
+    CanonicalRuntimeReading []
+        (.node (.atom "#nil") []) (.sym "#nil") ∧
+      CanonicalRuntimeReading [] (.node .nil []) nilA ∧
+      (Atom.sym "#nil" : Atom) ≠ nilA := by
   constructor
-  · exact .atom (by decide) (by decide)
-  · intro reading
-    have shared : SharedRuntimeAlpha [] := by
-      constructor <;> intro <;> simp_all
-    have equal :=
-      CanonicalRuntimeReading.functional shared reading
-        (CanonicalRuntimeReading.nil (alpha := []))
-    simp at equal
+  · exact .atom (by decide) (by decide) (by decide) (by decide)
+  · exact ⟨.nil, nilA_ne_source_nil.symm⟩
 
 private def partialArgumentsTree : Tree := .node .nil []
 private def partialArgumentsAtom : Atom := nilA
@@ -235,10 +228,8 @@ theorem source_partial_list_is_distinctly_admitted :
   constructor
   · apply CanonicalRuntimeReading.cons
     · exact .atom (by decide) (by decide) (by decide) (by decide)
-        (by decide)
     · apply CanonicalRuntimeReading.cons
       · exact .atom (by decide) (by decide) (by decide) (by decide)
-          (by decide)
       · apply CanonicalRuntimeReading.cons
         · exact .nil
         · exact .nil
