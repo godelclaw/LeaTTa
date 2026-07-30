@@ -9,7 +9,8 @@ Main exports:
   SegmentedTaskPayloadAgrees.afterBodyAdministrativeStep,
   SegmentedActiveProductRelates.afterAdministrativeStep,
   SegmentedActiveProductRelates.afterAdministrativeSteps,
-  SegmentedActiveProductRelates.afterUnifySuccess
+  SegmentedActiveProductRelates.afterUnifySuccess,
+  SegmentedActiveProductRelates.afterCut
 -/
 import PLeaTTa.Proofs.PrologProductSchedulingBridge
 
@@ -40,6 +41,53 @@ segmented.  In particular, successful unification trims the installed runtime
 substitution against the entire executable `bodyTail ++ callerTail` while
 rebuilding the two control segments at their original barrier identities.
 -/
+
+/-! ## Shared retained resources and post-cut state -/
+
+/-- The segmented active relation projects into the same control-independent
+resource certificate as the uniform relation.  Only the callee's body barrier
+owns the retained clause alternatives. -/
+def SegmentedActiveProductRelates.resources
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {bodyBarrier callerBarrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {referenceRest body : List PeTTaSpec.PrologCore.Goal}
+    {current : Substitution} {state : OpenConf}
+    (agreement :
+      SegmentedActiveProductRelates freshFrontier alpha support
+        bodyBarrier callerBarrier canonical referenceBase opened pending
+        finish branch branchTail altTail referenceRest current body state) :
+    RetainedProductResources bodyBarrier pending altTail state :=
+  ⟨agreement.retainedAlts, agreement.retainedAltsZero,
+    agreement.retainedBarriers, agreement.bodyBarrierTag⟩
+
+/-- State relation after a clause-local cut has removed the retained
+later-clause bank.
+
+The continuing clause body remains certified at `bodyBarrier`; the caller
+continuation remains certified independently at `callerBarrier`.  The
+executable alternative stack is exactly the suspended caller stack. -/
+structure SegmentedCommittedProductRelates
+    (freshFrontier : FreshFrontierRelation)
+    (alpha support : List (LogicVar × String))
+    (bodyBarrier callerBarrier : Nat)
+    (canonical : TreeSubstitution) (referenceBase : Substitution)
+    (opened : OpenedCall) (pending : DemandDrivenCallStep.PendingCall)
+    (referenceRest : List PeTTaSpec.PrologCore.Goal)
+    (current : Substitution)
+    (body : List PeTTaSpec.PrologCore.Goal)
+    (state : OpenConf) : Prop where
+  ready :
+    SegmentedReadyTaskRelates freshFrontier alpha support
+      bodyBarrier callerBarrier canonical referenceBase opened.session current
+      body referenceRest state
+  outerAlts : state.control.alts = pending.outer.alts
+  cacheCoherent : PLeaTTa.BarrierCacheCoherent state.toConf
+  frames : state.frames = pending.frames
 
 /-! ## Compiler-erased body administration -/
 
@@ -349,5 +397,114 @@ theorem SegmentedActiveProductRelates.afterUnifySuccess
         PLeaTTa.pushBarrierCache pending.outer.barriers
     exact agreement.retainedBarriers
   · simpa [nextState, unifySuccessor] using agreement.frames
+
+/-! ## Clause-local cut -/
+
+/-- One clause-local cut prunes the retained later-clause cursor while
+preserving the caller continuation at its independently certified barrier.
+
+The source emits the exact cursor-token prune observation and catches the
+commit at the predicate scope.  The executable performs one real tagged-cut
+step at `bodyBarrier`, removes exactly the predicate-owned alternatives and
+marker, and retains the caller's flattened control at `callerBarrier`. -/
+theorem SegmentedActiveProductRelates.afterCut
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {bodyBarrier callerBarrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {referenceRest bodyRest : List PeTTaSpec.PrologCore.Goal}
+    {callerScope : CutScopeId}
+    {current : Substitution} {state : OpenConf}
+    (agreement :
+      SegmentedActiveProductRelates freshFrontier alpha support
+        bodyBarrier callerBarrier canonical referenceBase opened pending
+        finish branch branchTail altTail referenceRest current
+        (.cut :: bodyRest) state)
+    (coherent : PLeaTTa.BarrierCacheCoherent state.toConf) :
+    ∃ bodyExecutableTail callerExecutables runtime,
+      state.control.cur =
+          some
+            (.cutAt bodyBarrier ::
+              (bodyExecutableTail ++ callerExecutables),
+              runtime) ∧
+        RawStep opened.session
+          (activeSourceProduct callerScope opened finish branch branchTail
+            current (.cut :: bodyRest) referenceRest)
+          [.pruned (retainedCursorToken opened finish branch branchTail)]
+          .none opened.session
+          (.running
+            (cutSourceProduct callerScope opened current bodyRest
+              referenceRest)) ∧
+        DemandDrivenCallStep.Step prog gt (.ready state)
+          (.ready
+            (cutSuccessor state bodyBarrier
+              (bodyExecutableTail ++ callerExecutables) runtime)) ∧
+        SegmentedCommittedProductRelates freshFrontier alpha support
+          bodyBarrier callerBarrier canonical referenceBase opened pending
+          referenceRest current bodyRest
+          (cutSuccessor state bodyBarrier
+            (bodyExecutableTail ++ callerExecutables) runtime) := by
+  rcases agreement.ready with
+    ⟨bodyExecutables, callerExecutables, runtime, persistent, currentControl,
+      payload⟩
+  rcases payload.body.control.cutHead with
+    ⟨bodyExecutableTail, bodyShape, bodyTailControl⟩
+  have executableHead :
+      state.control.cur =
+        some
+          (.cutAt bodyBarrier ::
+            (bodyExecutableTail ++ callerExecutables),
+            runtime) := by
+    calc
+      state.control.cur =
+          some (bodyExecutables ++ callerExecutables, runtime) :=
+        currentControl
+      _ =
+          some
+            ((.cutAt bodyBarrier :: bodyExecutableTail) ++
+              callerExecutables,
+              runtime) := by rw [bodyShape]
+      _ =
+          some
+            (.cutAt bodyBarrier ::
+              (bodyExecutableTail ++ callerExecutables),
+              runtime) := by rfl
+  let nextState :=
+    cutSuccessor state bodyBarrier
+      (bodyExecutableTail ++ callerExecutables) runtime
+  have executableStep :
+      DemandDrivenCallStep.Step prog gt (.ready state)
+        (.ready nextState) :=
+    executable_cut_step state bodyBarrier
+      (bodyExecutableTail ++ callerExecutables) runtime executableHead
+  have nextReady :
+      SegmentedReadyTaskRelates freshFrontier alpha support
+        bodyBarrier callerBarrier canonical referenceBase opened.session current
+        bodyRest referenceRest nextState := by
+    refine
+      ⟨bodyExecutableTail, callerExecutables, runtime, ?_, ?_, ?_⟩
+    · simpa [nextState] using persistent
+    · simp [nextState]
+    · exact
+        ⟨payload.body.data.withControl bodyTailControl, payload.caller⟩
+  refine
+    ⟨bodyExecutableTail, callerExecutables, runtime, executableHead,
+      activeSourceProduct_cut, executableStep, nextReady, ?_, ?_, ?_⟩
+  · change
+      (PLeaTTa.cutToTracked bodyBarrier state.toConf.barriers
+        state.toConf.alts).1 =
+        pending.outer.alts
+    exact
+      (PLeaTTa.PrologSegmentedProductStepBridge.SegmentedActiveProductRelates.resources
+        agreement).cutToTracked_alts_eq_outer coherent
+  · have nextCoherent :=
+      PLeaTTa.BarrierCacheCoherent.cut state.toConf bodyBarrier coherent
+    unfold PLeaTTa.BarrierCacheCoherent at nextCoherent ⊢
+    simpa [nextState, cutSuccessor] using nextCoherent
+  · simpa [nextState, cutSuccessor] using agreement.frames
 
 end PLeaTTa.PrologSegmentedProductStepBridge

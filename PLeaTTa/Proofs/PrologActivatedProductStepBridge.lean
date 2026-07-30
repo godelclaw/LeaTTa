@@ -7,6 +7,7 @@ Purpose: Carry the post-clause-activation relation through the real source
 Trusted boundary: none
 Main exports:
   ActiveProductRelates,
+  RetainedProductResources,
   RepresentativeProductActivation.activeProductRelates,
   ActiveProductRelates.afterAdministrativeStep
 -/
@@ -151,6 +152,117 @@ structure ActiveProductRelates
         (PLeaTTa.barrierCount pending.outer.alts) + 1
   frames : state.frames = pending.frames
 
+/-! ## Control-independent retained resources -/
+
+/-- Exact executable resources owned by one active local-predicate call.
+
+This certificate deliberately contains no goal payload or cut-control
+spelling.  Uniform and segmented body relations can therefore share the
+barrier/cache proof without identifying the body's predicate barrier with the
+caller's older barrier. -/
+structure RetainedProductResources
+    (barrier : Nat) (pending : DemandDrivenCallStep.PendingCall)
+    (altTail : List PLeaTTa.Alt) (state : OpenConf) : Prop where
+  retainedAlts :
+    state.control.alts =
+      altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts
+  retainedAltsZero : PLeaTTa.barrierCount altTail = 0
+  retainedBarriers :
+    state.control.barriers =
+      PLeaTTa.pushBarrierCache pending.outer.barriers
+  barrierTag :
+    barrier =
+      pending.outer.barriers.getD
+        (PLeaTTa.barrierCount pending.outer.alts) + 1
+
+/-- Forget the logical payload and frame ownership, retaining only the exact
+alternative/barrier resources owned by the active predicate call. -/
+def ActiveProductRelates.resources
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {referenceRest body : List PeTTaSpec.PrologCore.Goal}
+    {current : Substitution} {state : OpenConf}
+    (agreement :
+      ActiveProductRelates freshFrontier alpha support barrier canonical
+        referenceBase opened pending finish branch branchTail altTail
+        referenceRest current body state) :
+    RetainedProductResources barrier pending altTail state :=
+  ⟨agreement.retainedAlts, agreement.retainedAltsZero,
+    agreement.retainedBarriers, agreement.barrierTag⟩
+
+/-- Coherence of an active call's resource certificate recovers coherence of
+the suspended outer alternative stack. -/
+theorem RetainedProductResources.outerBarrierCacheCoherent
+    {barrier : Nat} {pending : DemandDrivenCallStep.PendingCall}
+    {altTail : List PLeaTTa.Alt} {state : OpenConf}
+    (resources :
+      RetainedProductResources barrier pending altTail state)
+    (coherent : PLeaTTa.BarrierCacheCoherent state.toConf) :
+    match pending.outer.barriers with
+    | none => True
+    | some depth => depth = PLeaTTa.barrierCount pending.outer.alts := by
+  cases cached : pending.outer.barriers with
+  | none =>
+      trivial
+  | some depth =>
+      have activeCached :
+          state.toConf.barriers = some (depth + 1) := by
+        change state.control.barriers = some (depth + 1)
+        rw [resources.retainedBarriers, cached]
+        rfl
+      have activeDepth := coherent.depth_eq activeCached
+      have activeAlts :
+          state.toConf.alts =
+            altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts := by
+        exact resources.retainedAlts
+      rw [activeAlts, PLeaTTa.barrierCount_append,
+        resources.retainedAltsZero,
+        PLeaTTa.barrierCount_cons_barrier] at activeDepth
+      omega
+
+/-- A coherent resource certificate identifies the active predicate tag with
+the semantic depth immediately above the suspended outer alternatives. -/
+theorem RetainedProductResources.barrierTag_eq
+    {barrier : Nat} {pending : DemandDrivenCallStep.PendingCall}
+    {altTail : List PLeaTTa.Alt} {state : OpenConf}
+    (resources :
+      RetainedProductResources barrier pending altTail state)
+    (coherent : PLeaTTa.BarrierCacheCoherent state.toConf) :
+    barrier = PLeaTTa.barrierCount pending.outer.alts + 1 := by
+  have outerCoherent := resources.outerBarrierCacheCoherent coherent
+  rw [resources.barrierTag]
+  cases cached : pending.outer.barriers with
+  | none =>
+      simp
+  | some depth =>
+      have depthEq :
+          depth = PLeaTTa.barrierCount pending.outer.alts := by
+        simpa [cached] using outerCoherent
+      simp [depthEq]
+
+/-- A tagged cut at the active predicate barrier removes exactly the retained
+clause alternatives and their marker, leaving the caller's alternatives. -/
+theorem RetainedProductResources.cutToTracked_alts_eq_outer
+    {barrier : Nat} {pending : DemandDrivenCallStep.PendingCall}
+    {altTail : List PLeaTTa.Alt} {state : OpenConf}
+    (resources :
+      RetainedProductResources barrier pending altTail state)
+    (coherent : PLeaTTa.BarrierCacheCoherent state.toConf) :
+    (PLeaTTa.cutToTracked barrier state.toConf.barriers state.toConf.alts).1 =
+      pending.outer.alts := by
+  have altsShape :
+      state.toConf.alts =
+        altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts :=
+    resources.retainedAlts
+  rw [PLeaTTa.cutToTracked_fst_of_coherent _ _ _ coherent, altsShape,
+    resources.barrierTag_eq coherent]
+  exact
+    PLeaTTa.PrologCoreAdequacy.cutTo_own_barrier altTail pending.outer.alts
+
 /-! ## Tracked barrier reconstruction -/
 
 /-- Coherence of the active state recovers coherence of the suspended outer
@@ -176,24 +288,7 @@ theorem ActiveProductRelates.outerBarrierCacheCoherent
     match pending.outer.barriers with
     | none => True
     | some depth => depth = PLeaTTa.barrierCount pending.outer.alts := by
-  cases cached : pending.outer.barriers with
-  | none =>
-      trivial
-  | some depth =>
-      have activeCached :
-          state.toConf.barriers = some (depth + 1) := by
-        change state.control.barriers = some (depth + 1)
-        rw [agreement.retainedBarriers, cached]
-        rfl
-      have activeDepth := coherent.depth_eq activeCached
-      have activeAlts :
-          state.toConf.alts =
-            altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts := by
-        exact agreement.retainedAlts
-      rw [activeAlts, PLeaTTa.barrierCount_append,
-        agreement.retainedAltsZero,
-        PLeaTTa.barrierCount_cons_barrier] at activeDepth
-      omega
+  exact agreement.resources.outerBarrierCacheCoherent coherent
 
 /-- Under the reachable-state cache invariant, the stored call tag is the
 semantic depth immediately above the outer alternative stack. -/
@@ -212,16 +307,7 @@ theorem ActiveProductRelates.barrierTag_eq
         referenceRest current body state)
     (coherent : PLeaTTa.BarrierCacheCoherent state.toConf) :
     barrier = PLeaTTa.barrierCount pending.outer.alts + 1 := by
-  have outerCoherent := agreement.outerBarrierCacheCoherent coherent
-  rw [agreement.barrierTag]
-  cases cached : pending.outer.barriers with
-  | none =>
-      simp
-  | some depth =>
-      have depthEq :
-          depth = PLeaTTa.barrierCount pending.outer.alts := by
-        simpa [cached] using outerCoherent
-      simp [depthEq]
+  exact agreement.resources.barrierTag_eq coherent
 
 /-- The executable tagged cut removes every retained clause alternative and
 the predicate's own barrier, leaving the caller's alternative stack exactly.
@@ -242,14 +328,7 @@ theorem ActiveProductRelates.cutToTracked_alts_eq_outer
     (coherent : PLeaTTa.BarrierCacheCoherent state.toConf) :
     (PLeaTTa.cutToTracked barrier state.toConf.barriers state.toConf.alts).1 =
       pending.outer.alts := by
-  have altsShape :
-      state.toConf.alts =
-        altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts :=
-    agreement.retainedAlts
-  rw [PLeaTTa.cutToTracked_fst_of_coherent _ _ _ coherent, altsShape,
-    agreement.barrierTag_eq coherent]
-  exact
-    PLeaTTa.PrologCoreAdequacy.cutTo_own_barrier altTail pending.outer.alts
+  exact agreement.resources.cutToTracked_alts_eq_outer coherent
 
 /-- A stale enabled cache defeats the own-barrier cut even on the smallest
 possible stack.  This witnesses that `BarrierCacheCoherent` above is
