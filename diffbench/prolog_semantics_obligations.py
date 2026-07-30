@@ -191,6 +191,10 @@ PROLOG_BODY_FAILURE_RESOURCE_TRANSITION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologBodyFailureResourceTransitionBridge.lean"
 )
+PROLOG_BODY_FAILURE_EXHAUSTED_RESOURCE_TRANSITION_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologBodyFailureExhaustedResourceTransitionBridge.lean"
+)
 PROLOG_CANONICAL_RUNTIME_READING = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologCanonicalRuntimeReading.lean"
@@ -351,6 +355,8 @@ def check() -> list[str]:
             digest(PROLOG_BODY_FAILURE_BACKTRACKING_BRIDGE),
         "prolog_body_failure_resource_transition_bridge_sha256":
             digest(PROLOG_BODY_FAILURE_RESOURCE_TRANSITION_BRIDGE),
+        "prolog_body_failure_exhausted_resource_transition_bridge_sha256":
+            digest(PROLOG_BODY_FAILURE_EXHAUSTED_RESOURCE_TRANSITION_BRIDGE),
         "prolog_canonical_runtime_reading_sha256":
             digest(PROLOG_CANONICAL_RUNTIME_READING),
         "prolog_boolean_alias_safety_sha256":
