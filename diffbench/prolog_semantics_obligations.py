@@ -156,6 +156,14 @@ PROLOG_PRODUCT_SCHEDULING_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologProductSchedulingBridge.lean"
 )
+PROLOG_SOURCE_PRODUCT_CONTEXT_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologSourceProductContextBridge.lean"
+)
+PROLOG_SPINED_SOURCE_ACTIVATION_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologSpinedSourceActivationBridge.lean"
+)
 PROLOG_ACTIVATION_FAILURE_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationFailureBridge.lean"
 )
@@ -309,6 +317,10 @@ def check() -> list[str]:
             digest(PROLOG_ACTIVATED_PRODUCT_STEP_BRIDGE),
         "prolog_product_scheduling_bridge_sha256":
             digest(PROLOG_PRODUCT_SCHEDULING_BRIDGE),
+        "prolog_source_product_context_bridge_sha256":
+            digest(PROLOG_SOURCE_PRODUCT_CONTEXT_BRIDGE),
+        "prolog_spined_source_activation_bridge_sha256":
+            digest(PROLOG_SPINED_SOURCE_ACTIVATION_BRIDGE),
         "prolog_activation_failure_bridge_sha256":
             digest(PROLOG_ACTIVATION_FAILURE_BRIDGE),
         "prolog_head_failure_continuation_bridge_sha256":
