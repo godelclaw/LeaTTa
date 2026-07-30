@@ -27,6 +27,7 @@ DATABASE_ACTIONS = (
 )
 PROLOG_COPY = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologCopy.lean"
 GOAL_SEMANTICS = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologGoalSemantics.lean"
+MACHINE = ROOT / "PLeaTTa" / "Machine.lean"
 DEMAND_DRIVEN_STEP = ROOT / "PLeaTTa" / "Proofs" / "DemandDrivenStep.lean"
 FINDALL_COPY = ROOT / "PLeaTTa" / "Proofs" / "FindallCopy.lean"
 PROLOG_FINDALL_COPY_BRIDGE = (
@@ -110,6 +111,10 @@ PROLOG_ACTIVATION_UNIFIER_BRIDGE = (
 )
 PROLOG_ORDINARY_STEP_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologOrdinaryStepBridge.lean"
+)
+PROLOG_DATABASE_ACTION_STEP_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologDatabaseActionStepBridge.lean"
 )
 PROLOG_SEGMENTED_PRODUCT_STEP_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
@@ -302,6 +307,7 @@ def check() -> list[str]:
         "database_actions_sha256": digest(DATABASE_ACTIONS),
         "prolog_copy_sha256": digest(PROLOG_COPY),
         "goal_semantics_sha256": digest(GOAL_SEMANTICS),
+        "machine_sha256": digest(MACHINE),
         "demand_driven_step_sha256": digest(DEMAND_DRIVEN_STEP),
         "findall_copy_sha256": digest(FINDALL_COPY),
         "prolog_findall_copy_bridge_sha256":
@@ -349,6 +355,8 @@ def check() -> list[str]:
             digest(PROLOG_ACTIVATION_UNIFIER_BRIDGE),
         "prolog_ordinary_step_bridge_sha256":
             digest(PROLOG_ORDINARY_STEP_BRIDGE),
+        "prolog_database_action_step_bridge_sha256":
+            digest(PROLOG_DATABASE_ACTION_STEP_BRIDGE),
         "prolog_segmented_product_step_bridge_sha256":
             digest(PROLOG_SEGMENTED_PRODUCT_STEP_BRIDGE),
         "prolog_recursive_call_payload_bridge_sha256":

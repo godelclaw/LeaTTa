@@ -612,6 +612,30 @@ theorem DatabaseRelatesWorld.reindex
   refine ⟨agreement.reachable, ?_, world.reindexClauses_coherent⟩
   simpa [PWorld.reindexClauses] using agreement.liveClauses
 
+/-- Any executable successor with the exact back-inserted canonical clause
+projection and a coherent derived index relates to the independent `assertz`
+successor.  Other executable world metadata may change independently; this
+theorem states precisely which projection is semantic for local resolution. -/
+theorem DatabaseRelatesWorld.assertz_of_projection
+    {database : Database} {world : PWorld}
+    (agreement : DatabaseRelatesWorld database world)
+    {reference : LocalClause}
+    {executable : String × PLeaTTa.Clause}
+    {afterWorld : PWorld}
+    (clause : LocalClauseAgrees reference executable)
+    (projection :
+      afterWorld.progClauses = world.progClauses ++ [executable])
+    (coherent : afterWorld.ClauseIndexCoherent) :
+    DatabaseRelatesWorld (database.assertz reference)
+      afterWorld := by
+  refine ⟨agreement.reachable.assertz reference, ?_, coherent⟩
+  rw [currentVisibleEntries_assertz agreement.generationClosed reference,
+    projection]
+  have newClause :
+      VersionedClauseAgrees (database.allocate reference) executable := by
+    simpa [VersionedClauseAgrees, Database.allocate] using clause
+  exact forall₂_append_singleton agreement.liveClauses newClause
+
 /-- Appending matching source/executable clauses preserves the exact live
 projection, source order, duplicate multiplicity, and executable index
 coherence. -/
@@ -623,19 +647,30 @@ theorem DatabaseRelatesWorld.assertz
     (clause : LocalClauseAgrees reference executable) :
     DatabaseRelatesWorld (database.assertz reference)
       (world.appendProgClause executable) := by
-  have executableClauses :
-      (world.appendProgClause executable).progClauses =
-        world.progClauses ++ [executable] := by
-    unfold PWorld.appendProgClause
+  apply agreement.assertz_of_projection clause
+  · unfold PWorld.appendProgClause
     split <;> rfl
-  refine ⟨agreement.reachable.assertz reference, ?_,
-    world.appendProgClause_coherent executable agreement.clauseIndex⟩
-  rw [currentVisibleEntries_assertz agreement.generationClosed reference,
-    executableClauses]
-  have newClause :
-      VersionedClauseAgrees (database.allocate reference) executable := by
-    simpa [VersionedClauseAgrees, Database.allocate] using clause
-  exact forall₂_append_singleton agreement.liveClauses newClause
+  · exact
+      world.appendProgClause_coherent executable agreement.clauseIndex
+
+/-- Any executable successor with the exact front-inserted canonical clause
+projection and a coherent derived index relates to the independent `asserta`
+successor. -/
+theorem DatabaseRelatesWorld.asserta_of_projection
+    {database : Database} {world : PWorld}
+    (agreement : DatabaseRelatesWorld database world)
+    {reference : LocalClause}
+    {executable : String × PLeaTTa.Clause}
+    {afterWorld : PWorld}
+    (clause : LocalClauseAgrees reference executable)
+    (projection :
+      afterWorld.progClauses = executable :: world.progClauses)
+    (coherent : afterWorld.ClauseIndexCoherent) :
+    DatabaseRelatesWorld (database.asserta reference) afterWorld := by
+  refine ⟨agreement.reachable.asserta reference, ?_, coherent⟩
+  rw [currentVisibleEntries_asserta agreement.generationClosed reference,
+    projection]
+  exact .cons clause agreement.liveClauses
 
 /-- Prepending matching source/executable clauses preserves the exact live
 projection.  `replaceProgClauses` is the executable asserta-shaped update and
@@ -648,11 +683,9 @@ theorem DatabaseRelatesWorld.asserta
     (clause : LocalClauseAgrees reference executable) :
     DatabaseRelatesWorld (database.asserta reference)
       (world.replaceProgClauses (executable :: world.progClauses)) := by
-  refine ⟨agreement.reachable.asserta reference, ?_,
-    world.replaceProgClauses_coherent _ agreement.clauseIndex⟩
-  rw [currentVisibleEntries_asserta agreement.generationClosed reference,
-    PWorld.replaceProgClauses_progClauses]
-  exact .cons clause agreement.liveClauses
+  apply agreement.asserta_of_projection clause
+  · exact PWorld.replaceProgClauses_progClauses world _
+  · exact world.replaceProgClauses_coherent _ agreement.clauseIndex
 
 /-- Successful identity retraction removes exactly the aligned executable
 occurrence, preserves the source order and duplicate multiplicity of all other

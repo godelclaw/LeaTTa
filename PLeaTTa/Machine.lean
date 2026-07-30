@@ -5054,10 +5054,13 @@ private def predicateBodyGoals? (gt : GroundingTable) :
       let (functor, inputs, output) ← predicateCallParts? call
       pure [predicateRelationGoal gt functor inputs output]
 
-/-- Decode a quoted Prolog fact or definite clause into PLeaTTa's canonical
-    clause representation.  This is a general function-convention mapping;
-    no corpus name or test value participates in dispatch. -/
-private def predicateClause? (gt : GroundingTable) (value : Atom) :
+/-- Decode the quoted `Predicate` representation accepted by the dynamic
+predicate world actions into PLeaTTa's canonical clause representation.
+This is a general function-convention mapping: no corpus name or test value
+participates in dispatch.  It is public so the source/executable state bridge
+can relate the independently decoded clause to the exact machine input;
+execution still enters through `wactDispatch`. -/
+def predicateClause? (gt : GroundingTable) (value : Atom) :
     Option (String × Clause) :=
   match unchainify 10000 value with
   | .expr [.sym "Predicate", .expr [.sym ":-", head, body]] => do
@@ -5069,9 +5072,11 @@ private def predicateClause? (gt : GroundingTable) (value : Atom) :
       pure (functor, { params := inputs, result := output, body := [] })
   | _ => none
 
-/-- Install a dynamic predicate at the requested Prolog clause-order edge,
-    maintaining the canonical key list and the executable clause index. -/
-private def installPredicateClause (w : PWorld) (front : Bool)
+/-- Install one decoded dynamic predicate clause at the requested ordered
+Prolog clause-order edge, maintaining the canonical key list and executable
+clause index.  Public proof clients use its projection theorems below;
+runtime dispatch remains the only execution entry point. -/
+def installPredicateClause (w : PWorld) (front : Bool)
     (functor : String) (clause : Clause) : PWorld :=
   let base := w.invalidateSpecializations functor
   let entry := (functor, clause)
@@ -5087,6 +5092,36 @@ private def installPredicateClause (w : PWorld) (front : Bool)
       knownArities := ((functor, clause.params.length) ::
         installed.knownArities.filter (fun entry =>
           !(entry.1 == functor && entry.2 == clause.params.length))) }
+
+/-- When the updated predicate owns no generated specialization descendants,
+installation changes the canonical clause list by exactly one ordered
+insertion.  The premise is explicit because invalidating descendants is a
+real executable side effect, not proof stuttering. -/
+theorem installPredicateClause_progClauses_of_no_descendants
+    (w : PWorld) (front : Bool) (functor : String) (clause : Clause)
+    (noDescendants : w.specializationDescendants functor = []) :
+    (installPredicateClause w front functor clause).progClauses =
+      if front then (functor, clause) :: w.progClauses
+      else w.progClauses ++ [(functor, clause)] := by
+  unfold installPredicateClause
+  have invalidation : w.invalidateSpecializations functor = w := by
+    simp [PWorld.invalidateSpecializations, noDescendants]
+  rw [invalidation]
+  split <;> simp
+
+/-- The same supported installation preserves the executable clause-index
+invariant. -/
+theorem installPredicateClause_coherent_of_no_descendants
+    (w : PWorld) (front : Bool) (functor : String) (clause : Clause)
+    (coherent : w.ClauseIndexCoherent)
+    (noDescendants : w.specializationDescendants functor = []) :
+    (installPredicateClause w front functor clause).ClauseIndexCoherent := by
+  unfold installPredicateClause
+  have invalidation : w.invalidateSpecializations functor = w := by
+    simp [PWorld.invalidateSpecializations, noDescendants]
+  rw [invalidation]
+  apply PWorld.replaceProgClauses_coherent
+  exact coherent
 
 /-- Retract the first alpha-equivalent clause of the named predicate. -/
 private def retractPredicateClause (w : PWorld) (functor : String)
@@ -5304,6 +5339,34 @@ def wactDispatch (w : PWorld) (gt : GroundingTable) (counter : Nat)
   (wactDispatchRaw w gt counter op args).map fun (result, world, rawCounter) =>
     (result, world,
       advanceCounterPastAtoms (max counter rawCounter) [result])
+
+/-- Exact successful `assertaPredicate` dispatch after the public predicate
+decoder has accepted its payload. -/
+theorem wactDispatch_assertaPredicate
+    (w : PWorld) (gt : GroundingTable) (counter : Nat) (value : Atom)
+    (functor : String) (clause : Clause)
+    (decoded : predicateClause? gt value = some (functor, clause)) :
+    wactDispatch w gt counter "assertaPredicate" [value] =
+      some (trueA, installPredicateClause w true functor clause,
+        counter + 1) := by
+  unfold wactDispatch wactDispatchRaw
+  simp [decoded, advanceCounterPastAtoms, resolutionSeedHighWaterAtoms,
+    resolutionSeedHighWaterAtom, resolutionSeedHighWaterNames, trueA,
+    Atom.vars]
+
+/-- Exact successful `assertzPredicate` dispatch after the public predicate
+decoder has accepted its payload. -/
+theorem wactDispatch_assertzPredicate
+    (w : PWorld) (gt : GroundingTable) (counter : Nat) (value : Atom)
+    (functor : String) (clause : Clause)
+    (decoded : predicateClause? gt value = some (functor, clause)) :
+    wactDispatch w gt counter "assertzPredicate" [value] =
+      some (trueA, installPredicateClause w false functor clause,
+        counter + 1) := by
+  unfold wactDispatch wactDispatchRaw
+  simp [decoded, advanceCounterPastAtoms, resolutionSeedHighWaterAtoms,
+    resolutionSeedHighWaterAtom, resolutionSeedHighWaterNames, trueA,
+    Atom.vars]
 
 /-- Prepared fast path for ordinary `add-atom`.  Rule-shaped atoms retain the
 full compiler dispatch; data atoms reuse insertion metadata while producing
