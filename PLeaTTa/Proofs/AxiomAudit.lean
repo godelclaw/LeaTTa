@@ -9,6 +9,7 @@ import PLeaTTa.Proofs.PrologStateBridge
 import PLeaTTa.Proofs.PrologCallEntryBridge
 import PLeaTTa.Proofs.PrologCallStepBridge
 import PLeaTTa.Proofs.PrologOrdinaryStepBridge
+import PLeaTTa.Proofs.PrologSequentialMgu
 import PLeaTTa.Proofs.PrologPrefilterBridge
 import PLeaTTa.Proofs.PrologPrefilterScanBridge
 import PLeaTTa.Proofs.PrologCallPayloadBridge
@@ -1022,6 +1023,10 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologMguVariant.AlphaResidualVariantAgrees.apply_of_canonical_ground
 #print axioms PLeaTTa.PrologMguVariant.OrderedTreeMgu.unifyTopExact_exists_residual_variant
 #print axioms PLeaTTa.PrologMguVariant.residual_variants_need_not_be_equal
+#print axioms PLeaTTa.PrologSequentialMgu.TreeIsRelativeMgu.variants_of_base_variants
+#print axioms PLeaTTa.PrologSequentialMgu.TreeIsMgu.relativeCompose
+#print axioms PLeaTTa.PrologSequentialMgu.sequential_mgu_composites_are_variants
+#print axioms PLeaTTa.PrologSequentialMgu.sequential_variants_need_not_be_equal
 #print axioms PLeaTTa.PrologGoalMguVariant.AlphaGoalAgrees.mono
 #print axioms PLeaTTa.PrologGoalMguVariant.AlphaGoalsAgree.mono
 #print axioms PLeaTTa.PrologGoalMguVariant.AlphaResidualVariantAgrees.goals
