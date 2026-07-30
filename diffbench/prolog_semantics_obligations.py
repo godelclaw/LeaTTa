@@ -192,6 +192,10 @@ PROLOG_NESTED_RETAINED_PAYLOAD_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologNestedRetainedPayloadBridge.lean"
 )
+PROLOG_CURRENT_SESSION_PAYLOAD_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologCurrentSessionPayloadBridge.lean"
+)
 PROLOG_ACTIVATION_FAILURE_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationFailureBridge.lean"
 )
@@ -379,6 +383,8 @@ def check() -> list[str]:
             digest(PROLOG_RETAINED_PAYLOAD_ACTIVATION_BRIDGE),
         "prolog_nested_retained_payload_bridge_sha256":
             digest(PROLOG_NESTED_RETAINED_PAYLOAD_BRIDGE),
+        "prolog_current_session_payload_bridge_sha256":
+            digest(PROLOG_CURRENT_SESSION_PAYLOAD_BRIDGE),
         "prolog_activation_failure_bridge_sha256":
             digest(PROLOG_ACTIVATION_FAILURE_BRIDGE),
         "prolog_head_failure_continuation_bridge_sha256":

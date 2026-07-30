@@ -51,21 +51,22 @@ def scheduledSourceProduct
 caller tail before later callee answers, emits no public observation, and
 leaves the retained cursor live in the right branch. -/
 theorem activeSourceProduct_answer
+    {session : Session}
     (callerScope : CutScopeId) (opened : OpenedCall)
     (finish : PreparedCursor) (branch : ClauseBranch)
     (branchTail : List ClauseBranch) (current : Substitution)
     (referenceRest : List PeTTaSpec.PrologCore.Goal) :
-    RawStep opened.session
+    RawStep session
       (activeSourceProduct callerScope opened finish branch branchTail current
         [] referenceRest)
-      [] .none opened.session
+      [] .none session
       (.running
         (scheduledSourceProduct callerScope opened finish branch branchTail
           current referenceRest)) := by
   apply RawStep.productAnswer
   apply RawStep.cutBoundaryProgress
   apply RawStep.choiceProgress
-  exact RawStep.taskAnswer opened.scope current opened.session
+  exact RawStep.taskAnswer opened.scope current session
 
 /-! ## Segmented executable relation -/
 

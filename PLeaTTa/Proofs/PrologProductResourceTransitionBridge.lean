@@ -91,11 +91,12 @@ caller-control spine.
 The first two regions are named explicitly because the current body and its
 immediate caller tail participate in scheduling.  `outer` retains every older
 barrier pointwise. -/
-structure SpinedActiveProductRelates
+structure SpinedActiveProductRelatesAt
     (freshFrontier : FreshFrontierRelation)
     (alpha support : List (LogicVar × String))
     (canonical : TreeSubstitution) (referenceBase : Substitution)
-    (opened : OpenedCall) (pending : DemandDrivenCallStep.PendingCall)
+    (opened : OpenedCall) (session : Session)
+    (pending : DemandDrivenCallStep.PendingCall)
     (finish : PreparedCursor) (branch : ClauseBranch)
     (branchTail : List ClauseBranch) (altTail : List PLeaTTa.Alt)
     (bodyBarrier callerBarrier : Nat)
@@ -108,15 +109,17 @@ structure SpinedActiveProductRelates
     (state : OpenConf) : Prop where
   ready :
     SpinedReadyTaskRelates freshFrontier alpha support canonical
-      referenceBase opened.session current runtime qterm
+      referenceBase session current runtime qterm
       ({ barrier := bodyBarrier
          references := bodyReferences
          executables := bodyExecutables } ::
        { barrier := callerBarrier
          references := callerReferences
          executables := callerExecutables } ::
-       outer)
+      outer)
       state
+  sessionAdvanced :
+    SessionHighWatersExtend opened.session session
   retainedAlts :
     state.control.alts =
       altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts
@@ -130,8 +133,56 @@ structure SpinedActiveProductRelates
         (PLeaTTa.barrierCount pending.outer.alts) + 1
   frames : state.frames = pending.frames
 
+/-- Backward-compatible exact specialization at the activation session.
+This is definitionally the `At` relation, not a weaker wrapper. -/
+abbrev SpinedActiveProductRelates
+    (freshFrontier : FreshFrontierRelation)
+    (alpha support : List (LogicVar × String))
+    (canonical : TreeSubstitution) (referenceBase : Substitution)
+    (opened : OpenedCall) (pending : DemandDrivenCallStep.PendingCall)
+    (finish : PreparedCursor) (branch : ClauseBranch)
+    (branchTail : List ClauseBranch) (altTail : List PLeaTTa.Alt)
+    (bodyBarrier callerBarrier : Nat)
+    (bodyReferences : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutables : List PLeaTTa.Goal)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (outer : List ControlSegment)
+    (current : Substitution) (runtime : Subst) (qterm : Atom)
+    (state : OpenConf) : Prop :=
+  SpinedActiveProductRelatesAt freshFrontier alpha support canonical
+    referenceBase opened opened.session pending finish branch branchTail
+    altTail bodyBarrier callerBarrier bodyReferences bodyExecutables
+    callerReferences callerExecutables outer current runtime qterm state
+
 /-- Control-independent active predicate resources projected from the
 spine-native logical relation. -/
+def SpinedActiveProductRelatesAt.resources
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {state : OpenConf}
+    (agreement :
+      SpinedActiveProductRelatesAt freshFrontier alpha support canonical
+        referenceBase opened session pending finish branch branchTail altTail
+        bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm state) :
+    RetainedProductResources bodyBarrier pending altTail state :=
+  ⟨agreement.retainedAlts, agreement.retainedAltsZero,
+    agreement.retainedBarriers, agreement.bodyBarrierTag⟩
+
+/-- Compatibility projection for the exact opener-session specialization. -/
 def SpinedActiveProductRelates.resources
     {freshFrontier : FreshFrontierRelation}
     {alpha support : List (LogicVar × String)}
@@ -153,12 +204,43 @@ def SpinedActiveProductRelates.resources
         bodyBarrier callerBarrier bodyReferences bodyExecutables
         callerReferences callerExecutables outer current runtime qterm state) :
     RetainedProductResources bodyBarrier pending altTail state :=
-  ⟨agreement.retainedAlts, agreement.retainedAltsZero,
-    agreement.retainedBarriers, agreement.bodyBarrierTag⟩
+  SpinedActiveProductRelatesAt.resources agreement
 
 /-- Spine-native state relation after a clause-local cut removed the active
 predicate's later-clause alternatives and marker. -/
-structure SpinedCommittedProductRelates
+structure SpinedCommittedProductRelatesAt
+    (freshFrontier : FreshFrontierRelation)
+    (alpha support : List (LogicVar × String))
+    (canonical : TreeSubstitution) (referenceBase : Substitution)
+    (opened : OpenedCall) (session : Session)
+    (pending : DemandDrivenCallStep.PendingCall)
+    (bodyBarrier callerBarrier : Nat)
+    (bodyReferences : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutables : List PLeaTTa.Goal)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (outer : List ControlSegment)
+    (current : Substitution) (runtime : Subst) (qterm : Atom)
+    (state : OpenConf) : Prop where
+  ready :
+    SpinedReadyTaskRelates freshFrontier alpha support canonical
+      referenceBase session current runtime qterm
+      ({ barrier := bodyBarrier
+         references := bodyReferences
+         executables := bodyExecutables } ::
+       { barrier := callerBarrier
+         references := callerReferences
+         executables := callerExecutables } ::
+      outer)
+      state
+  sessionAdvanced :
+    SessionHighWatersExtend opened.session session
+  outerAlts : state.control.alts = pending.outer.alts
+  cacheCoherent : PLeaTTa.BarrierCacheCoherent state.toConf
+  frames : state.frames = pending.frames
+
+/-- Exact opener-session specialization of the committed relation. -/
+abbrev SpinedCommittedProductRelates
     (freshFrontier : FreshFrontierRelation)
     (alpha support : List (LogicVar × String))
     (canonical : TreeSubstitution) (referenceBase : Substitution)
@@ -170,30 +252,21 @@ structure SpinedCommittedProductRelates
     (callerExecutables : List PLeaTTa.Goal)
     (outer : List ControlSegment)
     (current : Substitution) (runtime : Subst) (qterm : Atom)
-    (state : OpenConf) : Prop where
-  ready :
-    SpinedReadyTaskRelates freshFrontier alpha support canonical
-      referenceBase opened.session current runtime qterm
-      ({ barrier := bodyBarrier
-         references := bodyReferences
-         executables := bodyExecutables } ::
-       { barrier := callerBarrier
-         references := callerReferences
-         executables := callerExecutables } ::
-       outer)
-      state
-  outerAlts : state.control.alts = pending.outer.alts
-  cacheCoherent : PLeaTTa.BarrierCacheCoherent state.toConf
-  frames : state.frames = pending.frames
+    (state : OpenConf) : Prop :=
+  SpinedCommittedProductRelatesAt freshFrontier alpha support canonical
+    referenceBase opened opened.session pending bodyBarrier callerBarrier
+    bodyReferences bodyExecutables callerReferences callerExecutables outer
+    current runtime qterm state
 
 /-- Relation after a successful empty clause body has privately scheduled the
 immediate caller region.  The retained clause bank remains live for later
 backtracking, and every older control region keeps its original barrier. -/
-structure SpinedScheduledProductRelates
+structure SpinedScheduledProductRelatesAt
     (freshFrontier : FreshFrontierRelation)
     (alpha support : List (LogicVar × String))
     (canonical : TreeSubstitution) (referenceBase : Substitution)
-    (opened : OpenedCall) (pending : DemandDrivenCallStep.PendingCall)
+    (opened : OpenedCall) (session : Session)
+    (pending : DemandDrivenCallStep.PendingCall)
     (finish : PreparedCursor) (branch : ClauseBranch)
     (branchTail : List ClauseBranch) (altTail : List PLeaTTa.Alt)
     (bodyBarrier callerBarrier : Nat)
@@ -204,12 +277,14 @@ structure SpinedScheduledProductRelates
     (state : OpenConf) : Prop where
   ready :
     SpinedReadyTaskRelates freshFrontier alpha support canonical
-      referenceBase opened.session current runtime qterm
+      referenceBase session current runtime qterm
       ({ barrier := callerBarrier
          references := callerReferences
          executables := callerExecutables } ::
-       outer)
+      outer)
       state
+  sessionAdvanced :
+    SessionHighWatersExtend opened.session session
   retainedAlts :
     state.control.alts =
       altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts
@@ -222,6 +297,25 @@ structure SpinedScheduledProductRelates
       pending.outer.barriers.getD
         (PLeaTTa.barrierCount pending.outer.alts) + 1
   frames : state.frames = pending.frames
+
+/-- Exact opener-session specialization of the scheduled relation. -/
+abbrev SpinedScheduledProductRelates
+    (freshFrontier : FreshFrontierRelation)
+    (alpha support : List (LogicVar × String))
+    (canonical : TreeSubstitution) (referenceBase : Substitution)
+    (opened : OpenedCall) (pending : DemandDrivenCallStep.PendingCall)
+    (finish : PreparedCursor) (branch : ClauseBranch)
+    (branchTail : List ClauseBranch) (altTail : List PLeaTTa.Alt)
+    (bodyBarrier callerBarrier : Nat)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (outer : List ControlSegment)
+    (current : Substitution) (runtime : Subst) (qterm : Atom)
+    (state : OpenConf) : Prop :=
+  SpinedScheduledProductRelatesAt freshFrontier alpha support canonical
+    referenceBase opened opened.session pending finish branch branchTail
+    altTail bodyBarrier callerBarrier callerReferences callerExecutables outer
+    current runtime qterm state
 
 /-! ## Exact source/executable resource stack -/
 
@@ -284,11 +378,12 @@ structure CommittedProductResourceStackAgrees
 The literal source search is an index.  Thus the resource and control
 certificates cannot be paired with a different focus whose cursor, scope, or
 current substitution merely happens to have compatible metadata. -/
-structure SpinedActiveProductResourceRelates
+structure SpinedActiveProductResourceRelatesAt
     (freshFrontier : FreshFrontierRelation)
     (alpha support : List (LogicVar × String))
     (canonical : TreeSubstitution) (referenceBase : Substitution)
-    (opened : OpenedCall) (pending : DemandDrivenCallStep.PendingCall)
+    (opened : OpenedCall) (session : Session)
+    (pending : DemandDrivenCallStep.PendingCall)
     (finish : PreparedCursor) (branch : ClauseBranch)
     (branchTail : List ClauseBranch) (altTail : List PLeaTTa.Alt)
     (bodyBarrier callerBarrier : Nat)
@@ -305,8 +400,8 @@ structure SpinedActiveProductResourceRelates
     (baseAlts : List PLeaTTa.Alt)
     (source : Search) (state : OpenConf) : Prop where
   control :
-    SpinedActiveProductRelates freshFrontier alpha support canonical
-      referenceBase opened pending finish branch branchTail altTail
+    SpinedActiveProductRelatesAt freshFrontier alpha support canonical
+      referenceBase opened session pending finish branch branchTail altTail
       bodyBarrier callerBarrier bodyReferences bodyExecutables
       callerReferences callerExecutables outer current runtime qterm state
   resourceStack :
@@ -320,9 +415,69 @@ structure SpinedActiveProductResourceRelates
         (activeSourceProduct callerScope opened finish branch branchTail
           current bodyReferences callerReferences)
 
+/-- Exact opener-session specialization of the active resource relation. -/
+abbrev SpinedActiveProductResourceRelates
+    (freshFrontier : FreshFrontierRelation)
+    (alpha support : List (LogicVar × String))
+    (canonical : TreeSubstitution) (referenceBase : Substitution)
+    (opened : OpenedCall) (pending : DemandDrivenCallStep.PendingCall)
+    (finish : PreparedCursor) (branch : ClauseBranch)
+    (branchTail : List ClauseBranch) (altTail : List PLeaTTa.Alt)
+    (bodyBarrier callerBarrier : Nat)
+    (bodyReferences : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutables : List PLeaTTa.Goal)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (outer : List ControlSegment)
+    (current : Substitution) (runtime : Subst) (qterm : Atom)
+    (active : RetainedAlternativeSegment)
+    (resources : List RetainedAlternativeSegment)
+    (callerScope outerScope : CutScopeId)
+    (context : ActiveProductContext)
+    (baseAlts : List PLeaTTa.Alt)
+    (source : Search) (state : OpenConf) : Prop :=
+  SpinedActiveProductResourceRelatesAt freshFrontier alpha support canonical
+    referenceBase opened opened.session pending finish branch branchTail
+    altTail bodyBarrier callerBarrier bodyReferences bodyExecutables
+    callerReferences callerExecutables outer current runtime qterm active
+    resources callerScope outerScope context baseAlts source state
+
 /-- Fully composed post-cut state.  The source focus has no retained clause
 choice, and the executable bank has no descriptor or marker for it. -/
-structure SpinedCommittedProductResourceRelates
+structure SpinedCommittedProductResourceRelatesAt
+    (freshFrontier : FreshFrontierRelation)
+    (alpha support : List (LogicVar × String))
+    (canonical : TreeSubstitution) (referenceBase : Substitution)
+    (opened : OpenedCall) (session : Session)
+    (pending : DemandDrivenCallStep.PendingCall)
+    (bodyBarrier callerBarrier : Nat)
+    (bodyReferences : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutables : List PLeaTTa.Goal)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (outer : List ControlSegment)
+    (current : Substitution) (runtime : Subst) (qterm : Atom)
+    (resources : List RetainedAlternativeSegment)
+    (callerScope outerScope : CutScopeId)
+    (context : ActiveProductContext)
+    (baseAlts : List PLeaTTa.Alt)
+    (source : Search) (state : OpenConf) : Prop where
+  control :
+    SpinedCommittedProductRelatesAt freshFrontier alpha support canonical
+      referenceBase opened session pending bodyBarrier callerBarrier bodyReferences
+      bodyExecutables callerReferences callerExecutables outer current runtime
+      qterm state
+  resourceStack :
+    CommittedProductResourceStackAgrees alpha qterm callerBarrier pending outer
+      resources callerScope outerScope context baseAlts state
+  sourceShape :
+    source =
+      ActiveProductContext.plug context
+        (cutSourceProduct callerScope opened current bodyReferences
+          callerReferences)
+
+/-- Exact opener-session specialization of the committed resource relation. -/
+abbrev SpinedCommittedProductResourceRelates
     (freshFrontier : FreshFrontierRelation)
     (alpha support : List (LogicVar × String))
     (canonical : TreeSubstitution) (referenceBase : Substitution)
@@ -338,25 +493,53 @@ structure SpinedCommittedProductResourceRelates
     (callerScope outerScope : CutScopeId)
     (context : ActiveProductContext)
     (baseAlts : List PLeaTTa.Alt)
-    (source : Search) (state : OpenConf) : Prop where
-  control :
-    SpinedCommittedProductRelates freshFrontier alpha support canonical
-      referenceBase opened pending bodyBarrier callerBarrier bodyReferences
-      bodyExecutables callerReferences callerExecutables outer current runtime
-      qterm state
-  resourceStack :
-    CommittedProductResourceStackAgrees alpha qterm callerBarrier pending outer
-      resources callerScope outerScope context baseAlts state
-  sourceShape :
-    source =
-      ActiveProductContext.plug context
-        (cutSourceProduct callerScope opened current bodyReferences
-          callerReferences)
+    (source : Search) (state : OpenConf) : Prop :=
+  SpinedCommittedProductResourceRelatesAt freshFrontier alpha support canonical
+    referenceBase opened opened.session pending bodyBarrier callerBarrier
+    bodyReferences bodyExecutables callerReferences callerExecutables outer
+    current runtime qterm resources callerScope outerScope context baseAlts
+    source state
 
 /-- Fully composed post-body-success state.  The source focus records the
 private scheduling choice explicitly, while the executable and resource bank
 remain literally unchanged. -/
-structure SpinedScheduledProductResourceRelates
+structure SpinedScheduledProductResourceRelatesAt
+    (freshFrontier : FreshFrontierRelation)
+    (alpha support : List (LogicVar × String))
+    (canonical : TreeSubstitution) (referenceBase : Substitution)
+    (opened : OpenedCall) (session : Session)
+    (pending : DemandDrivenCallStep.PendingCall)
+    (finish : PreparedCursor) (branch : ClauseBranch)
+    (branchTail : List ClauseBranch) (altTail : List PLeaTTa.Alt)
+    (bodyBarrier callerBarrier : Nat)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (outer : List ControlSegment)
+    (current : Substitution) (runtime : Subst) (qterm : Atom)
+    (active : RetainedAlternativeSegment)
+    (resources : List RetainedAlternativeSegment)
+    (callerScope outerScope : CutScopeId)
+    (context : ActiveProductContext)
+    (baseAlts : List PLeaTTa.Alt)
+    (source : Search) (state : OpenConf) : Prop where
+  control :
+    SpinedScheduledProductRelatesAt freshFrontier alpha support canonical
+      referenceBase opened session pending finish branch branchTail altTail
+      bodyBarrier callerBarrier callerReferences callerExecutables outer
+      current runtime qterm state
+  resourceStack :
+    ActiveProductResourceStackAgrees alpha qterm bodyBarrier callerBarrier
+      pending (finish.advance branch branchTail)
+      (callerExecutables ++ flattenExecutables outer) altTail active outer
+      resources callerScope outerScope context baseAlts state
+  sourceShape :
+    source =
+      ActiveProductContext.plug context
+        (scheduledSourceProduct callerScope opened finish branch branchTail
+          current callerReferences)
+
+/-- Exact opener-session specialization of the scheduled resource relation. -/
+abbrev SpinedScheduledProductResourceRelates
     (freshFrontier : FreshFrontierRelation)
     (alpha support : List (LogicVar × String))
     (canonical : TreeSubstitution) (referenceBase : Substitution)
@@ -373,22 +556,269 @@ structure SpinedScheduledProductResourceRelates
     (callerScope outerScope : CutScopeId)
     (context : ActiveProductContext)
     (baseAlts : List PLeaTTa.Alt)
-    (source : Search) (state : OpenConf) : Prop where
-  control :
-    SpinedScheduledProductRelates freshFrontier alpha support canonical
-      referenceBase opened pending finish branch branchTail altTail
-      bodyBarrier callerBarrier callerReferences callerExecutables outer
-      current runtime qterm state
-  resourceStack :
-    ActiveProductResourceStackAgrees alpha qterm bodyBarrier callerBarrier
-      pending (finish.advance branch branchTail)
-      (callerExecutables ++ flattenExecutables outer) altTail active outer
-      resources callerScope outerScope context baseAlts state
-  sourceShape :
-    source =
-      ActiveProductContext.plug context
-        (scheduledSourceProduct callerScope opened finish branch branchTail
-          current callerReferences)
+    (source : Search) (state : OpenConf) : Prop :=
+  SpinedScheduledProductResourceRelatesAt freshFrontier alpha support canonical
+    referenceBase opened opened.session pending finish branch branchTail
+    altTail bodyBarrier callerBarrier callerReferences callerExecutables outer
+    current runtime qterm active resources callerScope outerScope context
+    baseAlts source state
+
+/-! ## Current-session reindexing and anti-vacuity -/
+
+/-- Exact compatibility: the historical public name is definitionally the
+current-session relation specialized at the opener. -/
+theorem spinedActiveProduct_specialization_exact
+    (freshFrontier : FreshFrontierRelation)
+    (alpha support : List (LogicVar × String))
+    (canonical : TreeSubstitution) (referenceBase : Substitution)
+    (opened : OpenedCall) (pending : DemandDrivenCallStep.PendingCall)
+    (finish : PreparedCursor) (branch : ClauseBranch)
+    (branchTail : List ClauseBranch) (altTail : List PLeaTTa.Alt)
+    (bodyBarrier callerBarrier : Nat)
+    (bodyReferences : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutables : List PLeaTTa.Goal)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (outer : List ControlSegment)
+    (current : Substitution) (runtime : Subst) (qterm : Atom)
+    (state : OpenConf) :
+    SpinedActiveProductRelates freshFrontier alpha support canonical
+        referenceBase opened pending finish branch branchTail altTail
+        bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm state =
+      SpinedActiveProductRelatesAt freshFrontier alpha support canonical
+        referenceBase opened opened.session pending finish branch branchTail
+        altTail bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm state :=
+  rfl
+
+/-- The resource-indexed compatibility name is likewise an exact
+specialization, including the literal source focus and retained bank. -/
+theorem spinedActiveProductResource_specialization_exact
+    (freshFrontier : FreshFrontierRelation)
+    (alpha support : List (LogicVar × String))
+    (canonical : TreeSubstitution) (referenceBase : Substitution)
+    (opened : OpenedCall) (pending : DemandDrivenCallStep.PendingCall)
+    (finish : PreparedCursor) (branch : ClauseBranch)
+    (branchTail : List ClauseBranch) (altTail : List PLeaTTa.Alt)
+    (bodyBarrier callerBarrier : Nat)
+    (bodyReferences : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutables : List PLeaTTa.Goal)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (outer : List ControlSegment)
+    (current : Substitution) (runtime : Subst) (qterm : Atom)
+    (active : RetainedAlternativeSegment)
+    (resources : List RetainedAlternativeSegment)
+    (callerScope outerScope : CutScopeId)
+    (context : ActiveProductContext)
+    (baseAlts : List PLeaTTa.Alt)
+    (source : Search) (state : OpenConf) :
+    SpinedActiveProductResourceRelates freshFrontier alpha support canonical
+        referenceBase opened pending finish branch branchTail altTail
+        bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm active
+        resources callerScope outerScope context baseAlts source state =
+      SpinedActiveProductResourceRelatesAt freshFrontier alpha support canonical
+        referenceBase opened opened.session pending finish branch branchTail
+        altTail bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm active
+        resources callerScope outerScope context baseAlts source state :=
+  rfl
+
+/-- Reindex an active state at a later source session.  The caller must provide
+the current persistent-state agreement; every control/resource field remains
+literal, while opener-to-current chronology composes. -/
+theorem SpinedActiveProductRelatesAt.reindex
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {session nextSession : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {state : OpenConf}
+    (agreement :
+      SpinedActiveProductRelatesAt freshFrontier alpha support canonical
+        referenceBase opened session pending finish branch branchTail altTail
+        bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm state)
+    (persistent :
+      SessionRelatesPersistent freshFrontier nextSession state.persistent)
+    (advanced : SessionHighWatersExtend session nextSession) :
+    SpinedActiveProductRelatesAt freshFrontier alpha support canonical
+      referenceBase opened nextSession pending finish branch branchTail altTail
+      bodyBarrier callerBarrier bodyReferences bodyExecutables callerReferences
+      callerExecutables outer current runtime qterm state := by
+  rcases agreement.ready with
+    ⟨_oldPersistent, control, queryTerm, payload⟩
+  exact
+    ⟨⟨persistent, control, queryTerm, payload⟩,
+      agreement.sessionAdvanced.trans advanced,
+      agreement.retainedAlts, agreement.retainedAltsZero,
+      agreement.retainedBarriers, agreement.bodyBarrierTag, agreement.frames⟩
+
+/-- The exact resource-indexed state reindexes without changing its source
+focus, retained cursor stack, executable alternative bank, or frames. -/
+theorem SpinedActiveProductResourceRelatesAt.reindex
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {session nextSession : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {state : OpenConf}
+    (agreement :
+      SpinedActiveProductResourceRelatesAt freshFrontier alpha support canonical
+        referenceBase opened session pending finish branch branchTail altTail
+        bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm active
+        resources callerScope outerScope context baseAlts source state)
+    (persistent :
+      SessionRelatesPersistent freshFrontier nextSession state.persistent)
+    (advanced : SessionHighWatersExtend session nextSession) :
+    SpinedActiveProductResourceRelatesAt freshFrontier alpha support canonical
+      referenceBase opened nextSession pending finish branch branchTail altTail
+      bodyBarrier callerBarrier bodyReferences bodyExecutables callerReferences
+      callerExecutables outer current runtime qterm active resources callerScope
+      outerScope context baseAlts source state :=
+  ⟨agreement.control.reindex persistent advanced,
+    agreement.resourceStack, agreement.sourceShape⟩
+
+/-- A full active resource state can inhabit a strictly later fresh session
+whenever the supplied frontier relates that later source high-water to the
+unchanged executable counter.  The source search and complete resource bank
+remain exact. -/
+theorem SpinedActiveProductResourceRelatesAt.strictFreshReindex
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {state : OpenConf}
+    (agreement :
+      SpinedActiveProductResourceRelatesAt freshFrontier alpha support canonical
+        referenceBase opened session pending finish branch branchTail altTail
+        bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm active
+        resources callerScope outerScope context baseAlts source state)
+    (freshAdvanced :
+      freshFrontier (session.resolver.nextFresh + 1)
+        state.persistent.counter) :
+    ∃ nextSession : Session,
+      session.resolver.nextFresh < nextSession.resolver.nextFresh ∧
+      SpinedActiveProductResourceRelatesAt freshFrontier alpha support canonical
+        referenceBase opened nextSession pending finish branch branchTail altTail
+        bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm active
+        resources callerScope outerScope context baseAlts source state := by
+  let nextSession : Session :=
+    { session with
+      resolver :=
+        { session.resolver with
+          nextFresh := session.resolver.nextFresh + 1 } }
+  have persistent :
+      SessionRelatesPersistent freshFrontier nextSession state.persistent := by
+    refine ⟨?_, ?_⟩
+    · simpa [nextSession] using agreement.control.ready.1.database
+    · simpa [nextSession] using freshAdvanced
+  have chronology : SessionHighWatersExtend session nextSession := by
+    simpa [nextSession] using
+      (SessionHighWatersExtend.strict_fresh_witness session).1
+  refine ⟨nextSession, ?_, agreement.reindex persistent chronology⟩
+  simp [nextSession]
+
+/-- A regressed fresh allocator is rejected by every active state, not merely
+by a side theorem about sessions. -/
+theorem SpinedActiveProductRelatesAt.rejectsFreshRegression
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {state : OpenConf}
+    (regressed :
+      session.resolver.nextFresh < opened.session.resolver.nextFresh) :
+    ¬ SpinedActiveProductRelatesAt freshFrontier alpha support canonical
+      referenceBase opened session pending finish branch branchTail altTail
+      bodyBarrier callerBarrier bodyReferences bodyExecutables callerReferences
+      callerExecutables outer current runtime qterm state := by
+  intro agreement
+  exact (Nat.not_lt_of_ge agreement.sessionAdvanced.fresh) regressed
+
+/-- The current-session relation retains all four source allocator
+chronologies even though only the fresh frontier is projected into the
+executable persistent state. -/
+theorem SpinedActiveProductRelatesAt.allHighWaters
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {state : OpenConf}
+    (agreement :
+      SpinedActiveProductRelatesAt freshFrontier alpha support canonical
+        referenceBase opened session pending finish branch branchTail altTail
+        bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm state) :
+    opened.session.resolver.nextFresh ≤ session.resolver.nextFresh ∧
+      opened.session.nextCutScope ≤ session.nextCutScope ∧
+      opened.session.nextExceptionScope ≤ session.nextExceptionScope ∧
+      opened.session.nextCollectionScope ≤ session.nextCollectionScope :=
+  ⟨agreement.sessionAdvanced.fresh, agreement.sessionAdvanced.cut,
+    agreement.sessionAdvanced.exception, agreement.sessionAdvanced.collection⟩
 
 namespace ActiveProductResourceStackAgrees
 
@@ -514,7 +944,8 @@ theorem
       (activatedOpenSuccessor pending copied
         (callerExecutables ++ flattenExecutables outer) qterm installed) := by
   refine
-    ⟨?_, ?_, activation.retainedAltsZero, ?_, activation.barrierTag, rfl⟩
+    ⟨?_, SessionHighWatersExtend.refl _, ?_, activation.retainedAltsZero,
+      ?_, activation.barrierTag, rfl⟩
   · refine
       ⟨?_, rfl, ?_, activation.spinePayload⟩
     · unfold activatedOpenSuccessor OpenConf.ofConf persistentOf
@@ -673,7 +1104,8 @@ theorem SpinedActiveProductResourceRelates.afterBodyAnswer
     {freshFrontier : FreshFrontierRelation}
     {alpha support : List (LogicVar × String)}
     {canonical : TreeSubstitution} {referenceBase : Substitution}
-    {opened : OpenedCall} {pending : DemandDrivenCallStep.PendingCall}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
     {finish : PreparedCursor} {branch : ClauseBranch}
     {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
     {bodyBarrier callerBarrier : Nat}
@@ -688,20 +1120,20 @@ theorem SpinedActiveProductResourceRelates.afterBodyAnswer
     {baseAlts : List PLeaTTa.Alt}
     {source : Search} {state : OpenConf}
     (agreement :
-      SpinedActiveProductResourceRelates freshFrontier alpha support canonical
-        referenceBase opened pending finish branch branchTail altTail
+      SpinedActiveProductResourceRelatesAt freshFrontier alpha support canonical
+        referenceBase opened session pending finish branch branchTail altTail
         bodyBarrier callerBarrier [] [] callerReferences callerExecutables
         outer current runtime qterm active resources callerScope outerScope
         context baseAlts source state) :
-    RawStep opened.session source [] .none opened.session
+    RawStep session source [] .none session
         (.running
           (ActiveProductContext.plug context
             (scheduledSourceProduct callerScope opened finish branch
               branchTail current callerReferences))) ∧
       DemandDrivenCallStep.StepsN prog gt 0
         (.ready state) (.ready state) ∧
-      SpinedScheduledProductResourceRelates freshFrontier alpha support
-        canonical referenceBase opened pending finish branch branchTail
+      SpinedScheduledProductResourceRelatesAt freshFrontier alpha support
+        canonical referenceBase opened session pending finish branch branchTail
         altTail bodyBarrier callerBarrier callerReferences callerExecutables
         outer current runtime qterm active resources callerScope outerScope
         context baseAlts
@@ -713,7 +1145,7 @@ theorem SpinedActiveProductResourceRelates.afterBodyAnswer
     ⟨persistent, currentControl, queryTerm, payload⟩
   have callerReady :
       SpinedReadyTaskRelates freshFrontier alpha support canonical
-        referenceBase opened.session current runtime qterm
+        referenceBase session current runtime qterm
         ({ barrier := callerBarrier
            references := callerReferences
            executables := callerExecutables } ::
@@ -724,16 +1156,17 @@ theorem SpinedActiveProductResourceRelates.afterBodyAnswer
     simpa [flattenExecutables, ControlSegment.executableGoals] using
       currentControl
   have scheduledControl :
-      SpinedScheduledProductRelates freshFrontier alpha support canonical
-        referenceBase opened pending finish branch branchTail altTail
+      SpinedScheduledProductRelatesAt freshFrontier alpha support canonical
+        referenceBase opened session pending finish branch branchTail altTail
         bodyBarrier callerBarrier callerReferences callerExecutables outer
         current runtime qterm state :=
-    ⟨callerReady, agreement.control.retainedAlts,
+    ⟨callerReady, agreement.control.sessionAdvanced,
+      agreement.control.retainedAlts,
       agreement.control.retainedAltsZero,
       agreement.control.retainedBarriers,
       agreement.control.bodyBarrierTag, agreement.control.frames⟩
   have sourceStep :
-      RawStep opened.session source [] .none opened.session
+      RawStep session source [] .none session
         (.running
           (ActiveProductContext.plug context
             (scheduledSourceProduct callerScope opened finish branch
@@ -763,7 +1196,8 @@ theorem SpinedActiveProductRelates.afterCutThroughResourceStack
     {freshFrontier : FreshFrontierRelation}
     {alpha support : List (LogicVar × String)}
     {canonical : TreeSubstitution} {referenceBase : Substitution}
-    {opened : OpenedCall} {pending : DemandDrivenCallStep.PendingCall}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
     {finish : PreparedCursor} {branch : ClauseBranch}
     {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
     {bodyBarrier callerBarrier : Nat}
@@ -779,8 +1213,8 @@ theorem SpinedActiveProductRelates.afterCutThroughResourceStack
     {context : ActiveProductContext}
     {baseAlts : List PLeaTTa.Alt}
     (agreement :
-      SpinedActiveProductRelates freshFrontier alpha support canonical
-        referenceBase opened pending finish branch branchTail altTail
+      SpinedActiveProductRelatesAt freshFrontier alpha support canonical
+        referenceBase opened session pending finish branch branchTail altTail
         bodyBarrier callerBarrier (.cut :: bodyRest)
         (.cutAt bodyBarrier :: bodyExecutableTail)
         callerReferences callerExecutables outer current runtime qterm state)
@@ -796,12 +1230,12 @@ theorem SpinedActiveProductRelates.afterCutThroughResourceStack
             (bodyExecutableTail ++
               (callerExecutables ++ flattenExecutables outer)),
             runtime) ∧
-      RawStep opened.session
+      RawStep session
         (ActiveProductContext.plug context
           (activeSourceProduct callerScope opened finish branch branchTail
             current (.cut :: bodyRest) callerReferences))
         [.pruned (retainedCursorToken opened finish branch branchTail)]
-        .none opened.session
+        .none session
         (.running
           (ActiveProductContext.plug context
             (cutSourceProduct callerScope opened current bodyRest
@@ -812,8 +1246,8 @@ theorem SpinedActiveProductRelates.afterCutThroughResourceStack
             (bodyExecutableTail ++
               (callerExecutables ++ flattenExecutables outer))
             runtime)) ∧
-      SpinedCommittedProductRelates freshFrontier alpha support canonical
-        referenceBase opened pending bodyBarrier callerBarrier bodyRest
+      SpinedCommittedProductRelatesAt freshFrontier alpha support canonical
+        referenceBase opened session pending bodyBarrier callerBarrier bodyRest
         bodyExecutableTail callerReferences callerExecutables outer current
         runtime qterm
         (cutSuccessor state bodyBarrier
@@ -883,7 +1317,7 @@ theorem SpinedActiveProductRelates.afterCutThroughResourceStack
       .cons bodyTailControl payload.control.tail⟩
   have nextReady :
       SpinedReadyTaskRelates freshFrontier alpha support canonical
-        referenceBase opened.session current runtime qterm
+        referenceBase session current runtime qterm
         ({ barrier := bodyBarrier
            references := bodyRest
            executables := bodyExecutableTail } ::
@@ -898,12 +1332,12 @@ theorem SpinedActiveProductRelates.afterCutThroughResourceStack
     · change state.control.qterm = qterm
       exact queryTerm
   have committed :
-      SpinedCommittedProductRelates freshFrontier alpha support canonical
-        referenceBase opened pending bodyBarrier callerBarrier bodyRest
+      SpinedCommittedProductRelatesAt freshFrontier alpha support canonical
+        referenceBase opened session pending bodyBarrier callerBarrier bodyRest
         bodyExecutableTail callerReferences callerExecutables outer current
         runtime qterm
         nextState := by
-    refine ⟨nextReady, ?_, ?_, ?_⟩
+    refine ⟨nextReady, agreement.sessionAdvanced, ?_, ?_, ?_⟩
     · change
         (PLeaTTa.cutToTracked bodyBarrier state.toConf.barriers
           state.toConf.alts).1 =
@@ -920,12 +1354,12 @@ theorem SpinedActiveProductRelates.afterCutThroughResourceStack
     ⟨resourceStack.outerAlignment, resourceStack.suspendedOuterAlts,
       committed.outerAlts.trans resourceStack.suspendedOuterAlts⟩
   have sourceStep :
-      RawStep opened.session
+      RawStep session
         (ActiveProductContext.plug context
           (activeSourceProduct callerScope opened finish branch branchTail
             current (.cut :: bodyRest) callerReferences))
         [.pruned (retainedCursorToken opened finish branch branchTail)]
-        .none opened.session
+        .none session
         (.running
           (ActiveProductContext.plug context
             (cutSourceProduct callerScope opened current bodyRest
@@ -953,7 +1387,8 @@ theorem SpinedActiveProductResourceRelates.afterCut
     {freshFrontier : FreshFrontierRelation}
     {alpha support : List (LogicVar × String)}
     {canonical : TreeSubstitution} {referenceBase : Substitution}
-    {opened : OpenedCall} {pending : DemandDrivenCallStep.PendingCall}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
     {finish : PreparedCursor} {branch : ClauseBranch}
     {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
     {bodyBarrier callerBarrier : Nat}
@@ -970,8 +1405,8 @@ theorem SpinedActiveProductResourceRelates.afterCut
     {baseAlts : List PLeaTTa.Alt}
     {source : Search} {state : OpenConf}
     (agreement :
-      SpinedActiveProductResourceRelates freshFrontier alpha support canonical
-        referenceBase opened pending finish branch branchTail altTail
+      SpinedActiveProductResourceRelatesAt freshFrontier alpha support canonical
+        referenceBase opened session pending finish branch branchTail altTail
         bodyBarrier callerBarrier (.cut :: bodyRest)
         (.cutAt bodyBarrier :: bodyExecutableTail)
         callerReferences callerExecutables outer current runtime qterm active
@@ -983,9 +1418,9 @@ theorem SpinedActiveProductResourceRelates.afterCut
             (bodyExecutableTail ++
               (callerExecutables ++ flattenExecutables outer)),
             runtime) ∧
-      RawStep opened.session source
+      RawStep session source
         [.pruned (retainedCursorToken opened finish branch branchTail)]
-        .none opened.session
+        .none session
         (.running
           (ActiveProductContext.plug context
             (cutSourceProduct callerScope opened current bodyRest
@@ -996,8 +1431,8 @@ theorem SpinedActiveProductResourceRelates.afterCut
             (bodyExecutableTail ++
               (callerExecutables ++ flattenExecutables outer))
             runtime)) ∧
-      SpinedCommittedProductResourceRelates freshFrontier alpha support
-        canonical referenceBase opened pending bodyBarrier callerBarrier
+      SpinedCommittedProductResourceRelatesAt freshFrontier alpha support
+        canonical referenceBase opened session pending bodyBarrier callerBarrier
         bodyRest bodyExecutableTail callerReferences callerExecutables outer
         current runtime qterm resources callerScope outerScope context baseAlts
         (ActiveProductContext.plug context
@@ -1013,14 +1448,15 @@ theorem SpinedActiveProductResourceRelates.afterCut
             (bodyExecutableTail ++
               (callerExecutables ++ flattenExecutables outer))
             runtime).control.alts + 1 := by
-  rcases agreement.control.afterCutThroughResourceStack
+  rcases SpinedActiveProductRelates.afterCutThroughResourceStack
+      agreement.control
       agreement.resourceStack coherent with
     ⟨executableHead, sourceStep, executableStep, committedControl,
       committedResources, countDrop⟩
   have indexedSourceStep :
-      RawStep opened.session source
+      RawStep session source
         [.pruned (retainedCursorToken opened finish branch branchTail)]
-        .none opened.session
+        .none session
         (.running
           (ActiveProductContext.plug context
             (cutSourceProduct callerScope opened current bodyRest

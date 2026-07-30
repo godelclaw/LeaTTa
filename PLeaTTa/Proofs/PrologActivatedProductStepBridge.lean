@@ -366,52 +366,53 @@ The singleton pruning observation is exact: it carries the activation scope
 and the immutable prepared cursor, rather than merely counting discarded
 alternatives. -/
 theorem activeSourceProduct_cut
+    {session : Session}
     {callerScope : CutScopeId} {opened : OpenedCall}
     {finish : PreparedCursor} {branch : ClauseBranch}
     {branchTail : List ClauseBranch}
     {current : Substitution}
     {bodyRest referenceRest : List PeTTaSpec.PrologCore.Goal} :
-    RawStep opened.session
+    RawStep session
       (activeSourceProduct callerScope opened finish branch branchTail current
         (.cut :: bodyRest) referenceRest)
       [.pruned (retainedCursorToken opened finish branch branchTail)]
-      .none opened.session
+      .none session
       (.running
         (cutSourceProduct callerScope opened current bodyRest referenceRest)) := by
   have choiceStep :
-      RawStep opened.session
+      RawStep session
         (.choice opened.scope
           (.task opened.scope (.cut :: bodyRest) current)
           (.clauses opened.scope (finish.advance branch branchTail)))
         [.pruned (retainedCursorToken opened finish branch branchTail)]
-        (.commit opened.scope) opened.session
+        (.commit opened.scope) session
         (.running (.task opened.scope bodyRest current)) := by
     simpa [retainedCursorToken, Search.liveCursors] using
       (RawStep.choiceCommitHere opened.scope
         (.task opened.scope (.cut :: bodyRest) current)
         (.clauses opened.scope (finish.advance branch branchTail))
         (.task opened.scope bodyRest current) []
-        opened.session opened.session
-        (RawStep.taskCut opened.scope bodyRest current opened.session))
+        session session
+        (RawStep.taskCut opened.scope bodyRest current session))
   have boundaryStep :
-      RawStep opened.session
+      RawStep session
         (.cutBoundary opened.scope
           (.choice opened.scope
             (.task opened.scope (.cut :: bodyRest) current)
             (.clauses opened.scope (finish.advance branch branchTail))))
         [.pruned (retainedCursorToken opened finish branch branchTail)]
-        .none opened.session
+        .none session
         (.running
           (.cutBoundary opened.scope
             (.task opened.scope bodyRest current))) :=
     RawStep.cutBoundaryCatch opened.scope _ _
       [.pruned (retainedCursorToken opened finish branch branchTail)]
-      opened.session opened.session choiceStep
+      session session choiceStep
   simpa [activeSourceProduct, cutSourceProduct] using
     (RawStep.productProgress callerScope _ _
       referenceRest
       [.pruned (retainedCursorToken opened finish branch branchTail)]
-      .none opened.session opened.session boundaryStep
+      .none session session boundaryStep
       (by simp [Trace.AnswerFree]))
 
 /-- Paired state after a clause-local cut has discarded the predicate's

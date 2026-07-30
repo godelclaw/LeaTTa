@@ -1,0 +1,494 @@
+-- SPDX-License-Identifier: Apache-2.0
+
+/-
+Module: PLeaTTa.Proofs.PrologCurrentSessionPayloadBridge
+Purpose: Couple current-session product/resource correspondence to the exact
+  immutable payload zipper owned by its retained alternatives.
+Trusted boundary: none
+Main exports:
+  SpinedActiveProductPayloadResourceRelatesAt,
+  SpinedActiveProductPayloadResourceRelatesAt.reindex,
+  SpinedRepresentativeProductActivation.spinedProductPayloadResourceRelates
+-/
+import PLeaTTa.Proofs.PrologNestedRetainedPayloadBridge
+
+namespace PLeaTTa.PrologCurrentSessionPayloadBridge
+
+open Metta (Atom Subst)
+open PeTTaSpec.PrologCore
+open PeTTaSpec.PrologCore.Canonical
+open PeTTaSpec.PrologCore.GoalSemantics
+open PeTTaSpec.PrologCore.OpenSubstitution
+open PeTTaSpec.PrologCore.Resolver
+open DemandDrivenStep
+open PrologAlphaFreshFrontierBridge
+open PrologControlSegmentSpineBridge
+open PrologNestedRetainedPayloadBridge
+open PrologProductResourceContextBridge
+open PrologProductResourceTransitionBridge
+open PrologRecursiveCallPayloadBridge
+open PrologRepresentativeCallFrontierBridge
+open PrologRepresentativeProductActivationBridge
+open PrologRepresentativeStepActivationBridge
+open PrologRetainedPayloadSnapshotBridge
+open PrologRetainedPayloadSnapshotBridge.SourceControlResourcePayloadContextAgrees
+open PrologSourceProductContextBridge
+open PrologStateBridge
+
+/-- The unique payload-bearing zipper shape belonging to one active product
+resource state.  Naming this dependent index keeps subsequent relations
+readable without weakening any cursor/resource/scope equality. -/
+abbrev ActiveProductPayloadContext
+    (alpha support : List (LogicVar × String)) (qterm : Atom)
+    (opened : OpenedCall) (finish : PreparedCursor) (branch : ClauseBranch)
+    (branchTail : List ClauseBranch) (bodyBarrier callerBarrier : Nat)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (outer : List ControlSegment)
+    (active : RetainedAlternativeSegment)
+    (resources : List RetainedAlternativeSegment)
+    (callerScope outerScope : CutScopeId)
+    (context : ActiveProductContext) :=
+  SourceControlResourcePayloadContextAgrees alpha support qterm bodyBarrier
+    ({ barrier := callerBarrier
+       references := callerReferences
+       executables := callerExecutables } ::
+     outer)
+    (active :: resources) opened.scope
+    ({ callerScope := callerScope
+       predicateScope := opened.scope
+       retained :=
+         .clauses opened.scope (finish.advance branch branchTail)
+       callerRest := callerReferences } ::
+     context)
+    outerScope
+
+/-- One active local-product state with its complete retained logical payload.
+
+The relation and its final payload-context index deliberately share all source
+segments, resource descriptors, cursor scopes, and executable state.  Thus a
+payload certificate
+cannot be paired with a merely shape-compatible resource bank.  Persistent
+world/database agreement comes from `core` at the *current* session, while
+`endpointsCurrent` pins every immutable retained allocation to that same
+source fresh high-water and executable counter.
+
+The zipper remains Type-valued linear data; this relation is Prop-valued and
+names that exact zipper as a dependent index, so existing activation theorems
+can produce it without forbidden Prop-to-Type elimination. -/
+structure SpinedActiveProductPayloadResourceRelatesAt
+    (freshFrontier : FreshFrontierRelation)
+    (alpha support : List (LogicVar × String))
+    (canonical : TreeSubstitution) (referenceBase : Substitution)
+    (opened : OpenedCall) (session : Session)
+    (pending : DemandDrivenCallStep.PendingCall)
+    (finish : PreparedCursor) (branch : ClauseBranch)
+    (branchTail : List ClauseBranch) (altTail : List PLeaTTa.Alt)
+    (bodyBarrier callerBarrier : Nat)
+    (bodyReferences : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutables : List PLeaTTa.Goal)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (outer : List ControlSegment)
+    (current : Substitution) (runtime : Subst) (qterm : Atom)
+    (active : RetainedAlternativeSegment)
+    (resources : List RetainedAlternativeSegment)
+    (callerScope outerScope : CutScopeId)
+    (context : ActiveProductContext)
+    (baseAlts : List PLeaTTa.Alt)
+    (source : Search) (state : OpenConf)
+    (payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context) : Prop where
+  core :
+    SpinedActiveProductResourceRelatesAt freshFrontier alpha support canonical
+      referenceBase opened session pending finish branch branchTail altTail
+      bodyBarrier callerBarrier bodyReferences bodyExecutables
+      callerReferences callerExecutables outer current runtime qterm active
+      resources callerScope outerScope context baseAlts source state
+  endpointsCurrent :
+    endpointsBelow payloadContext session.resolver.nextFresh
+      state.persistent.counter
+
+namespace SpinedActiveProductPayloadResourceRelatesAt
+
+/-- Erasing immutable payload evidence recovers the exact current-session
+resource correspondence, without changing any state index. -/
+def weak
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {state : OpenConf}
+    {payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context}
+    (agreement :
+      SpinedActiveProductPayloadResourceRelatesAt freshFrontier alpha support
+        canonical referenceBase opened session pending finish branch branchTail
+        altTail bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm active
+        resources callerScope outerScope context baseAlts source state
+        payloadContext) :
+    SpinedActiveProductResourceRelatesAt freshFrontier alpha support canonical
+      referenceBase opened session pending finish branch branchTail altTail
+      bodyBarrier callerBarrier bodyReferences bodyExecutables
+      callerReferences callerExecutables outer current runtime qterm active
+      resources callerScope outerScope context baseAlts source state :=
+  agreement.core
+
+/-- The payload-bearing zipper erases to the same outer
+source/control/resource alignment used by the core resource stack. -/
+def payloadAlignment
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {state : OpenConf}
+    {payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context}
+    (_agreement :
+      SpinedActiveProductPayloadResourceRelatesAt freshFrontier alpha support
+        canonical referenceBase opened session pending finish branch branchTail
+        altTail bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm active
+        resources callerScope outerScope context baseAlts source state
+        payloadContext) :
+    SourceControlResourceContextAgrees alpha qterm bodyBarrier
+      ({ barrier := callerBarrier
+         references := callerReferences
+         executables := callerExecutables } ::
+       outer)
+      (active :: resources) opened.scope
+      ({ callerScope := callerScope
+         predicateScope := opened.scope
+         retained :=
+           .clauses opened.scope (finish.advance branch branchTail)
+         callerRest := callerReferences } ::
+      context)
+      outerScope :=
+  payloadContext.alignment
+
+/-- Reindex at a later source session while retaining the exact source focus,
+resource bank, payload zipper, and executable state.
+
+This is a chronology transport, not a reachability theorem: the caller must
+supply current persistent database/fresh agreement and source high-water
+advance. -/
+def reindex
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {session nextSession : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {state : OpenConf}
+    {payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context}
+    (agreement :
+      SpinedActiveProductPayloadResourceRelatesAt freshFrontier alpha support
+        canonical referenceBase opened session pending finish branch branchTail
+        altTail bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm active
+        resources callerScope outerScope context baseAlts source state
+        payloadContext)
+    (persistent :
+      SessionRelatesPersistent freshFrontier nextSession state.persistent)
+    (advanced : SessionHighWatersExtend session nextSession) :
+    SpinedActiveProductPayloadResourceRelatesAt freshFrontier alpha support
+      canonical referenceBase opened nextSession pending finish branch
+      branchTail altTail bodyBarrier callerBarrier bodyReferences
+      bodyExecutables callerReferences callerExecutables outer current runtime
+      qterm active resources callerScope outerScope context baseAlts source
+      state payloadContext :=
+  ⟨agreement.core.reindex persistent advanced,
+    endpointsBelow_mono payloadContext agreement.endpointsCurrent
+      advanced.fresh (Nat.le_refl _)⟩
+
+/-- The payload-coupled relation genuinely admits a strictly later fresh
+session when the frontier relates that high-water to the unchanged executable
+counter.  Every cursor/resource/payload index remains literal. -/
+theorem strictFreshReindex
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {state : OpenConf}
+    {payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context}
+    (agreement :
+      SpinedActiveProductPayloadResourceRelatesAt freshFrontier alpha support
+        canonical referenceBase opened session pending finish branch branchTail
+        altTail bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm active
+        resources callerScope outerScope context baseAlts source state
+        payloadContext)
+    (freshAdvanced :
+      freshFrontier (session.resolver.nextFresh + 1)
+        state.persistent.counter) :
+    ∃ nextSession : Session,
+      session.resolver.nextFresh < nextSession.resolver.nextFresh ∧
+      SpinedActiveProductPayloadResourceRelatesAt freshFrontier alpha support
+        canonical referenceBase opened nextSession pending finish branch
+        branchTail altTail bodyBarrier callerBarrier bodyReferences
+        bodyExecutables callerReferences callerExecutables outer current runtime
+        qterm active resources callerScope outerScope context baseAlts source
+        state payloadContext := by
+  let nextSession : Session :=
+    { session with
+      resolver :=
+        { session.resolver with
+          nextFresh := session.resolver.nextFresh + 1 } }
+  have persistent :
+      SessionRelatesPersistent freshFrontier nextSession state.persistent := by
+    refine ⟨?_, ?_⟩
+    · simpa [nextSession] using agreement.core.control.ready.1.database
+    · simpa [nextSession] using freshAdvanced
+  have chronology : SessionHighWatersExtend session nextSession := by
+    simpa [nextSession] using
+      (SessionHighWatersExtend.strict_fresh_witness session).1
+  refine ⟨nextSession, ?_, agreement.reindex persistent chronology⟩
+  simp [nextSession]
+
+/-- A source fresh allocator below the historical opener cannot inhabit the
+payload-coupled current-session relation. -/
+theorem rejectsFreshRegression
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {state : OpenConf}
+    {payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context}
+    (regressed :
+      session.resolver.nextFresh < opened.session.resolver.nextFresh) :
+    SpinedActiveProductPayloadResourceRelatesAt freshFrontier alpha support
+      canonical referenceBase opened session pending finish branch branchTail
+      altTail bodyBarrier callerBarrier bodyReferences bodyExecutables
+      callerReferences callerExecutables outer current runtime qterm active
+      resources callerScope outerScope context baseAlts source state
+      payloadContext → False := by
+  intro agreement
+  exact agreement.core.control.rejectsFreshRegression regressed
+
+end SpinedActiveProductPayloadResourceRelatesAt
+
+/-! ## Construction from one real nested local activation -/
+
+/-- A real nested representative activation constructs the current-session
+resource relation and its exact payload zipper in one existential package.
+
+The endpoint certificate is returned at the actual post-activation source
+session and executable counter.  No later caller chooses either floor. -/
+theorem
+    SpinedRepresentativeProductActivation.spinedProductPayloadResourceRelates
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {referenceBindings : Substitution}
+    {opened : OpenedCall} {before : OpenConf}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor}
+    {branch : ClauseBranch} {clause : PLeaTTa.Clause}
+    {branchTail : List ClauseBranch} {clauseTail : List PLeaTTa.Clause}
+    {altTail : List PLeaTTa.Alt} {copied : PLeaTTa.Clause}
+    {referencePayload : List Term}
+    {segmentReferenceRest : List PeTTaSpec.PrologCore.Goal}
+    {argsv args : List Atom} {res : Atom}
+    {segmentExecutableRest : List PLeaTTa.Goal}
+    {outer : List ControlSegment} {binding : Subst}
+    {qterm : Atom} {bodyBarrier callerBarrier startCounter : Nat}
+    {callerScope outerScope : CutScopeId}
+    {independentResult : Substitution}
+    {representative : TreeSubstitution}
+    {nextAlpha : List (LogicVar × String)}
+    {sourceCanonical flattenedRepresentative : TreeSubstitution}
+    {installed : Subst}
+    {resources : List RetainedAlternativeSegment}
+    {context : ActiveProductContext}
+    (frontier :
+      RepresentativeRetainedCallFrontier alpha opened before pending finish
+        branch clause branchTail clauseTail altTail copied argsv args res
+        (segmentExecutableRest ++ flattenExecutables outer)
+        binding qterm bodyBarrier startCounter)
+    (preHeadPayload :
+      TaskSpinePayloadAgrees alpha support canonical referenceBase
+        referenceBindings binding
+        ({ barrier := callerBarrier
+           references :=
+             .call opened.cursor.predicate referencePayload ::
+               segmentReferenceRest
+           executables :=
+             .call opened.cursor.predicate args res ::
+               segmentExecutableRest } ::
+         outer))
+    (payloadSupported :
+      AlphaTermsSupported alpha support referencePayload)
+    (openedArguments : opened.cursor.arguments = referencePayload)
+    (openedBindings : opened.cursor.bindings = referenceBindings)
+    (queryReferenceBelow :
+      GeneratedBelow finish.reservationStart (alpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ alpha.map Prod.snd →
+        name ∈
+          resolutionOccupiedVars
+            (args.map (PLeaTTa.subst binding)) res
+            (segmentExecutableRest ++ flattenExecutables outer)
+            binding qterm)
+    (activation :
+      SpinedRepresentativeProductActivation prog gt alpha support canonical
+        referenceBase opened pending finish branch branchTail altTail copied
+        segmentReferenceRest segmentExecutableRest outer qterm bodyBarrier
+        callerBarrier startCounter callerScope independentResult representative
+        nextAlpha sourceCanonical flattenedRepresentative installed)
+    (sourceFresh :
+      opened.session.resolver.nextFresh = opened.cursor.reservedUntil)
+    (outerPayloads :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        callerBarrier outer resources callerScope context outerScope)
+    (outerEndpoints :
+      endpointsBelow outerPayloads opened.cursor.reservationStart
+        startCounter)
+    (baseAlts : List PLeaTTa.Alt)
+    (outerAlts :
+      pending.outer.alts = flattenOwnedAlts resources baseAlts) :
+    ∃ active : RetainedAlternativeSegment,
+      ∃ payloadContext :
+          ActiveProductPayloadContext nextAlpha support qterm opened finish
+            branch branchTail bodyBarrier callerBarrier segmentReferenceRest
+            segmentExecutableRest outer active resources callerScope outerScope
+            context,
+        SpinedActiveProductPayloadResourceRelatesAt
+          (AlphaFreshFrontier nextAlpha) nextAlpha support
+          (sourceCanonical ++ canonical) referenceBase opened opened.session
+          pending finish branch branchTail altTail bodyBarrier callerBarrier
+          branch.body copied.body segmentReferenceRest segmentExecutableRest
+          outer independentResult
+          (PLeaTTa.trimFor
+            (copied.body ++
+              (segmentExecutableRest ++ flattenExecutables outer))
+            qterm installed)
+          qterm active resources callerScope outerScope context baseAlts
+          (ActiveProductContext.plug context
+            (activatedSourceProduct callerScope opened finish branch branchTail
+              independentResult segmentReferenceRest))
+          (activatedOpenSuccessor pending copied
+            (segmentExecutableRest ++ flattenExecutables outer) qterm
+            installed)
+          payloadContext := by
+  obtain ⟨active, _snapshot, payloadContext, endpoints, resourceStack⟩ :=
+    _root_.PLeaTTa.PrologNestedRetainedPayloadBridge.SpinedRepresentativeProductActivation.activeResourceStackWithNestedSnapshots
+      frontier preHeadPayload payloadSupported openedArguments openedBindings
+      queryReferenceBelow queryExecutableLive activation sourceFresh
+      outerPayloads outerEndpoints baseAlts outerAlts
+  have counterExact :
+      (activatedOpenSuccessor pending copied
+        (segmentExecutableRest ++ flattenExecutables outer) qterm
+        installed).persistent.counter =
+        pending.persistent.counter := by
+    unfold activatedOpenSuccessor OpenConf.ofConf persistentOf
+    exact activation.counterPreserved
+  have endpointsCurrent :
+      endpointsBelow payloadContext opened.session.resolver.nextFresh
+        (activatedOpenSuccessor pending copied
+          (segmentExecutableRest ++ flattenExecutables outer) qterm
+          installed).persistent.counter := by
+    rw [counterExact]
+    exact endpoints
+  refine ⟨active, payloadContext, ?_, endpointsCurrent⟩
+  refine ⟨?_, resourceStack, ?_⟩
+  · exact
+      _root_.PLeaTTa.PrologProductResourceTransitionBridge.SpinedRepresentativeProductActivation.spinedActiveProductRelates
+        activation
+  · rfl
+
+end PLeaTTa.PrologCurrentSessionPayloadBridge

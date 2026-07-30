@@ -6,8 +6,8 @@ Purpose: Faithful state-side bridge between the independent local-Prolog
   semantics and the fine-grained executable lane.
 Trusted boundary: none
 Main exports: LocalClauseAgrees, DatabaseRelatesWorld,
-  SessionRelatesPersistent, RuntimeAlpha, LocalClauseHeadAlphaAgrees,
-  FreshenedClauseAlphaAgrees
+  SessionRelatesPersistent, SessionHighWatersExtend, RuntimeAlpha,
+  LocalClauseHeadAlphaAgrees, FreshenedClauseAlphaAgrees
 -/
 import PLeaTTa.Proofs.CompilerAdequacy
 import PLeaTTa.Proofs.CompilerSubstitutionAdequacy
@@ -344,6 +344,85 @@ structure SessionRelatesPersistent
     DatabaseRelatesWorld session.resolver.database persistent.world
   fresh :
     freshFrontier session.resolver.nextFresh persistent.counter
+
+/-- Source-side chronology between a historical activation session and the
+current non-backtrackable session.
+
+`SessionRelatesPersistent` projects the current database and fresh frontier
+into executable `Persistent`.  It deliberately erases the three typed control
+allocators.  This separate certificate retains all four source high-waters
+without pretending that the executable counter represents cut, exception, or
+collection identities.  It does not claim database reachability: that is
+carried by the current `SessionRelatesPersistent` database relation and,
+once dynamic body effects are connected, a separate logical-update
+generation theorem. -/
+structure SessionHighWatersExtend (before after : Session) : Prop where
+  fresh :
+    before.resolver.nextFresh ≤ after.resolver.nextFresh
+  cut :
+    before.nextCutScope ≤ after.nextCutScope
+  exception :
+    before.nextExceptionScope ≤ after.nextExceptionScope
+  collection :
+    before.nextCollectionScope ≤ after.nextCollectionScope
+
+namespace SessionHighWatersExtend
+
+/-- A session is its own exact chronology origin. -/
+theorem refl (session : Session) :
+    SessionHighWatersExtend session session :=
+  ⟨Nat.le_refl _, Nat.le_refl _, Nat.le_refl _, Nat.le_refl _⟩
+
+/-- Chronology composes across successive non-backtrackable transitions. -/
+theorem trans {first middle last : Session}
+    (left : SessionHighWatersExtend first middle)
+    (right : SessionHighWatersExtend middle last) :
+    SessionHighWatersExtend first last :=
+  ⟨Nat.le_trans left.fresh right.fresh,
+    Nat.le_trans left.cut right.cut,
+    Nat.le_trans left.exception right.exception,
+    Nat.le_trans left.collection right.collection⟩
+
+/-- Every real independent local-search step advances all four source
+high-waters monotonically. -/
+theorem of_rawStep {before after : Session} {search : Search}
+    {events : List Observation} {signal : Trace.CutSignal}
+    {target : RawTarget}
+    (step : RawStep before search events signal after target) :
+    SessionHighWatersExtend before after :=
+  ⟨step.nextFresh_mono, step.nextCutScope_mono,
+    step.nextExceptionScope_mono, step.nextCollectionScope_mono⟩
+
+/-- The chronology field is load-bearing: a current session whose fresh
+allocator is below its opener cannot satisfy it. -/
+theorem rejects_fresh_regression {before after : Session}
+    (regressed :
+      after.resolver.nextFresh < before.resolver.nextFresh) :
+    ¬ SessionHighWatersExtend before after := by
+  intro chronology
+  exact (Nat.not_lt_of_ge chronology.fresh) regressed
+
+/-- Advancing only the fresh allocator gives a concrete non-identity
+chronology witness.  This rules out reading the relation as mere session
+equality. -/
+theorem strict_fresh_witness (session : Session) :
+    SessionHighWatersExtend session
+        { session with
+          resolver :=
+            { session.resolver with
+              nextFresh := session.resolver.nextFresh + 1 } } ∧
+      session.resolver.nextFresh <
+        ({ session with
+          resolver :=
+            { session.resolver with
+              nextFresh := session.resolver.nextFresh + 1 } } :
+          Session).resolver.nextFresh := by
+  constructor
+  · exact
+      ⟨Nat.le_succ _, Nat.le_refl _, Nat.le_refl _, Nat.le_refl _⟩
+  · exact Nat.lt_succ_self _
+
+end SessionHighWatersExtend
 
 theorem LocalClauseAgrees.arity
     {reference : LocalClause} {executable : String × PLeaTTa.Clause}
