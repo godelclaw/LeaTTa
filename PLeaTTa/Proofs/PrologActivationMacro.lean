@@ -103,6 +103,28 @@ inductive ResolutionScan (argsv args : List Atom) (res : Atom)
           clause :: alts)
         finalCounter
 
+/-- Resolution scans produce only branch alternatives.  In particular, a
+retained suffix never contains a control barrier; the unique predicate
+barrier is installed separately by the call step. -/
+theorem ResolutionScan.barrierCount_zero
+    {argsv args : List Atom} {res : Atom} {rest : List Goal}
+    {binding : Subst} {qterm : Atom} {barrier : Nat}
+    {clauses : List Clause} {counter : Nat} {alts : List Alt}
+    {finalCounter : Nat}
+    (scan :
+      ResolutionScan argsv args res rest binding qterm barrier clauses
+        counter alts finalCounter) :
+    PLeaTTa.barrierCount alts = 0 := by
+  induction scan with
+  | nil =>
+      rfl
+  | skipped clause clauses counter finalCounter alts skipped tail
+      inductionHypothesis =>
+      exact inductionHypothesis
+  | retained clause clauses counter finalCounter alts retained tail
+      inductionHypothesis =>
+      simpa [resolutionAlt] using inductionHypothesis
+
 theorem scanResolution_certified (argsv args : List Atom) (res : Atom)
     (rest : List Goal) (binding : Subst) (qterm : Atom)
     (barrier : Nat) (clauses : List Clause) (counter : Nat) :

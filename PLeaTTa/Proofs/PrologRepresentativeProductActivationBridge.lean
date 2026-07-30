@@ -132,6 +132,15 @@ structure RepresentativeProductActivation
     (activatedExecutableSuccessor pending copied executableRest qterm
       installed).alts =
       altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts
+  retainedAltsZero : PLeaTTa.barrierCount altTail = 0
+  retainedBarriers :
+    (activatedExecutableSuccessor pending copied executableRest qterm
+      installed).barriers =
+      PLeaTTa.pushBarrierCache pending.outer.barriers
+  barrierTag :
+    barrier =
+      pending.outer.barriers.getD
+        (PLeaTTa.barrierCount pending.outer.alts) + 1
   worldPreserved :
     (activatedExecutableSuccessor pending copied executableRest qterm
       installed).world =
@@ -366,6 +375,18 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step
         opened.session pending.persistent :=
     ⟨entry.entry.database,
       freshFrontier.mono branchBelowSession (Nat.le_refl _)⟩
+  have retainedBarriers :
+      (activatedExecutableSuccessor pending copied executableRest qterm
+        installed).barriers =
+        PLeaTTa.pushBarrierCache pending.outer.barriers := by
+    rw [activatedExecutableSuccessor_barriers, frontier.pulledExact]
+    rfl
+  have barrierTag :
+      barrier =
+        pending.outer.barriers.getD
+          (PLeaTTa.barrierCount pending.outer.alts) + 1 := by
+    rw [entry.entry.barrierExact, entry.entry.outer]
+    rfl
   refine
     ⟨representative, nextAlpha, sourceCanonical, flattened, installed, ?_⟩
   exact
@@ -373,6 +394,8 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step
       independentShape, sourceOrdered,
       sourceProductStep, executableStep, fineExecutableStep, cumulative,
       bodyPayload,
-      flattenedPayload, retainedAlts, worldPreserved, counterPreserved⟩
+      flattenedPayload, retainedAlts, frontier.tailScan.barrierCount_zero,
+      retainedBarriers, barrierTag,
+      worldPreserved, counterPreserved⟩
 
 end PLeaTTa.PrologRepresentativeProductActivationBridge
