@@ -52,6 +52,20 @@ theorem RejectedPullsN.preserves_wellFormed
       exact inductionHypothesis
         (cursor.advance_wellFormed wellFormed remaining)
 
+/-- Exactly counted rejected pulls consume only the frozen branch prefix.
+The global reservation endpoint is immutable, so every retained occurrence
+remains bounded by the same call-entry high-water. -/
+theorem RejectedPullsN.preserves_reservedUntil
+    {count : Nat} {before after : PreparedCursor}
+    (pulls : RejectedPullsN count before after) :
+    after.reservedUntil = before.reservedUntil := by
+  induction pulls with
+  | zero cursor =>
+      rfl
+  | succ count cursor branch branches finish remaining clash tail
+      inductionHypothesis =>
+      exact inductionHypothesis
+
 /-- A ready suffix with a nonempty executable bank cannot be exhausted on
 the source side. -/
 theorem SupportedCursorAlternativeReady.branches_nonempty_of_alts_nonempty
@@ -180,6 +194,8 @@ structure SupportedRetainedCallFrontier
     (qterm : Atom) (barrier startCounter : Nat) : Prop where
   finishRemaining : finish.remaining = branch :: branchTail
   finishWellFormed : finish.WellFormed
+  finishReservedUntil :
+    finish.reservedUntil = opened.cursor.reservedUntil
   finishContext :
     CursorCallContext finish opened.cursor.callGeneration
       opened.cursor.predicate opened.cursor.arguments opened.cursor.bindings
@@ -281,6 +297,10 @@ theorem
       finish.WellFormed :=
     PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_wellFormed
       pulls agreement.cursorWellFormed
+  have finishReservedUntil :
+      finish.reservedUntil = opened.cursor.reservedUntil :=
+    PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_reservedUntil
+      pulls
   have query :
       NormalizedCallAgrees queryAlpha finish argsv
         (PLeaTTa.subst binding res) :=
@@ -322,7 +342,8 @@ theorem
         rw [readyClausesEq]
   · exact
       ⟨by simpa [readyBranchesEq] using finishRemaining,
-        finishWellFormed, finishContext, query, supportedAtFinish,
+        finishWellFormed, finishReservedUntil, finishContext, query,
+        supportedAtFinish,
         normalized, arity, retained, tail,
         agreement.entry.substitutedArgs, agreement.entry.queryTerm,
         agreement.entry.startCounterExact, copiedExact, pulledExact,

@@ -20,6 +20,7 @@ open PeTTaSpec.PrologCore.GoalSemantics
 open PeTTaSpec.PrologCore.OpenSubstitution
 open PeTTaSpec.PrologCore.Resolver
 open DemandDrivenStep
+open PrologAlphaFreshFrontierBridge
 open PrologActivationMacro
 open PrologCallStepBridge
 open PrologMguBridge
@@ -44,6 +45,33 @@ def activatedExecutableSuccessor
       some
         (copied.body ++ rest,
           PLeaTTa.trimFor (copied.body ++ rest) qterm installed) }
+
+/-- Fine-grained executable spelling of the activated successor.  The sealed
+configuration changes, while the pending call's suspended frame stack is
+carried literally and in order. -/
+def activatedOpenSuccessor
+    (pending : DemandDrivenCallStep.PendingCall)
+    (copied : PLeaTTa.Clause) (rest : List PLeaTTa.Goal)
+    (qterm : Atom) (installed : Subst) : DemandDrivenStep.OpenConf :=
+  DemandDrivenStep.OpenConf.ofConf
+    (activatedExecutableSuccessor pending copied rest qterm installed)
+    pending.frames
+
+@[simp] theorem activatedOpenSuccessor_toConf
+    (pending : DemandDrivenCallStep.PendingCall)
+    (copied : PLeaTTa.Clause) (rest : List PLeaTTa.Goal)
+    (qterm : Atom) (installed : Subst) :
+    (activatedOpenSuccessor pending copied rest qterm installed).toConf =
+      activatedExecutableSuccessor pending copied rest qterm installed :=
+  rfl
+
+@[simp] theorem activatedOpenSuccessor_frames
+    (pending : DemandDrivenCallStep.PendingCall)
+    (copied : PLeaTTa.Clause) (rest : List PLeaTTa.Goal)
+    (qterm : Atom) (installed : Subst) :
+    (activatedOpenSuccessor pending copied rest qterm installed).frames =
+      pending.frames :=
+  rfl
 
 @[simp] theorem activatedExecutableSuccessor_cur
     (pending : DemandDrivenCallStep.PendingCall)
@@ -168,6 +196,7 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step
     ∃ representative nextAlpha sourceCanonical flattened installed,
       SharedRuntimeAlpha nextAlpha ∧
       (∀ pair, pair ∈ alpha → pair ∈ nextAlpha) ∧
+      AlphaFreshFrontier nextAlpha branch.nextFresh (startCounter + 1) ∧
       independentResult =
         TreeSubstitution.reify (sourceCanonical ++ canonical) ++
           referenceBase ∧
@@ -242,7 +271,8 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step
     exact observed
   obtain
     ⟨nextAlpha, sourceCanonical, flattened, generated, installed,
-      nextShared, alphaIncluded, independentShape, sourceOrdered,
+      nextShared, alphaIncluded, freshFrontier, independentShape,
+      sourceOrdered,
       _generatedExact, installedExact, successorCumulative, successorTask⟩ :=
     PLeaTTa.PrologRepresentativeTaskActivationBridge.SupportedPreparedCandidateAgrees.unifyB_body_cumulativeWith_of_headResolution
       oldCumulative queryAtFinish cursorBindingShape
@@ -322,8 +352,8 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step
     rfl
   refine
     ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
-      nextShared, alphaIncluded, independentShape, sourceOrdered,
-      sourceStep, executableStep, ?_, taskCopied, retainedAlts,
+      nextShared, alphaIncluded, freshFrontier, independentShape,
+      sourceOrdered, sourceStep, executableStep, ?_, taskCopied, retainedAlts,
       worldPreserved, counterPreserved⟩
   simpa only using cumulativeCopied
 

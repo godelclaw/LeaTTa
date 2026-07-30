@@ -19,6 +19,7 @@ open PeTTaSpec.PrologCore.Canonical
 open PeTTaSpec.PrologCore.OpenSubstitution
 open PeTTaSpec.PrologCore.Resolver
 open PrologGoalAlpha
+open PrologAlphaFreshFrontierBridge
 open PrologCallPayloadBridge
 open PrologMguBridge
 open PrologMguComposition
@@ -143,6 +144,7 @@ theorem
     ∃ alpha sourceCanonical flattened generated installed,
       SharedRuntimeAlpha alpha ∧
       (∀ pair, pair ∈ queryAlpha → pair ∈ alpha) ∧
+      AlphaFreshFrontier alpha branch.nextFresh (seed + 1) ∧
       independentResult =
         TreeSubstitution.reify (sourceCanonical ++ oldCanonical) ++
           referenceBase ∧
@@ -189,8 +191,8 @@ theorem
           qterm seed barrier clause).body := by
   obtain
     ⟨alpha, sourceCanonical, representative, _semanticCanonical,
-      flattened, generated, installed, shared, queryIncluded, bodyControl,
-      representativeExact, independentShape, sourceOrdered,
+      flattened, generated, installed, shared, queryIncluded, freshFrontier,
+      bodyControl, representativeExact, independentShape, sourceOrdered,
       successorVariants, _semanticOrdered, _equationAgreement,
       generatedExact, generatedAgreement, flattenedTopological,
       ⟨generatedTopological⟩, generatedValuation, _flattenedMgu,
@@ -381,7 +383,8 @@ theorem
       trimmedCumulative.weak⟩
   exact
     ⟨alpha, sourceCanonical, flattened, generated, installed,
-      shared, queryIncluded, compositeResultShape, sourceOrdered,
+      shared, queryIncluded, freshFrontier, compositeResultShape,
+      sourceOrdered,
       generatedExact, installedExact, trimmedCumulative, task⟩
 
 /-! ## Anti-vacuity: previously bound support really composes -/

@@ -11,6 +11,7 @@ Main exports:
 -/
 import PLeaTTa.Proofs.PrologRepresentativeCallFrontierBridge
 import PLeaTTa.Proofs.PrologActivationUnifierBridge
+import PLeaTTa.Proofs.PrologAlphaFreshFrontierBridge
 
 namespace PLeaTTa.PrologRepresentativeActivationBridge
 
@@ -21,6 +22,7 @@ open PeTTaSpec.PrologCore.OpenSubstitution
 open PeTTaSpec.PrologCore.Resolver
 open PrologGoalAlpha
 open PrologGoalMguVariant
+open PrologAlphaFreshFrontierBridge
 open PrologMguBridge
 open PrologMguComposition
 open PrologMguDirectSimulation
@@ -732,6 +734,7 @@ theorem
         flattened generated installed,
       SharedRuntimeAlpha alpha ∧
       (∀ pair, pair ∈ queryAlpha → pair ∈ alpha) ∧
+      AlphaFreshFrontier alpha branch.nextFresh (seed + 1) ∧
       AlphaGoalsAgree alpha barrier branch.body
         (freshenResolutionClause
           (args.map (PLeaTTa.subst binding)) args result rest binding
@@ -971,6 +974,35 @@ theorem
           ∀ pair, pair ∈ queryAlpha → pair ∈ alpha := by
         intro pair pairMember
         exact List.mem_append_left clauseAlpha pairMember
+      have queryFresh :
+          AlphaFreshFrontier queryAlpha cursor.reservationStart seed := by
+        constructor
+        · exact queryReferenceBelow
+        · exact Nat.le_trans
+            (resolutionSeedHighWaterNames_le_of_subset queryExecutableLive)
+            highWater
+      have queryEnd :
+          cursor.reservationStart ≤
+            (reference.clause.freshCopy freshSeed).nextFresh := by
+        exact Nat.le_trans startsAbove (by
+          rw [reference.clause.freshCopy_next]
+          exact Nat.le_add_right _ _)
+      have clauseFresh :
+          AlphaFreshFrontier clauseAlpha
+            (reference.clause.freshCopy freshSeed).nextFresh
+            (seed + 1) := by
+        simpa [clauseAlpha, resolutionFreshSuffix,
+          reference.clause.freshCopy_next] using
+          (clauseAlpha_freshFrontier
+            (reference.clause.freshCopy freshSeed).firstFresh seed
+            reference.clause.variables)
+      have combinedFresh :
+          AlphaFreshFrontier alpha
+            (reference.clause.freshCopy freshSeed).nextFresh
+            (seed + 1) := by
+        exact AlphaFreshFrontier.append
+          (queryFresh.mono queryEnd (Nat.le_add_right seed 1))
+          clauseFresh
       have bodyAgreement :=
         freshenClause_body_alpha_agrees
           base bodySupported freshSeed
@@ -1172,6 +1204,7 @@ theorem
         ⟨alpha, sourceCanonical, representative, semanticCanonical,
           flattened, generated, installed, combinedShared,
           queryIncluded,
+          by simpa [preparedBranchOf] using combinedFresh,
           by simpa [preparedBranchOf] using bodyControl,
           rfl,
           by simpa [sourceExtensionShape] using independentShape,
@@ -1281,7 +1314,7 @@ theorem
   obtain
     ⟨alpha, sourceCanonical, representative, semanticCanonical,
       flattened, generated, installed, shared, _queryIncluded,
-      _bodyControl, _representativeExact, tail⟩ :=
+      _freshFrontier, _bodyControl, _representativeExact, tail⟩ :=
     PLeaTTa.PrologRepresentativeActivationBridge.SupportedPreparedCandidateAgrees.unifyB_representativeWith_of_headResolution
       exactQuery wellFormed member agreement arity queryShared
       queryReferenceBelow queryExecutableLive highWater resolved
