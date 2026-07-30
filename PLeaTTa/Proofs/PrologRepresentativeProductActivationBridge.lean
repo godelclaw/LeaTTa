@@ -14,6 +14,7 @@ Main exports:
   RepresentativeRetainedCallFrontier.activate_product_step
 -/
 import PLeaTTa.Proofs.PrologRepresentativeStepActivationBridge
+import PLeaTTa.Proofs.PrologRetainedCursorOwnershipBridge
 import PLeaTTa.Proofs.PrologControlSegmentSpineBridge
 
 namespace PLeaTTa.PrologRepresentativeProductActivationBridge
@@ -32,6 +33,7 @@ open PrologMguComposition
 open PrologOrdinaryStepBridge
 open PrologRecursiveCallPayloadBridge
 open PrologRepresentativeCallFrontierBridge
+open PrologRetainedCursorOwnershipBridge
 open PrologRepresentativeStepActivationBridge
 open PrologStateBridge
 
@@ -131,6 +133,9 @@ structure RepresentativeProductActivationCore
     (activatedExecutableSuccessor pending copied executableRest qterm
       installed).alts =
       altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts
+  retainedCursorOwnership :
+    PendingRetainedCursorAlternativeOwnership alpha pending
+      (finish.advance branch branchTail) executableRest qterm barrier altTail
   retainedAltsZero : PLeaTTa.barrierCount altTail = 0
   retainedBarriers :
     (activatedExecutableSuccessor pending copied executableRest qterm
@@ -488,13 +493,20 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step_head
           (PLeaTTa.barrierCount pending.outer.alts) + 1 := by
     rw [entry.entry.barrierExact, entry.entry.outer]
     rfl
+  have retainedCursorOwnership :
+      PendingRetainedCursorAlternativeOwnership alpha pending
+        (finish.advance branch branchTail) executableRest qterm barrier
+        altTail :=
+    PLeaTTa.PrologRetainedCursorOwnershipBridge.RepresentativeRetainedCallFrontier.tailOwnership
+      entry frontier
   refine
     ⟨representative, nextAlpha, sourceCanonical, flattened, installed, ?_⟩
   exact
     ⟨nextShared, alphaIncluded, freshFrontier, persistentAgreement,
       independentShape, sourceOrdered,
       sourceProductStep, executableStep, fineExecutableStep, cumulative,
-      bodyPayload, retainedAlts, frontier.tailScan.barrierCount_zero,
+      bodyPayload, retainedAlts, retainedCursorOwnership,
+      frontier.tailScan.barrierCount_zero,
       retainedBarriers, barrierTag,
       worldPreserved, counterPreserved⟩
 
