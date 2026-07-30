@@ -8,7 +8,9 @@ Purpose: Relate compiler-erased local task administration to exact zero-step
 Trusted boundary: none
 Main exports:
   NormalizedAlphaGoalsAgree,
+  TaskDataAgrees,
   ReadyTaskRelates,
+  TaskPayloadAgrees.afterUnifySuccessData,
   administrative_prefix_correspondence
 -/
 import PLeaTTa.Proofs.PrologActivationUnifierBridge
@@ -366,6 +368,25 @@ theorem AdministrativeStepsN.sourceSteps
           [] [] (head.transition scope bindings session)
           inductionHypothesis
 
+/-- Substitution and valuation agreement independent of executable control
+spelling.
+
+This is the reusable data half of `TaskPayloadAgrees`.  Keeping it separate
+is load-bearing for segmented continuations: a clause body and its caller may
+carry distinct cut barriers while sharing one cumulative source/runtime
+valuation. -/
+structure TaskDataAgrees
+    (alpha support : List (LogicVar × String))
+    (canonical : TreeSubstitution) (referenceBase current : Substitution)
+    (runtime : Metta.Subst) : Prop where
+  alphaShared : SharedRuntimeAlpha alpha
+  canonicalWellFormed : canonical.WellFormed
+  bindingShape :
+    current = TreeSubstitution.reify canonical ++ referenceBase
+  valuation :
+    AlphaCumulativeResidualVariantAgreesOn
+      alpha support canonical referenceBase runtime
+
 /-- Actual task payload agreement after compiler-erased administration.  The
 independent cumulative binding remains explicit rather than being folded into
 the goal syntax. -/
@@ -384,6 +405,52 @@ structure TaskPayloadAgrees
   valuation :
     AlphaCumulativeResidualVariantAgreesOn
       alpha support canonical referenceBase runtime
+
+/-- Forget only the control spelling and barrier from a task payload. -/
+theorem TaskPayloadAgrees.data
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Metta.Subst}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (agreement :
+      TaskPayloadAgrees alpha support barrier canonical referenceBase current
+        runtime references executables) :
+    TaskDataAgrees alpha support canonical referenceBase current runtime :=
+  ⟨agreement.alphaShared, agreement.canonicalWellFormed,
+    agreement.bindingShape, agreement.valuation⟩
+
+/-- Add an independently proved control spelling to shared task data. -/
+theorem TaskDataAgrees.withControl
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Metta.Subst}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (control :
+      NormalizedAlphaGoalsAgree alpha barrier references executables) :
+    TaskPayloadAgrees alpha support barrier canonical referenceBase current
+      runtime references executables :=
+  ⟨agreement.alphaShared, agreement.canonicalWellFormed,
+    agreement.bindingShape, control, agreement.valuation⟩
+
+/-- Liveness trimming changes only the executable representative carried by
+the data relation.  Source binding shape and canonical MGU structure remain
+unchanged. -/
+theorem TaskDataAgrees.trimFor
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Metta.Subst}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    {goals : List PLeaTTa.Goal} {qterm : Metta.Atom}
+    (live : AlphaRuntimeNamesLive support goals qterm) :
+    TaskDataAgrees alpha support canonical referenceBase current
+      (PLeaTTa.trimFor goals qterm runtime) :=
+  ⟨agreement.alphaShared, agreement.canonicalWellFormed,
+    agreement.bindingShape, agreement.valuation.trimFor live⟩
 
 /-- The exact post-clause-activation payload already proved by the MGU bridge
 embeds into administrative-normalized task agreement. -/
@@ -1054,21 +1121,24 @@ theorem TaskPayloadAgrees.executableUnifyTopExact
   rw [sourceResultShape]
   exact successors
 
-/-- One successful primitive equality installs the actual executable MGU,
-trims it on the exact continuation, and preserves the task payload relation.
+/-- One successful primitive equality installs the actual executable MGU and
+preserves the continuation-independent task data relation.
 
 The support premises remain caller-visible.  `leftSupported` and
 `rightSupported` say that evaluating this equality does not need a dead
 alpha link; `supportIncluded` permits restricting the newly generated full
 valuation; `runtimeAvoids` is the carried-state separation needed by eager
-composition; and `live` is exactly the machine trim obligation. -/
-theorem TaskPayloadAgrees.afterUnifySuccess
+composition.  Trimming and control reconstruction are deliberately left to
+`TaskDataAgrees.trimFor` and `TaskDataAgrees.withControl`, so segmented
+body/caller continuations can reuse this MGU proof without retagging either
+control region. -/
+theorem TaskPayloadAgrees.afterUnifySuccessData
     {alpha support : List (LogicVar × String)} {barrier : Nat}
     {canonical : TreeSubstitution} {referenceBase current : Substitution}
     {runtime : Metta.Subst}
     {left right : Term} {executableLeft executableRight : Metta.Atom}
     {references : List PeTTaSpec.PrologCore.Goal}
-    {wholeExecutables executables : List PLeaTTa.Goal}
+    {wholeExecutables : List PLeaTTa.Goal}
     (agreement :
       TaskPayloadAgrees alpha support barrier canonical referenceBase current
         runtime (.unify left right :: references)
@@ -1077,8 +1147,6 @@ theorem TaskPayloadAgrees.afterUnifySuccess
       AlphaTermAgrees alpha left executableLeft)
     (rightAgreement :
       AlphaTermAgrees alpha right executableRight)
-    (tailControl :
-      NormalizedAlphaGoalsAgree alpha barrier references executables)
     (leftSupported :
       AlphaTreeSupported alpha support (Term.denote left))
     (rightSupported :
@@ -1086,18 +1154,14 @@ theorem TaskPayloadAgrees.afterUnifySuccess
     (supportIncluded :
       ∀ pair, pair ∈ support → pair ∈ alpha)
     (runtimeAvoids : AlphaRuntimeNamesAvoid support runtime)
-    (qterm : Metta.Atom)
-    (live : AlphaRuntimeNamesLive support executables qterm)
     {result : Substitution}
     (resolved : UnifyResolution current left right result) :
     ∃ sourceExtension : TreeSubstitution,
       ∃ installed : Metta.Subst,
       PLeaTTa.unifyB runtime executableLeft executableRight =
         some installed ∧
-      TaskPayloadAgrees alpha support barrier
-        (sourceExtension ++ canonical) referenceBase result
-        (PLeaTTa.trimFor executables qterm installed)
-        references executables := by
+      TaskDataAgrees alpha support (sourceExtension ++ canonical)
+        referenceBase result installed := by
   obtain
     ⟨representative, sourceExtension, executableCanonical, generated,
       bases, oldCanonicalTopological, representativeCovered, oldValuation,
@@ -1219,17 +1283,12 @@ theorem TaskPayloadAgrees.afterUnifySuccess
       sourceCompositeTopological, successorRepresentativeCovered,
       ⟨installedTopological⟩,
       installedValuation⟩
-  have trimmedCumulative :
-      AlphaCumulativeResidualVariantAgreesOn
-        alpha support (sourceExtension ++ canonical)
-        referenceBase (PLeaTTa.trimFor executables qterm installed) :=
-    installedCumulative.trimFor live
   refine
     ⟨sourceExtension, installed, installedExact, ?_⟩
   refine
     ⟨agreement.alphaShared,
       sourceExtensionWellFormed.append agreement.canonicalWellFormed,
-      ?_, tailControl, trimmedCumulative⟩
+      ?_, installedCumulative⟩
   calc
     result =
         TreeSubstitution.reify sourceExtension ++ current :=
@@ -1243,6 +1302,55 @@ theorem TaskPayloadAgrees.afterUnifySuccess
           referenceBase := by
       rw [TreeSubstitution.reify_append]
       simp only [List.append_assoc]
+
+/-- One successful primitive equality installs the actual executable MGU,
+trims it on the exact continuation, and preserves the full task payload
+relation.
+
+This is the uniform-control specialization of
+`TaskPayloadAgrees.afterUnifySuccessData`. -/
+theorem TaskPayloadAgrees.afterUnifySuccess
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Metta.Subst}
+    {left right : Term} {executableLeft executableRight : Metta.Atom}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {wholeExecutables executables : List PLeaTTa.Goal}
+    (agreement :
+      TaskPayloadAgrees alpha support barrier canonical referenceBase current
+        runtime (.unify left right :: references)
+        wholeExecutables)
+    (leftAgreement :
+      AlphaTermAgrees alpha left executableLeft)
+    (rightAgreement :
+      AlphaTermAgrees alpha right executableRight)
+    (tailControl :
+      NormalizedAlphaGoalsAgree alpha barrier references executables)
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote left))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote right))
+    (supportIncluded :
+      ∀ pair, pair ∈ support → pair ∈ alpha)
+    (runtimeAvoids : AlphaRuntimeNamesAvoid support runtime)
+    (qterm : Metta.Atom)
+    (live : AlphaRuntimeNamesLive support executables qterm)
+    {result : Substitution}
+    (resolved : UnifyResolution current left right result) :
+    ∃ sourceExtension : TreeSubstitution,
+      ∃ installed : Metta.Subst,
+      PLeaTTa.unifyB runtime executableLeft executableRight =
+        some installed ∧
+      TaskPayloadAgrees alpha support barrier
+        (sourceExtension ++ canonical) referenceBase result
+        (PLeaTTa.trimFor executables qterm installed)
+        references executables := by
+  obtain ⟨sourceExtension, installed, installedExact, data⟩ :=
+    agreement.afterUnifySuccessData leftAgreement rightAgreement
+      leftSupported rightSupported supportIncluded runtimeAvoids resolved
+  exact
+    ⟨sourceExtension, installed, installedExact,
+      (data.trimFor live).withControl tailControl⟩
 
 /-- Leaf-level state relation for one active independent task and one ready
 fine executable state.  The broader Search/OpenConf bridge will add relations

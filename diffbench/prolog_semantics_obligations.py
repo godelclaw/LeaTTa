@@ -107,6 +107,10 @@ PROLOG_ACTIVATION_UNIFIER_BRIDGE = (
 PROLOG_ORDINARY_STEP_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologOrdinaryStepBridge.lean"
 )
+PROLOG_SEGMENTED_PRODUCT_STEP_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologSegmentedProductStepBridge.lean"
+)
 PROLOG_RECURSIVE_CALL_PAYLOAD_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRecursiveCallPayloadBridge.lean"
@@ -276,6 +280,8 @@ def check() -> list[str]:
             digest(PROLOG_ACTIVATION_UNIFIER_BRIDGE),
         "prolog_ordinary_step_bridge_sha256":
             digest(PROLOG_ORDINARY_STEP_BRIDGE),
+        "prolog_segmented_product_step_bridge_sha256":
+            digest(PROLOG_SEGMENTED_PRODUCT_STEP_BRIDGE),
         "prolog_recursive_call_payload_bridge_sha256":
             digest(PROLOG_RECURSIVE_CALL_PAYLOAD_BRIDGE),
         "prolog_representative_call_prefilter_bridge_sha256":
