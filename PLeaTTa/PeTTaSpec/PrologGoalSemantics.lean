@@ -228,6 +228,15 @@ theorem openLocalCall_nextFresh_mono (session : Session)
       (openLocalCall session request).session.resolver.nextFresh := by
   exact prepareCall_nextFresh_mono session.resolver request
 
+/-- A newly opened local call starts its complete eager reservation no lower
+than the incoming global fresh high-water.  The request ceiling may move the
+start farther forward, but can never roll it back. -/
+theorem openLocalCall_reservationStart_ge (session : Session)
+    (request : CallRequest) :
+    session.resolver.nextFresh ≤
+      (openLocalCall session request).cursor.reservationStart := by
+  exact Nat.le_max_left _ _
+
 @[simp] theorem openLocalCall_nextCutScope (session : Session)
     (request : CallRequest) :
     (openLocalCall session request).session.nextCutScope =

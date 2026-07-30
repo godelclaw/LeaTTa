@@ -51,6 +51,40 @@ def AlphaAllocationGap
       resolutionSeedHighWaterName name ≤ executableStart ∨
         executableEnd < resolutionSeedHighWaterName name
 
+/-- Exact chronological extension of a runtime alpha graph.
+
+`larger` consists of the old graph followed by one freshly allocated suffix.
+Every independent generated identity in that suffix is at or above the
+source floor, while every executable name is strictly above the executable
+floor.  Keeping the exact suffix equation prevents a proof from laundering
+an unrelated graph through mere old-entry inclusion. -/
+def AlphaExtendsAbove
+    (smaller larger : List (LogicVar × String))
+    (referenceFloor executableFloor : Nat) : Prop :=
+  ∃ suffix : List (LogicVar × String),
+    larger = smaller ++ suffix ∧
+      (∀ index, .generated index ∈ suffix.map Prod.fst →
+        referenceFloor ≤ index) ∧
+      ∀ name, name ∈ suffix.map Prod.snd →
+        executableFloor < resolutionSeedHighWaterName name
+
+namespace AlphaExtendsAbove
+
+/-- An exact chronological extension contains every old alpha pair. -/
+theorem included
+    {smaller larger : List (LogicVar × String)}
+    {referenceFloor executableFloor : Nat}
+    (extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor) :
+    ∀ pair, pair ∈ smaller → pair ∈ larger := by
+  rcases extension with ⟨suffix, largerEq, _referenceAbove,
+    _executableAbove⟩
+  intro pair member
+  rw [largerEq]
+  exact List.mem_append_left suffix member
+
+end AlphaExtendsAbove
+
 namespace AlphaAllocationGap
 
 /-- A graph entirely below the two lower bounds avoids every protected
@@ -118,6 +152,39 @@ theorem append
     rcases member with member | member
     · exact leftGap.2 name member
     · exact rightGap.2 name member
+
+/-- Extending the alpha graph strictly after both protected upper bounds
+preserves the retained allocation gap.
+
+This is the recursive-call chronology rule: the old graph already avoids the
+retained source/runtime regions, and every newly appended pair is allocated
+after those regions in both independent allocator currencies. -/
+theorem extendAbove
+    {smaller larger : List (LogicVar × String)}
+    {referenceStart referenceEnd executableStart executableEnd
+      referenceFloor executableFloor : Nat}
+    (gap :
+      AlphaAllocationGap smaller referenceStart referenceEnd executableStart
+        executableEnd)
+    (extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor)
+    (referenceDominated : referenceEnd ≤ referenceFloor)
+    (executableDominated : executableEnd ≤ executableFloor) :
+    AlphaAllocationGap larger referenceStart referenceEnd executableStart
+      executableEnd := by
+  rcases extension with
+    ⟨suffix, largerEq, referenceAbove, executableAbove⟩
+  rw [largerEq]
+  apply gap.append
+  constructor
+  · intro index member
+    exact Or.inr
+      (Nat.le_trans referenceDominated
+        (referenceAbove index member))
+  · intro name member
+    exact Or.inr
+      (Nat.lt_of_le_of_lt executableDominated
+        (executableAbove name member))
 
 end AlphaAllocationGap
 

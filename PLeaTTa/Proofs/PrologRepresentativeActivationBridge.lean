@@ -913,6 +913,7 @@ theorem
         flattened generated installed,
       SharedRuntimeAlpha alpha ∧
       (∀ pair, pair ∈ ambientAlpha → pair ∈ alpha) ∧
+      AlphaExtendsAbove ambientAlpha alpha branch.firstFresh seed ∧
       AlphaFreshFrontier alpha referenceFrontier executableFrontier ∧
       AlphaAllocationGap alpha branch.nextFresh cursor.reservedUntil
         (seed + 1) protectedExecutableEnd ∧
@@ -1152,14 +1153,15 @@ theorem
               qterm seed)
             reference.clause.variables)
       let alpha := ambientAlpha ++ clauseAlpha
+      let clauseAgreement :=
+        freshenClause_alpha_agrees reference.clause freshSeed
+          (resolutionFreshSuffix
+            (args.map (PLeaTTa.subst binding)) result rest binding qterm
+            seed)
+          encoding
       have combinedShared : SharedRuntimeAlpha alpha := by
         have clauseShared : SharedRuntimeAlpha clauseAlpha := by
-          exact RuntimeAlpha.graph_shared
-            (freshenClause_alpha_agrees reference.clause freshSeed
-              (resolutionFreshSuffix
-                (args.map (PLeaTTa.subst binding)) result rest binding qterm
-                seed)
-              encoding)
+          exact RuntimeAlpha.graph_shared clauseAgreement
         have cross :
             List.Disjoint (ambientAlpha.map Prod.fst)
                 (clauseAlpha.map Prod.fst) ∧
@@ -1172,6 +1174,23 @@ theorem
           ∀ pair, pair ∈ ambientAlpha → pair ∈ alpha := by
         intro pair pairMember
         exact List.mem_append_left clauseAlpha pairMember
+      have extensionAbove :
+          AlphaExtendsAbove ambientAlpha alpha
+            (reference.clause.freshCopy freshSeed).firstFresh seed := by
+        refine ⟨clauseAlpha, rfl, ?_, ?_⟩
+        · intro index targetMember
+          rw [clauseAgreement.graph_reference] at targetMember
+          obtain ⟨targetIndex, targetShape, targetLower⟩ :=
+            referenceFreshTargets_generated_lower targetMember
+          injection targetShape with indexEq
+          simpa [indexEq] using targetLower
+        · intro name targetMember
+          rw [clauseAgreement.graph_executable] at targetMember
+          simp only [executableFreshTargets, List.mem_map] at targetMember
+          obtain ⟨source, _sourceMember, targetShape⟩ := targetMember
+          rw [← targetShape, resolutionFreshSuffix,
+            resolutionSeedHighWaterName_append_compact]
+          omega
       have clauseFresh :
           AlphaFreshFrontier clauseAlpha
             (reference.clause.freshCopy freshSeed).nextFresh
@@ -1416,7 +1435,7 @@ theorem
       exact
         ⟨alpha, sourceCanonical, representative, semanticCanonical,
           flattened, generated, installed, combinedShared,
-          queryIncluded,
+          queryIncluded, by simpa [preparedBranchOf] using extensionAbove,
           by simpa [preparedBranchOf] using combinedFresh,
           by simpa [preparedBranchOf] using combinedGap,
           by simpa [preparedBranchOf] using bodyControl,
@@ -1597,8 +1616,8 @@ theorem
       exact
         ⟨alpha, sourceCanonical, representative, semanticCanonical,
           flattened, generated, installed, resultBundle.1,
-          resultBundle.2.1, resultBundle.2.2.1,
-          resultBundle.2.2.2.2⟩
+          resultBundle.2.1, resultBundle.2.2.2.1,
+          resultBundle.2.2.2.2.2⟩
 
 /-- Existential compatibility view of
 `unifyB_representativeWith_of_headResolution`.

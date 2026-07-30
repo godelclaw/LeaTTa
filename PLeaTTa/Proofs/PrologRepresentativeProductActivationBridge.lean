@@ -94,6 +94,8 @@ structure RepresentativeProductActivationCore
     (installed : Subst) : Prop where
   nextShared : SharedRuntimeAlpha nextAlpha
   alphaIncluded : ∀ pair, pair ∈ alpha → pair ∈ nextAlpha
+  alphaExtension :
+    AlphaExtendsAbove alpha nextAlpha branch.firstFresh startCounter
   freshFrontier :
     AlphaFreshFrontier nextAlpha branch.nextFresh pending.persistent.counter
   /-- Tight frontier of the selected clause itself, before widening to the
@@ -399,7 +401,8 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step_head
         flattenedRepresentative installed := by
   obtain
     ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
-      nextShared, alphaIncluded, selectionFresh, independentShape,
+      nextShared, alphaIncluded, alphaExtension, selectionFresh,
+      independentShape,
       sourceOrdered, sourceInnerStep, executableStep, cumulative, bodyPayload,
       retainedAlts, worldPreserved, counterPreserved⟩ :=
     PLeaTTa.PrologRepresentativeStepActivationBridge.RepresentativeRetainedCallFrontier.activate_task_step_head
@@ -513,7 +516,7 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step_head
   refine
     ⟨representative, nextAlpha, sourceCanonical, flattened, installed, ?_⟩
   exact
-    ⟨nextShared, alphaIncluded, freshFrontier, selectionFresh,
+    ⟨nextShared, alphaIncluded, alphaExtension, freshFrontier, selectionFresh,
       persistentAgreement, independentShape, sourceOrdered,
       sourceProductStep, executableStep, fineExecutableStep, cumulative,
       bodyPayload, retainedAlts, retainedCursorOwnership,

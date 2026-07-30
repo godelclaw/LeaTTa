@@ -152,6 +152,7 @@ theorem
     ∃ alpha sourceCanonical flattened generated installed,
       SharedRuntimeAlpha alpha ∧
       (∀ pair, pair ∈ ambientAlpha → pair ∈ alpha) ∧
+      AlphaExtendsAbove ambientAlpha alpha branch.firstFresh seed ∧
       AlphaFreshFrontier alpha referenceFrontier executableFrontier ∧
       AlphaAllocationGap alpha branch.nextFresh cursor.reservedUntil
         (seed + 1) protectedExecutableEnd ∧
@@ -201,8 +202,9 @@ theorem
           qterm seed barrier clause).body := by
   obtain
     ⟨alpha, sourceCanonical, representative, _semanticCanonical,
-      flattened, generated, installed, shared, queryIncluded, freshFrontier,
-      allocationGap, bodyControl, representativeExact, independentShape,
+      flattened, generated, installed, shared, queryIncluded, extensionAbove,
+      freshFrontier, allocationGap, bodyControl, representativeExact,
+      independentShape,
       sourceOrdered,
       successorVariants, _semanticOrdered, _equationAgreement,
       generatedExact, generatedAgreement, flattenedTopological,
@@ -399,7 +401,7 @@ theorem
       trimmedCumulative.weak⟩
   exact
     ⟨alpha, sourceCanonical, flattened, generated, installed,
-      shared, queryIncluded, freshFrontier, allocationGap,
+      shared, queryIncluded, extensionAbove, freshFrontier, allocationGap,
       compositeResultShape,
       sourceOrdered,
       generatedExact, installedExact, trimmedCumulative, task⟩
@@ -458,6 +460,7 @@ theorem
     ∃ alpha sourceCanonical flattened generated installed,
       SharedRuntimeAlpha alpha ∧
       (∀ pair, pair ∈ queryAlpha → pair ∈ alpha) ∧
+      AlphaExtendsAbove queryAlpha alpha branch.firstFresh seed ∧
       AlphaFreshFrontier alpha branch.nextFresh (seed + 1) ∧
       independentResult =
         TreeSubstitution.reify (sourceCanonical ++ oldCanonical) ++
@@ -561,7 +564,8 @@ theorem
       exact
         ⟨alpha, sourceCanonical, flattened, generated, installed,
           resultBundle.1, resultBundle.2.1, resultBundle.2.2.1,
-          resultBundle.2.2.2.2⟩
+          resultBundle.2.2.2.1,
+          resultBundle.2.2.2.2.2⟩
 
 /-! ## Anti-vacuity: previously bound support really composes -/
 

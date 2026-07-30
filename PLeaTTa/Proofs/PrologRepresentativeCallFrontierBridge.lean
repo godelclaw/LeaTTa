@@ -522,6 +522,8 @@ structure RepresentativeRetainedCallFrontier
     (qterm : Atom) (barrier startCounter : Nat) : Prop where
   finishRemaining : finish.remaining = branch :: branchTail
   finishWellFormed : finish.WellFormed
+  finishReservationStart :
+    opened.cursor.reservationStart ≤ finish.reservationStart
   finishReservedUntil :
     finish.reservedUntil = opened.cursor.reservedUntil
   finishContext :
@@ -680,6 +682,10 @@ theorem
   have finishWellFormed : finish.WellFormed :=
     PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_wellFormed
       pulls agreement.cursorWellFormed
+  have finishReservationStart :
+      opened.cursor.reservationStart ≤ finish.reservationStart :=
+    PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.reservationStart_le
+      pulls agreement.cursorWellFormed
   have finishReservedUntil :
       finish.reservedUntil = opened.cursor.reservedUntil :=
     PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_reservedUntil
@@ -737,7 +743,8 @@ theorem
         rw [readyClausesEq]
   · exact
       ⟨by simpa [readyBranchesEq] using finishRemaining,
-        finishWellFormed, finishReservedUntil, finishContext,
+        finishWellFormed, finishReservationStart, finishReservedUntil,
+        finishContext,
         queryAtFinish, supportedAtFinish,
         executableArity, tailArities, retained, tailSupported, tailScan,
         agreement.entry.substitutedArgs, agreement.entry.queryTerm,

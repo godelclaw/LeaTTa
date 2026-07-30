@@ -66,6 +66,34 @@ theorem RejectedPullsN.preserves_reservedUntil
       inductionHypothesis =>
       exact inductionHypothesis
 
+/-- Consuming a counted rejected prefix never rolls the reservation start
+backward.  Each rejected branch advances to the end of its own certified
+nonempty interval, while the global upper endpoint remains frozen. -/
+theorem RejectedPullsN.reservationStart_le
+    {count : Nat} {before after : PreparedCursor}
+    (pulls : RejectedPullsN count before after)
+    (wellFormed : before.WellFormed) :
+    before.reservationStart ≤ after.reservationStart := by
+  induction pulls with
+  | zero cursor =>
+      exact Nat.le_refl _
+  | succ count cursor branch branches finish remaining clash tail
+      inductionHypothesis =>
+      have branchMember : branch ∈ cursor.remaining := by
+        rw [remaining]
+        simp
+      have one :
+          cursor.reservationStart ≤
+            (cursor.advance branch branches).reservationStart := by
+        simpa [PreparedCursor.advance] using
+          Nat.le_trans
+            (wellFormed.1.start_le_member_first branchMember)
+            (wellFormed.1.member_first_le_next branchMember)
+      exact
+        Nat.le_trans one
+          (inductionHypothesis
+            (cursor.advance_wellFormed wellFormed remaining))
+
 /-- A ready suffix with a nonempty executable bank cannot be exhausted on
 the source side. -/
 theorem SupportedCursorAlternativeReady.branches_nonempty_of_alts_nonempty

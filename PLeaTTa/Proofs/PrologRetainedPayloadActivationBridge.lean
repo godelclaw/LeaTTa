@@ -152,6 +152,8 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
     ∃ representative nextAlpha sourceCanonical flattened installed,
       SharedRuntimeAlpha nextAlpha ∧
       (∀ pair, pair ∈ currentAlpha → pair ∈ nextAlpha) ∧
+      AlphaExtendsAbove currentAlpha nextAlpha branch.firstFresh
+        resource.counter ∧
       AlphaFreshFrontier nextAlpha session.resolver.nextFresh
         state.persistent.counter ∧
       independentResult =
@@ -251,7 +253,7 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
     Nat.le_trans seedReserved resourceDominated
   obtain
     ⟨nextAlpha, sourceCanonical, flattened, generated, installed,
-      nextShared, alphaIncluded, freshFrontier, allocationGap,
+      nextShared, alphaIncluded, extensionAbove, freshFrontier, allocationGap,
       independentShape,
       sourceOrdered, _generatedExact, installedExact, successorCumulative,
       successorTask⟩ :=
@@ -380,7 +382,8 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
     simpa [currentQuery] using taskCopied
   refine
     ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
-      nextShared, alphaIncluded, freshFrontier, independentShape,
+      nextShared, alphaIncluded, extensionAbove, freshFrontier,
+      independentShape,
       sourceOrdered, sourceStep, sealedStep, fineStep, cumulativeCopied,
       taskCopied, ⟨nextSnapshot⟩, successorBelow, ?_, ?_, ?_⟩
   · exact unifySuccessor_persistent state _ installed

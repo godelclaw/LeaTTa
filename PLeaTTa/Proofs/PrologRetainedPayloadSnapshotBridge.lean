@@ -513,6 +513,125 @@ def mono
         (snapshot.mono included (gaps snapshot))
         (outerAgrees.mono included gaps)
 
+/-- Every retained source reservation and executable alternative bank in
+this exact payload zipper was created no later than the supplied allocator
+floors.
+
+The predicate recurses over the agreement itself rather than over separate
+cursor/resource lists.  Consequently a domination proof cannot be permuted
+or paired with a different payload cell. -/
+def endpointsBelow
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer)
+    (referenceFloor executableFloor : Nat) : Prop :=
+  match agreement with
+  | .nil _ _ => True
+  | .cons _ _ _ _ _ _ resource _ cursor _ _ _ _ _ _ _ outerAgrees =>
+      cursor.reservedUntil ≤ referenceFloor ∧
+        resource.finalCounter ≤ executableFloor ∧
+        endpointsBelow outerAgrees referenceFloor executableFloor
+
+/-- Advancing either persistent allocator preserves domination of every
+frozen payload cell. -/
+theorem endpointsBelow_mono
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {referenceBefore executableBefore referenceAfter executableAfter : Nat}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer)
+    (below :
+      endpointsBelow agreement referenceBefore executableBefore)
+    (referenceMono : referenceBefore ≤ referenceAfter)
+    (executableMono : executableBefore ≤ executableAfter) :
+    endpointsBelow agreement referenceAfter executableAfter := by
+  induction agreement with
+  | nil =>
+      trivial
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+      inductionHypothesis =>
+      simp only [endpointsBelow] at below ⊢
+      exact
+        ⟨Nat.le_trans below.1 referenceMono,
+          Nat.le_trans below.2.1 executableMono,
+          inductionHypothesis below.2.2⟩
+
+/-- Extend every payload snapshot through one exact later alpha suffix.
+
+The suffix floors dominate every cell's protected upper endpoints, so
+`AlphaAllocationGap.extendAbove` derives each new gap.  No caller supplies a
+gap directly, and the zipper recursion preserves the exact cell order. -/
+def extendAbove
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {referenceFloor executableFloor : Nat}
+    (extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor) :
+    (agreement :
+      SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer) →
+    endpointsBelow agreement referenceFloor executableFloor →
+      SourceControlResourcePayloadContextAgrees larger support qterm
+        currentBarrier segments resources inner context outer
+  | .nil currentBarrier scope, _ =>
+      .nil currentBarrier scope
+  | .cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees,
+      below =>
+      .cons currentBarrier currentScope nextScope outerScope segment segments
+        resource resources cursor context
+        (segmentAgrees.mono extension.included)
+        resourceRest resourceQuery resourceBarrier
+        (resourceOwnership.mono extension.included)
+        (snapshot.mono extension.included
+          (snapshot.allocationGap.extendAbove extension below.1 below.2.1))
+        (extendAbove extension outerAgrees below.2.2)
+
+/-- Alpha transport changes only proof annotations; it preserves the exact
+cursor/resource endpoints and therefore the same domination certificate. -/
+theorem extendAbove_endpointsBelow
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {referenceFloor executableFloor : Nat}
+    (extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor)
+    (agreement :
+      SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer)
+    (below :
+      endpointsBelow agreement referenceFloor executableFloor) :
+    endpointsBelow (extendAbove extension agreement below)
+      referenceFloor executableFloor := by
+  induction agreement with
+  | nil =>
+      trivial
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+      inductionHypothesis =>
+      simp only [endpointsBelow] at below ⊢
+      exact
+        ⟨below.1, below.2.1,
+          inductionHypothesis below.2.2⟩
+
 /-- The four spines are one-to-one: no payload certificate can be inserted,
 deleted, or shifted independently of its source frame and executable
 resource. -/

@@ -194,6 +194,7 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step_head
     ∃ representative nextAlpha sourceCanonical flattened installed,
       SharedRuntimeAlpha nextAlpha ∧
       (∀ pair, pair ∈ alpha → pair ∈ nextAlpha) ∧
+      AlphaExtendsAbove alpha nextAlpha branch.firstFresh startCounter ∧
       AlphaFreshFrontier nextAlpha branch.nextFresh (startCounter + 1) ∧
       independentResult =
         TreeSubstitution.reify (sourceCanonical ++ canonical) ++
@@ -269,7 +270,8 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step_head
     exact observed
   obtain
     ⟨nextAlpha, sourceCanonical, flattened, generated, installed,
-      nextShared, alphaIncluded, freshFrontier, independentShape,
+      nextShared, alphaIncluded, extensionAbove, freshFrontier,
+      independentShape,
       sourceOrdered,
       _generatedExact, installedExact, successorCumulative, successorTask⟩ :=
     PLeaTTa.PrologRepresentativeTaskActivationBridge.SupportedPreparedCandidateAgrees.unifyB_body_cumulativeWith_of_headResolution
@@ -350,7 +352,8 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step_head
     rfl
   refine
     ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
-      nextShared, alphaIncluded, freshFrontier, independentShape,
+      nextShared, alphaIncluded, extensionAbove, freshFrontier,
+      independentShape,
       sourceOrdered, sourceStep, executableStep, ?_, taskCopied, retainedAlts,
       worldPreserved, counterPreserved⟩
   simpa only using cumulativeCopied
@@ -408,6 +411,7 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step
     ∃ representative nextAlpha sourceCanonical flattened installed,
       SharedRuntimeAlpha nextAlpha ∧
       (∀ pair, pair ∈ alpha → pair ∈ nextAlpha) ∧
+      AlphaExtendsAbove alpha nextAlpha branch.firstFresh startCounter ∧
       AlphaFreshFrontier nextAlpha branch.nextFresh (startCounter + 1) ∧
       independentResult =
         TreeSubstitution.reify (sourceCanonical ++ canonical) ++
