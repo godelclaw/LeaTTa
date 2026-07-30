@@ -15,6 +15,7 @@ namespace PLeaTTa.PrologPrefilterScanBridge
 
 open Metta (Atom Subst)
 open PeTTaSpec.PrologCore.Resolver
+open PeTTaSpec.PrologCore.GoalSemantics
 open PrologActivationMacro
 open PrologCallEntryBridge
 open PrologPrefilterBridge
@@ -145,6 +146,162 @@ theorem preparedPrefilterScan
   conservativeResolutionScan_of_forall₂
     agreement.normalizedHeads agreement.bank.scan
 
+/-! ## Exact execution of the rejected prefix -/
+
+/-- Exactly `count` independently rejected prepared clauses.
+
+Every constructor consumes the current cursor head and advances to its
+already-reserved tail.  No provider result, fresh allocation, or executable
+state appears in this relation: it is the finite semantic work that the
+executable conservative scan performed during call entry. -/
+inductive RejectedPullsN :
+    Nat → PreparedCursor → PreparedCursor → Prop where
+  | zero (cursor : PreparedCursor) :
+      RejectedPullsN 0 cursor cursor
+  | succ (count : Nat) (cursor : PreparedCursor) (branch : ClauseBranch)
+      (branches : List ClauseBranch) (finish : PreparedCursor)
+      (remaining : cursor.remaining = branch :: branches)
+      (clash : ¬ ∃ result, HeadResolution branch result)
+      (tail :
+        RejectedPullsN count (cursor.advance branch branches) finish) :
+      RejectedPullsN (count + 1) cursor finish
+
+/-- A conservative scan is ready exactly when it is exhausted or its first
+paired occurrence was retained.  The retained constructor carries the
+complete remaining decision alignment, so later activation cannot swap or
+reorder the suffix. -/
+inductive PrefilterReady (argsv : List Atom) (resv : Atom) :
+    List ClauseBranch → List PLeaTTa.Clause → Prop where
+  | exhausted : PrefilterReady argsv resv [] []
+  | retained (branch : ClauseBranch) (clause : PLeaTTa.Clause)
+      (branches : List ClauseBranch) (clauses : List PLeaTTa.Clause)
+      (agreement : NormalizedHeadAgrees branch argsv resv clause)
+      (kept : resolutionClauseRetained argsv resv clause = true)
+      (tail : ConservativeResolutionScan argsv resv branches clauses) :
+      PrefilterReady argsv resv
+        (branch :: branches) (clause :: clauses)
+
+/-- Rejected cursor pulls are genuine, exactly counted public transitions.
+Their observation trace is exactly empty and their non-backtrackable session
+is definitionally unchanged.  Thus prefiltering is a bounded silent
+expansion, not a zero-step observation quotient. -/
+theorem RejectedPullsN.stepsN
+    {count : Nat} {before after : PreparedCursor}
+    (pulls : RejectedPullsN count before after)
+    (scope : CutScopeId) (session : Session) :
+    StepsN count
+      (.running session (.clauses scope before)) []
+      (.running session (.clauses scope after)) := by
+  induction pulls with
+  | zero cursor =>
+      exact .zero _
+  | succ count cursor branch branches finish remaining clash tail
+      inductionHypothesis =>
+      have pulled :
+          LocalPull cursor
+            (.silent (cursor.advance branch branches)) :=
+        .rejected cursor branch branches remaining clash
+      have raw :
+          RawStep session (.clauses scope cursor) [] .none session
+            (.running (.clauses scope (cursor.advance branch branches))) := by
+        simpa [localPullEvents, localPullTarget] using
+          (RawStep.clausesPull scope cursor
+            (.silent (cursor.advance branch branches)) session pulled)
+      have first :
+          Transition
+            (.running session (.clauses scope cursor)) []
+            (.running session
+              (.clauses scope (cursor.advance branch branches))) :=
+        .ordinary _ _ _ _ _ raw
+      simpa using
+        (StepsN.succ count
+          (.running session (.clauses scope cursor))
+          (.running session
+            (.clauses scope (cursor.advance branch branches)))
+          (.running session (.clauses scope finish))
+          [] [] first inductionHypothesis)
+
+/-- Every conservative decision alignment factors uniquely by construction
+into a maximal rejected prefix and a ready suffix.
+
+The skipped source and executable occurrence lists are returned explicitly,
+with exact equal lengths and exact reconstruction equations.  Consequently
+the step count cannot be shortened, padded, or justified by reflexivity, and
+the ready suffix remains a literal source-order suffix of both input banks. -/
+theorem ConservativeResolutionScan.decomposeRejectedPrefix
+    {argsv : List Atom} {resv : Atom}
+    {branches : List ClauseBranch} {clauses : List PLeaTTa.Clause}
+    (scan : ConservativeResolutionScan argsv resv branches clauses)
+    (cursor : PreparedCursor) (remaining : cursor.remaining = branches) :
+    ∃ count skippedBranches skippedClauses finish
+        readyBranches readyClauses,
+      branches = skippedBranches ++ readyBranches ∧
+      clauses = skippedClauses ++ readyClauses ∧
+      skippedBranches.length = count ∧
+      skippedClauses.length = count ∧
+      RejectedPullsN count cursor finish ∧
+      finish.remaining = readyBranches ∧
+      PrefilterReady argsv resv readyBranches readyClauses := by
+  induction scan generalizing cursor with
+  | nil =>
+      exact ⟨0, [], [], cursor, [], [],
+        rfl, rfl, rfl, rfl, .zero cursor, remaining, .exhausted⟩
+  | skipped branch clause branches clauses agreement rejected clash tail
+      inductionHypothesis =>
+      let next := cursor.advance branch branches
+      have nextRemaining : next.remaining = branches := by
+        simp [next, PreparedCursor.advance]
+      obtain
+        ⟨count, skippedBranches, skippedClauses, finish,
+          readyBranches, readyClauses, branchesEq, clausesEq,
+          branchCount, clauseCount, pulls, finishRemaining, ready⟩ :=
+        inductionHypothesis next nextRemaining
+      refine
+        ⟨count + 1, branch :: skippedBranches, clause :: skippedClauses,
+          finish, readyBranches, readyClauses, ?_, ?_, ?_, ?_, ?_,
+          finishRemaining, ready⟩
+      · simp [branchesEq]
+      · simp [clausesEq]
+      · simp [branchCount]
+      · simp [clauseCount]
+      · exact .succ count cursor branch branches finish remaining clash pulls
+  | retained branch clause branches clauses agreement kept tail =>
+      exact
+        ⟨0, [], [], cursor, branch :: branches, clause :: clauses,
+          rfl, rfl, rfl, rfl, .zero cursor, remaining,
+          .retained branch clause branches clauses agreement kept tail⟩
+
+/-- The decomposition above immediately yields the exact empty-observation
+execution prefix demanded by finite-prefix bisimulation.  The count and both
+literal suffix equations remain in the result; no internal work is erased. -/
+theorem ConservativeResolutionScan.rejectedPrefixSteps
+    {argsv : List Atom} {resv : Atom}
+    {branches : List ClauseBranch} {clauses : List PLeaTTa.Clause}
+    (scan : ConservativeResolutionScan argsv resv branches clauses)
+    (cursor : PreparedCursor) (remaining : cursor.remaining = branches)
+    (scope : CutScopeId) (session : Session) :
+    ∃ count skippedBranches skippedClauses finish
+        readyBranches readyClauses,
+      branches = skippedBranches ++ readyBranches ∧
+      clauses = skippedClauses ++ readyClauses ∧
+      skippedBranches.length = count ∧
+      skippedClauses.length = count ∧
+      StepsN count
+        (.running session (.clauses scope cursor)) []
+        (.running session (.clauses scope finish)) ∧
+      finish.remaining = readyBranches ∧
+      PrefilterReady argsv resv readyBranches readyClauses := by
+  obtain
+    ⟨count, skippedBranches, skippedClauses, finish,
+      readyBranches, readyClauses, branchesEq, clausesEq,
+      branchCount, clauseCount, pulls, finishRemaining, ready⟩ :=
+    scan.decomposeRejectedPrefix cursor remaining
+  exact
+    ⟨count, skippedBranches, skippedClauses, finish,
+      readyBranches, readyClauses, branchesEq, clausesEq,
+      branchCount, clauseCount, pulls.stepsN scope session,
+      finishRemaining, ready⟩
+
 /-! ### Anti-vacuity: a real rigid clash is consumed silently -/
 
 private def rejectedReferenceBranch : ClauseBranch :=
@@ -190,5 +347,135 @@ theorem rigid_clash_filter_and_head_rejection :
     rfl
   exact ⟨agreement, rejected,
     agreement.no_headResolution_of_rejected rejected⟩
+
+private def secondRejectedReferenceBranch : ClauseBranch :=
+  { sourceId := 1
+    callGeneration := 0
+    freshSubstitution := []
+    headEquations :=
+      [(.integer 1, .integer 3), (.atom "out", .atom "out")]
+    body := []
+    bindings := []
+    firstFresh := 0
+    nextFresh := 0 }
+
+private def secondRejectedExecutableClause : PLeaTTa.Clause :=
+  { params := [.gnd (.int 3)]
+    result := .sym "out"
+    body := [] }
+
+private def retainedReferenceBranch : ClauseBranch :=
+  { sourceId := 2
+    callGeneration := 0
+    freshSubstitution := []
+    headEquations :=
+      [(.integer 1, .integer 1), (.atom "out", .atom "out")]
+    body := []
+    bindings := []
+    firstFresh := 0
+    nextFresh := 0 }
+
+private def retainedExecutableClause : PLeaTTa.Clause :=
+  { params := [.gnd (.int 1)]
+    result := .sym "out"
+    body := [] }
+
+private theorem secondRejectedHeadAgrees :
+    NormalizedHeadAgrees secondRejectedReferenceBranch
+      [.gnd (.int 1)] (.sym "out") secondRejectedExecutableClause := by
+  constructor
+  · rfl
+  · exact AlphaEquationsAgree.cons
+      (AlphaTermAgrees.integer (alpha := []) 1)
+      (AlphaTermAgrees.integer (alpha := []) 3)
+      (AlphaEquationsAgree.cons
+        (AlphaTermAgrees.atom (alpha := []) (by decide) (by decide))
+        (AlphaTermAgrees.atom (alpha := []) (by decide) (by decide))
+        .nil)
+
+private theorem retainedHeadAgrees :
+    NormalizedHeadAgrees retainedReferenceBranch
+      [.gnd (.int 1)] (.sym "out") retainedExecutableClause := by
+  constructor
+  · rfl
+  · exact AlphaEquationsAgree.cons
+      (AlphaTermAgrees.integer (alpha := []) 1)
+      (AlphaTermAgrees.integer (alpha := []) 1)
+      (AlphaEquationsAgree.cons
+        (AlphaTermAgrees.atom (alpha := []) (by decide) (by decide))
+        (AlphaTermAgrees.atom (alpha := []) (by decide) (by decide))
+        .nil)
+
+private def twoRejectedCursor : PreparedCursor :=
+  { callGeneration := 0
+    predicate := "ranked"
+    arguments := [.integer 1, .atom "out"]
+    bindings := []
+    reservationStart := 0
+    remaining :=
+      [rejectedReferenceBranch, secondRejectedReferenceBranch,
+        retainedReferenceBranch]
+    reservedUntil := 0 }
+
+private def afterTwoRejected : PreparedCursor :=
+  (twoRejectedCursor.advance rejectedReferenceBranch
+      [secondRejectedReferenceBranch, retainedReferenceBranch]).advance
+    secondRejectedReferenceBranch [retainedReferenceBranch]
+
+/-- Concrete anti-vacuity witness: two rigid source-ranked rejections are two
+actual silent transitions before the retained occurrence becomes active.
+The witness fixes the final cursor and the retained executable suffix, so the
+claim cannot be satisfied by the zero-step constructor or by skipping past
+the first retained clause. -/
+theorem two_rigid_prefilter_skips_are_exact_two_steps
+    (scope : CutScopeId) (session : Session) :
+    ConservativeResolutionScan [.gnd (.int 1)] (.sym "out")
+        [rejectedReferenceBranch, secondRejectedReferenceBranch,
+          retainedReferenceBranch]
+        [rejectedExecutableClause, secondRejectedExecutableClause,
+          retainedExecutableClause] ∧
+      StepsN 2
+        (.running session (.clauses scope twoRejectedCursor)) []
+        (.running session (.clauses scope afterTwoRejected)) ∧
+      afterTwoRejected.remaining = [retainedReferenceBranch] ∧
+      PrefilterReady [.gnd (.int 1)] (.sym "out")
+        afterTwoRejected.remaining [retainedExecutableClause] := by
+  have firstAgreement := rigid_clash_filter_and_head_rejection.1
+  have firstRejected := rigid_clash_filter_and_head_rejection.2.1
+  have firstClash := rigid_clash_filter_and_head_rejection.2.2
+  have secondRejected :
+      resolutionClauseRetained
+        [.gnd (.int 1)] (.sym "out")
+        secondRejectedExecutableClause = false := by
+    rfl
+  have secondClash :
+      ¬ ∃ result, HeadResolution secondRejectedReferenceBranch result :=
+    secondRejectedHeadAgrees.no_headResolution_of_rejected secondRejected
+  have retained :
+      resolutionClauseRetained
+        [.gnd (.int 1)] (.sym "out")
+        retainedExecutableClause = true := by
+    rfl
+  have scan :
+      ConservativeResolutionScan [.gnd (.int 1)] (.sym "out")
+        [rejectedReferenceBranch, secondRejectedReferenceBranch,
+          retainedReferenceBranch]
+        [rejectedExecutableClause, secondRejectedExecutableClause,
+          retainedExecutableClause] :=
+    .skipped _ _ _ _ firstAgreement firstRejected firstClash
+      (.skipped _ _ _ _ secondRejectedHeadAgrees secondRejected secondClash
+        (.retained _ _ _ _ retainedHeadAgrees retained .nil))
+  have pulls : RejectedPullsN 2 twoRejectedCursor afterTwoRejected := by
+    exact
+      .succ 1 twoRejectedCursor rejectedReferenceBranch
+        [secondRejectedReferenceBranch, retainedReferenceBranch]
+        afterTwoRejected rfl firstClash
+        (.succ 0
+          (twoRejectedCursor.advance rejectedReferenceBranch
+            [secondRejectedReferenceBranch, retainedReferenceBranch])
+          secondRejectedReferenceBranch [retainedReferenceBranch]
+          afterTwoRejected rfl secondClash (.zero afterTwoRejected))
+  refine ⟨scan, pulls.stepsN scope session, rfl, ?_⟩
+  exact .retained _ _ _ _ retainedHeadAgrees retained .nil
 
 end PLeaTTa.PrologPrefilterScanBridge
