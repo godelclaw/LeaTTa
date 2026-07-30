@@ -165,7 +165,7 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step
     {referenceRest : List PeTTaSpec.PrologCore.Goal}
     {argsv args : List Atom} {res : Atom}
     {rest : List PLeaTTa.Goal} {binding : Subst}
-    {qterm : Atom} {barrier startCounter : Nat}
+    {qterm : Atom} {barrier callerBarrier startCounter : Nat}
     {independentResult : Substitution}
     (entry :
       RepresentativeSupportedCallEntryRelates alpha opened before pending
@@ -175,7 +175,7 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step
         branch clause branchTail clauseTail altTail copied argsv args res rest
         binding qterm barrier startCounter)
     (payload :
-      TaskPayloadAgrees alpha support barrier canonical referenceBase
+      TaskPayloadAgrees alpha support callerBarrier canonical referenceBase
         referenceBindings binding
         (.call opened.cursor.predicate referencePayload :: referenceRest)
         (.call opened.cursor.predicate args res :: rest))

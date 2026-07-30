@@ -370,6 +370,113 @@ theorem RepresentativeNormalizedCallAgrees.existsWith
     ⟨residualRepresentative, olderBase,
       ⟨variants, residualCovered, olderBaseIncluded, arguments⟩⟩
 
+/-- Barrier-independent evidence carried by the head of one active local
+call.
+
+The clause resolver needs the call's ordered argument/result agreement and
+the shared cumulative valuation, but it must not assume that the caller
+continuation uses the cut barrier allocated for the callee.  Keeping the
+tail out of this structure makes that accidental retagging unrepresentable:
+the caller continuation remains related separately at its own barrier. -/
+structure LocalCallPayloadAgrees
+    (alpha support : List (LogicVar × String))
+    (canonical : TreeSubstitution) (referenceBase current : Substitution)
+    (runtime : Subst)
+    (referencePayload : List Term)
+    (executableArguments : List Atom) (executableResult : Atom) : Prop where
+  alphaShared : SharedRuntimeAlpha alpha
+  canonicalWellFormed : canonical.WellFormed
+  bindingShape :
+    current = TreeSubstitution.reify canonical ++ referenceBase
+  callHead :
+    ∃ referenceArguments referenceResult,
+      referencePayload = referenceArguments ++ [referenceResult] ∧
+      AlphaTermsAgree alpha referenceArguments executableArguments ∧
+      AlphaTermAgrees alpha referenceResult executableResult
+  valuation :
+    AlphaCumulativeResidualVariantAgreesOn
+      alpha support canonical referenceBase runtime
+
+/-- Project one whole-task payload to the barrier-independent evidence at its
+local-call head.  The continuation proof is deliberately not retained. -/
+theorem TaskPayloadAgrees.localCallPayload
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Subst}
+    {predicate : String} {referencePayload : List Term}
+    {executableArguments : List Atom} {executableResult : Atom}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (payload :
+      TaskPayloadAgrees alpha support barrier canonical referenceBase current
+        runtime
+        (.call predicate referencePayload :: references)
+        (.call predicate executableArguments executableResult ::
+          executables)) :
+    LocalCallPayloadAgrees alpha support canonical referenceBase current
+      runtime referencePayload executableArguments executableResult := by
+  obtain
+    ⟨referenceArguments, referenceResult, payloadShape,
+      arguments, result, _tail⟩ :=
+    NormalizedAlphaGoalsAgree.localCallHead payload.control
+  exact
+    ⟨payload.alphaShared, payload.canonicalWellFormed, payload.bindingShape,
+      ⟨referenceArguments, referenceResult, payloadShape, arguments, result⟩,
+      payload.valuation⟩
+
+/-- A head-only local-call payload selects one cumulative representative
+which simultaneously certifies the carried valuation and the normalized
+recursive-call arguments.
+
+No cut-barrier parameter appears in the statement: resolving a call head is
+independent of the caller tail's control delimiter. -/
+theorem LocalCallPayloadAgrees.representativeNormalizedCallAgreesWith
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Subst}
+    {referencePayload : List Term}
+    {executableArguments : List Atom} {executableResult : Atom}
+    (payload :
+      LocalCallPayloadAgrees alpha support canonical referenceBase current
+        runtime referencePayload executableArguments executableResult)
+    (supported :
+      AlphaTermsSupported alpha support referencePayload)
+    (cursor : PreparedCursor)
+    (cursorArguments : cursor.arguments = referencePayload)
+    (cursorBindings : cursor.bindings = current) :
+    ∃ representative,
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase runtime representative ∧
+      RepresentativeNormalizedCallAgreesWith alpha cursor
+        (executableArguments.map (PLeaTTa.subst runtime))
+        (PLeaTTa.subst runtime executableResult)
+        representative referenceBase := by
+  obtain
+    ⟨referenceArguments, referenceResult, payloadShape,
+      arguments, result⟩ :=
+    payload.callHead
+  obtain ⟨representative, cumulative⟩ :=
+    payload.valuation.existsWith
+  have supportedOutput :
+      AlphaTermsSupported alpha support
+        (referenceArguments ++ [referenceResult]) := by
+    simpa only [payloadShape] using supported
+  have leaves :=
+    PLeaTTa.PrologRecursiveCallPayloadBridge.AlphaCumulativeResidualVariantAgreesOnWith.applyOutputLast
+      cumulative arguments result supportedOutput
+  refine ⟨representative, cumulative, ?_⟩
+  refine
+    ⟨?_, cumulative.representativeCovered, ?_, ?_⟩
+  · rw [cursorBindings, payload.bindingShape, Substitution.denote_append,
+      TreeSubstitution.denote_reify payload.canonicalWellFormed]
+    exact cumulative.variants
+  · intro entry member
+    rw [cursorBindings, payload.bindingShape]
+    simp [member]
+  · rw [cursorArguments, payloadShape]
+    simpa only [List.map_append, List.map_singleton] using
+      (List.forall₂_map_right_iff.mpr leaves)
+
 /-- A live task selects one cumulative representative which simultaneously
 certifies its carried valuation and the exact normalized recursive-call
 payload.
@@ -404,30 +511,11 @@ theorem TaskPayloadAgrees.representativeNormalizedCallAgreesWith
         (executableArguments.map (PLeaTTa.subst runtime))
         (PLeaTTa.subst runtime executableResult)
         representative referenceBase := by
-  obtain
-    ⟨referenceArguments, referenceResult, payloadShape,
-      arguments, result, _tail⟩ :=
-    NormalizedAlphaGoalsAgree.localCallHead payload.control
-  obtain ⟨representative, cumulative⟩ :=
-    payload.valuation.existsWith
-  have supportedOutput :
-      AlphaTermsSupported alpha support
-        (referenceArguments ++ [referenceResult]) := by
-    simpa only [payloadShape] using supported
-  have leaves :=
-    PLeaTTa.PrologRecursiveCallPayloadBridge.AlphaCumulativeResidualVariantAgreesOnWith.applyOutputLast
-      cumulative arguments result supportedOutput
-  refine ⟨representative, cumulative, ?_⟩
-  refine
-    ⟨?_, cumulative.representativeCovered, ?_, ?_⟩
-  · rw [cursorBindings, payload.denoteCurrent]
-    exact cumulative.variants
-  · intro entry member
-    rw [cursorBindings, payload.bindingShape]
-    simp [member]
-  · rw [cursorArguments, payloadShape]
-    simpa only [List.map_append, List.map_singleton] using
-      (List.forall₂_map_right_iff.mpr leaves)
+  exact
+    PLeaTTa.PrologRecursiveCallPayloadBridge.LocalCallPayloadAgrees.representativeNormalizedCallAgreesWith
+      (PLeaTTa.PrologRecursiveCallPayloadBridge.TaskPayloadAgrees.localCallPayload
+        payload)
+      supported cursor cursorArguments cursorBindings
 
 /-- Pointwise syntactic alpha agreement after applying a source
 substitution embeds into the representative relation with that exact
