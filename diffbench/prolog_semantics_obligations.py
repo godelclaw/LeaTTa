@@ -54,6 +54,10 @@ PROLOG_CURSOR_ALTERNATIVE_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologCursorAlternativeBridge.lean"
 )
+PROLOG_SUPPORTED_CURSOR_ALTERNATIVE_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologSupportedCursorAlternativeBridge.lean"
+)
 PROLOG_MGU_BRIDGE = ROOT / "PLeaTTa" / "Proofs" / "PrologMguBridge.lean"
 PROLOG_MGU_VALUATION = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologMguValuation.lean"
@@ -191,6 +195,8 @@ def check() -> list[str]:
             digest(PROLOG_PREFILTER_CALL_BRIDGE),
         "prolog_cursor_alternative_bridge_sha256":
             digest(PROLOG_CURSOR_ALTERNATIVE_BRIDGE),
+        "prolog_supported_cursor_alternative_bridge_sha256":
+            digest(PROLOG_SUPPORTED_CURSOR_ALTERNATIVE_BRIDGE),
         "prolog_mgu_bridge_sha256": digest(PROLOG_MGU_BRIDGE),
         "prolog_mgu_valuation_sha256": digest(PROLOG_MGU_VALUATION),
         "prolog_mgu_open_agreement_sha256":

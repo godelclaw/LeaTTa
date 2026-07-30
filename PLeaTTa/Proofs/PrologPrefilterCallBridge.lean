@@ -9,7 +9,10 @@ Main exports:
   VisibleEncodingSupported,
   CandidateBankSupported,
   SupportedCandidateBank,
-  DatabaseRelatesWorld.prepareCall_resolveAlts_prefilter
+  SupportedPreparedPrefilterBankRelates,
+  SupportedCallEntryPrefilterRelates,
+  prepareCall_resolveAlts_prefilter,
+  prepareCall_resolveAlts_supported_prefilter
 -/
 import PLeaTTa.Proofs.PrologCallPayloadBridge
 import PLeaTTa.Proofs.PrologCallStepBridge
@@ -222,6 +225,46 @@ theorem supportedCandidates_normalizedHeads
   exact supportedCandidates_normalizedHeads_of_subset
     query wellFormed (fun _ member => member) spine arities
 
+/-- Supported-source strengthening of the prepared prefilter bank.
+
+`PreparedPrefilterBankRelates` retains the normalized head projection needed
+to justify conservative skips.  Later body activation additionally needs the
+exact compiler support and finite encoding witness for the retained
+occurrence.  Keeping the original relation as a field makes this strengthening
+additive: no scan, decision, counter, or alternative-bank fact is reproved or
+silently replaced. -/
+structure SupportedPreparedPrefilterBankRelates
+    (cursor : PreparedCursor)
+    (argsv args : List Atom) (res : Atom)
+    (rest : List PLeaTTa.Goal)
+    (binding : Subst) (qterm : Atom) (barrier : Nat)
+    (candidates : List PLeaTTa.Clause) (counter : Nat)
+    (alts : List Alt) (finalCounter : Nat) : Prop where
+  prefilter :
+    PreparedPrefilterBankRelates cursor argsv args res rest binding qterm
+      barrier candidates counter alts finalCounter
+  supportedCandidates :
+    List.Forall₂
+      (SupportedPreparedCandidateAgrees cursor.callGeneration
+        cursor.predicate cursor.arguments cursor.bindings)
+      cursor.remaining candidates
+
+/-- Forgetting compiler support recovers the previously audited prefilter
+bank literally. -/
+theorem SupportedPreparedPrefilterBankRelates.weak
+    {cursor : PreparedCursor}
+    {argsv args : List Atom} {res : Atom}
+    {rest : List PLeaTTa.Goal}
+    {binding : Subst} {qterm : Atom} {barrier : Nat}
+    {candidates : List PLeaTTa.Clause} {counter : Nat}
+    {alts : List Alt} {finalCounter : Nat}
+    (agreement :
+      SupportedPreparedPrefilterBankRelates cursor argsv args res rest
+        binding qterm barrier candidates counter alts finalCounter) :
+    PreparedPrefilterBankRelates cursor argsv args res rest binding qterm
+      barrier candidates counter alts finalCounter :=
+  agreement.prefilter
+
 /-- The concrete independent call opener and the concrete executable
 `resolveAlts` scan satisfy the complete prefilter-bank relation.
 
@@ -304,6 +347,59 @@ theorem prepareCall_resolveAlts_prefilter
           (List.mem_filter.mp filtered).2
         simpa using arityTest)
 
+/-- The same concrete call opener retains the exact supported occurrence
+spine instead of discarding it after deriving normalized heads. -/
+theorem prepareCall_resolveAlts_supported_prefilter
+    {session : LocalSession} {world : PWorld}
+    (database : DatabaseRelatesWorld session.database world)
+    (ready : world.clauseIndexReady = true)
+    (request : CallRequest)
+    (queryAlpha : List (LogicVar × String))
+    (argsv args : List Atom) (res : Atom)
+    (rest : List PLeaTTa.Goal) (binding : Subst)
+    (qterm : Atom) (barrier counter : Nat)
+    (arity : request.arguments.length = args.length + 1)
+    (query :
+      NormalizedCallAgrees queryAlpha
+        (prepareCall session request).1 argsv
+        (PLeaTTa.subst binding res))
+    (supported :
+      SupportedCandidateBank request.predicate
+        (session.database.visibleClausesAt session.database.generation
+          request.predicate request.arguments.length)
+        (world.resolutionCandidates request.predicate args.length)) :
+    SupportedPreparedPrefilterBankRelates
+      (prepareCall session request).1
+      argsv args res rest binding qterm barrier
+      (world.resolutionCandidates request.predicate args.length)
+      counter
+      (resolveAlts
+        (world.resolutionCandidates request.predicate args.length)
+        argsv args res rest binding qterm barrier counter).1
+      (resolveAlts
+        (world.resolutionCandidates request.predicate args.length)
+        argsv args res rest binding qterm barrier counter).2 := by
+  have prefilter :=
+    prepareCall_resolveAlts_prefilter
+      database ready request queryAlpha argsv args res rest binding qterm
+        barrier counter arity query supported
+  have supportedSpine :=
+    reserveVisible_supported_candidates
+      session.database.generation request.predicate request.arguments
+      request.bindings (max session.nextFresh request.generatedCeiling)
+      supported
+  have preparedSpine :
+      List.Forall₂
+        (SupportedPreparedCandidateAgrees
+          (prepareCall session request).1.callGeneration
+          (prepareCall session request).1.predicate
+          (prepareCall session request).1.arguments
+          (prepareCall session request).1.bindings)
+        (prepareCall session request).1.remaining
+        (world.resolutionCandidates request.predicate args.length) := by
+    simpa only [prepareCall, arity] using supportedSpine
+  exact ⟨prefilter, preparedSpine⟩
+
 /-- Consequently the actual call-entry bank has a source-ranked conservative
 scan: every executable skip is one independently certified silent rejection,
 while retained false positives remain available for the later ordered-MGU
@@ -354,6 +450,41 @@ structure CallEntryPrefilterRelates
       (pending.persistent.world.resolutionCandidates
         opened.cursor.predicate args.length)
       startCounter pending.branches pending.persistent.counter
+
+/-- Post-entry relation which keeps the exact supported candidate occurrence
+spine for later clause-body activation.
+
+The executable pending package and independent cursor are the same objects as
+in `CallEntryPrefilterRelates`; the only extra evidence is the compiler
+support attached to every paired candidate occurrence. -/
+structure SupportedCallEntryPrefilterRelates
+    (opened : OpenedCall) (before : OpenConf) (pending : PendingCall)
+    (argsv args : List Atom) (res : Atom)
+    (rest : List PLeaTTa.Goal) (binding : Subst)
+    (qterm : Atom) (barrier startCounter : Nat) : Prop where
+  entry :
+    CallEntryBankRelates opened before pending argsv args res rest binding
+      qterm barrier startCounter
+  prefilter :
+    SupportedPreparedPrefilterBankRelates opened.cursor argsv args res rest
+      binding qterm barrier
+      (pending.persistent.world.resolutionCandidates
+        opened.cursor.predicate args.length)
+      startCounter pending.branches pending.persistent.counter
+
+/-- Erasing the supported occurrence certificate recovers the original
+post-entry relation exactly. -/
+theorem SupportedCallEntryPrefilterRelates.weak
+    {opened : OpenedCall} {before : OpenConf} {pending : PendingCall}
+    {argsv args : List Atom} {res : Atom}
+    {rest : List PLeaTTa.Goal} {binding : Subst}
+    {qterm : Atom} {barrier startCounter : Nat}
+    (agreement :
+      SupportedCallEntryPrefilterRelates opened before pending argsv args res
+        rest binding qterm barrier startCounter) :
+    CallEntryPrefilterRelates opened before pending argsv args res rest
+      binding qterm barrier startCounter :=
+  ⟨agreement.entry, agreement.prefilter.weak⟩
 
 /-- The strengthened post-entry relation exposes the exact ranked decision
 alignment without recomputing the executable filter. -/
@@ -416,21 +547,82 @@ theorem openedFor_pendingCallOf_prefilter_relates
       (args.map (PLeaTTa.subst binding)) args res rest binding
       state.control.qterm (barrierDepth state.toConf + 1)
       state.toConf.counter := by
-  constructor
-  · exact openedFor_pendingCallOf_relates database ready predicate
+  have entryAgreement :=
+    openedFor_pendingCallOf_relates database ready predicate
       referenceArguments referenceBindings args res rest binding
       branches finalCounter arity head scanned
-  · have complete :=
-      prepareCall_resolveAlts_prefilter
-        database ready
-        (requestFor predicate referenceArguments referenceBindings)
-        queryAlpha (args.map (PLeaTTa.subst binding)) args res rest binding
-        state.control.qterm (barrierDepth state.toConf + 1)
-        state.toConf.counter arity query supported
-    simp only [requestFor] at complete
-    rw [scanned] at complete
-    simpa [openedFor, openLocalCall, requestFor, prepareCall, pendingCallOf]
-      using complete
+  refine ⟨entryAgreement, ?_⟩
+  have complete :=
+    prepareCall_resolveAlts_prefilter
+      database ready
+      (requestFor predicate referenceArguments referenceBindings)
+      queryAlpha (args.map (PLeaTTa.subst binding)) args res rest binding
+      state.control.qterm (barrierDepth state.toConf + 1)
+      state.toConf.counter arity query supported
+  simp only [requestFor] at complete
+  rw [scanned] at complete
+  simpa [openedFor, openLocalCall, requestFor, prepareCall, pendingCallOf]
+    using complete
+
+/-- The concrete opener and pending package retain the supported prepared
+candidate spine all the way to the post-entry state. -/
+theorem openedFor_pendingCallOf_supported_prefilter_relates
+    {session : Session} {state : OpenConf}
+    (database :
+      DatabaseRelatesWorld session.resolver.database state.persistent.world)
+    (ready : state.persistent.world.clauseIndexReady = true)
+    (predicate : String)
+    (referenceArguments : List Term)
+    (referenceBindings : Substitution)
+    (queryAlpha : List (LogicVar × String))
+    (args : List Atom) (res : Atom)
+    (rest : List PLeaTTa.Goal) (binding : Subst)
+    (branches : List Alt) (finalCounter : Nat)
+    (arity : referenceArguments.length = args.length + 1)
+    (head :
+      state.toConf.cur =
+        some (PLeaTTa.Goal.call predicate args res :: rest, binding))
+    (scanned :
+      resolveAlts
+        (state.persistent.world.resolutionCandidates predicate args.length)
+        (args.map (PLeaTTa.subst binding)) args res rest binding
+          state.control.qterm (barrierDepth state.toConf + 1)
+          state.toConf.counter =
+        (branches, finalCounter))
+    (query :
+      NormalizedCallAgrees queryAlpha
+        (openedFor session predicate referenceArguments
+          referenceBindings).cursor
+        (args.map (PLeaTTa.subst binding))
+        (PLeaTTa.subst binding res))
+    (supported :
+      SupportedCandidateBank predicate
+        (session.resolver.database.visibleClausesAt
+          session.resolver.database.generation predicate
+          referenceArguments.length)
+        (state.persistent.world.resolutionCandidates predicate args.length)) :
+    SupportedCallEntryPrefilterRelates
+      (openedFor session predicate referenceArguments referenceBindings)
+      state (pendingCallOf state branches finalCounter)
+      (args.map (PLeaTTa.subst binding)) args res rest binding
+      state.control.qterm (barrierDepth state.toConf + 1)
+      state.toConf.counter := by
+  have entryAgreement :=
+    openedFor_pendingCallOf_relates database ready predicate
+      referenceArguments referenceBindings args res rest binding
+      branches finalCounter arity head scanned
+  refine ⟨entryAgreement, ?_⟩
+  have complete :=
+    prepareCall_resolveAlts_supported_prefilter
+      database ready
+      (requestFor predicate referenceArguments referenceBindings)
+      queryAlpha (args.map (PLeaTTa.subst binding)) args res rest binding
+      state.control.qterm (barrierDepth state.toConf + 1)
+      state.toConf.counter arity query supported
+  simp only [requestFor] at complete
+  rw [scanned] at complete
+  simpa [openedFor, openLocalCall, requestFor, prepareCall, pendingCallOf]
+    using complete
 
 /-- Exact paired call-entry transitions, strengthened through the real
 prefilter bank.  A skipped executable occurrence is already known here to be
