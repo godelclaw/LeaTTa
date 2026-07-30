@@ -164,7 +164,10 @@ theorem RepresentativeNormalizedCallAgrees.retained_of_headResolution
     (resolves : ∃ result, HeadResolution branch result) :
     resolutionClauseRetained argsv resv clause = true := by
   rcases query with
-    ⟨representative, variants, queryArguments⟩
+    ⟨residualRepresentative, olderBase, variants,
+      _residualCovered, _olderBaseIncluded, queryArguments⟩
+  let representative :=
+    residualRepresentative ++ Substitution.denote olderBase
   cases agreement with
   | intro reference freshSeed executable base encoding bodySupported =>
       have startsAbove :

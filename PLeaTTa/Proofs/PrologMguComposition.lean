@@ -204,6 +204,8 @@ def AlphaCumulativeResidualVariantAgreesOn
       (canonical ++ Substitution.denote referenceBase)
       (representative ++ Substitution.denote referenceBase) ∧
     TreeSubstitutionTopological canonical ∧
+    TreeSubstitutionVariablesSatisfy
+      (AlphaCovers alpha) representative ∧
     Nonempty (PLeaTTa.SubstTopological runtime) ∧
     AlphaValuationAgreesOn alpha support
       (representative ++ Substitution.denote referenceBase) runtime
@@ -245,7 +247,8 @@ theorem AlphaResidualVariantAgreesOn.carry
       alpha support canonical referenceBase installed := by
   rcases agreement with
     ⟨representative, variants, canonicalTopological,
-      representativeTopological, ⟨generatedTopological⟩, valuation⟩
+      _representativeTopological, representativeCovered,
+      ⟨generatedTopological⟩, valuation⟩
   have installedTopological :
       PLeaTTa.SubstTopological installed := by
     cases generated with
@@ -280,7 +283,8 @@ theorem AlphaResidualVariantAgreesOn.carry
     ⟨representative,
       PrologSequentialMgu.TreeSubstitutionVariants.appendRight variants
         (Substitution.denote referenceBase),
-      canonicalTopological, ⟨installedTopological⟩, ?_⟩
+      canonicalTopological, representativeCovered,
+      ⟨installedTopological⟩, ?_⟩
   intro identity name linked
   have referenceBaseFixed :
       TreeSubstitution.apply (Substitution.denote referenceBase)
@@ -323,9 +327,10 @@ theorem AlphaCumulativeResidualVariantAgreesOn.trimFor
         (PLeaTTa.trimFor goals qterm runtime) := by
   rcases agreement with
     ⟨representative, variants, canonicalTopological,
-      ⟨runtimeTopological⟩, valuation⟩
+      representativeCovered, ⟨runtimeTopological⟩, valuation⟩
   exact
     ⟨representative, variants, canonicalTopological,
+      representativeCovered,
       ⟨PLeaTTa.SubstTopological.trimFor
         goals qterm runtime runtimeTopological⟩,
       AlphaValuationAgreesOn.trimFor

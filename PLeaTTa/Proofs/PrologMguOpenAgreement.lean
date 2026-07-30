@@ -417,6 +417,32 @@ theorem AlphaTreeSubstitutionAgrees.length_eq
   | cons _ _ _ inductionHypothesis =>
       simp [inductionHypothesis]
 
+/-- Exact alpha spelling covers every key and every replacement variable in
+the canonical substitution.  Retaining this fact is load-bearing when a
+residual representative is later composed with a freshly reserved clause:
+the representative cannot mention a variable outside its original alpha
+support. -/
+theorem AlphaTreeSubstitutionAgrees.variablesSatisfy
+    {alpha : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {runtime : Subst}
+    (agreement :
+      AlphaTreeSubstitutionAgrees alpha canonical runtime) :
+    TreeSubstitutionVariablesSatisfy
+      (AlphaCovers alpha) canonical := by
+  induction agreement with
+  | nil =>
+      intro entry member
+      simp at member
+  | @cons identity name tree atom canonical runtime
+      linked replacement tail inductionHypothesis =>
+      intro entry member
+      simp only [List.mem_cons] at member
+      rcases member with rfl | member
+      · exact
+          ⟨⟨name, linked⟩,
+            canonicalRuntimeAgrees_variablesSatisfy replacement⟩
+      · exact inductionHypothesis entry member
+
 /-- Alpha coverage of every source plus representability of every
 replacement constructively yields an order-preserving runtime spelling.
 Residual variables remain variables; no grounding function appears. -/

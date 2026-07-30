@@ -387,6 +387,7 @@ theorem
       AlphaResidualVariantAgrees alpha canonical generated :=
     ⟨flattened, ⟨canonicalFactors, flattenedFactors⟩,
       canonicalTopological, flattenedTopological,
+      generatedAgreement.variablesSatisfy,
       generatedTopological, generatedValuation⟩
   exact
     ⟨alpha, canonical, generated, installed, shared,

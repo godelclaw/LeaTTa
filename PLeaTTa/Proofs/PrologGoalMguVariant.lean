@@ -291,7 +291,8 @@ theorem AlphaResidualVariantAgrees.goals
       references executables := by
   rcases residual with
     ⟨representative, variants, canonicalTopological,
-      representativeTopological, runtimeTopological, valuation⟩
+      representativeTopological, _representativeCovered,
+      runtimeTopological, valuation⟩
   exact
     ⟨representative, control, variants, canonicalTopological,
       representativeTopological, runtimeTopological, valuation⟩

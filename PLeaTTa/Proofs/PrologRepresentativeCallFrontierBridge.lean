@@ -66,10 +66,16 @@ theorem CursorCallContext.representativeNormalizedCallAgrees
     (query :
       RepresentativeNormalizedCallAgrees queryAlpha source argsv resv) :
     RepresentativeNormalizedCallAgrees queryAlpha target argsv resv := by
-  rcases query with ⟨representative, variants, agreement⟩
-  refine ⟨representative, ?_, ?_⟩
+  rcases query with
+    ⟨residualRepresentative, olderBase, variants,
+      residualCovered, olderBaseIncluded, agreement⟩
+  refine
+    ⟨residualRepresentative, olderBase, ?_, residualCovered, ?_, ?_⟩
   · simpa [sourceContext.bindings_eq, targetContext.bindings_eq] using
       variants
+  · intro entry member
+    simpa [sourceContext.bindings_eq, targetContext.bindings_eq] using
+      olderBaseIncluded entry member
   · simpa [sourceContext.arguments_eq, targetContext.arguments_eq] using
       agreement
 

@@ -75,6 +75,8 @@ theorem AlphaCumulativeResidualVariantAgreesOn.applyTerms
       TreeSubstitutionVariants
         (canonical ++ Substitution.denote referenceBase)
         (representative ++ Substitution.denote referenceBase) ∧
+      TreeSubstitutionVariablesSatisfy
+        (AlphaCovers alpha) representative ∧
       List.Forall₂
         (fun term atom =>
           CanonicalRuntimeAgrees alpha
@@ -85,8 +87,8 @@ theorem AlphaCumulativeResidualVariantAgreesOn.applyTerms
         references executables := by
   rcases cumulative with
     ⟨representative, variants, _canonicalTopological,
-      _runtimeTopological, valuation⟩
-  refine ⟨representative, variants, ?_⟩
+      representativeCovered, _runtimeTopological, valuation⟩
+  refine ⟨representative, variants, representativeCovered, ?_⟩
   induction leaves with
   | nil =>
       exact .nil
@@ -120,6 +122,8 @@ theorem AlphaCumulativeResidualVariantAgreesOn.applyOutputLast
       TreeSubstitutionVariants
         (canonical ++ Substitution.denote referenceBase)
         (representative ++ Substitution.denote referenceBase) ∧
+      TreeSubstitutionVariablesSatisfy
+        (AlphaCovers alpha) representative ∧
       List.Forall₂
         (fun term atom =>
           CanonicalRuntimeAgrees alpha
@@ -185,6 +189,8 @@ theorem TaskPayloadAgrees.applyLocalCall
         TreeSubstitutionVariants
           (canonical ++ Substitution.denote referenceBase)
           (representative ++ Substitution.denote referenceBase) ∧
+        TreeSubstitutionVariablesSatisfy
+          (AlphaCovers alpha) representative ∧
         List.Forall₂
           (fun term atom =>
             CanonicalRuntimeAgrees alpha
@@ -199,12 +205,12 @@ theorem TaskPayloadAgrees.applyLocalCall
     ⟨referenceArguments, referenceResult, payloadShape,
       arguments, result, _tail⟩
   subst referencePayload
-  obtain ⟨representative, variants, leaves⟩ :=
+  obtain ⟨representative, variants, representativeCovered, leaves⟩ :=
     PLeaTTa.PrologRecursiveCallPayloadBridge.AlphaCumulativeResidualVariantAgreesOn.applyOutputLast
       payload.valuation arguments result supported
   exact
     ⟨referenceArguments, referenceResult, representative, rfl,
-      variants, leaves⟩
+      variants, representativeCovered, leaves⟩
 
 /-! ## Representation-independent normalized calls -/
 
@@ -219,13 +225,20 @@ actual source cursor binding. -/
 def RepresentativeNormalizedCallAgrees
     (alpha : List (LogicVar × String))
     (cursor : PreparedCursor) (argsv : List Atom) (resv : Atom) : Prop :=
-  ∃ representative : TreeSubstitution,
+  ∃ residualRepresentative : TreeSubstitution,
+    ∃ olderBase : Substitution,
     TreeSubstitutionVariants
-        (Substitution.denote cursor.bindings) representative ∧
+        (Substitution.denote cursor.bindings)
+        (residualRepresentative ++ Substitution.denote olderBase) ∧
+    TreeSubstitutionVariablesSatisfy
+      (AlphaCovers alpha) residualRepresentative ∧
+    (∀ entry, entry ∈ olderBase → entry ∈ cursor.bindings) ∧
     List.Forall₂
       (fun term atom =>
         CanonicalRuntimeAgrees alpha
-          (TreeSubstitution.apply representative (Term.denote term))
+          (TreeSubstitution.apply
+            (residualRepresentative ++ Substitution.denote olderBase)
+            (Term.denote term))
           atom)
       cursor.arguments (argsv ++ [resv])
 
@@ -271,10 +284,15 @@ theorem NormalizedCallAgrees.representative
     (agreement :
       NormalizedCallAgrees alpha cursor argsv resv) :
     RepresentativeNormalizedCallAgrees alpha cursor argsv resv :=
-  ⟨Substitution.denote cursor.bindings,
-    TreeSubstitutionVariants.refl _,
-    PLeaTTa.PrologRecursiveCallPayloadBridge.AlphaTermsAgree.appliedCanonicalRuntimeAgrees
-      agreement.arguments⟩
+  ⟨[], cursor.bindings, by simp [TreeSubstitutionVariants.refl],
+    by
+      intro entry member
+      simp at member,
+    fun _ member => member,
+    by
+      simpa using
+        PLeaTTa.PrologRecursiveCallPayloadBridge.AlphaTermsAgree.appliedCanonicalRuntimeAgrees
+          agreement.arguments⟩
 
 /-- A recursive local call in an active task constructs the semantic
 normalized-call relation at the exact runtime values inspected by the
@@ -307,13 +325,16 @@ theorem TaskPayloadAgrees.representativeNormalizedCallAgrees
       (PLeaTTa.subst runtime executableResult) := by
   obtain
     ⟨_referenceArguments, _referenceResult, representative,
-      _payloadShape, variants, leaves⟩ :=
+      _payloadShape, variants, representativeCovered, leaves⟩ :=
     PLeaTTa.PrologRecursiveCallPayloadBridge.TaskPayloadAgrees.applyLocalCall
       payload supported
   refine
-    ⟨representative ++ Substitution.denote referenceBase, ?_, ?_⟩
+    ⟨representative, referenceBase, ?_, representativeCovered, ?_, ?_⟩
   · rw [cursorBindings, payload.denoteCurrent]
     exact variants
+  · intro entry member
+    rw [cursorBindings, payload.bindingShape]
+    simp [member]
   · rw [cursorArguments]
     simpa only [List.map_append, List.map_singleton] using
       (List.forall₂_map_right_iff.mpr leaves)
@@ -344,6 +365,8 @@ theorem recursive_call_orientation_requires_representative :
       (∃ representative,
         TreeSubstitutionVariants
           recursiveWitnessCanonical representative ∧
+        TreeSubstitutionVariablesSatisfy
+          (AlphaCovers recursiveWitnessAlpha) representative ∧
         CanonicalRuntimeAgrees recursiveWitnessAlpha
           (TreeSubstitution.apply representative
             (.variable recursiveWitnessX))
@@ -438,6 +461,21 @@ theorem recursive_call_orientation_requires_representative :
           (alpha := recursiveWitnessAlpha)
           (by simp [recursiveWitnessAlpha, recursiveWitnessX,
             recursiveWitnessY]))
+  have representativeCovered :
+      TreeSubstitutionVariablesSatisfy
+        (AlphaCovers recursiveWitnessAlpha)
+        recursiveWitnessRepresentative := by
+    intro entry member
+    have entryEq :
+        entry =
+          (recursiveWitnessY, .variable recursiveWitnessX) := by
+      simpa [recursiveWitnessRepresentative] using member
+    subst entry
+    exact
+      ⟨⟨"$runtime_y",
+          by simp [recursiveWitnessAlpha, recursiveWitnessY]⟩,
+        ⟨"$runtime_x",
+          by simp [recursiveWitnessAlpha, recursiveWitnessX]⟩⟩
   have cumulative :
       AlphaCumulativeResidualVariantAgreesOn
         recursiveWitnessAlpha recursiveWitnessAlpha
@@ -447,7 +485,7 @@ theorem recursive_call_orientation_requires_representative :
         change TreeSubstitutionVariants
           recursiveWitnessCanonical recursiveWitnessRepresentative
         exact variants,
-      canonicalTopological, ⟨runtimeTopological⟩,
+      canonicalTopological, representativeCovered, ⟨runtimeTopological⟩,
       by
         change AlphaValuationAgreesOn
           recursiveWitnessAlpha recursiveWitnessAlpha
@@ -465,7 +503,7 @@ theorem recursive_call_orientation_requires_representative :
     subst term
     intro name linked
     exact linked
-  obtain ⟨representative, related, applied⟩ :=
+  obtain ⟨representative, related, representativeCovered, applied⟩ :=
     PLeaTTa.PrologRecursiveCallPayloadBridge.AlphaCumulativeResidualVariantAgreesOn.applyTerms
       cumulative
       (AlphaTermsAgree.cons rawLeaf AlphaTermsAgree.nil)
@@ -483,6 +521,7 @@ theorem recursive_call_orientation_requires_representative :
   refine ⟨cumulative, ⟨representative,
     by
       simpa only [Substitution.denote, List.append_nil] using related,
+    representativeCovered,
     appliedHead⟩,
     ?_⟩
   have canonicalApplied :
@@ -531,12 +570,20 @@ theorem representative_call_strictly_extends_normalized_call :
         recursiveWitnessCursor []
         (PLeaTTa.subst recursiveWitnessRuntime (.var "$runtime_x")) := by
   rcases recursive_call_orientation_requires_representative with
-    ⟨_cumulative, ⟨representative, variants, reading⟩, notDirect⟩
+    ⟨_cumulative,
+      ⟨representative, variants, representativeCovered, reading⟩,
+      notDirect⟩
   constructor
-  · refine ⟨representative, ?_, ?_⟩
+  · refine ⟨representative, [], ?_, representativeCovered, ?_, ?_⟩
     · simpa [recursiveWitnessCursor, recursiveWitnessCanonical,
         Substitution.denote, Term.denote] using variants
-    · exact .cons reading .nil
+    · intro entry member
+      simp at member
+    · exact .cons
+        (by
+          simpa only [Substitution.denote, List.append_nil, Term.denote] using
+            reading)
+        .nil
   · intro syntactic
     have direct :
         CanonicalRuntimeAgrees recursiveWitnessAlpha

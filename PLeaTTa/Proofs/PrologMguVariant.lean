@@ -193,6 +193,8 @@ def AlphaResidualVariantAgreesOn
     TreeSubstitutionVariants canonical representative ∧
     TreeSubstitutionTopological canonical ∧
     TreeSubstitutionTopological representative ∧
+    TreeSubstitutionVariablesSatisfy
+      (AlphaCovers alpha) representative ∧
     Nonempty (PLeaTTa.SubstTopological runtime) ∧
     AlphaValuationAgreesOn alpha support representative runtime
 
@@ -212,10 +214,12 @@ theorem AlphaResidualVariantAgrees.on
     AlphaResidualVariantAgreesOn alpha support canonical runtime := by
   rcases agreement with
     ⟨representative, variants, canonicalTopological,
-      representativeTopological, runtimeTopological, valuation⟩
+      representativeTopological, representativeCovered,
+      runtimeTopological, valuation⟩
   exact
     ⟨representative, variants, canonicalTopological,
-      representativeTopological, runtimeTopological,
+      representativeTopological, representativeCovered,
+      runtimeTopological,
       AlphaValuationAgrees.on valuation included⟩
 
 /-- Liveness trimming preserves residual-variant agreement on exactly the
@@ -232,10 +236,11 @@ theorem AlphaResidualVariantAgreesOn.trimFor
       (PLeaTTa.trimFor goals qterm runtime) := by
   rcases agreement with
     ⟨representative, variants, canonicalTopological,
-      representativeTopological, ⟨runtimeTopological⟩, valuation⟩
+      representativeTopological, representativeCovered,
+      ⟨runtimeTopological⟩, valuation⟩
   exact
     ⟨representative, variants, canonicalTopological,
-      representativeTopological,
+      representativeTopological, representativeCovered,
       ⟨PLeaTTa.SubstTopological.trimFor
         goals qterm runtime runtimeTopological⟩,
       AlphaValuationAgreesOn.trimFor valuation runtimeTopological live⟩
@@ -258,7 +263,8 @@ theorem AlphaResidualVariantAgrees.apply
         (PLeaTTa.subst runtime atom) := by
   rcases agreement with
     ⟨representative, variants, _canonicalTopological,
-      _representativeTopological, _runtimeTopological, valuation⟩
+      _representativeTopological, _representativeCovered,
+      _runtimeTopological, valuation⟩
   exact
     ⟨representative, variants,
       canonicalRuntimeAgrees_apply termAgreement valuation⟩
@@ -306,7 +312,7 @@ theorem OrderedTreeMgu.unifyTopExact_exists_residual_variant
   rcases
     PLeaTTa.PrologMguDirectSimulation.OrderedTreeMgu.unifyTopExact_exists_alpha_mgu
       shared agreement derivation with
-    ⟨representative, runtimeResult, runtimeExact, _runtimeAgreement,
+    ⟨representative, runtimeResult, runtimeExact, representativeAgreement,
       representativeTopological, runtimeTopological, valuation,
       _representativeMgu, representativeFactorsCanonical,
       canonicalFactorsRepresentative⟩
@@ -319,6 +325,7 @@ theorem OrderedTreeMgu.unifyTopExact_exists_residual_variant
         ⟨canonicalFactorsRepresentative,
           representativeFactorsCanonical⟩,
         canonicalTopological, representativeTopological,
+        representativeAgreement.variablesSatisfy,
         runtimeTopological, valuation⟩⟩
 
 /-! ## Anti-vacuity: orientation is genuinely quotiented -/

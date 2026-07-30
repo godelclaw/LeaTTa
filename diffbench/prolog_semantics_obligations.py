@@ -116,6 +116,10 @@ PROLOG_REPRESENTATIVE_CALL_FRONTIER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRepresentativeCallFrontierBridge.lean"
 )
+PROLOG_REPRESENTATIVE_ACTIVATION_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologRepresentativeActivationBridge.lean"
+)
 PROLOG_ACTIVATION_FAILURE_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationFailureBridge.lean"
 )
@@ -241,6 +245,8 @@ def check() -> list[str]:
             digest(PROLOG_REPRESENTATIVE_CALL_PREFILTER_BRIDGE),
         "prolog_representative_call_frontier_bridge_sha256":
             digest(PROLOG_REPRESENTATIVE_CALL_FRONTIER_BRIDGE),
+        "prolog_representative_activation_bridge_sha256":
+            digest(PROLOG_REPRESENTATIVE_ACTIVATION_BRIDGE),
         "prolog_activation_failure_bridge_sha256":
             digest(PROLOG_ACTIVATION_FAILURE_BRIDGE),
         "prolog_canonical_runtime_reading_sha256":

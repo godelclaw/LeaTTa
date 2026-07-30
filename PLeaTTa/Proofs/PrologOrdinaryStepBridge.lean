@@ -437,15 +437,17 @@ theorem TaskPayloadAgrees.cumulativeVariants
         (canonical ++ Substitution.denote referenceBase)
         (representative ++ Substitution.denote referenceBase) ∧
       TreeSubstitutionTopological canonical ∧
+      TreeSubstitutionVariablesSatisfy
+        (AlphaCovers alpha) representative ∧
       Nonempty (PLeaTTa.SubstTopological runtime) ∧
       AlphaValuationAgreesOn alpha support
         (representative ++ Substitution.denote referenceBase) runtime := by
   rcases agreement.valuation with
     ⟨representative, variants, canonicalTopological,
-      runtimeTopological, valuation⟩
+      representativeCovered, runtimeTopological, valuation⟩
   exact
     ⟨representative, variants, canonicalTopological,
-      runtimeTopological, valuation⟩
+      representativeCovered, runtimeTopological, valuation⟩
 
 /-- Exact source-guided readings of the two executable equality operands
 against one hidden cumulative representative.
@@ -825,7 +827,7 @@ theorem TaskPayloadAgrees.strictUnifyOperands_of_aliasSafe
       runtime left right executableLeft executableRight := by
   rcases agreement.cumulativeVariants with
     ⟨representative, variants, _canonicalTopological,
-      _runtimeTopological, valuation⟩
+      _representativeCovered, _runtimeTopological, valuation⟩
   let runtimeBase :=
     representative ++ Substitution.denote referenceBase
   have leftBroad :
@@ -927,6 +929,8 @@ theorem TaskPayloadAgrees.executableUnifyTopExact
         (canonical ++ Substitution.denote referenceBase)
         (representative ++ Substitution.denote referenceBase) ∧
       TreeSubstitutionTopological canonical ∧
+      TreeSubstitutionVariablesSatisfy
+        (AlphaCovers alpha) representative ∧
       AlphaValuationAgreesOn alpha support
         (representative ++ Substitution.denote referenceBase) runtime ∧
       OrderedTreeMgu
@@ -955,6 +959,8 @@ theorem TaskPayloadAgrees.executableUnifyTopExact
           (PLeaTTa.subst runtime executableRight) =
         some generated ∧
       AlphaValuationAgrees alpha executableCanonical generated ∧
+      TreeSubstitutionVariablesSatisfy
+        (AlphaCovers alpha) executableCanonical ∧
       TreeSubstitutionTopological executableCanonical ∧
       Nonempty (PLeaTTa.SubstTopological generated) ∧
       Nonempty (PLeaTTa.SubstTopological runtime) := by
@@ -971,7 +977,7 @@ theorem TaskPayloadAgrees.executableUnifyTopExact
       TreeSubstitution.applyEquations] using sourceExtensionMgu
   rcases agreement.cumulativeVariants with
     ⟨representative, bases, canonicalTopological,
-      runtimeTopological, valuationOn⟩
+      representativeCovered, runtimeTopological, valuationOn⟩
   have leftAfter :
       CanonicalRuntimeAgrees alpha
         (TreeSubstitution.apply
@@ -1022,7 +1028,7 @@ theorem TaskPayloadAgrees.executableUnifyTopExact
     OrderedTreeMgu.complete candidate candidateUnifies
   obtain
     ⟨executableCanonical, generated, generatedExact,
-      _generatedAgreement, executableTopological, generatedTopological,
+      generatedAgreement, executableTopological, generatedTopological,
       generatedValuation, executableMgu,
       _executableFactorsOrdered, _orderedFactorsExecutable⟩ :=
     PLeaTTa.PrologCanonicalMguSimulation.OrderedTreeMgu.unifyTopExact_exists_canonical_alpha_mgu
@@ -1038,11 +1044,12 @@ theorem TaskPayloadAgrees.executableUnifyTopExact
       bases sourceExtensionApplied executableMguApplied
   refine
     ⟨representative, sourceExtension, executableCanonical, generated,
-      bases, canonicalTopological, valuationOn,
+      bases, canonicalTopological, representativeCovered, valuationOn,
       sourceExtensionOrdered, sourceExtensionApplied,
       sourceExtensionWellFormed, sourceConcreteResultShape,
       executableMguApplied, sourceResultShape, ?_,
       generatedExact, generatedValuation,
+      generatedAgreement.variablesSatisfy,
       executableTopological, generatedTopological, runtimeTopological⟩
   rw [sourceResultShape]
   exact successors
@@ -1093,11 +1100,12 @@ theorem TaskPayloadAgrees.afterUnifySuccess
         references executables := by
   obtain
     ⟨representative, sourceExtension, executableCanonical, generated,
-      bases, oldCanonicalTopological, oldValuation,
+      bases, oldCanonicalTopological, representativeCovered, oldValuation,
       sourceExtensionOrdered, _sourceExtensionMgu,
       sourceExtensionWellFormed, sourceConcreteResultShape,
       _executableMgu, sourceResultShape, successorVariants,
-      generatedExact, generatedValuation, executableTopological,
+      generatedExact, generatedValuation, executableCanonicalCovered,
+      executableTopological,
       ⟨generatedTopological⟩, ⟨runtimeTopological⟩⟩ :=
     agreement.executableUnifyTopExact leftAgreement rightAgreement
       leftSupported rightSupported resolved
@@ -1258,8 +1266,15 @@ theorem TaskPayloadAgrees.afterUnifySuccess
       AlphaCumulativeResidualVariantAgreesOn
         alpha support (sourceExtension ++ canonical)
         referenceBase installed :=
+    have successorRepresentativeCovered :
+        TreeSubstitutionVariablesSatisfy
+          (AlphaCovers alpha)
+          (executableCanonical ++ representative) :=
+      treeSubstitutionVariablesSatisfy_append
+        executableCanonicalCovered representativeCovered
     ⟨executableCanonical ++ representative, cumulativeVariants,
-      sourceCompositeTopological, ⟨installedTopological⟩,
+      sourceCompositeTopological, successorRepresentativeCovered,
+      ⟨installedTopological⟩,
       installedValuation⟩
   have trimmedCumulative :
       AlphaCumulativeResidualVariantAgreesOn
