@@ -89,6 +89,25 @@ theorem CursorCallContext.supportedPreparedCandidate
     context.bindings_eq]
   exact supported
 
+/-- The normalized caller payload depends only on the call identity fields,
+so it transports unchanged through every conservative cursor advance. -/
+theorem CursorCallContext.normalizedCallAgrees
+    {queryAlpha : List (LogicVar × String)}
+    {source target : PreparedCursor}
+    {callGeneration : Generation} {predicate : String}
+    {arguments : List Term} {bindings : Substitution}
+    (targetContext :
+      CursorCallContext target callGeneration predicate arguments bindings)
+    (sourceContext :
+      CursorCallContext source callGeneration predicate arguments bindings)
+    {argsv : List Atom} {resv : Atom}
+    (query : NormalizedCallAgrees queryAlpha source argsv resv) :
+    NormalizedCallAgrees queryAlpha target argsv resv := by
+  constructor
+  simpa [sourceContext.arguments_eq, sourceContext.bindings_eq,
+    targetContext.arguments_eq, targetContext.bindings_eq] using
+    query.arguments
+
 /-- Occurrence-preserving cursor/alternative ownership with the exact
 compiler-supported prepared candidate retained at every position. -/
 inductive SupportedCursorAlternativeSpine
@@ -456,14 +475,15 @@ clause-body activation theorem. -/
 theorem
     SupportedCallEntryPrefilterRelates.callPull_supported_ready_correspondence
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {queryAlpha : List (LogicVar × String)}
     {opened : OpenedCall} {before : DemandDrivenStep.OpenConf}
     {pending : DemandDrivenCallStep.PendingCall}
     {argsv args : List Atom} {res : Atom}
     {rest : List PLeaTTa.Goal} {binding : Subst}
     {qterm : Atom} {barrier startCounter : Nat}
     (agreement :
-      SupportedCallEntryPrefilterRelates opened before pending argsv args res
-        rest binding qterm barrier startCounter) :
+      SupportedCallEntryPrefilterRelates queryAlpha opened before pending
+        argsv args res rest binding qterm barrier startCounter) :
     ∃ count skippedBranches skippedClauses finish
         readyBranches readyClauses,
       opened.cursor.remaining = skippedBranches ++ readyBranches ∧

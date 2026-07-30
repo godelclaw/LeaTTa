@@ -57,6 +57,7 @@ structure CallEntryBankRelates
   substitutedArgs : argsv = args.map (PLeaTTa.subst binding)
   barrierExact : barrier = barrierDepth before.toConf + 1
   startCounterExact : startCounter = before.toConf.counter
+  queryTerm : qterm = before.toConf.qterm
   database :
     DatabaseRelatesWorld opened.session.resolver.database
       pending.persistent.world
@@ -71,6 +72,23 @@ structure CallEntryBankRelates
     opened.session.resolver.nextFresh = opened.cursor.reservedUntil
   cutScopeAdvanced :
     opened.session.nextCutScope = opened.scope + 1
+
+/-- The call-entry relation cannot be forged with two different query
+terms.  This is load-bearing for resolution freshening: the observable query
+term participates in the occupied-variable high-water. -/
+theorem CallEntryBankRelates.qterm_unique
+    {opened : OpenedCall} {before : OpenConf} {pending : PendingCall}
+    {argsv args : List Metta.Atom} {res : Metta.Atom}
+    {rest : List PLeaTTa.Goal} {binding : Metta.Subst}
+    {first second : Metta.Atom} {barrier startCounter : Nat}
+    (one :
+      CallEntryBankRelates opened before pending argsv args res rest binding
+        first barrier startCounter)
+    (two :
+      CallEntryBankRelates opened before pending argsv args res rest binding
+        second barrier startCounter) :
+    first = second :=
+  one.queryTerm.trans two.queryTerm.symm
 
 /-- The concrete independent opener and the concrete executable pending
 package satisfy the post-entry relation.  Rewriting by the actual
@@ -110,6 +128,7 @@ theorem openedFor_pendingCallOf_relates
   · rfl
   · rfl
   · simpa [openedFor, openLocalCall, requestFor, prepareCall] using head
+  · rfl
   · rfl
   · rfl
   · rfl

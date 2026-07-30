@@ -458,6 +458,7 @@ The executable pending package and independent cursor are the same objects as
 in `CallEntryPrefilterRelates`; the only extra evidence is the compiler
 support attached to every paired candidate occurrence. -/
 structure SupportedCallEntryPrefilterRelates
+    (queryAlpha : List (LogicVar × String))
     (opened : OpenedCall) (before : OpenConf) (pending : PendingCall)
     (argsv args : List Atom) (res : Atom)
     (rest : List PLeaTTa.Goal) (binding : Subst)
@@ -465,6 +466,10 @@ structure SupportedCallEntryPrefilterRelates
   entry :
     CallEntryBankRelates opened before pending argsv args res rest binding
       qterm barrier startCounter
+  cursorWellFormed : opened.cursor.WellFormed
+  query :
+    NormalizedCallAgrees queryAlpha opened.cursor argsv
+      (PLeaTTa.subst binding res)
   prefilter :
     SupportedPreparedPrefilterBankRelates opened.cursor argsv args res rest
       binding qterm barrier
@@ -475,13 +480,14 @@ structure SupportedCallEntryPrefilterRelates
 /-- Erasing the supported occurrence certificate recovers the original
 post-entry relation exactly. -/
 theorem SupportedCallEntryPrefilterRelates.weak
+    {queryAlpha : List (LogicVar × String)}
     {opened : OpenedCall} {before : OpenConf} {pending : PendingCall}
     {argsv args : List Atom} {res : Atom}
     {rest : List PLeaTTa.Goal} {binding : Subst}
     {qterm : Atom} {barrier startCounter : Nat}
     (agreement :
-      SupportedCallEntryPrefilterRelates opened before pending argsv args res
-        rest binding qterm barrier startCounter) :
+      SupportedCallEntryPrefilterRelates queryAlpha opened before pending
+        argsv args res rest binding qterm barrier startCounter) :
     CallEntryPrefilterRelates opened before pending argsv args res rest
       binding qterm barrier startCounter :=
   ⟨agreement.entry, agreement.prefilter.weak⟩
@@ -602,6 +608,7 @@ theorem openedFor_pendingCallOf_supported_prefilter_relates
           referenceArguments.length)
         (state.persistent.world.resolutionCandidates predicate args.length)) :
     SupportedCallEntryPrefilterRelates
+      queryAlpha
       (openedFor session predicate referenceArguments referenceBindings)
       state (pendingCallOf state branches finalCounter)
       (args.map (PLeaTTa.subst binding)) args res rest binding
@@ -611,7 +618,10 @@ theorem openedFor_pendingCallOf_supported_prefilter_relates
     openedFor_pendingCallOf_relates database ready predicate
       referenceArguments referenceBindings args res rest binding
       branches finalCounter arity head scanned
-  refine ⟨entryAgreement, ?_⟩
+  refine ⟨entryAgreement, ?_, query, ?_⟩
+  · simpa [openedFor, openLocalCall] using
+      (prepareCall_wellFormed session.resolver
+        (requestFor predicate referenceArguments referenceBindings))
   have complete :=
     prepareCall_resolveAlts_supported_prefilter
       database ready
