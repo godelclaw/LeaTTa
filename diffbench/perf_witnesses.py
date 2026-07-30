@@ -462,7 +462,7 @@ def main() -> int:
             row = D.run_file(path)
         finally:
             path.unlink(missing_ok=True)
-        _file, frag, _why, verdict, petta_n, leatta_n = row
+        _file, frag, _why, verdict, petta_n, leatta_n, _independent = row
         if verdict not in ("AGREE", "AGREE-ORD"):
             ok = False
         print(
