@@ -12,6 +12,7 @@ Main exports:
   administrative_prefix_correspondence
 -/
 import PLeaTTa.Proofs.PrologActivationUnifierBridge
+import PLeaTTa.Proofs.PrologBooleanAliasSafety
 import PLeaTTa.Proofs.PrologCanonicalMguSimulation
 import PLeaTTa.Proofs.PrologRuntimeDecode
 import PLeaTTa.Proofs.PrologSequentialMgu
@@ -37,6 +38,7 @@ open PrologPrefilterBridge
 open PrologRuntimeDecode
 open PrologSequentialMgu
 open PrologActivationUnifierBridge
+open PrologBooleanAliasSafety
 open PrologCanonicalMguSimulation
 open DemandDrivenStep
 
@@ -502,6 +504,19 @@ def CurrentUnifyOperandsAliasSafe
       (Term.denote (current.applyTerm left)) ∧
     NoRuntimeBooleanAliases
       (Term.denote (current.applyTerm right))
+
+/-- A stable safe-substitution invariant plus safe raw operands produces the
+exact current-operand premise used by failure reflection. -/
+theorem CurrentUnifyOperandsAliasSafe.of_booleanAliasSafe
+    {current : Substitution} {left right : Term}
+    (currentSafe : Substitution.BooleanAliasSafe current)
+    (leftSafe : TermBooleanAliasSafe left)
+    (rightSafe : TermBooleanAliasSafe right) :
+    CurrentUnifyOperandsAliasSafe current left right :=
+  ⟨PrologBooleanAliasSafety.Substitution.BooleanAliasSafe.applyTerm
+      currentSafe left leftSafe,
+    PrologBooleanAliasSafety.Substitution.BooleanAliasSafe.applyTerm
+      currentSafe right rightSafe⟩
 
 /-- Exact payload denotation transports source-syntax alias-safety into the
 canonical binding currency used by MGU variation. -/
@@ -1808,8 +1823,9 @@ theorem unify_failure_step_correspondence
       AlphaTreeSupported alpha support (Term.denote left))
     (rightSupported :
       AlphaTreeSupported alpha support (Term.denote right))
-    (aliasSafe :
-      CurrentUnifyOperandsAliasSafe current left right)
+    (currentSafe : Substitution.BooleanAliasSafe current)
+    (leftAliasSafe : TermBooleanAliasSafe left)
+    (rightAliasSafe : TermBooleanAliasSafe right)
     (clash : ¬ ∃ result, UnifyResolution current left right result) :
     ∃ (spelling :
           NormalizedAlphaGoalsAgree.ExecutableUnifySpelling)
@@ -1831,6 +1847,10 @@ theorem unify_failure_step_correspondence
     ⟨spelling, executableLeft, executableRight, executableTail,
       executableShape, leftAgreement, rightAgreement, _tailControl⟩
   subst executables
+  have aliasSafe :
+      CurrentUnifyOperandsAliasSafe current left right :=
+    CurrentUnifyOperandsAliasSafe.of_booleanAliasSafe
+      currentSafe leftAliasSafe rightAliasSafe
   have strictOperands :=
     payload.strictUnifyOperands_of_currentAliasSafe
       leftAgreement rightAgreement leftSupported rightSupported aliasSafe
