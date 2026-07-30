@@ -25,6 +25,9 @@ PROLOG_COPY = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologCopy.lean"
 GOAL_SEMANTICS = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologGoalSemantics.lean"
 DEMAND_DRIVEN_STEP = ROOT / "PLeaTTa" / "Proofs" / "DemandDrivenStep.lean"
 FINDALL_COPY = ROOT / "PLeaTTa" / "Proofs" / "FindallCopy.lean"
+PROLOG_FINDALL_COPY_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologFindallCopyBridge.lean"
+)
 DEMAND_DRIVEN_CALL_STEP = (
     ROOT / "PLeaTTa" / "Proofs" / "DemandDrivenCallStep.lean"
 )
@@ -142,6 +145,8 @@ def check() -> list[str]:
         "goal_semantics_sha256": digest(GOAL_SEMANTICS),
         "demand_driven_step_sha256": digest(DEMAND_DRIVEN_STEP),
         "findall_copy_sha256": digest(FINDALL_COPY),
+        "prolog_findall_copy_bridge_sha256":
+            digest(PROLOG_FINDALL_COPY_BRIDGE),
         "demand_driven_call_step_sha256": digest(DEMAND_DRIVEN_CALL_STEP),
         "prolog_state_bridge_sha256": digest(PROLOG_STATE_BRIDGE),
         "prolog_call_entry_bridge_sha256": digest(PROLOG_CALL_ENTRY_BRIDGE),

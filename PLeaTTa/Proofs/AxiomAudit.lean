@@ -3,6 +3,7 @@
 import PLeaTTa.Proofs.StepCases
 import PLeaTTa.Proofs.DemandDrivenStep
 import PLeaTTa.Proofs.FindallCopy
+import PLeaTTa.Proofs.PrologFindallCopyBridge
 import PLeaTTa.Proofs.DemandDrivenCallStep
 import PLeaTTa.Proofs.PrologStateBridge
 import PLeaTTa.Proofs.PrologCallEntryBridge
@@ -1203,6 +1204,16 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.FindallCopy.two_solution_copy_witness
 #print axioms PLeaTTa.FindallCopy.intra_solution_sharing_witness
 #print axioms PLeaTTa.FindallCopy.occupied_seed_repair_witness
+#print axioms PLeaTTa.PrologFindallCopyBridge.termCopy_runtimeAlpha
+#print axioms PLeaTTa.PrologFindallCopyBridge.copyTerm_copyFindallAtom_runtime_agrees
+#print axioms PLeaTTa.PrologFindallCopyBridge.collectTemplate_deferred
+#print axioms PLeaTTa.PrologFindallCopyBridge.CollectionCopyFrontier.advance
+#print axioms PLeaTTa.PrologFindallCopyBridge.CollectionCopyFrontier.collect
+#print axioms PLeaTTa.PrologFindallCopyBridge.CollectionCopyFrontier.pay
+#print axioms PLeaTTa.PrologFindallCopyBridge.CollectionSessionRelates.collect
+#print axioms PLeaTTa.PrologFindallCopyBridge.CollectionCopyFrontier.payment_exact
+#print axioms PLeaTTa.PrologFindallCopyBridge.CopyPaymentAgrees.next
+#print axioms PLeaTTa.PrologFindallCopyBridge.witness_copy_debt_frontiers_need_not_equal
 #print axioms PLeaTTa.DemandDrivenStep.FlatStepsN.lift
 #print axioms PLeaTTa.DemandDrivenStep.two_answer_findall_copies_source_variables_apart
 #print axioms PLeaTTa.DemandDrivenStep.findall_prefix_lifts
