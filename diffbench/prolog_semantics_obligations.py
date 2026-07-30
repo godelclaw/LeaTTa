@@ -172,6 +172,10 @@ PROLOG_PRODUCT_RESOURCE_CONTEXT_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologProductResourceContextBridge.lean"
 )
+PROLOG_PRODUCT_RESOURCE_TRANSITION_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologProductResourceTransitionBridge.lean"
+)
 PROLOG_ACTIVATION_FAILURE_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationFailureBridge.lean"
 )
@@ -333,6 +337,8 @@ def check() -> list[str]:
             digest(PROLOG_SPINED_SOURCE_ACTIVATION_BRIDGE),
         "prolog_product_resource_context_bridge_sha256":
             digest(PROLOG_PRODUCT_RESOURCE_CONTEXT_BRIDGE),
+        "prolog_product_resource_transition_bridge_sha256":
+            digest(PROLOG_PRODUCT_RESOURCE_TRANSITION_BRIDGE),
         "prolog_activation_failure_bridge_sha256":
             digest(PROLOG_ACTIVATION_FAILURE_BRIDGE),
         "prolog_head_failure_continuation_bridge_sha256":
