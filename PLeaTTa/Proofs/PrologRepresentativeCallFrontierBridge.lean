@@ -79,6 +79,35 @@ theorem CursorCallContext.representativeNormalizedCallAgrees
   · simpa [sourceContext.arguments_eq, targetContext.arguments_eq] using
       agreement
 
+/-- Cursor advance preserves the *selected* residual representative and
+older base, not merely the existential weak relation. -/
+theorem CursorCallContext.representativeNormalizedCallAgreesWith
+    {queryAlpha : List (LogicVar × String)}
+    {source target : PreparedCursor}
+    {callGeneration : Generation} {predicate : String}
+    {arguments : List Term} {bindings : Substitution}
+    (targetContext :
+      CursorCallContext target callGeneration predicate arguments bindings)
+    (sourceContext :
+      CursorCallContext source callGeneration predicate arguments bindings)
+    {argsv : List Atom} {resv : Atom}
+    {residualRepresentative : TreeSubstitution}
+    {olderBase : Substitution}
+    (query :
+      RepresentativeNormalizedCallAgreesWith queryAlpha source argsv resv
+        residualRepresentative olderBase) :
+    RepresentativeNormalizedCallAgreesWith queryAlpha target argsv resv
+      residualRepresentative olderBase := by
+  refine
+    ⟨?_, query.residualCovered, ?_, ?_⟩
+  · simpa [sourceContext.bindings_eq, targetContext.bindings_eq] using
+      query.variants
+  · intro entry member
+    simpa [sourceContext.bindings_eq, targetContext.bindings_eq] using
+      query.olderBaseIncluded entry member
+  · simpa [sourceContext.arguments_eq, targetContext.arguments_eq] using
+      query.arguments
+
 /-- Concrete post-entry state for a semantically represented recursive call.
 
 The executable bank and source occurrence bank are the exact objects already

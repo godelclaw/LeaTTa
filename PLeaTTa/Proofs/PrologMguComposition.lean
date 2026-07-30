@@ -28,6 +28,7 @@ open PrologMguBridge
 open PrologMguOpenAgreement
 open PrologMguTopology
 open PrologMguVariant
+open PrologPrefilterBridge
 
 /-!
 The independently ordered source MGU and the executable MGU may orient one
@@ -46,6 +47,110 @@ def installGenerated (generated base : Subst) : Subst :=
   | [] => base
   | _ :: _ => Metta.Subst.compose generated base
 
+/-- Installing a topological generated block over a topological carried
+state remains topological when the generated block avoids the carried
+domain. -/
+def installGeneratedTopological
+    {generated base : Subst}
+    (baseTopological : PLeaTTa.SubstTopological base)
+    (generatedTopological : PLeaTTa.SubstTopological generated)
+    (generatedAvoidsBase : PLeaTTa.SubstEntriesAvoid base generated) :
+    PLeaTTa.SubstTopological (installGenerated generated base) := by
+  cases generated with
+  | nil =>
+      simpa [installGenerated] using baseTopological
+  | cons head tail =>
+      simpa [installGenerated] using
+        PLeaTTa.SubstTopological.compose_of_avoids
+          base (head :: tail) baseTopological generatedTopological
+          generatedAvoidsBase
+
+/-- On an atom outside the carried domain, installing the generated block
+has exactly the generated block's action. -/
+theorem subst_installGenerated_eq_generated_of_avoids
+    {generated base : Subst} {atom : Atom}
+    (baseTopological : PLeaTTa.SubstTopological base)
+    (generatedTopological : PLeaTTa.SubstTopological generated)
+    (generatedAvoidsBase : PLeaTTa.SubstEntriesAvoid base generated)
+    (atomAvoidsBase : PLeaTTa.AtomAvoids base atom) :
+    PLeaTTa.subst (installGenerated generated base) atom =
+      PLeaTTa.subst generated atom := by
+  cases generated with
+  | nil =>
+      simp only [installGenerated]
+      rw [PLeaTTa.subst_eq_self_of_domain_free base atom atomAvoidsBase]
+      simp
+  | cons head tail =>
+      simpa [installGenerated] using
+        PLeaTTa.PersistentSubst.subst_compose_eq_generated_of_avoids
+          base (head :: tail) baseTopological generatedTopological
+          generatedAvoidsBase atomAvoidsBase
+
+/-- Eager installation has the exact semantic composition order: first
+normalize through the carried base, then through the generated MGU.
+
+Unlike `subst_installGenerated_eq_generated_of_avoids`, this theorem permits
+the input atom itself to be owned by the carried state.  The intermediate
+`subst base atom` is automatically outside the base domain, and the
+generated block is standardized apart from that domain. -/
+theorem subst_installGenerated_eq_generated_after_base
+    {generated base : Subst}
+    (baseTopological : PLeaTTa.SubstTopological base)
+    (generatedTopological : PLeaTTa.SubstTopological generated)
+    (generatedAvoidsBase : PLeaTTa.SubstEntriesAvoid base generated)
+    (atom : Atom) :
+    PLeaTTa.subst (installGenerated generated base) atom =
+      PLeaTTa.subst generated (PLeaTTa.subst base atom) := by
+  cases generated with
+  | nil =>
+      simp [installGenerated]
+  | cons head tail =>
+      let generated : Subst := head :: tail
+      let composed := Metta.Subst.compose generated base
+      have composedDenotesRaw :
+          PLeaTTa.SubstLookupDenotes composed (generated ++ base) := by
+        exact
+          PLeaTTa.PersistentSubst.compose_denotes_append
+            base generated baseTopological generatedTopological
+            generatedAvoidsBase
+      have composedDenotesBase :
+          PLeaTTa.SubstLookupDenotes composed base := by
+        intro name value baseLookup
+        have generatedNone :
+            Metta.Subst.lookup generated name = none := by
+          cases generatedLookup :
+              Metta.Subst.lookup generated name with
+          | none =>
+              rfl
+          | some generatedValue =>
+              have baseNone :=
+                (PLeaTTa.SubstEntriesAvoid.lookup
+                  base generated generatedAvoidsBase name generatedValue
+                  generatedLookup).1
+              rw [baseLookup] at baseNone
+              contradiction
+        apply composedDenotesRaw name value
+        simp [PLeaTTa.PersistentSubst.lookup_append,
+          generatedNone, baseLookup]
+      have absorbed :
+          PLeaTTa.subst composed (PLeaTTa.subst base atom) =
+            PLeaTTa.subst composed atom :=
+        PLeaTTa.subst_subst_of_lookupDenotes
+          composed base composedDenotesBase atom
+      have baseResultAvoids :
+          PLeaTTa.AtomAvoids base (PLeaTTa.subst base atom) := by
+        intro name member
+        exact baseTopological.subst_resolvesDomain base atom name member
+      have generatedAfterBase :
+          PLeaTTa.subst composed (PLeaTTa.subst base atom) =
+            PLeaTTa.subst generated (PLeaTTa.subst base atom) := by
+        exact
+          PLeaTTa.PersistentSubst.subst_compose_eq_generated_of_avoids
+            base generated baseTopological generatedTopological
+            generatedAvoidsBase baseResultAvoids
+      simpa [installGenerated, generated, composed] using
+        absorbed.symm.trans generatedAfterBase
+
 /-- The carried independent state fixes every source identity observed by
 one alpha subgraph. -/
 def AlphaReferenceIdentitiesFixed
@@ -60,6 +165,101 @@ def AlphaRuntimeNamesAvoid
     (support : List (LogicVar × String)) (binding : Subst) : Prop :=
   ∀ {identity name}, (identity, name) ∈ support →
     Metta.Subst.lookup binding name = none
+
+/-- Semantic valuation composition for arbitrary previously supported
+bindings.
+
+The old runtime value may already be bound.  Its canonical/runtime agreement
+is lifted through the generated MGU, while
+`subst_installGenerated_eq_generated_after_base` identifies the executable
+eager composition with that same two-stage interpretation. -/
+theorem AlphaValuationAgreesOn.installGenerated_compose
+    {alpha support : List (LogicVar × String)}
+    {oldCanonical extension : TreeSubstitution}
+    {base generated : Subst}
+    (oldValuation :
+      AlphaValuationAgreesOn alpha support oldCanonical base)
+    (baseTopological : PLeaTTa.SubstTopological base)
+    (generatedTopological : PLeaTTa.SubstTopological generated)
+    (generatedAvoidsBase : PLeaTTa.SubstEntriesAvoid base generated)
+    (extensionValuation :
+      AlphaValuationAgrees alpha extension generated) :
+    AlphaValuationAgreesOn alpha support
+      (extension ++ oldCanonical)
+      (installGenerated generated base) := by
+  intro identity name linked
+  have oldAgreement :
+      CanonicalRuntimeAgrees alpha
+        (TreeSubstitution.apply oldCanonical (.variable identity))
+        (PLeaTTa.subst base (.var name)) :=
+    oldValuation linked
+  have lifted :
+      CanonicalRuntimeAgrees alpha
+        (TreeSubstitution.apply extension
+          (TreeSubstitution.apply oldCanonical (.variable identity)))
+        (PLeaTTa.subst generated
+          (PLeaTTa.subst base (.var name))) := by
+    exact
+      CanonicalRuntimeAgrees.apply_of_supported
+        oldAgreement
+        (treeVariablesSatisfy_true
+          (TreeSubstitution.apply oldCanonical (.variable identity)))
+        (fun alphaLinked _true => extensionValuation alphaLinked)
+  rw [TreeSubstitution.apply_append,
+    subst_installGenerated_eq_generated_after_base
+      baseTopological generatedTopological generatedAvoidsBase]
+  exact lifted
+
+/-- Once a topological canonical block has been applied after any older
+layer, every variable remaining in the normalized equations lies outside
+that canonical block's domain. -/
+theorem TreeSubstitutionTopological.applyEquations_append_avoids
+    {canonical older : TreeSubstitution}
+    (topological : TreeSubstitutionTopological canonical)
+    (equations : List TreeEquation) :
+    TreeEquationsVariablesSatisfy
+      (fun identity =>
+        identity ∉ TreeSubstitution.keys canonical)
+      (TreeSubstitution.applyEquations
+        (canonical ++ older) equations) := by
+  intro normalized member
+  simp only [TreeSubstitution.applyEquations, List.mem_map] at member
+  obtain ⟨equation, _equationMember, rfl⟩ := member
+  rcases equation with ⟨left, right⟩
+  simp only [TreeSubstitution.apply_append]
+  exact
+    ⟨topological.apply_avoids
+        (TreeSubstitution.apply older left),
+      topological.apply_avoids
+        (TreeSubstitution.apply older right)⟩
+
+/-- Compatibility form of `installGenerated_compose` for callers which
+already carry the older conservative unbound-support premises.
+
+The stronger composition theorem shows that those extra premises are not
+needed: previously bound supported values compose semantically as well. -/
+theorem AlphaValuationAgreesOn.installGenerated_extension
+    {alpha support : List (LogicVar × String)}
+    {oldCanonical extension : TreeSubstitution}
+    {base generated : Subst}
+    (_shared : SharedRuntimeAlpha alpha)
+    (_supportIncluded :
+      ∀ pair, pair ∈ support → pair ∈ alpha)
+    (oldValuation :
+      AlphaValuationAgreesOn alpha support oldCanonical base)
+    (baseTopological : PLeaTTa.SubstTopological base)
+    (generatedTopological : PLeaTTa.SubstTopological generated)
+    (generatedAvoidsBase : PLeaTTa.SubstEntriesAvoid base generated)
+    (_runtimeAvoids : AlphaRuntimeNamesAvoid support base)
+    (extensionValuation :
+      AlphaValuationAgrees alpha extension generated) :
+    AlphaValuationAgreesOn alpha support
+      (extension ++ oldCanonical)
+      (installGenerated generated base) := by
+  exact
+    AlphaValuationAgreesOn.installGenerated_compose
+      oldValuation baseTopological generatedTopological
+      generatedAvoidsBase extensionValuation
 
 /-- A conservative executable check that one independent identity is not a
 source key of the carried independent substitution.  Absence is stronger
@@ -209,6 +409,88 @@ def AlphaCumulativeResidualVariantAgreesOn
     Nonempty (PLeaTTa.SubstTopological runtime) ∧
     AlphaValuationAgreesOn alpha support
       (representative ++ Substitution.denote referenceBase) runtime
+
+/-- The same cumulative relation with its hidden residual representative
+made explicit.
+
+This refinement is used when one later proof must share the *same*
+representative between the active call reading, head activation, and body
+continuation.  The older existential relation remains the public weak view;
+this structure merely prevents separate eliminations from silently choosing
+different variant witnesses. -/
+structure AlphaCumulativeResidualVariantAgreesOnWith
+    (alpha support : List (LogicVar × String))
+    (canonical : TreeSubstitution) (referenceBase : Substitution)
+    (runtime : Subst) (representative : TreeSubstitution) : Prop where
+  variants :
+    TreeSubstitutionVariants
+      (canonical ++ Substitution.denote referenceBase)
+      (representative ++ Substitution.denote referenceBase)
+  canonicalTopological : TreeSubstitutionTopological canonical
+  representativeCovered :
+    TreeSubstitutionVariablesSatisfy
+      (AlphaCovers alpha) representative
+  runtimeTopological : Nonempty (PLeaTTa.SubstTopological runtime)
+  valuation :
+    AlphaValuationAgreesOn alpha support
+      (representative ++ Substitution.denote referenceBase) runtime
+
+/-- Forgetting the selected representative recovers the original cumulative
+relation exactly. -/
+theorem AlphaCumulativeResidualVariantAgreesOnWith.weak
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase : Substitution} {runtime : Subst}
+    (agreement :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase runtime representative) :
+    AlphaCumulativeResidualVariantAgreesOn
+      alpha support canonical referenceBase runtime :=
+  ⟨representative, agreement.variants, agreement.canonicalTopological,
+    agreement.representativeCovered, agreement.runtimeTopological,
+    agreement.valuation⟩
+
+/-- Liveness trimming preserves the selected cumulative representative. -/
+theorem AlphaCumulativeResidualVariantAgreesOnWith.trimFor
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase : Substitution} {runtime : Subst}
+    (agreement :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase runtime representative)
+    {goals : List PLeaTTa.Goal} {qterm : Atom}
+    (live : AlphaRuntimeNamesLive support goals qterm) :
+    AlphaCumulativeResidualVariantAgreesOnWith
+      alpha support canonical referenceBase
+        (PLeaTTa.trimFor goals qterm runtime) representative := by
+  rcases agreement.runtimeTopological with ⟨runtimeTopological⟩
+  exact
+    ⟨agreement.variants, agreement.canonicalTopological,
+      agreement.representativeCovered,
+      ⟨PLeaTTa.SubstTopological.trimFor
+        goals qterm runtime runtimeTopological⟩,
+      AlphaValuationAgreesOn.trimFor
+        agreement.valuation runtimeTopological live⟩
+
+/-- Every existential cumulative relation admits one explicit, coherent
+representative package. -/
+theorem AlphaCumulativeResidualVariantAgreesOn.existsWith
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {runtime : Subst}
+    (agreement :
+      AlphaCumulativeResidualVariantAgreesOn
+        alpha support canonical referenceBase runtime) :
+    ∃ representative,
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase runtime representative := by
+  rcases agreement with
+    ⟨representative, variants, canonicalTopological,
+      representativeCovered, runtimeTopological, valuation⟩
+  exact
+    ⟨representative,
+      ⟨variants, canonicalTopological, representativeCovered,
+        runtimeTopological, valuation⟩⟩
 
 /-- Exact goal/control structure paired with the cumulative residual
 valuation used by an entered local task.  No whole-goal substitution or

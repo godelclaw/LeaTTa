@@ -55,6 +55,70 @@ def AlphaTermsSupported
   ∀ term, term ∈ terms →
     AlphaTreeSupported alpha support (Term.denote term)
 
+/-- Apply one already-selected cumulative representative to an entire
+ordered payload.
+
+Unlike the existential wrapper below, this theorem cannot reselect a
+different residual orientation: the representative is an input and remains
+fixed across every `Forall₂` leaf. -/
+theorem AlphaCumulativeResidualVariantAgreesOnWith.applyTerms
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase : Substitution} {runtime : Subst}
+    (cumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase runtime representative)
+    {references : List Term} {executables : List Atom}
+    (leaves : AlphaTermsAgree alpha references executables)
+    (supported : AlphaTermsSupported alpha support references) :
+    List.Forall₂
+      (fun term atom =>
+        CanonicalRuntimeAgrees alpha
+          (TreeSubstitution.apply
+            (representative ++ Substitution.denote referenceBase)
+            (Term.denote term))
+          (PLeaTTa.subst runtime atom))
+      references executables := by
+  induction leaves with
+  | nil =>
+      exact .nil
+  | cons head tail inductionHypothesis =>
+      exact .cons
+        (canonicalRuntimeAgrees_apply_on
+          (AlphaTermAgrees.canonicalRuntimeAgrees head)
+          cumulative.valuation (supported _ (by simp)))
+        (inductionHypothesis
+          (fun term member => supported term (by simp [member])))
+
+/-- Output-last specialization with a fixed cumulative representative. -/
+theorem AlphaCumulativeResidualVariantAgreesOnWith.applyOutputLast
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase : Substitution} {runtime : Subst}
+    (cumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase runtime representative)
+    {referenceArguments : List Term} {referenceResult : Term}
+    {executableArguments : List Atom} {executableResult : Atom}
+    (arguments :
+      AlphaTermsAgree alpha referenceArguments executableArguments)
+    (result :
+      AlphaTermAgrees alpha referenceResult executableResult)
+    (supported :
+      AlphaTermsSupported alpha support
+        (referenceArguments ++ [referenceResult])) :
+    List.Forall₂
+      (fun term atom =>
+        CanonicalRuntimeAgrees alpha
+          (TreeSubstitution.apply
+            (representative ++ Substitution.denote referenceBase)
+            (Term.denote term))
+          (PLeaTTa.subst runtime atom))
+      (referenceArguments ++ [referenceResult])
+      (executableArguments ++ [executableResult]) :=
+  PLeaTTa.PrologRecursiveCallPayloadBridge.AlphaCumulativeResidualVariantAgreesOnWith.applyTerms
+    cumulative (AlphaTermsAgree.append_singleton arguments result) supported
+
 /-- A cumulative residual variant applies one shared hidden representative
 to an entire ordered source/runtime payload.
 
@@ -242,6 +306,129 @@ def RepresentativeNormalizedCallAgrees
           atom)
       cursor.arguments (argsv ++ [resv])
 
+/-- The normalized-call relation with its residual representative and older
+source base selected explicitly.
+
+This certificate is the coherence token carried from the active task through
+call opening, rejected-prefix scanning, retained-clause activation, and body
+continuation.  Keeping both witnesses as parameters prevents two independent
+existential eliminations from choosing semantically variant but incompatible
+orientations. -/
+structure RepresentativeNormalizedCallAgreesWith
+    (alpha : List (LogicVar × String))
+    (cursor : PreparedCursor) (argsv : List Atom) (resv : Atom)
+    (residualRepresentative : TreeSubstitution)
+    (olderBase : Substitution) : Prop where
+  variants :
+    TreeSubstitutionVariants
+      (Substitution.denote cursor.bindings)
+      (residualRepresentative ++ Substitution.denote olderBase)
+  residualCovered :
+    TreeSubstitutionVariablesSatisfy
+      (AlphaCovers alpha) residualRepresentative
+  olderBaseIncluded :
+    ∀ entry, entry ∈ olderBase → entry ∈ cursor.bindings
+  arguments :
+    List.Forall₂
+      (fun term atom =>
+        CanonicalRuntimeAgrees alpha
+          (TreeSubstitution.apply
+            (residualRepresentative ++ Substitution.denote olderBase)
+            (Term.denote term))
+          atom)
+      cursor.arguments (argsv ++ [resv])
+
+/-- Forgetting the selected witnesses recovers the original semantic call
+relation. -/
+theorem RepresentativeNormalizedCallAgreesWith.weak
+    {alpha : List (LogicVar × String)}
+    {cursor : PreparedCursor} {argsv : List Atom} {resv : Atom}
+    {residualRepresentative : TreeSubstitution}
+    {olderBase : Substitution}
+    (agreement :
+      RepresentativeNormalizedCallAgreesWith alpha cursor argsv resv
+        residualRepresentative olderBase) :
+    RepresentativeNormalizedCallAgrees alpha cursor argsv resv :=
+  ⟨residualRepresentative, olderBase, agreement.variants,
+    agreement.residualCovered, agreement.olderBaseIncluded,
+    agreement.arguments⟩
+
+/-- Every semantic normalized-call relation exposes one exact witness
+package. -/
+theorem RepresentativeNormalizedCallAgrees.existsWith
+    {alpha : List (LogicVar × String)}
+    {cursor : PreparedCursor} {argsv : List Atom} {resv : Atom}
+    (agreement :
+      RepresentativeNormalizedCallAgrees alpha cursor argsv resv) :
+    ∃ residualRepresentative olderBase,
+      RepresentativeNormalizedCallAgreesWith alpha cursor argsv resv
+        residualRepresentative olderBase := by
+  rcases agreement with
+    ⟨residualRepresentative, olderBase, variants, residualCovered,
+      olderBaseIncluded, arguments⟩
+  exact
+    ⟨residualRepresentative, olderBase,
+      ⟨variants, residualCovered, olderBaseIncluded, arguments⟩⟩
+
+/-- A live task selects one cumulative representative which simultaneously
+certifies its carried valuation and the exact normalized recursive-call
+payload.
+
+This is stronger than separately invoking `cumulativeVariants` and
+`representativeNormalizedCallAgrees`: both conclusions expose the very same
+`representative`, so later head and body proofs cannot silently change alias
+orientation between phases. -/
+theorem TaskPayloadAgrees.representativeNormalizedCallAgreesWith
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Subst}
+    {predicate : String} {referencePayload : List Term}
+    {executableArguments : List Atom} {executableResult : Atom}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (payload :
+      TaskPayloadAgrees alpha support barrier canonical referenceBase current
+        runtime
+        (.call predicate referencePayload :: references)
+        (.call predicate executableArguments executableResult ::
+          executables))
+    (supported :
+      AlphaTermsSupported alpha support referencePayload)
+    (cursor : PreparedCursor)
+    (cursorArguments : cursor.arguments = referencePayload)
+    (cursorBindings : cursor.bindings = current) :
+    ∃ representative,
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase runtime representative ∧
+      RepresentativeNormalizedCallAgreesWith alpha cursor
+        (executableArguments.map (PLeaTTa.subst runtime))
+        (PLeaTTa.subst runtime executableResult)
+        representative referenceBase := by
+  obtain
+    ⟨referenceArguments, referenceResult, payloadShape,
+      arguments, result, _tail⟩ :=
+    NormalizedAlphaGoalsAgree.localCallHead payload.control
+  obtain ⟨representative, cumulative⟩ :=
+    payload.valuation.existsWith
+  have supportedOutput :
+      AlphaTermsSupported alpha support
+        (referenceArguments ++ [referenceResult]) := by
+    simpa only [payloadShape] using supported
+  have leaves :=
+    PLeaTTa.PrologRecursiveCallPayloadBridge.AlphaCumulativeResidualVariantAgreesOnWith.applyOutputLast
+      cumulative arguments result supportedOutput
+  refine ⟨representative, cumulative, ?_⟩
+  refine
+    ⟨?_, cumulative.representativeCovered, ?_, ?_⟩
+  · rw [cursorBindings, payload.denoteCurrent]
+    exact cumulative.variants
+  · intro entry member
+    rw [cursorBindings, payload.bindingShape]
+    simp [member]
+  · rw [cursorArguments, payloadShape]
+    simpa only [List.map_append, List.map_singleton] using
+      (List.forall₂_map_right_iff.mpr leaves)
+
 /-- Pointwise syntactic alpha agreement after applying a source
 substitution embeds into the representative relation with that exact
 source substitution as its own representative. -/
@@ -323,21 +510,10 @@ theorem TaskPayloadAgrees.representativeNormalizedCallAgrees
     RepresentativeNormalizedCallAgrees alpha cursor
       (executableArguments.map (PLeaTTa.subst runtime))
       (PLeaTTa.subst runtime executableResult) := by
-  obtain
-    ⟨_referenceArguments, _referenceResult, representative,
-      _payloadShape, variants, representativeCovered, leaves⟩ :=
-    PLeaTTa.PrologRecursiveCallPayloadBridge.TaskPayloadAgrees.applyLocalCall
-      payload supported
-  refine
-    ⟨representative, referenceBase, ?_, representativeCovered, ?_, ?_⟩
-  · rw [cursorBindings, payload.denoteCurrent]
-    exact variants
-  · intro entry member
-    rw [cursorBindings, payload.bindingShape]
-    simp [member]
-  · rw [cursorArguments]
-    simpa only [List.map_append, List.map_singleton] using
-      (List.forall₂_map_right_iff.mpr leaves)
+  obtain ⟨_representative, _cumulative, exact⟩ :=
+    PLeaTTa.PrologRecursiveCallPayloadBridge.TaskPayloadAgrees.representativeNormalizedCallAgreesWith
+      payload supported cursor cursorArguments cursorBindings
+  exact exact.weak
 
 /-! ## Anti-vacuity: recursive calls really need the representative -/
 

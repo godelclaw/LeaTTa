@@ -1,0 +1,543 @@
+-- SPDX-License-Identifier: Apache-2.0
+
+/-
+Module: PLeaTTa.Proofs.PrologRepresentativeTaskActivationBridge
+Purpose: Compose one representation-independent retained-clause head
+  activation into the exact cumulative clause-body task payload.
+Trusted boundary: none
+Main exports:
+  SupportedPreparedCandidateAgrees.unifyB_body_cumulativeWith_of_headResolution
+-/
+import PLeaTTa.Proofs.PrologRepresentativeActivationBridge
+import PLeaTTa.Proofs.PrologOrdinaryStepBridge
+
+namespace PLeaTTa.PrologRepresentativeTaskActivationBridge
+
+open Metta (Atom Subst)
+open PeTTaSpec.PrologCore
+open PeTTaSpec.PrologCore.Canonical
+open PeTTaSpec.PrologCore.OpenSubstitution
+open PeTTaSpec.PrologCore.Resolver
+open PrologGoalAlpha
+open PrologCallPayloadBridge
+open PrologMguBridge
+open PrologMguComposition
+open PrologMguOpenAgreement
+open PrologMguTopology
+open PrologMguVariant
+open PrologOrdinaryStepBridge
+open PrologPrefilterBridge
+open PrologRecursiveCallPayloadBridge
+open PrologRepresentativeActivationBridge
+
+/-! ## Structural transport into the activated task -/
+
+/-- A supported prepared occurrence carries exactly the cursor binding used
+to construct it.  Naming this constructor projection keeps the composition
+proof independent of the concrete `preparedBranchOf` record fields. -/
+theorem SupportedPreparedCandidateAgrees.branch_bindings_eq
+    {callGeneration : Generation} {predicate : String}
+    {arguments : List Term} {bindings : Substitution}
+    {branch : ClauseBranch} {clause : PLeaTTa.Clause}
+    (agreement :
+      SupportedPreparedCandidateAgrees callGeneration predicate
+        arguments bindings branch clause) :
+    branch.bindings = bindings := by
+  cases agreement
+  rfl
+
+/-- Alpha coverage of a canonical substitution is monotone under inclusion
+of the shared alpha graph. -/
+theorem TreeSubstitutionVariablesSatisfy.monoAlpha
+    {smaller larger : List (LogicVar × String)}
+    {binding : TreeSubstitution}
+    (included : ∀ pair, pair ∈ smaller → pair ∈ larger)
+    (covered :
+      TreeSubstitutionVariablesSatisfy (AlphaCovers smaller) binding) :
+    TreeSubstitutionVariablesSatisfy (AlphaCovers larger) binding := by
+  intro entry member
+  have entryCovered := covered entry member
+  exact
+    ⟨by
+      rcases entryCovered.1 with ⟨name, linked⟩
+      exact ⟨name, included _ linked⟩,
+      TreeVariablesSatisfy.mono
+        (fun identity identityCovered => by
+          rcases identityCovered with ⟨name, linked⟩
+          exact ⟨name, included _ linked⟩)
+        entryCovered.2⟩
+
+/-- A cumulative valuation already known on a smaller alpha graph remains
+valid when every link is embedded in the larger shared graph. -/
+theorem AlphaValuationAgreesOn.monoAlpha
+    {smaller larger support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {runtime : Subst}
+    (included : ∀ pair, pair ∈ smaller → pair ∈ larger)
+    (valuation :
+      AlphaValuationAgreesOn smaller support canonical runtime) :
+    AlphaValuationAgreesOn larger support canonical runtime := by
+  intro identity name linked
+  exact
+    PLeaTTa.PrologRepresentativeActivationBridge.CanonicalRuntimeAgrees.mono
+      included (valuation linked)
+
+/-! ## Exact clause-body activation -/
+
+/-- One source-resolved retained clause activates the actual executable
+head, composes that new MGU over both carried states, and enters the exact
+clause body while preserving the single representative selected for the
+recursive call.
+
+The result is deliberately stronger than a bare `TaskPayloadAgrees`: the
+selected successor representative remains visible, so a later call or
+backtracking proof cannot silently choose a different variant witness. -/
+theorem
+    SupportedPreparedCandidateAgrees.unifyB_body_cumulativeWith_of_headResolution
+    {queryAlpha support : List (LogicVar × String)}
+    {oldCanonical residualRepresentative : TreeSubstitution}
+    {referenceBase : Substitution}
+    {cursor : PreparedCursor} {branch : ClauseBranch}
+    {clause : PLeaTTa.Clause}
+    {args : List Atom} {result : Atom} {rest : List PLeaTTa.Goal}
+    {binding : Subst} {qterm : Atom} {seed barrier : Nat}
+    {independentResult : Substitution}
+    (oldCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        queryAlpha support oldCanonical referenceBase binding
+        residualRepresentative)
+    (query :
+      RepresentativeNormalizedCallAgreesWith queryAlpha cursor
+        (args.map (PLeaTTa.subst binding))
+        (PLeaTTa.subst binding result)
+        residualRepresentative referenceBase)
+    (cursorBindingShape :
+      cursor.bindings =
+        TreeSubstitution.reify oldCanonical ++ referenceBase)
+    (oldCanonicalWellFormed : oldCanonical.WellFormed)
+    (wellFormed : cursor.WellFormed)
+    (member : branch ∈ cursor.remaining)
+    (agreement :
+      SupportedPreparedCandidateAgrees cursor.callGeneration
+        cursor.predicate cursor.arguments cursor.bindings branch clause)
+    (arity : clause.params.length = args.length)
+    (queryShared : SharedRuntimeAlpha queryAlpha)
+    (queryReferenceBelow :
+      GeneratedBelow cursor.reservationStart (queryAlpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ queryAlpha.map Prod.snd →
+        name ∈
+          resolutionOccupiedVars
+            (args.map (PLeaTTa.subst binding)) result rest binding qterm)
+    (highWater :
+      resolutionSeedHighWaterNames
+        (resolutionOccupiedVars
+          (args.map (PLeaTTa.subst binding)) result rest binding qterm) ≤
+        seed)
+    (live :
+      AlphaRuntimeNamesLive support
+        ((freshenResolutionClause
+            (args.map (PLeaTTa.subst binding)) args result rest binding
+            qterm seed barrier clause).body ++ rest)
+        qterm)
+    (resolved : HeadResolution branch independentResult) :
+    ∃ alpha sourceCanonical flattened generated installed,
+      SharedRuntimeAlpha alpha ∧
+      (∀ pair, pair ∈ queryAlpha → pair ∈ alpha) ∧
+      independentResult =
+        TreeSubstitution.reify (sourceCanonical ++ oldCanonical) ++
+          referenceBase ∧
+      OrderedTreeMgu
+        (denoteEquations branch.normalizedHeadEquations) sourceCanonical ∧
+      PLeaTTa.unifyTopExact
+          (.expr ((args ++ [result]).map (PLeaTTa.subst binding)))
+          (.expr
+            (((freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).params ++
+              [(freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).result]).map
+              (PLeaTTa.subst binding))) =
+        some generated ∧
+      PLeaTTa.unifyB binding (.expr (args ++ [result]))
+          (.expr
+            ((freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).params ++
+              [(freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).result])) =
+        some installed ∧
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support (sourceCanonical ++ oldCanonical) referenceBase
+        (PLeaTTa.trimFor
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body ++ rest)
+          qterm installed)
+        (flattened ++ residualRepresentative) ∧
+      TaskPayloadAgrees alpha support barrier
+        (sourceCanonical ++ oldCanonical) referenceBase independentResult
+        (PLeaTTa.trimFor
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body ++ rest)
+          qterm installed)
+        branch.body
+        (freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args result rest binding
+          qterm seed barrier clause).body := by
+  obtain
+    ⟨alpha, sourceCanonical, representative, _semanticCanonical,
+      flattened, generated, installed, shared, queryIncluded, bodyControl,
+      representativeExact, independentShape, sourceOrdered,
+      successorVariants, _semanticOrdered, _equationAgreement,
+      generatedExact, generatedAgreement, flattenedTopological,
+      ⟨generatedTopological⟩, generatedValuation, _flattenedMgu,
+      _flattenedFactors, _semanticFactors, installedExact,
+      installedShape⟩ :=
+    PLeaTTa.PrologRepresentativeActivationBridge.SupportedPreparedCandidateAgrees.unifyB_representativeWith_of_headResolution
+      (barrier := barrier) query wellFormed member agreement arity queryShared
+      queryReferenceBelow queryExecutableLive highWater resolved
+  have branchBindings : branch.bindings = cursor.bindings :=
+    PLeaTTa.PrologRepresentativeTaskActivationBridge.SupportedPreparedCandidateAgrees.branch_bindings_eq
+      agreement
+  have sourceWellFormed : sourceCanonical.WellFormed :=
+    sourceOrdered.binding_wellFormed
+      (denoteEquations_wellFormed branch.normalizedHeadEquations)
+  have compositeWellFormed :
+      (sourceCanonical ++ oldCanonical).WellFormed :=
+    sourceWellFormed.append oldCanonicalWellFormed
+  have compositeResultShape :
+      independentResult =
+        TreeSubstitution.reify (sourceCanonical ++ oldCanonical) ++
+          referenceBase := by
+    calc
+      independentResult =
+          TreeSubstitution.reify sourceCanonical ++ branch.bindings :=
+        independentShape
+      _ =
+          TreeSubstitution.reify sourceCanonical ++
+            (TreeSubstitution.reify oldCanonical ++ referenceBase) := by
+        rw [branchBindings, cursorBindingShape]
+      _ =
+          TreeSubstitution.reify (sourceCanonical ++ oldCanonical) ++
+            referenceBase := by
+        rw [
+          PLeaTTa.PrologSequentialMgu.TreeSubstitution.reify_append]
+        simp only [List.append_assoc]
+  have normalizedEquationShape :
+      denoteEquations branch.normalizedHeadEquations =
+        TreeSubstitution.applyEquations
+          (oldCanonical ++ Substitution.denote referenceBase)
+          (denoteEquations branch.headEquations) := by
+    rw [ClauseBranch.denote_normalizedHeadEquations, branchBindings,
+      cursorBindingShape, Substitution.denote_append,
+      TreeSubstitution.denote_reify oldCanonicalWellFormed]
+  have sourceEquationsAvoidOld :
+      TreeEquationsVariablesSatisfy
+        (fun identity =>
+          identity ∉ TreeSubstitution.keys oldCanonical)
+        (denoteEquations branch.normalizedHeadEquations) := by
+    rw [normalizedEquationShape]
+    exact
+      PLeaTTa.PrologMguComposition.TreeSubstitutionTopological.applyEquations_append_avoids
+        (older := Substitution.denote referenceBase)
+        oldCumulative.canonicalTopological
+        (denoteEquations branch.headEquations)
+  have sourceCompositeTopological :
+      TreeSubstitutionTopological (sourceCanonical ++ oldCanonical) :=
+    PrologSequentialMgu.OrderedTreeMgu.prepend_topological_of_equations_avoid
+      oldCumulative.canonicalTopological sourceOrdered
+      sourceEquationsAvoidOld
+  have cumulativeVariants :
+      TreeSubstitutionVariants
+        ((sourceCanonical ++ oldCanonical) ++
+          Substitution.denote referenceBase)
+        ((flattened ++ residualRepresentative) ++
+          Substitution.denote referenceBase) := by
+    have variants := successorVariants
+    rw [compositeResultShape, Substitution.denote_append,
+      TreeSubstitution.denote_reify compositeWellFormed,
+      representativeExact] at variants
+    simpa [List.append_assoc] using variants
+  have successorRepresentativeCovered :
+      TreeSubstitutionVariablesSatisfy
+        (AlphaCovers alpha)
+        (flattened ++ residualRepresentative) :=
+    treeSubstitutionVariablesSatisfy_append
+      generatedAgreement.variablesSatisfy
+      (PLeaTTa.PrologRepresentativeTaskActivationBridge.TreeSubstitutionVariablesSatisfy.monoAlpha
+        queryIncluded oldCumulative.representativeCovered)
+  rcases oldCumulative.runtimeTopological with ⟨bindingTopological⟩
+  have resolvedAvoids (atom : Atom) :
+      PLeaTTa.AtomAvoids binding (PLeaTTa.subst binding atom) := by
+    intro name nameMember
+    exact bindingTopological.subst_resolvesDomain
+      binding atom name nameMember
+  have leftAvoids :
+      PLeaTTa.AtomAvoids binding
+        (.expr ((args ++ [result]).map (PLeaTTa.subst binding))) := by
+    simpa only [PLeaTTa.subst_expr] using
+      resolvedAvoids (.expr (args ++ [result]))
+  have rightAvoids :
+      PLeaTTa.AtomAvoids binding
+        (.expr
+          (((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).params ++
+            [(freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).result]).map
+            (PLeaTTa.subst binding))) := by
+    simpa only [PLeaTTa.subst_expr] using
+      resolvedAvoids
+        (.expr
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).params ++
+            [(freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).result]))
+  have generatedAvoidsBinding :
+      PLeaTTa.SubstEntriesAvoid binding generated :=
+    PLeaTTa.unifyTopExact_avoidsExternal binding
+      (.expr ((args ++ [result]).map (PLeaTTa.subst binding)))
+      (.expr
+        (((freshenResolutionClause
+            (args.map (PLeaTTa.subst binding)) args result rest binding
+            qterm seed barrier clause).params ++
+          [(freshenResolutionClause
+            (args.map (PLeaTTa.subst binding)) args result rest binding
+            qterm seed barrier clause).result]).map
+          (PLeaTTa.subst binding)))
+      generated leftAvoids rightAvoids generatedExact
+  have installedShape' :
+      installed = installGenerated generated binding := by
+    cases generated with
+    | nil =>
+        simpa [installGenerated] using installedShape
+    | cons head tail =>
+        simpa [installGenerated] using installedShape
+  have installedTopological :
+      PLeaTTa.SubstTopological installed := by
+    rw [installedShape']
+    exact
+      installGeneratedTopological bindingTopological generatedTopological
+        generatedAvoidsBinding
+  have oldValuation :
+      AlphaValuationAgreesOn alpha support
+        (residualRepresentative ++ Substitution.denote referenceBase)
+        binding :=
+    PLeaTTa.PrologRepresentativeTaskActivationBridge.AlphaValuationAgreesOn.monoAlpha
+      queryIncluded oldCumulative.valuation
+  have installedValuation :
+      AlphaValuationAgreesOn alpha support
+        ((flattened ++ residualRepresentative) ++
+          Substitution.denote referenceBase)
+        installed := by
+    have lifted :
+        AlphaValuationAgreesOn alpha support
+          (flattened ++
+            (residualRepresentative ++ Substitution.denote referenceBase))
+          (installGenerated generated binding) :=
+      AlphaValuationAgreesOn.installGenerated_compose
+        oldValuation bindingTopological generatedTopological
+        generatedAvoidsBinding generatedValuation
+    intro identity name linked
+    rw [installedShape']
+    simpa [List.append_assoc] using lifted linked
+  have installedCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support (sourceCanonical ++ oldCanonical) referenceBase
+        installed (flattened ++ residualRepresentative) :=
+    ⟨cumulativeVariants, sourceCompositeTopological,
+      successorRepresentativeCovered, ⟨installedTopological⟩,
+      installedValuation⟩
+  have trimmedCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support (sourceCanonical ++ oldCanonical) referenceBase
+        (PLeaTTa.trimFor
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body ++ rest)
+          qterm installed)
+        (flattened ++ residualRepresentative) :=
+    installedCumulative.trimFor live
+  have task :
+      TaskPayloadAgrees alpha support barrier
+        (sourceCanonical ++ oldCanonical) referenceBase independentResult
+        (PLeaTTa.trimFor
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body ++ rest)
+          qterm installed)
+        branch.body
+        (freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args result rest binding
+          qterm seed barrier clause).body :=
+    ⟨shared, compositeWellFormed, compositeResultShape,
+      NormalizedAlphaGoalsAgree.ofAlphaGoalsAgree bodyControl,
+      trimmedCumulative.weak⟩
+  exact
+    ⟨alpha, sourceCanonical, flattened, generated, installed,
+      shared, queryIncluded, compositeResultShape, sourceOrdered,
+      generatedExact, installedExact, trimmedCumulative, task⟩
+
+/-! ## Anti-vacuity: previously bound support really composes -/
+
+private def boundWitnessX : LogicVar := .source "$bound_x"
+private def boundWitnessY : LogicVar := .source "$bound_y"
+private def boundWitnessAlpha : List (LogicVar × String) :=
+  [(boundWitnessX, "$runtime_x"), (boundWitnessY, "$runtime_y")]
+private def boundWitnessSupport : List (LogicVar × String) :=
+  [(boundWitnessX, "$runtime_x")]
+private def boundWitnessOldCanonical : TreeSubstitution :=
+  [(boundWitnessX, .variable boundWitnessY)]
+private def boundWitnessExtension : TreeSubstitution :=
+  [(boundWitnessY, .node (.atom "done") [])]
+private def boundWitnessBase : Subst :=
+  [("$runtime_x", .var "$runtime_y")]
+private def boundWitnessGenerated : Subst :=
+  [("$runtime_y", .sym "done")]
+
+/-- A supported runtime name may already be bound and still compose
+correctly through a later MGU.
+
+Here the older states agree on `X ↦ Y` / `x ↦ y`; the new blocks agree on
+`Y ↦ done` / `y ↦ done`.  Eager installation therefore carries the observed
+`x` all the way to `done`, even though the conservative
+`AlphaRuntimeNamesAvoid` premise is false for `x`. -/
+theorem bound_observable_value_composes_through_later_mgu :
+    ¬ AlphaRuntimeNamesAvoid boundWitnessSupport boundWitnessBase ∧
+    AlphaValuationAgreesOn boundWitnessAlpha boundWitnessSupport
+      (boundWitnessExtension ++ boundWitnessOldCanonical)
+      (installGenerated boundWitnessGenerated boundWitnessBase) := by
+  have baseTopological :
+      PLeaTTa.SubstTopological boundWitnessBase :=
+    PLeaTTa.SubstTopological.cons_of_fresh []
+      PLeaTTa.emptySubstTopological "$runtime_x" (.var "$runtime_y")
+      (by simp [Metta.Subst.lookup])
+      (by simp [Atom.vars])
+      (by simp [PLeaTTa.AtomAvoids, Metta.Subst.lookup])
+  have generatedTopological :
+      PLeaTTa.SubstTopological boundWitnessGenerated :=
+    PLeaTTa.SubstTopological.cons_of_fresh []
+      PLeaTTa.emptySubstTopological "$runtime_y" (.sym "done")
+      (by simp [Metta.Subst.lookup])
+      (by simp [Atom.vars])
+      (by simp [PLeaTTa.AtomAvoids, Metta.Subst.lookup])
+  have generatedAvoidsBase :
+      PLeaTTa.SubstEntriesAvoid boundWitnessBase boundWitnessGenerated := by
+    intro entry member
+    have entryEq : entry = ("$runtime_y", .sym "done") := by
+      simpa [boundWitnessGenerated] using member
+    subst entry
+    exact
+      ⟨by simp [boundWitnessBase, Metta.Subst.lookup],
+        by
+          intro name member
+          simp [Atom.vars] at member⟩
+  have oldCanonicalX :
+      TreeSubstitution.apply boundWitnessOldCanonical
+          (.variable boundWitnessX) =
+        .variable boundWitnessY := by
+    simp [boundWitnessOldCanonical, boundWitnessX, boundWitnessY,
+      TreeSubstitution.apply, Tree.instantiateOne]
+  have extensionX :
+      TreeSubstitution.apply boundWitnessExtension
+          (.variable boundWitnessX) =
+        .variable boundWitnessX := by
+    simp [boundWitnessExtension, boundWitnessX, boundWitnessY,
+      TreeSubstitution.apply, Tree.instantiateOne]
+  have extensionY :
+      TreeSubstitution.apply boundWitnessExtension
+          (.variable boundWitnessY) =
+        .node (.atom "done") [] := by
+    simp [boundWitnessExtension, boundWitnessY,
+      TreeSubstitution.apply, Tree.instantiateOne]
+  have baseY :
+      PLeaTTa.subst boundWitnessBase (.var "$runtime_y") =
+        .var "$runtime_y" :=
+    PLeaTTa.subst_var_of_lookup_none boundWitnessBase "$runtime_y" (by
+      simp [boundWitnessBase, Metta.Subst.lookup])
+  have baseX :
+      PLeaTTa.subst boundWitnessBase (.var "$runtime_x") =
+        .var "$runtime_y" := by
+    rw [baseTopological.subst_var_of_lookup
+      boundWitnessBase "$runtime_x" (.var "$runtime_y")
+      (by simp [boundWitnessBase, Metta.Subst.lookup])]
+    exact baseY
+  have generatedX :
+      PLeaTTa.subst boundWitnessGenerated (.var "$runtime_x") =
+        .var "$runtime_x" :=
+    PLeaTTa.subst_var_of_lookup_none
+      boundWitnessGenerated "$runtime_x" (by
+        simp [boundWitnessGenerated, Metta.Subst.lookup])
+  have generatedY :
+      PLeaTTa.subst boundWitnessGenerated (.var "$runtime_y") =
+        .sym "done" :=
+    PLeaTTa.subst_var_of_lookup_sym
+      boundWitnessGenerated "$runtime_y" "done" (by
+        simp [boundWitnessGenerated, Metta.Subst.lookup])
+  have oldValuation :
+      AlphaValuationAgreesOn boundWitnessAlpha boundWitnessSupport
+        boundWitnessOldCanonical boundWitnessBase := by
+    intro identity name linked
+    have linkedEq :
+        (identity, name) = (boundWitnessX, "$runtime_x") := by
+      simpa [boundWitnessSupport] using linked
+    have identityEq := congrArg Prod.fst linkedEq
+    have nameEq := congrArg Prod.snd linkedEq
+    simp only at identityEq nameEq
+    subst identity
+    subst name
+    rw [oldCanonicalX, baseX]
+    exact
+      CanonicalRuntimeAgrees.variable (alpha := boundWitnessAlpha)
+        (by
+          show
+            (boundWitnessY, "$runtime_y") ∈ boundWitnessAlpha
+          simp [boundWitnessAlpha])
+  have extensionValuation :
+      AlphaValuationAgrees boundWitnessAlpha boundWitnessExtension
+        boundWitnessGenerated := by
+    intro identity name linked
+    simp only [boundWitnessAlpha, List.mem_cons, List.not_mem_nil,
+      or_false] at linked
+    rcases linked with linked | linked
+    · have identityEq := congrArg Prod.fst linked
+      have nameEq := congrArg Prod.snd linked
+      simp only at identityEq nameEq
+      subst identity
+      subst name
+      rw [extensionX, generatedX]
+      exact
+        CanonicalRuntimeAgrees.variable (alpha := boundWitnessAlpha)
+          (by
+            show
+              (boundWitnessX, "$runtime_x") ∈ boundWitnessAlpha
+            simp [boundWitnessAlpha])
+    · have identityEq := congrArg Prod.fst linked
+      have nameEq := congrArg Prod.snd linked
+      simp only at identityEq nameEq
+      subst identity
+      subst name
+      rw [extensionY, generatedY]
+      exact
+        CanonicalRuntimeAgrees.atom
+          (alpha := boundWitnessAlpha) (name := "done")
+          (by decide) (by decide)
+  refine ⟨?_, ?_⟩
+  · intro avoids
+    have lookupNone :=
+      avoids
+        (identity := boundWitnessX) (name := "$runtime_x")
+        (by simp [boundWitnessSupport])
+    simp [boundWitnessBase, Metta.Subst.lookup] at lookupNone
+  · exact
+      AlphaValuationAgreesOn.installGenerated_compose
+        oldValuation baseTopological generatedTopological
+        generatedAvoidsBase extensionValuation
+
+end PLeaTTa.PrologRepresentativeTaskActivationBridge

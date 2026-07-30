@@ -1141,15 +1141,9 @@ theorem TaskPayloadAgrees.afterUnifySuccess
       generated leftAvoids rightAvoids generatedExact
   have installedTopological :
       PLeaTTa.SubstTopological installed := by
-    cases generated with
-    | nil =>
-        simpa [installed, PrologMguComposition.installGenerated] using
-          runtimeTopological
-    | cons head tail =>
-        simpa [installed, PrologMguComposition.installGenerated] using
-          PLeaTTa.SubstTopological.compose_of_avoids
-            runtime (head :: tail) runtimeTopological generatedTopological
-            generatedAvoidsRuntime
+    simpa [installed] using
+      PrologMguComposition.installGeneratedTopological
+        runtimeTopological generatedTopological generatedAvoidsRuntime
   have sourceEquationsAvoidCanonical :
       TreeEquationsVariablesSatisfy
         (fun identity =>
@@ -1200,68 +1194,17 @@ theorem TaskPayloadAgrees.afterUnifySuccess
         ((executableCanonical ++ representative) ++
           Substitution.denote referenceBase)
         installed := by
+    have lifted :
+        AlphaValuationAgreesOn alpha support
+          (executableCanonical ++
+            (representative ++ Substitution.denote referenceBase))
+          (PrologMguComposition.installGenerated generated runtime) :=
+      PLeaTTa.PrologMguComposition.AlphaValuationAgreesOn.installGenerated_extension
+        agreement.alphaShared supportIncluded oldValuation
+        runtimeTopological generatedTopological generatedAvoidsRuntime
+        runtimeAvoids generatedValuation
     intro identity name linked
-    have linkedAlpha : (identity, name) ∈ alpha :=
-      supportIncluded (identity, name) linked
-    have runtimeFixed :
-        PLeaTTa.subst runtime (.var name) = .var name :=
-      PLeaTTa.subst_var_of_lookup_none runtime name (runtimeAvoids linked)
-    have oldAgreement :
-        CanonicalRuntimeAgrees alpha
-          (TreeSubstitution.apply
-            (representative ++ Substitution.denote referenceBase)
-            (.variable identity))
-          (.var name) := by
-      simpa [runtimeFixed] using oldValuation linked
-    obtain ⟨oldIdentity, oldShape, oldLinked⟩ :=
-      CanonicalRuntimeAgrees.of_runtime_variable oldAgreement
-    have oldIdentityEq : oldIdentity = identity :=
-      agreement.alphaShared.backward oldLinked linkedAlpha
-    have oldFixed :
-        TreeSubstitution.apply
-            (representative ++ Substitution.denote referenceBase)
-            (.variable identity) =
-          .variable identity := by
-      rw [oldShape, oldIdentityEq]
-    have runtimeAtomAvoids :
-        PLeaTTa.AtomAvoids runtime (.var name) := by
-      intro candidate member
-      simp only [Metta.Atom.vars, List.mem_singleton] at member
-      subst candidate
-      exact runtimeAvoids linked
-    have installedEqGenerated :
-        PLeaTTa.subst installed (.var name) =
-          PLeaTTa.subst generated (.var name) := by
-      cases generated with
-      | nil =>
-          simp only [installed, PrologMguComposition.installGenerated]
-          rw [PLeaTTa.subst_eq_self_of_domain_free
-            runtime (.var name) runtimeAtomAvoids]
-          simp
-      | cons head tail =>
-          simpa [installed, PrologMguComposition.installGenerated] using
-            PLeaTTa.PersistentSubst.subst_compose_eq_generated_of_avoids
-              runtime (head :: tail) runtimeTopological
-              generatedTopological generatedAvoidsRuntime runtimeAtomAvoids
-    have canonicalEq :
-        TreeSubstitution.apply
-            ((executableCanonical ++ representative) ++
-              Substitution.denote referenceBase)
-            (.variable identity) =
-          TreeSubstitution.apply executableCanonical
-            (.variable identity) := by
-      simp only [TreeSubstitution.apply_append]
-      have oldFixedExpanded :
-          TreeSubstitution.apply representative
-              (TreeSubstitution.apply
-                (Substitution.denote referenceBase)
-                (.variable identity)) =
-            .variable identity := by
-        simpa only [TreeSubstitution.apply_append] using oldFixed
-      exact congrArg
-        (TreeSubstitution.apply executableCanonical) oldFixedExpanded
-    rw [canonicalEq, installedEqGenerated]
-    exact generatedValuation linkedAlpha
+    simpa [installed, List.append_assoc] using lifted linked
   have installedCumulative :
       AlphaCumulativeResidualVariantAgreesOn
         alpha support (sourceExtension ++ canonical)
