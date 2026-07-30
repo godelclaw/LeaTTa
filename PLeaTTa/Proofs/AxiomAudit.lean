@@ -10,6 +10,7 @@ import PLeaTTa.Proofs.PrologCallEntryBridge
 import PLeaTTa.Proofs.PrologCallStepBridge
 import PLeaTTa.Proofs.PrologOrdinaryStepBridge
 import PLeaTTa.Proofs.PrologCanonicalMguSimulation
+import PLeaTTa.Proofs.PrologRuntimeDecode
 import PLeaTTa.Proofs.PrologSequentialMgu
 import PLeaTTa.Proofs.PrologPrefilterBridge
 import PLeaTTa.Proofs.PrologPrefilterScanBridge
@@ -1027,6 +1028,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologSequentialMgu.TreeIsRelativeMgu.variants_of_base_variants
 #print axioms PLeaTTa.PrologSequentialMgu.TreeFactorsThrough.appendRight
 #print axioms PLeaTTa.PrologSequentialMgu.TreeSubstitutionVariants.appendRight
+#print axioms PLeaTTa.PrologSequentialMgu.TreeSubstitutionVariants.applied_has_unifier_iff
 #print axioms PLeaTTa.PrologSequentialMgu.TreeSubstitution.reify_append
 #print axioms PLeaTTa.PrologSequentialMgu.OrderedTreeMgu.prepend_topological_of_equations_avoid
 #print axioms PLeaTTa.PrologSequentialMgu.TreeIsMgu.relativeCompose
@@ -1073,6 +1075,16 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologCanonicalRuntimeReading.partial_value_is_admitted
 #print axioms PLeaTTa.PrologCanonicalRuntimeReading.partial_runtime_list_reading_is_excluded
 #print axioms PLeaTTa.PrologCanonicalRuntimeReading.source_partial_list_is_distinctly_admitted
+#print axioms PLeaTTa.PrologRuntimeDecode.RuntimeShape.ofAtom_eq_of_equivalent
+#print axioms PLeaTTa.PrologRuntimeDecode.decodeRuntimeAtom_eq_of_equivalent
+#print axioms PLeaTTa.PrologRuntimeDecode.decodeAlphaAtom_eq_of_reading
+#print axioms PLeaTTa.PrologRuntimeDecode.decodedGroundValuation_topological
+#print axioms PLeaTTa.PrologRuntimeDecode.decodedGroundValuation_apply_of_reading
+#print axioms PLeaTTa.PrologRuntimeDecode.decodedGroundValuation_unifies_of_equivalent
+#print axioms PLeaTTa.PrologRuntimeDecode.orderedTreeMgu_exists_of_runtime_mgu
+#print axioms PLeaTTa.PrologRuntimeDecode.computesDenotationalMgu_exists_of_runtime_mgu
+#print axioms PLeaTTa.PrologRuntimeDecode.unifyResolution_exists_of_runtime_mgu
+#print axioms PLeaTTa.PrologRuntimeDecode.broad_true_alias_is_not_failure_reflecting
 #print axioms PLeaTTa.chainListM_partialC
 #print axioms PLeaTTa.nilA_ne_source_nil
 #print axioms PLeaTTa.chainListM_source_nil
@@ -1354,6 +1366,11 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.unifySuccessor_persistent
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.executable_unify_step
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.unify_step_correspondence
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.TaskPayloadAgrees.unifyResolution_of_runtime_success
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.TaskPayloadAgrees.unifyB_eq_none_of_no_resolution
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.unifyFailureSuccessor_persistent
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.executable_unify_failure_step
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.unify_failure_step_correspondence
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.executable_unify_spellings_are_distinct
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.three_administrative_steps_are_exact
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.three_administrative_steps_are_not_two

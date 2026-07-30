@@ -100,6 +100,66 @@ theorem appendRight
   ⟨TreeFactorsThrough.appendRight variants.1 carried,
     TreeFactorsThrough.appendRight variants.2 carried⟩
 
+/-- One factorization direction transports existence of a residual unifier
+from the more-specific carried base to the more-general one. -/
+private theorem applied_has_unifier_of_factors
+    {specificBase generalBase : TreeSubstitution}
+    (factors : TreeFactorsThrough specificBase generalBase)
+    (equations : List TreeEquation)
+    (specificHas :
+      ∃ candidate,
+        TreeUnifiesEquations candidate
+          (TreeSubstitution.applyEquations specificBase equations)) :
+    ∃ candidate,
+      TreeUnifiesEquations candidate
+        (TreeSubstitution.applyEquations generalBase equations) := by
+  rcases specificHas with ⟨specificCandidate, specificUnifies⟩
+  have cumulativeUnifies :
+      TreeUnifiesEquations (specificCandidate ++ specificBase) equations :=
+    (PrologMguDirectSimulation.treeUnifiesEquations_applyEquations_iff
+      specificCandidate specificBase equations).1 specificUnifies
+  have cumulativeFactorsGeneral :
+      TreeFactorsThrough
+        (specificCandidate ++ specificBase) generalBase := by
+    exact TreeFactorsThrough.trans
+      ⟨specificCandidate, fun tree =>
+        TreeSubstitution.apply_append specificCandidate specificBase tree⟩
+      factors
+  rcases cumulativeFactorsGeneral with
+    ⟨generalCandidate, generalFactors⟩
+  refine ⟨generalCandidate, ?_⟩
+  apply
+    (PrologMguDirectSimulation.treeUnifiesEquations_applyEquations_iff
+      generalCandidate generalBase equations).2
+  intro equation member
+  rw [TreeSubstitution.apply_append,
+    TreeSubstitution.apply_append]
+  rw [← generalFactors equation.1, ← generalFactors equation.2]
+  exact cumulativeUnifies equation member
+
+/-- Variant carried substitutions leave exactly the same residual
+unification problems solvable.
+
+This is deliberately an existence statement rather than equality of the two
+normalized equation lists.  Given a residual solution over one base, compose
+it with that base to obtain a cumulative solution of the original equations.
+Mutual factorization then re-expresses that cumulative solution through the
+other base, and the resulting residual solves the other normalized problem.
+No residual-variable orientation or association-list spelling is chosen. -/
+theorem applied_has_unifier_iff
+    {firstBase secondBase : TreeSubstitution}
+    (variants : TreeSubstitutionVariants firstBase secondBase)
+    (equations : List TreeEquation) :
+    (∃ candidate,
+        TreeUnifiesEquations candidate
+          (TreeSubstitution.applyEquations firstBase equations)) ↔
+      ∃ candidate,
+        TreeUnifiesEquations candidate
+          (TreeSubstitution.applyEquations secondBase equations) := by
+  constructor
+  · exact applied_has_unifier_of_factors variants.1 equations
+  · exact applied_has_unifier_of_factors variants.2 equations
+
 end TreeSubstitutionVariants
 
 /-- Canonical reification preserves the stored extension-before-base order

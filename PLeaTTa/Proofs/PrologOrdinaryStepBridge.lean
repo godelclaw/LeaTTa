@@ -13,6 +13,7 @@ Main exports:
 -/
 import PLeaTTa.Proofs.PrologActivationUnifierBridge
 import PLeaTTa.Proofs.PrologCanonicalMguSimulation
+import PLeaTTa.Proofs.PrologRuntimeDecode
 import PLeaTTa.Proofs.PrologSequentialMgu
 import PLeaTTa.Proofs.PrologStateBridge
 import PLeaTTa.Proofs.DemandDrivenCallStep
@@ -25,6 +26,7 @@ open PeTTaSpec.PrologCore.GoalSemantics
 open PeTTaSpec.PrologCore.OpenSubstitution
 open PrologStateBridge
 open PrologGoalAlpha
+open PrologCanonicalRuntimeReading
 open PrologMguBridge
 open PrologMguComposition
 open PrologMguDirectSimulation
@@ -32,6 +34,7 @@ open PrologMguOpenAgreement
 open PrologMguTopology
 open PrologMguVariant
 open PrologPrefilterBridge
+open PrologRuntimeDecode
 open PrologSequentialMgu
 open PrologActivationUnifierBridge
 open PrologCanonicalMguSimulation
@@ -442,6 +445,31 @@ theorem TaskPayloadAgrees.cumulativeVariants
     ⟨representative, variants, canonicalTopological,
       runtimeTopological, valuation⟩
 
+/-- Exact source-guided readings of the two executable equality operands
+against one hidden cumulative representative.
+
+The ordinary payload relation intentionally exposes only the broader
+forward runtime agreement, which admits PeTTa aliases such as source
+`true` and source `True` at the same executable atom.  Failure reflection
+needs the strictly invertible reading instead.  This certificate names no
+preferred residual-MGU orientation: it merely records that one
+representative variant of the carried source binding gives the exact two
+runtime operands. -/
+def StrictUnifyOperands
+    (alpha : List (LogicVar × String))
+    (sourceBase : TreeSubstitution)
+    (runtime : Metta.Subst)
+    (left right : Term)
+    (executableLeft executableRight : Metta.Atom) : Prop :=
+  ∃ representative : TreeSubstitution,
+    TreeSubstitutionVariants sourceBase representative ∧
+      CanonicalRuntimeReading alpha
+        (TreeSubstitution.apply representative (Term.denote left))
+        (PLeaTTa.subst runtime executableLeft) ∧
+      CanonicalRuntimeReading alpha
+        (TreeSubstitution.apply representative (Term.denote right))
+        (PLeaTTa.subst runtime executableRight)
+
 /-- One primitive source equality, presented directly in the canonical
 equation space after applying the carried binding. -/
 def carriedUnifyEquation
@@ -449,6 +477,108 @@ def carriedUnifyEquation
     List TreeEquation :=
   [(TreeSubstitution.apply base (Term.denote left),
     TreeSubstitution.apply base (Term.denote right))]
+
+/-- Executable primitive-unification success reflects to an actual source
+`UnifyResolution` under the strict operand certificate.
+
+The generated runtime MGU first supplies a concrete canonical unifier over
+the representative-applied operands.  Semantic variation of the cumulative
+bases transports existence of that residual unifier to the source-applied
+operands.  Completeness of the independent ordered algorithm then constructs
+the typed source substitution.  No equality of residual association lists
+or chosen alias orientation is assumed. -/
+theorem TaskPayloadAgrees.unifyResolution_of_runtime_success
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Metta.Subst}
+    {left right : Term}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    {executableLeft executableRight : Metta.Atom}
+    (agreement :
+      TaskPayloadAgrees alpha support barrier canonical referenceBase current
+        runtime (.unify left right :: references) executables)
+    (strict :
+      StrictUnifyOperands alpha
+        (canonical ++ Substitution.denote referenceBase)
+        runtime left right executableLeft executableRight)
+    {installed : Metta.Subst}
+    (returned :
+      PLeaTTa.unifyB runtime executableLeft executableRight =
+        some installed) :
+    ∃ result, UnifyResolution current left right result := by
+  rcases strict with
+    ⟨representative, baseVariants, leftReading, rightReading⟩
+  obtain
+    ⟨generated, _generatedExact, runtimeMgu, _installedShape⟩ :=
+    PLeaTTa.unifyB_result_has_generated_mgu
+      runtime executableLeft executableRight installed returned
+  obtain ⟨representativeExtension, representativeOrdered⟩ :=
+    orderedTreeMgu_exists_of_runtime_mgu
+      agreement.alphaShared leftReading rightReading runtimeMgu
+  have representativeHas :
+      ∃ candidate,
+        TreeUnifiesEquations candidate
+          (TreeSubstitution.applyEquations representative
+            [(Term.denote left, Term.denote right)]) := by
+    refine ⟨representativeExtension, ?_⟩
+    simpa [TreeSubstitution.applyEquations] using
+      representativeOrdered.isMostGeneral.1
+  have sourceHas :
+      ∃ candidate,
+        TreeUnifiesEquations candidate
+          (TreeSubstitution.applyEquations
+            (canonical ++ Substitution.denote referenceBase)
+            [(Term.denote left, Term.denote right)]) :=
+    (PrologSequentialMgu.TreeSubstitutionVariants.applied_has_unifier_iff
+      baseVariants [(Term.denote left, Term.denote right)]).2
+        representativeHas
+  obtain ⟨sourceCandidate, sourceUnifies⟩ := sourceHas
+  obtain ⟨sourceExtension, sourceOrdered⟩ :=
+    OrderedTreeMgu.complete sourceCandidate sourceUnifies
+  let extension := TreeSubstitution.reify sourceExtension
+  have computed :
+      ComputesDenotationalMgu
+        [(current.applyTerm left, current.applyTerm right)] extension := by
+    refine ⟨sourceExtension, ?_, rfl⟩
+    simpa only [denoteEquations, List.map_singleton,
+      TreeSubstitution.applyEquations,
+      Substitution.denote_applyTerm, agreement.denoteCurrent] using
+      sourceOrdered
+  exact
+    ⟨extension ++ current,
+      ⟨extension, computed, rfl⟩⟩
+
+/-- A source primitive-equality clash forces the actual executable
+`unifyB` call to fail.  This is the contrapositive use of semantic runtime
+success reflection; it does not inspect or duplicate the executable
+unification algorithm. -/
+theorem TaskPayloadAgrees.unifyB_eq_none_of_no_resolution
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Metta.Subst}
+    {left right : Term}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    {executableLeft executableRight : Metta.Atom}
+    (agreement :
+      TaskPayloadAgrees alpha support barrier canonical referenceBase current
+        runtime (.unify left right :: references) executables)
+    (strict :
+      StrictUnifyOperands alpha
+        (canonical ++ Substitution.denote referenceBase)
+        runtime left right executableLeft executableRight)
+    (clash : ¬ ∃ result, UnifyResolution current left right result) :
+    PLeaTTa.unifyB runtime executableLeft executableRight = none := by
+  cases returned :
+      PLeaTTa.unifyB runtime executableLeft executableRight with
+  | none =>
+      rfl
+  | some installed =>
+      exact False.elim
+        (clash
+          (agreement.unifyResolution_of_runtime_success
+            strict returned))
 
 /-- A real source `UnifyResolution` exposes the well-formed ordered canonical
 extension which it prepends to the carried task binding.  The post-binding
@@ -1019,6 +1149,24 @@ def ReadyUnifyContinuationSafe
       AlphaRuntimeNamesAvoid support runtime ∧
       AlphaRuntimeNamesLive support rest state.control.qterm
 
+/-- Strict, invertible readings for whichever executable equality spelling
+is actually at the ready state's head.  Quantifying over head decomposition
+ties the certificate to `state.control.cur`; it cannot certify unrelated
+atoms beside the real transition. -/
+def ReadyUnifyOperandsStrict
+    (alpha : List (LogicVar × String))
+    (sourceBase : TreeSubstitution)
+    (left right : Term) (state : OpenConf) : Prop :=
+  ∀ (spelling :
+        NormalizedAlphaGoalsAgree.ExecutableUnifySpelling)
+      (executableLeft executableRight : Metta.Atom)
+      (executableTail : List PLeaTTa.Goal) (runtime : Metta.Subst),
+    state.control.cur =
+        some (spelling.goal executableLeft executableRight ::
+          executableTail, runtime) →
+      StrictUnifyOperands alpha sourceBase runtime left right
+        executableLeft executableRight
+
 /-- Clause activation plus the persistent state bridge constructs the actual
 ready-task relation consumed by ordinary-step simulation. -/
 theorem ReadyTaskRelates.ofActivated
@@ -1389,6 +1537,156 @@ theorem unify_step_correspondence
       ?_, unifySuccessor_current state executableTail installed,
       nextPayload⟩
   simpa using persistent
+
+/-! ## Primitive equality failure: semantic reflection and control mismatch -/
+
+/-- Exact executable successor of one failed primitive equality.  The sealed
+machine immediately pulls the next retained alternative; this is deliberately
+not identified with the independent leaf's branch-completion terminal. -/
+def unifyFailureSuccessor (state : OpenConf) : OpenConf :=
+  OpenConf.ofConf
+    (PLeaTTa.pull { state.toConf with cur := none })
+    state.frames
+
+/-- Pulling after primitive-unification failure changes only backtrackable
+control.  The dynamic world and global high-water remain current. -/
+@[simp] theorem unifyFailureSuccessor_persistent (state : OpenConf) :
+    (unifyFailureSuccessor state).persistent = state.persistent := by
+  have world :
+      (PLeaTTa.pull { state.toConf with cur := none }).world =
+        state.toConf.world := by
+    unfold PLeaTTa.pull
+    generalize outcomeEq :
+      PLeaTTa.pullAuxTracked state.toConf.barriers state.toConf.alts =
+        outcome
+    rcases outcome with ⟨outcome, barriers⟩
+    cases outcome <;> rfl
+  have counter :
+      (PLeaTTa.pull { state.toConf with cur := none }).counter =
+        state.toConf.counter := by
+    unfold PLeaTTa.pull
+    generalize outcomeEq :
+      PLeaTTa.pullAuxTracked state.toConf.barriers state.toConf.alts =
+        outcome
+    rcases outcome with ⟨outcome, barriers⟩
+    cases outcome <;> rfl
+  change
+    persistentOf (PLeaTTa.pull { state.toConf with cur := none }) =
+      state.persistent
+  unfold persistentOf
+  rw [world, counter]
+  cases state with
+  | mk persistent control frames =>
+      cases persistent
+      rfl
+
+/-- Either sealed equality spelling takes exactly one failure transition in
+the findall/call-fine lane.  The target includes the sealed machine's eager
+DFS pull rather than fabricating a branch-completion state. -/
+theorem executable_unify_failure_step
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (state : OpenConf)
+    (spelling : NormalizedAlphaGoalsAgree.ExecutableUnifySpelling)
+    (left right : Metta.Atom) (rest : List PLeaTTa.Goal)
+    (runtime : Metta.Subst)
+    (head :
+      state.control.cur =
+        some (spelling.goal left right :: rest, runtime))
+    (failed : PLeaTTa.unifyB runtime left right = none) :
+    DemandDrivenCallStep.Step prog gt (.ready state)
+      (.ready (unifyFailureSuccessor state)) := by
+  have sealedHead :
+      state.toConf.cur =
+        some (spelling.goal left right :: rest, runtime) := by
+    simpa [OpenConf.toConf, Control.toConf] using head
+  have notFindall : ¬ findallRunHead state.toConf := by
+    cases spelling <;> simp
+      [findallRunHead,
+        NormalizedAlphaGoalsAgree.ExecutableUnifySpelling.goal,
+        sealedHead]
+  have notLocalCall :
+      ¬ DemandDrivenCallStep.LocalResolveHead state := by
+    cases spelling <;> simp
+      [DemandDrivenCallStep.LocalResolveHead,
+        NormalizedAlphaGoalsAgree.ExecutableUnifySpelling.goal,
+        sealedHead]
+  apply DemandDrivenCallStep.Step.ordinary state
+    (unifyFailureSuccessor state) notLocalCall
+  apply DemandDrivenStep.Step.ordinary state
+    (unifyFailureSuccessor state).toConf notFindall
+  cases spelling with
+  | equality =>
+      simpa [unifyFailureSuccessor,
+        NormalizedAlphaGoalsAgree.ExecutableUnifySpelling.goal] using
+        (PLeaTTa.Step.eq_fail state.toConf left right rest runtime
+          sealedHead failed)
+  | compilerAlias =>
+      simpa [unifyFailureSuccessor,
+        NormalizedAlphaGoalsAgree.ExecutableUnifySpelling.goal] using
+        (PLeaTTa.Step.compileAlias_fail state.toConf left right rest runtime
+          sealedHead failed)
+
+/-- Paired failed primitive-unification transitions on the actual task
+states.
+
+Strict source-guided operand readings make executable success reflect to a
+source `UnifyResolution`; the source clash therefore forces the exact sealed
+failure constructor.  The result intentionally records, rather than erases,
+the remaining granularity mismatch: the independent leaf emits branch
+completion and becomes terminal, while the sealed machine pulls its next
+alternative inside the same step.  Choice/resource correspondence must close
+that wrapper seam before a whole-state bisimulation theorem is claimed. -/
+theorem unify_failure_step_correspondence
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {session : Session} {scope : CutScopeId} {current : Substitution}
+    {left right : Term}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {state : OpenConf}
+    (agreement :
+      ReadyTaskRelates freshFrontier alpha support barrier canonical
+        referenceBase session current
+        (.unify left right :: references) state)
+    (strict :
+      ReadyUnifyOperandsStrict alpha
+        (canonical ++ Substitution.denote referenceBase)
+        left right state)
+    (clash : ¬ ∃ result, UnifyResolution current left right result) :
+    ∃ (spelling :
+          NormalizedAlphaGoalsAgree.ExecutableUnifySpelling)
+        (executableLeft executableRight : Metta.Atom)
+        (executableTail : List PLeaTTa.Goal) (runtime : Metta.Subst),
+      state.control.cur =
+          some (spelling.goal executableLeft executableRight ::
+            executableTail, runtime) ∧
+        RawStep session
+          (.task scope (.unify left right :: references) current)
+          [.completed] .none session (.terminal .completed) ∧
+        DemandDrivenCallStep.Step prog gt (.ready state)
+          (.ready (unifyFailureSuccessor state)) ∧
+        (unifyFailureSuccessor state).persistent =
+          state.persistent := by
+  rcases agreement with
+    ⟨executables, runtime, _persistent, currentControl, payload⟩
+  rcases payload.control.unifyHead with
+    ⟨spelling, executableLeft, executableRight, executableTail,
+      executableShape, _leftAgreement, _rightAgreement, _tailControl⟩
+  subst executables
+  have strictOperands :=
+    strict spelling executableLeft executableRight executableTail runtime
+      currentControl
+  have failed :=
+    payload.unifyB_eq_none_of_no_resolution strictOperands clash
+  exact
+    ⟨spelling, executableLeft, executableRight, executableTail, runtime,
+      currentControl,
+      RawStep.taskUnifyFailure scope left right references current session
+        clash,
+      executable_unify_failure_step state spelling executableLeft
+        executableRight executableTail runtime currentControl failed,
+      unifyFailureSuccessor_persistent state⟩
 
 /-! ## Anti-vacuity: exact count and strictness -/
 

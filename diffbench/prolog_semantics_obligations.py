@@ -83,6 +83,9 @@ PROLOG_CANONICAL_MGU_SIMULATION = (
 PROLOG_SEQUENTIAL_MGU = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologSequentialMgu.lean"
 )
+PROLOG_RUNTIME_DECODE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologRuntimeDecode.lean"
+)
 PROLOG_ACTIVATION_UNIFIER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationUnifierBridge.lean"
 )
@@ -192,6 +195,8 @@ def check() -> list[str]:
             digest(PROLOG_CANONICAL_MGU_SIMULATION),
         "prolog_sequential_mgu_sha256":
             digest(PROLOG_SEQUENTIAL_MGU),
+        "prolog_runtime_decode_sha256":
+            digest(PROLOG_RUNTIME_DECODE),
         "prolog_activation_unifier_bridge_sha256":
             digest(PROLOG_ACTIVATION_UNIFIER_BRIDGE),
         "prolog_ordinary_step_bridge_sha256":
