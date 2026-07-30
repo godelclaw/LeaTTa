@@ -56,8 +56,10 @@ def ActivatedTaskAgrees
     (canonical : TreeSubstitution) (referenceBase : Substitution)
     (runtime : Subst) (entered : EnteredClause)
     (executableGoals : List PLeaTTa.Goal) : Prop :=
-  entered.bindings =
-      TreeSubstitution.reify canonical ++ referenceBase ∧
+  SharedRuntimeAlpha alpha ∧
+    canonical.WellFormed ∧
+    entered.bindings =
+        TreeSubstitution.reify canonical ++ referenceBase ∧
     AlphaGoalsCumulativeResidualVariantAgreesOn
       alpha support barrier canonical referenceBase runtime
       entered.rawBody executableGoals
@@ -1136,7 +1138,11 @@ theorem matched_clause_eq_ok_task_correspondence
   refine
     ⟨alpha, canonical, installed, shared, ordered, sourceStep,
       executableStep, ?_⟩
-  constructor
+  refine
+    ⟨shared,
+      ordered.binding_wellFormed
+        (denoteEquations_wellFormed branch.normalizedHeadEquations),
+      ?_, ?_⟩
   · simpa [ClauseBranch.enter] using independentShape
   · simpa [ClauseBranch.enter] using bodyAgreement
 

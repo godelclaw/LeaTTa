@@ -16,6 +16,8 @@ namespace PLeaTTa.PrologSequentialMgu
 
 open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.Canonical
+open PrologMguOpenAgreement
+open PrologMguTopology
 open PrologMguVariant
 
 /-!
@@ -66,6 +68,54 @@ theorem variants_of_base_variants
       second.2.1
 
 end TreeIsRelativeMgu
+
+namespace TreeFactorsThrough
+
+/-- Extending both representatives by the same older carried state preserves
+factorization.  The residual witness acts only after that shared suffix has
+been applied, so no commutation or freshness premise is needed. -/
+theorem appendRight
+    {first second : TreeSubstitution}
+    (factors : TreeFactorsThrough first second)
+    (carried : TreeSubstitution) :
+    TreeFactorsThrough (first ++ carried) (second ++ carried) := by
+  rcases factors with ⟨residual, factor⟩
+  refine ⟨residual, ?_⟩
+  intro tree
+  rw [TreeSubstitution.apply_append,
+    TreeSubstitution.apply_append, factor]
+
+end TreeFactorsThrough
+
+namespace TreeSubstitutionVariants
+
+/-- A common historical suffix does not choose between variant residual MGU
+orientations. -/
+theorem appendRight
+    {first second : TreeSubstitution}
+    (variants : TreeSubstitutionVariants first second)
+    (carried : TreeSubstitution) :
+    TreeSubstitutionVariants
+      (first ++ carried) (second ++ carried) :=
+  ⟨TreeFactorsThrough.appendRight variants.1 carried,
+    TreeFactorsThrough.appendRight variants.2 carried⟩
+
+end TreeSubstitutionVariants
+
+/-- Canonical reification preserves the stored extension-before-base order
+exactly, not merely after denotation. -/
+theorem TreeSubstitution.reify_append
+    (extension base : TreeSubstitution) :
+    TreeSubstitution.reify (extension ++ base) =
+      TreeSubstitution.reify extension ++
+        TreeSubstitution.reify base := by
+  induction extension with
+  | nil =>
+      rfl
+  | cons entry extension inductionHypothesis =>
+      rcases entry with ⟨source, replacement⟩
+      simp only [List.cons_append, TreeSubstitution.reify,
+        inductionHypothesis]
 
 /-- An ordinary MGU of the equations after applying `base` induces the
 relative principal solution obtained by prepending that extension to
@@ -127,6 +177,25 @@ theorem sequential_mgu_composites_are_variants
   TreeIsRelativeMgu.variants_of_base_variants bases
     (TreeIsMgu.relativeCompose firstMgu)
     (TreeIsMgu.relativeCompose secondMgu)
+
+/-- An ordered extension whose input equations avoid an older topological
+base may be prepended without creating a cycle.  This is the topological
+counterpart of relative MGU composition: the ordered solver cannot invent a
+key or replacement variable outside the normalized equation support. -/
+theorem OrderedTreeMgu.prepend_topological_of_equations_avoid
+    {base extension : TreeSubstitution}
+    {equations : List TreeEquation}
+    (baseTopological : TreeSubstitutionTopological base)
+    (derivation : OrderedTreeMgu equations extension)
+    (equationsAvoid :
+      TreeEquationsVariablesSatisfy
+        (fun identity =>
+          identity ∉ TreeSubstitution.keys base)
+        equations) :
+    TreeSubstitutionTopological (extension ++ base) := by
+  exact baseTopological.append
+    (PrologMguTopology.OrderedTreeMgu.binding_topological derivation)
+    (orderedTreeMgu_binding_variablesSatisfy derivation equationsAvoid)
 
 /-! ## Anti-vacuity: sequential orientation really remains quotiented -/
 

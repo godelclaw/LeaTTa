@@ -15,6 +15,7 @@ Main exports:
 -/
 import PLeaTTa.PersistentSubst
 import PLeaTTa.Proofs.PrologGoalMguVariant
+import PLeaTTa.Proofs.PrologSequentialMgu
 
 namespace PLeaTTa.PrologMguComposition
 
@@ -189,19 +190,20 @@ theorem continuationAlphaSupport_drops_carried_runtime_link :
 /-- One residual-MGU representative after composing the older independent
 and executable states.
 
-`canonical` remains the actual independently ordered head MGU.  The hidden
-`representative` is a mutual semantic variant of it and is the only
-orientation used to interpret the runtime substitution.  The older
-independent state is appended to that representative in the same order as
-source clause entry. -/
+`canonical` remains the actual independently ordered residual state.  The
+hidden `representative` interprets the runtime substitution.  Variation is
+stated over the full residual-plus-base states: residual prefixes alone need
+not remain variants after a later equality is solved under differently
+oriented carried bases. -/
 def AlphaCumulativeResidualVariantAgreesOn
     (alpha support : List (LogicVar × String))
     (canonical : TreeSubstitution) (referenceBase : Substitution)
     (runtime : Subst) : Prop :=
   ∃ representative : TreeSubstitution,
-    TreeSubstitutionVariants canonical representative ∧
+    TreeSubstitutionVariants
+      (canonical ++ Substitution.denote referenceBase)
+      (representative ++ Substitution.denote referenceBase) ∧
     TreeSubstitutionTopological canonical ∧
-    TreeSubstitutionTopological representative ∧
     Nonempty (PLeaTTa.SubstTopological runtime) ∧
     AlphaValuationAgreesOn alpha support
       (representative ++ Substitution.denote referenceBase) runtime
@@ -275,8 +277,10 @@ theorem AlphaResidualVariantAgreesOn.carry
           base (head :: tail) baseTopological generatedTopological
           generatedAvoidsBase atomAvoids
   refine
-    ⟨representative, variants, canonicalTopological,
-      representativeTopological, ⟨installedTopological⟩, ?_⟩
+    ⟨representative,
+      PrologSequentialMgu.TreeSubstitutionVariants.appendRight variants
+        (Substitution.denote referenceBase),
+      canonicalTopological, ⟨installedTopological⟩, ?_⟩
   intro identity name linked
   have referenceBaseFixed :
       TreeSubstitution.apply (Substitution.denote referenceBase)
@@ -319,10 +323,9 @@ theorem AlphaCumulativeResidualVariantAgreesOn.trimFor
         (PLeaTTa.trimFor goals qterm runtime) := by
   rcases agreement with
     ⟨representative, variants, canonicalTopological,
-      representativeTopological, ⟨runtimeTopological⟩, valuation⟩
+      ⟨runtimeTopological⟩, valuation⟩
   exact
     ⟨representative, variants, canonicalTopological,
-      representativeTopological,
       ⟨PLeaTTa.SubstTopological.trimFor
         goals qterm runtime runtimeTopological⟩,
       AlphaValuationAgreesOn.trimFor

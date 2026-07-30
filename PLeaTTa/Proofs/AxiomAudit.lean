@@ -9,6 +9,7 @@ import PLeaTTa.Proofs.PrologStateBridge
 import PLeaTTa.Proofs.PrologCallEntryBridge
 import PLeaTTa.Proofs.PrologCallStepBridge
 import PLeaTTa.Proofs.PrologOrdinaryStepBridge
+import PLeaTTa.Proofs.PrologCanonicalMguSimulation
 import PLeaTTa.Proofs.PrologSequentialMgu
 import PLeaTTa.Proofs.PrologPrefilterBridge
 import PLeaTTa.Proofs.PrologPrefilterScanBridge
@@ -1024,9 +1025,16 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologMguVariant.OrderedTreeMgu.unifyTopExact_exists_residual_variant
 #print axioms PLeaTTa.PrologMguVariant.residual_variants_need_not_be_equal
 #print axioms PLeaTTa.PrologSequentialMgu.TreeIsRelativeMgu.variants_of_base_variants
+#print axioms PLeaTTa.PrologSequentialMgu.TreeFactorsThrough.appendRight
+#print axioms PLeaTTa.PrologSequentialMgu.TreeSubstitutionVariants.appendRight
+#print axioms PLeaTTa.PrologSequentialMgu.TreeSubstitution.reify_append
+#print axioms PLeaTTa.PrologSequentialMgu.OrderedTreeMgu.prepend_topological_of_equations_avoid
 #print axioms PLeaTTa.PrologSequentialMgu.TreeIsMgu.relativeCompose
 #print axioms PLeaTTa.PrologSequentialMgu.sequential_mgu_composites_are_variants
 #print axioms PLeaTTa.PrologSequentialMgu.sequential_variants_need_not_be_equal
+#print axioms PLeaTTa.PrologCanonicalMguSimulation.CanonicalRuntimePair.canonicalFuelLe
+#print axioms PLeaTTa.PrologCanonicalMguSimulation.OrderedTreeMgu.unifyTopExact_exists_canonical_alpha
+#print axioms PLeaTTa.PrologCanonicalMguSimulation.OrderedTreeMgu.unifyTopExact_exists_canonical_alpha_mgu
 #print axioms PLeaTTa.PrologGoalMguVariant.AlphaGoalAgrees.mono
 #print axioms PLeaTTa.PrologGoalMguVariant.AlphaGoalsAgree.mono
 #print axioms PLeaTTa.PrologGoalMguVariant.AlphaResidualVariantAgrees.goals
@@ -1328,6 +1336,13 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.AdministrativeStepsN.rank_exact
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.AdministrativeStepsN.sourceSteps
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.TaskPayloadAgrees.ofActivated
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.TaskPayloadAgrees.denoteCurrent
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.TaskPayloadAgrees.cumulativeVariants
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.TaskPayloadAgrees.sourceUnifyExtension
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.TaskPayloadAgrees.sourceUnifyRelative
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.canonicalRuntimeAgrees_apply_on
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.TaskPayloadAgrees.executableUnifyTopExact
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.TaskPayloadAgrees.afterUnifySuccess
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.ReadyTaskRelates.ofActivated
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.ReadyTaskRelates.afterAdministrativeSteps
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.administrative_prefix_correspondence
@@ -1335,6 +1350,11 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.cutSuccessor_persistent
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.executable_cut_step
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.cut_step_correspondence
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.NormalizedAlphaGoalsAgree.unifyHead
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.unifySuccessor_persistent
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.executable_unify_step
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.unify_step_correspondence
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.executable_unify_spellings_are_distinct
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.three_administrative_steps_are_exact
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.three_administrative_steps_are_not_two
 #print axioms PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.prologMatchCompat_of_denotationalUnifier

@@ -77,8 +77,17 @@ PROLOG_GOAL_MGU_VARIANT = (
 PROLOG_MGU_COMPOSITION = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologMguComposition.lean"
 )
+PROLOG_CANONICAL_MGU_SIMULATION = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologCanonicalMguSimulation.lean"
+)
+PROLOG_SEQUENTIAL_MGU = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologSequentialMgu.lean"
+)
 PROLOG_ACTIVATION_UNIFIER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationUnifierBridge.lean"
+)
+PROLOG_ORDINARY_STEP_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologOrdinaryStepBridge.lean"
 )
 PROLOG_ACTIVATION_FAILURE_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationFailureBridge.lean"
@@ -179,8 +188,14 @@ def check() -> list[str]:
             digest(PROLOG_GOAL_MGU_VARIANT),
         "prolog_mgu_composition_sha256":
             digest(PROLOG_MGU_COMPOSITION),
+        "prolog_canonical_mgu_simulation_sha256":
+            digest(PROLOG_CANONICAL_MGU_SIMULATION),
+        "prolog_sequential_mgu_sha256":
+            digest(PROLOG_SEQUENTIAL_MGU),
         "prolog_activation_unifier_bridge_sha256":
             digest(PROLOG_ACTIVATION_UNIFIER_BRIDGE),
+        "prolog_ordinary_step_bridge_sha256":
+            digest(PROLOG_ORDINARY_STEP_BRIDGE),
         "prolog_activation_failure_bridge_sha256":
             digest(PROLOG_ACTIVATION_FAILURE_BRIDGE),
         "prolog_canonical_runtime_reading_sha256":
