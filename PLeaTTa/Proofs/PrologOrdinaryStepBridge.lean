@@ -158,6 +158,26 @@ theorem afterConjunction
   | cons head tail =>
       cases head
 
+/-- A non-administrative source cut exposes exactly the executable cut at the
+barrier carried by the alpha-goal relation.  No other executable constructor
+can be selected by administrative normalization. -/
+theorem cutHead
+    {alpha : List (LogicVar × String)} {barrier : Nat}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (agreement :
+      NormalizedAlphaGoalsAgree alpha barrier
+        (.cut :: references) executables) :
+    ∃ executableTail,
+      executables = .cutAt barrier :: executableTail ∧
+        NormalizedAlphaGoalsAgree alpha barrier
+          references executableTail := by
+  cases agreement with
+  | cons head tail =>
+      cases head with
+      | cut =>
+          exact ⟨_, rfl, tail⟩
+
 end NormalizedAlphaGoalsAgree
 
 /-- One source-only administrative transition at the active leftmost goal. -/
@@ -446,6 +466,115 @@ theorem administrative_prefix_correspondence
       .zero (.ready state),
       agreement.afterAdministrativeSteps steps,
       steps.rank_exact⟩
+
+/-! ## Local cut: one real step on each side -/
+
+/-- Exact executable successor of one tagged cut.  The current goal advances
+and the alternative/barrier stacks are pruned by the sealed machine's shared
+`cutToTracked`; persistent world and fresh allocation are untouched. -/
+def cutSuccessor (state : OpenConf) (barrier : Nat)
+    (rest : List PLeaTTa.Goal) (runtime : Metta.Subst) : OpenConf :=
+  OpenConf.ofConf
+    { state.toConf with
+      cur := some (rest, runtime)
+      alts := (cutToTracked barrier state.toConf.barriers
+        state.toConf.alts).1
+      barriers := (cutToTracked barrier state.toConf.barriers
+        state.toConf.alts).2 }
+    state.frames
+
+@[simp] theorem cutSuccessor_persistent
+    (state : OpenConf) (barrier : Nat)
+    (rest : List PLeaTTa.Goal) (runtime : Metta.Subst) :
+    (cutSuccessor state barrier rest runtime).persistent =
+      state.persistent := by
+  cases state with
+  | mk persistent control frames =>
+      cases persistent
+      cases control
+      rfl
+
+@[simp] theorem cutSuccessor_current
+    (state : OpenConf) (barrier : Nat)
+    (rest : List PLeaTTa.Goal) (runtime : Metta.Subst) :
+    (cutSuccessor state barrier rest runtime).control.cur =
+      some (rest, runtime) := by
+  rfl
+
+/-- An executable cut head takes exactly one real transition in the
+findall/call-fine lane.  It cannot be mistaken for either a nested collector
+or a local-call installation head. -/
+theorem executable_cut_step
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (state : OpenConf) (barrier : Nat)
+    (rest : List PLeaTTa.Goal) (runtime : Metta.Subst)
+    (head :
+      state.control.cur = some (.cutAt barrier :: rest, runtime)) :
+    DemandDrivenCallStep.Step prog gt (.ready state)
+      (.ready (cutSuccessor state barrier rest runtime)) := by
+  have sealedHead :
+      state.toConf.cur = some (.cutAt barrier :: rest, runtime) := by
+    simpa [OpenConf.toConf, Control.toConf] using head
+  have notFindall : ¬ findallRunHead state.toConf := by
+    simp [findallRunHead, sealedHead]
+  have notLocalCall :
+      ¬ DemandDrivenCallStep.LocalResolveHead state := by
+    simp [DemandDrivenCallStep.LocalResolveHead, sealedHead]
+  apply DemandDrivenCallStep.Step.ordinary state
+    (cutSuccessor state barrier rest runtime) notLocalCall
+  apply DemandDrivenStep.Step.ordinary state
+    (cutSuccessor state barrier rest runtime).toConf notFindall
+  simpa [cutSuccessor] using
+    (PLeaTTa.Step.cut_at state.toConf barrier rest runtime sealedHead)
+
+/-- Paired local-cut transition on the actual task states.
+
+The independent transition emits no observation and exposes a typed commit
+signal; the executable transition performs the exact `cutToTracked` update at
+the barrier selected by `AlphaGoalAgrees.cut`.  The task payload, cumulative
+MGU valuation, database/world relation, and fresh frontier survive.  This
+leaf theorem intentionally does not yet identify the source choice resources
+pruned by commit propagation with executable `Alt`s; that is the separate
+wrapper/resource-linearity obligation. -/
+theorem cut_step_correspondence
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {session : Session} {scope : CutScopeId} {current : Substitution}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {state : OpenConf}
+    (agreement :
+      ReadyTaskRelates freshFrontier alpha support barrier canonical
+        referenceBase session current (.cut :: references) state) :
+    ∃ executableTail runtime,
+      state.control.cur =
+          some (.cutAt barrier :: executableTail, runtime) ∧
+        RawStep session (.task scope (.cut :: references) current)
+          [] (.commit scope) session
+          (.running (.task scope references current)) ∧
+        DemandDrivenCallStep.Step prog gt (.ready state)
+          (.ready (cutSuccessor state barrier executableTail runtime)) ∧
+        (cutSuccessor state barrier executableTail runtime).persistent =
+          state.persistent ∧
+        ReadyTaskRelates freshFrontier alpha support barrier canonical
+          referenceBase session current references
+          (cutSuccessor state barrier executableTail runtime) := by
+  rcases agreement with
+    ⟨executables, runtime, persistent, currentControl, payload⟩
+  rcases payload.control.cutHead with
+    ⟨executableTail, executableShape, tailControl⟩
+  subst executables
+  refine
+    ⟨executableTail, runtime, currentControl,
+      RawStep.taskCut scope references current session,
+      executable_cut_step state barrier executableTail runtime currentControl,
+      cutSuccessor_persistent state barrier executableTail runtime, ?_⟩
+  refine
+    ⟨executableTail, runtime, ?_,
+      cutSuccessor_current state barrier executableTail runtime,
+      ⟨payload.bindingShape, tailControl, payload.valuation⟩⟩
+  simpa using persistent
 
 /-! ## Anti-vacuity: exact count and strictness -/
 

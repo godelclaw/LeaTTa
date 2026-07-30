@@ -1322,6 +1322,10 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.ReadyTaskRelates.ofActivated
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.ReadyTaskRelates.afterAdministrativeSteps
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.administrative_prefix_correspondence
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.NormalizedAlphaGoalsAgree.cutHead
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.cutSuccessor_persistent
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.executable_cut_step
+#print axioms PLeaTTa.PrologOrdinaryStepBridge.cut_step_correspondence
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.three_administrative_steps_are_exact
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.three_administrative_steps_are_not_two
 #print axioms PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.prologMatchCompat_of_denotationalUnifier
