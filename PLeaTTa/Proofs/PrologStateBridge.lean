@@ -86,6 +86,225 @@ def currentVisibleEntries (database : Database) : List VersionedClause :=
   database.history.filter fun entry =>
     entry.visibleAt database.generation
 
+/-- Eager reservation preserves the exact occurrence identity sequence of
+the immutable call-start snapshot.  Freshening changes clause variables, not
+source occurrence order or multiplicity. -/
+private theorem reserveVisible_sourceIds
+    (callGeneration : Generation) (arguments : List Term)
+    (bindings : Substitution) (freshSeed : Nat)
+    (entries : List VersionedClause) :
+    (reserveVisible callGeneration arguments bindings freshSeed entries).1.map
+        (fun branch => branch.sourceId) =
+      entries.map (fun entry => entry.id) := by
+  induction entries generalizing freshSeed with
+  | nil =>
+      rfl
+  | cons entry rest inductionHypothesis =>
+      simp [reserveVisible, inductionHypothesis]
+
+/-- Exact call-start snapshot relation for the actual prepared protocol
+token.  It records the generation and ordered, duplicate-sensitive occurrence
+identities; the token contains no live database pointer that could drift after
+assertion or retraction. -/
+structure PreparedCursorSnapshots (database : Database)
+    (request : CallRequest) (cursor : PreparedCursor) : Prop where
+  generation : cursor.callGeneration = database.generation
+  sourceOrder :
+    cursor.remaining.map (fun branch => branch.sourceId) =
+      (database.visibleClausesAt database.generation request.predicate
+        request.arguments.length).map (fun entry => entry.id)
+
+/-- `prepareCall` establishes the exact immutable snapshot relation. -/
+theorem prepareCall_snapshots (session : LocalSession)
+    (request : CallRequest) :
+    PreparedCursorSnapshots session.database request
+      (prepareCall session request).1 := by
+  constructor
+  · rfl
+  · simpa [prepareCall] using
+      reserveVisible_sourceIds session.database.generation request.arguments
+        request.bindings
+        (max session.nextFresh request.generatedCeiling)
+        (session.database.visibleClausesAt session.database.generation
+          request.predicate request.arguments.length)
+
+/-- Reachability invariant factored over a bare history for the retraction
+induction below. -/
+private def HistoryGenerationClosed (generation : Generation)
+    (history : List VersionedClause) : Prop :=
+  ∀ entry ∈ history,
+    entry.created ≤ generation ∧
+      ∀ erased, entry.erased = some erased → erased ≤ generation
+
+/-- Advancing one generation cannot change the visibility of an unchanged
+entry in a closed history.  A live entry remains live; an already erased
+entry remains erased. -/
+private theorem VersionedClause.visibleAt_succ_of_closed
+    {generation : Generation} {entry : VersionedClause}
+    (closed :
+      entry.created ≤ generation ∧
+        ∀ erased, entry.erased = some erased → erased ≤ generation) :
+    entry.visibleAt (generation + 1) =
+      entry.visibleAt generation := by
+  rcases closed with ⟨created, erasedClosed⟩
+  cases erased : entry.erased with
+  | none =>
+      simp [VersionedClause.visibleAt, erased, created,
+        Nat.le_trans created (Nat.le_add_right generation 1)]
+  | some erasedGeneration =>
+      have erasedLe := erasedClosed erasedGeneration erased
+      have notOld : ¬ generation < erasedGeneration :=
+        Nat.not_lt.mpr erasedLe
+      have notNew : ¬ generation + 1 < erasedGeneration :=
+        Nat.not_lt.mpr
+          (Nat.le_trans erasedLe (Nat.le_add_right generation 1))
+      simp [VersionedClause.visibleAt, erased, created,
+        Nat.le_trans created (Nat.le_add_right generation 1),
+        notOld, notNew]
+
+/-- The live projection of an unchanged closed history is stable across one
+generation tick. -/
+private theorem filter_visibleAt_succ_of_closed
+    (generation : Generation) (history : List VersionedClause)
+    (closed : HistoryGenerationClosed generation history) :
+    history.filter (fun entry => entry.visibleAt (generation + 1)) =
+      history.filter (fun entry => entry.visibleAt generation) := by
+  induction history with
+  | nil =>
+      rfl
+  | cons entry rest inductionHypothesis =>
+      have headClosed := closed entry (by simp)
+      have tailClosed : HistoryGenerationClosed generation rest := by
+        intro candidate member
+        exact closed candidate (by simp [member])
+      simp only [List.filter_cons,
+        VersionedClause.visibleAt_succ_of_closed headClosed,
+        inductionHypothesis tailClosed]
+
+/-- Successful identity retraction deletes exactly one live occurrence from
+the current projection, preserves the source order of every other occurrence,
+and closes the updated history at the new generation. -/
+private theorem retireFirst_live_projection
+    {generation : Generation} {id : ClauseId}
+    {before after : List VersionedClause}
+    (closed : HistoryGenerationClosed generation before)
+    (retired : retireFirst (generation + 1) id before = some after) :
+    ∃ left target right,
+      before.filter (fun entry => entry.visibleAt generation) =
+          left ++ target :: right ∧
+        after.filter (fun entry => entry.visibleAt (generation + 1)) =
+          left ++ right ∧
+        target.id = id ∧
+        target.erased = none ∧
+        HistoryGenerationClosed (generation + 1) after := by
+  induction before generalizing after with
+  | nil =>
+      simp [retireFirst] at retired
+  | cons entry rest inductionHypothesis =>
+      have entryClosed := closed entry (by simp)
+      have restClosed : HistoryGenerationClosed generation rest := by
+        intro candidate member
+        exact closed candidate (by simp [member])
+      by_cases hit : entry.id = id ∧ entry.erased = none
+      · simp only [retireFirst, hit, and_self, if_true,
+          Option.some.injEq] at retired
+        subst after
+        have entryVisible : entry.visibleAt generation = true := by
+          rcases entryClosed with ⟨created, _⟩
+          simp [VersionedClause.visibleAt, hit.2, created]
+        have retiredInvisibleId :
+            ({ id := id, clause := entry.clause, created := entry.created,
+                erased := some (generation + 1) } :
+              VersionedClause).visibleAt (generation + 1) = false := by
+          simp [VersionedClause.visibleAt]
+        have restStable :=
+          filter_visibleAt_succ_of_closed generation rest restClosed
+        refine
+          ⟨[], entry,
+            rest.filter (fun candidate =>
+              candidate.visibleAt generation), ?_, ?_,
+            hit.1, hit.2, ?_⟩
+        · simp [entryVisible]
+        · simp only [List.filter_cons, retiredInvisibleId,
+            Bool.false_eq_true, if_false, List.nil_append]
+          exact restStable
+        · intro candidate member
+          simp only [List.mem_cons] at member
+          rcases member with rfl | member
+          · constructor
+            · exact Nat.le_trans entryClosed.1
+                (Nat.le_add_right generation 1)
+            · intro erasedGeneration erasedEq
+              simp only at erasedEq
+              have exactGeneration :
+                  erasedGeneration = generation + 1 := by
+                exact (Option.some.inj erasedEq).symm
+              subst erasedGeneration
+              exact Nat.le_refl _
+          · have tail := restClosed candidate member
+            exact
+              ⟨Nat.le_trans tail.1 (Nat.le_add_right generation 1),
+                fun erasedGeneration erasedEq =>
+                  Nat.le_trans (tail.2 erasedGeneration erasedEq)
+                    (Nat.le_add_right generation 1)⟩
+      · cases tailResult :
+          retireFirst (generation + 1) id rest with
+        | none =>
+            simp [retireFirst, hit, tailResult] at retired
+        | some retiredRest =>
+            have afterShape : after = entry :: retiredRest := by
+              have reversed : entry :: retiredRest = after := by
+                simpa [retireFirst, hit, tailResult] using retired
+              exact reversed.symm
+            subst after
+            obtain
+              ⟨left, target, right, beforeProjection, afterProjection,
+                targetId, targetLive, retiredClosed⟩ :=
+              inductionHypothesis restClosed tailResult
+            have visibilityStable :=
+              VersionedClause.visibleAt_succ_of_closed entryClosed
+            by_cases visible : entry.visibleAt generation = true
+            · have visibleNext :
+                  entry.visibleAt (generation + 1) = true := by
+                simpa [visibilityStable] using visible
+              refine
+                ⟨entry :: left, target, right, ?_, ?_, targetId, targetLive,
+                  ?_⟩
+              · simp [visible, beforeProjection]
+              · simp [visibleNext, afterProjection]
+              · intro candidate member
+                simp only [List.mem_cons] at member
+                rcases member with rfl | member
+                · exact
+                    ⟨Nat.le_trans entryClosed.1
+                        (Nat.le_add_right generation 1),
+                      fun erasedGeneration erasedEq =>
+                        Nat.le_trans
+                          (entryClosed.2 erasedGeneration erasedEq)
+                          (Nat.le_add_right generation 1)⟩
+                · exact retiredClosed candidate member
+            · have invisible : entry.visibleAt generation = false :=
+                Bool.eq_false_of_not_eq_true visible
+              have invisibleNext :
+                  entry.visibleAt (generation + 1) = false := by
+                rw [visibilityStable]
+                exact invisible
+              refine
+                ⟨left, target, right, ?_, ?_, targetId, targetLive, ?_⟩
+              · simp [invisible, beforeProjection]
+              · simp [invisibleNext, afterProjection]
+              · intro candidate member
+                simp only [List.mem_cons] at member
+                rcases member with rfl | member
+                · exact
+                    ⟨Nat.le_trans entryClosed.1
+                        (Nat.le_add_right generation 1),
+                      fun erasedGeneration erasedEq =>
+                        Nat.le_trans
+                          (entryClosed.2 erasedGeneration erasedEq)
+                          (Nat.le_add_right generation 1)⟩
+                · exact retiredClosed candidate member
+
 /-- Every creation/erasure stamp in a reachable history has already occurred
 at the database's current generation.  This excludes forged future erasure
 stamps and makes the current logical-update view exactly the unerased
@@ -150,6 +369,58 @@ private theorem forall₂_append_singleton
     List.Forall₂ relation (left ++ [lastLeft]) (right ++ [lastRight]) := by
   induction agreement with
   | nil => exact .cons last .nil
+  | cons head tail inductionHypothesis =>
+      exact .cons head inductionHypothesis
+
+/-- An aligned occurrence inside the left list of a `Forall₂` derivation has
+an exact corresponding occurrence on the right.  Removing that pair preserves
+the relation, including duplicate multiplicity and source order. -/
+private theorem forall₂_split_middle
+    {α β : Type} {relation : α → β → Prop}
+    {left : List α} {target : α} {right : List α}
+    {executables : List β}
+    (agreement :
+      List.Forall₂ relation (left ++ target :: right) executables) :
+    ∃ executableLeft executableTarget executableRight,
+      executables =
+          executableLeft ++ executableTarget :: executableRight ∧
+        List.Forall₂ relation left executableLeft ∧
+        relation target executableTarget ∧
+        List.Forall₂ relation right executableRight := by
+  induction left generalizing executables with
+  | nil =>
+      cases agreement with
+      | cons targetAgreement rightAgreement =>
+          exact
+            ⟨[], _, _, rfl, .nil, targetAgreement, rightAgreement⟩
+  | cons sourceHead sourceTail inductionHypothesis =>
+      cases executables with
+      | nil =>
+          cases agreement
+      | cons executableHead executableTail =>
+          cases agreement with
+          | cons headAgreement tailAgreement =>
+              obtain
+                ⟨executableLeft, executableTarget, executableRight,
+                  executableShape, leftAgreement, targetAgreement,
+                  rightAgreement⟩ :=
+                inductionHypothesis tailAgreement
+              refine
+                ⟨executableHead :: executableLeft, executableTarget,
+                  executableRight, ?_, .cons headAgreement leftAgreement,
+                  targetAgreement, rightAgreement⟩
+              simp [executableShape]
+
+/-- Concatenating two exact pointwise correspondences preserves their order. -/
+private theorem forall₂_append
+    {α β : Type} {relation : α → β → Prop}
+    {left₁ left₂ : List α} {right₁ right₂ : List β}
+    (left : List.Forall₂ relation left₁ right₁)
+    (right : List.Forall₂ relation left₂ right₂) :
+    List.Forall₂ relation (left₁ ++ left₂) (right₁ ++ right₂) := by
+  induction left with
+  | nil =>
+      exact right
   | cons head tail inductionHypothesis =>
       exact .cons head inductionHypothesis
 
@@ -281,6 +552,138 @@ theorem DatabaseRelatesWorld.asserta
   rw [currentVisibleEntries_asserta agreement.generationClosed reference,
     PWorld.replaceProgClauses_progClauses]
   exact .cons clause agreement.liveClauses
+
+/-- Successful identity retraction removes exactly the aligned executable
+occurrence, preserves the source order and duplicate multiplicity of all other
+clauses, advances the logical-update generation, and rebuilds a coherent
+executable index.
+
+This is deliberately the identity primitive from `metta.pl:279-280`.
+Selecting the first content-unifying occurrence and exposing later matches on
+backtracking remains a separate MGU/control obligation. -/
+theorem DatabaseRelatesWorld.retractId
+    {database after : Database} {world : PWorld} {id : ClauseId}
+    (agreement : DatabaseRelatesWorld database world)
+    (retracted : database.retractId id = some after) :
+    ∃ sourceLeft target sourceRight
+        executableLeft executableTarget executableRight,
+      currentVisibleEntries database =
+          sourceLeft ++ target :: sourceRight ∧
+        currentVisibleEntries after = sourceLeft ++ sourceRight ∧
+        world.progClauses =
+          executableLeft ++ executableTarget :: executableRight ∧
+        target.id = id ∧
+        target.erased = none ∧
+        VersionedClauseAgrees target executableTarget ∧
+        DatabaseRelatesWorld after
+          (world.replaceProgClauses
+            (executableLeft ++ executableRight)) := by
+  cases retiredHistoryEq :
+      retireFirst (database.generation + 1) id database.history with
+  | none =>
+      simp [Database.retractId, retiredHistoryEq] at retracted
+  | some retiredHistory =>
+      have afterShape :
+          after =
+            { database with
+              generation := database.generation + 1
+              history := retiredHistory } := by
+        have reversed :
+            { database with
+                generation := database.generation + 1
+                history := retiredHistory } = after := by
+          have someEq :
+              some
+                  { database with
+                    generation := database.generation + 1
+                    history := retiredHistory } =
+                some after := by
+            simpa [Database.retractId, retiredHistoryEq] using retracted
+          exact Option.some.inj someEq
+        exact reversed.symm
+      subst after
+      obtain
+        ⟨sourceLeft, target, sourceRight, beforeProjection,
+          afterProjection, targetId, targetLive, retiredClosed⟩ :=
+        retireFirst_live_projection agreement.generationClosed
+          retiredHistoryEq
+      have aligned :
+          List.Forall₂ VersionedClauseAgrees
+            (sourceLeft ++ target :: sourceRight) world.progClauses := by
+        rw [← beforeProjection]
+        exact agreement.liveClauses
+      obtain
+        ⟨executableLeft, executableTarget, executableRight,
+          executableShape, leftAgreement, targetAgreement,
+          rightAgreement⟩ :=
+        forall₂_split_middle aligned
+      have retainedAgreement :
+          List.Forall₂ VersionedClauseAgrees
+            (sourceLeft ++ sourceRight)
+            (executableLeft ++ executableRight) :=
+        forall₂_append leftAgreement rightAgreement
+      refine
+        ⟨sourceLeft, target, sourceRight, executableLeft, executableTarget,
+          executableRight, beforeProjection, ?_, executableShape, targetId,
+          targetLive, targetAgreement, ?_⟩
+      · simpa [currentVisibleEntries] using afterProjection
+      · refine
+          ⟨?_, ?_,
+            world.replaceProgClauses_coherent
+              (executableLeft ++ executableRight) agreement.clauseIndex⟩
+        · exact retiredClosed
+        · rw [PWorld.replaceProgClauses_progClauses]
+          simpa [currentVisibleEntries, afterProjection] using
+            retainedAgreement
+
+/-- A successful identity retraction advances the logical-update generation
+exactly once. -/
+theorem Database.retractId_generation
+    {database after : Database} {id : ClauseId}
+    (retracted : database.retractId id = some after) :
+    after.generation = database.generation + 1 := by
+  cases retiredHistoryEq :
+      retireFirst (database.generation + 1) id database.history with
+  | none =>
+      simp [Database.retractId, retiredHistoryEq] at retracted
+  | some retiredHistory =>
+      have someEq :
+          some
+              { database with
+                generation := database.generation + 1
+                history := retiredHistory } =
+            some after := by
+        simpa [Database.retractId, retiredHistoryEq] using retracted
+      have shape := Option.some.inj someEq
+      rw [← shape]
+
+/-- Retraction separates old and new call snapshots without mutating the old
+prepared token: the old token remains related to the exact call-start
+generation and occurrence order, while a later open observes the successor
+generation and the updated database projection.
+
+The concrete resolver witnesses additionally show that a matching retracted
+occurrence remains in the old token and is absent from the new one. -/
+theorem retractId_snapshot_separation
+    {database after : Database} {id : ClauseId}
+    (session : LocalSession) (request : CallRequest)
+    (retracted : database.retractId id = some after) :
+    let beforeSession : LocalSession :=
+      { session with database := database }
+    let afterSession : LocalSession :=
+      { session with database := after }
+    PreparedCursorSnapshots database request
+        (prepareCall beforeSession request).1 ∧
+      PreparedCursorSnapshots after request
+        (prepareCall afterSession request).1 ∧
+      (prepareCall beforeSession request).1.callGeneration <
+        (prepareCall afterSession request).1.callGeneration := by
+  dsimp
+  refine
+    ⟨prepareCall_snapshots { session with database := database } request,
+      prepareCall_snapshots { session with database := after } request, ?_⟩
+  rw [Database.retractId_generation retracted]
+  exact Nat.lt_succ_self _
 
 /-- Empty independent and executable stores agree for every frontier relation
 that relates their zero high-waters. -/

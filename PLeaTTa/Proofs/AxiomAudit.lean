@@ -1247,6 +1247,10 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.DemandDrivenStep.sealed_findall_step_has_terminal_subrun
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.assertz
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.asserta
+#print axioms PLeaTTa.PrologStateBridge.prepareCall_snapshots
+#print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.retractId
+#print axioms PLeaTTa.PrologStateBridge.Database.retractId_generation
+#print axioms PLeaTTa.PrologStateBridge.retractId_snapshot_separation
 #print axioms PLeaTTa.PrologStateBridge.openCatch_preserves_persistent_relation
 #print axioms PLeaTTa.PrologStateBridge.openFindall_preserves_persistent_relation
 #print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_reference
