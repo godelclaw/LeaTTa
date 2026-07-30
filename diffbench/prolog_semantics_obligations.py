@@ -128,6 +128,14 @@ PROLOG_REPRESENTATIVE_STEP_ACTIVATION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRepresentativeStepActivationBridge.lean"
 )
+PROLOG_TASK_CONTINUATION_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologTaskContinuationBridge.lean"
+)
+PROLOG_REPRESENTATIVE_PRODUCT_ACTIVATION_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologRepresentativeProductActivationBridge.lean"
+)
 PROLOG_ACTIVATION_FAILURE_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationFailureBridge.lean"
 )
@@ -259,6 +267,10 @@ def check() -> list[str]:
             digest(PROLOG_REPRESENTATIVE_TASK_ACTIVATION_BRIDGE),
         "prolog_representative_step_activation_bridge_sha256":
             digest(PROLOG_REPRESENTATIVE_STEP_ACTIVATION_BRIDGE),
+        "prolog_task_continuation_bridge_sha256":
+            digest(PROLOG_TASK_CONTINUATION_BRIDGE),
+        "prolog_representative_product_activation_bridge_sha256":
+            digest(PROLOG_REPRESENTATIVE_PRODUCT_ACTIVATION_BRIDGE),
         "prolog_activation_failure_bridge_sha256":
             digest(PROLOG_ACTIVATION_FAILURE_BRIDGE),
         "prolog_canonical_runtime_reading_sha256":
