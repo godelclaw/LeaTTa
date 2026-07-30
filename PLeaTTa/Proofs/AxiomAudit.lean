@@ -56,6 +56,7 @@ import PLeaTTa.Proofs.Simulation
 import PLeaTTa.Proofs.ResolutionCounter
 import PLeaTTa.Proofs.CompilerAdequacy
 import PLeaTTa.Proofs.CompilerDesugaring
+import PLeaTTa.Proofs.CompilerProgramDesugaring
 import PLeaTTa.Proofs.PrologCoreAdequacy
 import PLeaTTa.Proofs.ObservationAgreement
 import PLeaTTa.Proofs.OpenBindingAgreement
@@ -203,6 +204,28 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_untyped_source_defined_partial_complete
 #print axioms PLeaTTa.CompilerAdequacy.unaryIdentitySource_literal_compiles
 #print axioms PLeaTTa.CompilerAdequacy.binaryFirstSource_unary_partial_compiles
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.TranslatesArgs.length_eq
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.TranslatesPartialApplication.selected_at_source_arity
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.partial_application_inhabited
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.non_selecting_registry_has_no_derivation
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.wrong_arity_registry_rejected
+#print axioms PLeaTTa.CompilerProgramDesugaring.DesugarsProgram.to_desugarProgramAtoms
+#print axioms PLeaTTa.CompilerProgramDesugaring.desugarProgramAtoms_sound
+#print axioms PLeaTTa.CompilerProgramDesugaring.desugarProgramAtoms_iff
+#print axioms PLeaTTa.CompilerProgramDesugaring.desugarSourceForms_atoms_map
+#print axioms PLeaTTa.CompilerProgramDesugaring.compileExprFuel_partial_value_data
+#print axioms PLeaTTa.CompilerProgramDesugaring.compileExprFuel_partial_application
+#print axioms PLeaTTa.CompilerProgramDesugaring.compileExprFuel_partial_application_sound
+#print axioms PLeaTTa.CompilerProgramDesugaring.compileExpr_partial_application_sound
+#print axioms PLeaTTa.CompilerProgramDesugaring.compileExpr_partial_application_complete
+#print axioms PLeaTTa.CompilerProgramDesugaring.lambda_variable_parameter_eq_singleton
+#print axioms PLeaTTa.CompilerProgramDesugaring.source_written_partial_ne_private
+#print axioms PLeaTTa.CompilerProgramDesugaring.capturedLambda_desugars_exact
+#print axioms PLeaTTa.CompilerProgramDesugaring.capturedLambda_split_bang_exact
+#print axioms PLeaTTa.CompilerProgramDesugaring.capturedLambda_wrong_order_rejected
+#print axioms PLeaTTa.CompilerProgramDesugaring.lone_bang_preserves_counter
+#print axioms PLeaTTa.CompilerProgramDesugaring.capturedLambda_source_visibility_exact
+#print axioms PLeaTTa.runClean_callDyn_partial_defined_eq_direct
 #print axioms PLeaTTa.CompilerAdequacy.compileSeqFuel_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_sound
 #print axioms PLeaTTa.CompilerAdequacy.compileExpr_initial_complete

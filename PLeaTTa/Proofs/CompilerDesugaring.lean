@@ -71,7 +71,7 @@ theorem compileAppFuel_trace_eq (fuel counter : Nat) (env : CEnv)
   rw [compileAppFuel.eq_2]
   rw [rewriteStreamOp_trace_pair]
   simp only
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
 
 /-- The complete expression compiler performs the same pinned `trace!`
 source rewrite, with the two extra application-dispatch steps exposed in the
@@ -84,11 +84,11 @@ theorem compileExprFuel_trace_rewrite_eq (fuel counter : Nat) (env : CEnv)
         (.expr
           [.sym "progn", .expr [.sym "println!", message], value]) := by
   rw [show fuel + 5 = (fuel + 4) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show fuel + 4 = (fuel + 2) + 2 by omega]
   rw [compileAppFuel_trace_eq (fuel + 2) counter env message value]
   rw [show fuel + 3 = (fuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
 
 /-- PLeaTTa compiles an immediately quoted `unquote` as `eval`.
 

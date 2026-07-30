@@ -1681,6 +1681,8 @@ theorem compileExprFuel_generatedNames_step (fuel : Nat)
     constructor <;> simp [nilA]
   · rcases Except.ok.inj compiled with ⟨rfl, rfl, rfl⟩
     exact ⟨sourceAllowed, by simp⟩
+  · rcases Except.ok.inj compiled with ⟨rfl, rfl, rfl⟩
+    exact ⟨sourceAllowed, by simp⟩
   · exact (ih.of_succ_eq (by omega)).app external origin _ _ _ _ term goals
       next originStart envAllowed
       (by simpa [CompilerNamesAllowed, Atom.vars] using sourceAllowed) compiled

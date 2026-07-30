@@ -364,6 +364,14 @@ private def staticDataHead (env : CEnv) : Atom → Bool
       !(env.defined.contains h) && !(env.isBin h) && !specialHead h
   | _ => false
 
+/-- Compiler-private partial values can never be mistaken for an ordinary
+compound data head.  Their first child is the source-unforgeable external tag,
+not a source symbol. -/
+theorem staticDataHead_partialC_false (env : CEnv) (head : String)
+    (encodedArguments : Atom) :
+    staticDataHead env (partialC head encodedArguments) = false := by
+  rfl
+
 def dynamicUnknownHead : String → Bool
   | h =>
       match h.toList with
@@ -1029,6 +1037,16 @@ def compileExprFuel : Nat → CEnv → Nat → Atom →
       -- stay as data. Captured lambdas use `partialValue`, whose bound
       -- argument list is a #c-chain [SPEC translator.pl:253-254].
       .ok (Atom.expr [Atom.sym "#c", h, t], [], n)
+  | _ + 1, _, n, Atom.expr
+      [Atom.gnd (.external "PLeaTTa.internal" "partial"),
+       Atom.sym functor, encodedArgs] =>
+      -- Binder desugaring materializes pinned `partial(Fun, Bound)` as the
+      -- source-unforgeable `partialC` value.  Like `#c`, this is already
+      -- compiler data: recursively translating it as a compound-headed
+      -- source application would call the private tag and destroy the
+      -- closure before the enclosing application can dispatch it
+      -- [SPEC translator.pl:59-61,244-261].
+      .ok (partialC functor encodedArgs, [], n)
   | fuel + 1, env, n, Atom.expr (Atom.sym h :: args) => compileAppFuel fuel env n h args
   | fuel + 1, env, n, Atom.expr (Atom.var v :: args) => do
       -- first-class function value: dynamic application
@@ -2289,7 +2307,7 @@ theorem compileExprFuel_unshadowed_app_eq (fuel : Nat) (env : CEnv)
         (.expr (.sym head :: arguments)) =
       compileAppCoreFuel fuel env counter head arguments := by
   rw [show fuel + 2 = (fuel + 1) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := notInternalCons)]
+  rw [compileExprFuel.eq_8 (x_4 := notInternalCons)]
   exact compileAppFuel_unshadowed_eq fuel env counter head arguments
     noRewrite noHook
 
@@ -2307,7 +2325,7 @@ theorem compileExprFuel_stream_rewrite_eq (fuel : Nat) (env : CEnv)
         (.expr (.sym head :: arguments)) =
       compileExprFuel fuel env counter expanded := by
   rw [show fuel + 2 = (fuel + 1) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := notInternalCons)]
+  rw [compileExprFuel.eq_8 (x_4 := notInternalCons)]
   rw [compileAppFuel.eq_2, rewrite]
 
 set_option maxHeartbeats 2000000 in
@@ -2558,7 +2576,7 @@ theorem compileExprFuel_progn_empty_eq (fuel counter : Nat) (env : CEnv)
     compileExprFuel (fuel + 3) env counter (.expr [.sym "progn"]) =
       .error "progn: empty" := by
   rw [show fuel + 3 = (fuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show fuel + 2 = (fuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
@@ -2574,7 +2592,7 @@ theorem compileExprFuel_prog1_empty_eq (fuel counter : Nat) (env : CEnv)
     compileExprFuel (fuel + 3) env counter (.expr [.sym "prog1"]) =
       .error "prog1: empty" := by
   rw [show fuel + 3 = (fuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show fuel + 2 = (fuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
@@ -2595,7 +2613,7 @@ theorem compileExprFuel_progn_eq (listFuel : Nat) (env : CEnv)
         (.expr (.sym "progn" :: source :: sources)) =
       .ok (terms.getLast!, goals, nextCounter) := by
   rw [show listFuel + 3 = (listFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show listFuel + 2 = (listFuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
@@ -2618,7 +2636,7 @@ theorem compileExprFuel_prog1_eq (listFuel : Nat) (env : CEnv)
         (.expr (.sym "prog1" :: source :: sources)) =
       .ok (terms.head!, goals, nextCounter) := by
   rw [show listFuel + 3 = (listFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show listFuel + 2 = (listFuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
@@ -2642,7 +2660,7 @@ theorem compileExprFuel_progn_singleton_eq (bodyFuel : Nat)
         (.expr [.sym "progn", source]) =
       .ok (term, goals, nextCounter) := by
   rw [show bodyFuel + 4 = (bodyFuel + 3) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show bodyFuel + 3 = (bodyFuel + 2) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [rewriteStreamOp?, rewriteStreamOpForHead]
@@ -2673,7 +2691,7 @@ theorem compileExprFuel_prog1_singleton_eq (bodyFuel : Nat)
         (.expr [.sym "prog1", source]) =
       .ok (term, goals, nextCounter) := by
   rw [show bodyFuel + 4 = (bodyFuel + 3) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show bodyFuel + 3 = (bodyFuel + 2) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [rewriteStreamOp?, rewriteStreamOpForHead]
@@ -2706,7 +2724,7 @@ theorem compileExprFuel_collapse_eq (bodyFuel : Nat) (env : CEnv)
         [Goal.findall term goals (.var s!"_q{nextCounter}")],
         nextCounter + 1) := by
   rw [show bodyFuel + 3 = (bodyFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show bodyFuel + 2 = (bodyFuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
@@ -2731,7 +2749,7 @@ theorem compileExprFuel_once_eq (bodyFuel : Nat) (env : CEnv)
         [Goal.onceg term goals (.var s!"_q{nextCounter}")],
         nextCounter + 1) := by
   rw [show bodyFuel + 3 = (bodyFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show bodyFuel + 2 = (bodyFuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
@@ -2842,7 +2860,7 @@ theorem compileExprFuel_ifThen_eq (childFuel : Nat) (env : CEnv)
             (.var s!"_q{thenCounter}")],
         thenCounter + 1) := by
   rw [show childFuel + 3 = (childFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show childFuel + 2 = (childFuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [rewriteStreamOp?, rewriteStreamOpForHead]
@@ -2885,7 +2903,7 @@ theorem compileExprFuel_ifThenElse_eq (childFuel : Nat) (env : CEnv)
             (.var s!"_q{elseCounter}")],
         elseCounter + 1) := by
   rw [show childFuel + 3 = (childFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show childFuel + 2 = (childFuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [rewriteStreamOp?, rewriteStreamOpForHead]
@@ -2986,7 +3004,7 @@ theorem compileExprFuel_andThen_eq (childFuel : Nat) (env : CEnv)
             (.var s!"_q{bodyCounter}")],
         bodyCounter + 1) := by
   rw [show childFuel + 3 = (childFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show childFuel + 2 = (childFuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [rewriteStreamOp?, rewriteStreamOpForHead]
@@ -3021,7 +3039,7 @@ theorem compileExprFuel_orElse_eq (childFuel : Nat) (env : CEnv)
             (.var s!"_q{bodyCounter}")],
         bodyCounter + 1) := by
   rw [show childFuel + 3 = (childFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show childFuel + 2 = (childFuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [rewriteStreamOp?, rewriteStreamOpForHead]
@@ -3081,7 +3099,7 @@ theorem compileExprFuel_let_eq (childFuel : Nat) (env : CEnv)
           bodyGoals,
         nextCounter) := by
   rw [show childFuel + 3 = (childFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show childFuel + 2 = (childFuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
@@ -3113,7 +3131,7 @@ theorem compileExprFuel_chain_eq (childFuel : Nat) (env : CEnv)
           bodyGoals,
         nextCounter) := by
   rw [show childFuel + 3 = (childFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show childFuel + 2 = (childFuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   rw [rewriteStreamOp_chain_none]
@@ -3141,7 +3159,7 @@ theorem compileExprFuel_letStar_eq (nestedFuel : Nat) (env : CEnv)
         (.expr [.sym "let*", .expr bindings, bodySource]) =
       .ok (internal, goals, nextCounter) := by
   rw [show nestedFuel + 3 = (nestedFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show nestedFuel + 2 = (nestedFuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
@@ -3163,7 +3181,7 @@ theorem compileExprFuel_withMutex_eq (bodyFuel : Nat) (env : CEnv)
         (.expr [.sym "with_mutex", mutex, bodySource]) =
       .ok (bodyTerm, bodyGoals, nextCounter) := by
   rw [show bodyFuel + 3 = (bodyFuel + 2) + 1 by omega]
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [show bodyFuel + 2 = (bodyFuel + 1) + 1 by omega]
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
@@ -3179,7 +3197,7 @@ theorem compileExprFuel_cut_eq (fuel counter : Nat) (env : CEnv)
     (noHook : env.translatorRules.contains "cut" = false) :
     compileExprFuel (fuel + 3) env counter (.expr [.sym "cut"]) =
       .ok (.sym "True", [Goal.cut], counter) := by
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_13]
@@ -3194,7 +3212,7 @@ theorem compileExprFuel_quote_eq (fuel counter : Nat) (env : CEnv)
     (noHook : env.translatorRules.contains "quote" = false) :
     compileExprFuel (fuel + 3) env counter (.expr [.sym "quote", source]) =
       .ok (chainify source, [], counter) := by
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [compileAppFuel.eq_2]
   rw [rewriteStreamOp_quote_none]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
@@ -3210,7 +3228,7 @@ theorem compileExprFuel_empty_eq (fuel counter : Nat) (env : CEnv)
     compileExprFuel (fuel + 3) env counter (.expr [.sym "empty"]) =
       .ok (.sym "True",
         [Goal.eq (.sym "True") (.sym "False")], counter) := by
-  rw [compileExprFuel.eq_7 (x_4 := by simp)]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
   rw [compileAppFuel.eq_2]
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_12]
@@ -3336,14 +3354,60 @@ def compileRuleFresh (env : CEnv) (counter : Nat) (params : List Atom)
     the bare `#lam` symbol or the partially applied `(#lam captures…)`. -/
 private def _desugarDoc : Unit := ()
 
-/-- Collect the $-variables of a surface atom (order-preserving). -/
-partial def surfaceVars (a : Atom) (acc : List String := []) : List String :=
+mutual
+
+/-- Collect the $-variables of a surface atom in first-occurrence order.
+The companion list traversal makes the recursion structurally total and
+transparent to the kernel. -/
+def surfaceVars (a : Atom) (acc : List String := []) : List String :=
   match a with
   | Atom.var v => if acc.contains v then acc else acc ++ [v]
-  | Atom.expr es => es.foldl (fun ac e => surfaceVars e ac) acc
+  | Atom.expr atoms => surfaceVarsList atoms acc
   | _ => acc
+termination_by 2 * a.size
+decreasing_by
+  all_goals simp_all [Atom.size] <;> omega
 
-partial def desugarBinders (a : Atom) (k : Nat) :
+/-- Structurally recursive list companion for `surfaceVars`. -/
+def surfaceVarsList : List Atom → List String → List String
+  | [], acc => acc
+  | atom :: rest, acc =>
+      surfaceVarsList rest (surfaceVars atom acc)
+termination_by atoms _ =>
+  2 * (atoms.map Atom.size).sum + 1
+decreasing_by
+  all_goals
+    simp only [List.map_cons, List.sum_cons]
+    have positive : 0 < atom.size := by
+      cases atom <;> simp [Atom.size] <;> omega
+    omega
+
+end
+
+/-- Construct the synthesized rule and closure value shared by both supported
+lambda parameter spellings. -/
+def finishLambdaDesugaring (parameters : List Atom) (body : Atom)
+    (nestedDefinitions : List Atom) (nextCounter : Nat) :
+    Atom × List Atom × Nat :=
+  let function := s!"#lam{nextCounter}"
+  let parameterVariables :=
+    parameters.foldl (fun acc atom => surfaceVars atom acc) []
+  let captures :=
+    (surfaceVars body).filter
+      (fun name => !parameterVariables.contains name)
+  let rule := Atom.expr [Atom.sym "=",
+    Atom.expr
+      (Atom.sym function :: (captures.map Atom.var) ++ parameters), body]
+  let value :=
+    if captures.isEmpty then Atom.sym function
+    else partialValue function (captures.map Atom.var)
+  (value, nestedDefinitions ++ [rule], nextCounter + 1)
+
+mutual
+
+/-- Structurally total binder conversion.  Generated-name counters are
+threaded left-to-right through the companion list traversal. -/
+def desugarBinders (a : Atom) (k : Nat) :
     Atom × List Atom × Nat :=
   match a with
   | Atom.expr [Atom.sym "quote", _] =>
@@ -3355,19 +3419,15 @@ partial def desugarBinders (a : Atom) (k : Nat) :
       -- λ closure conversion: captured outer vars become leading params;
       -- the VALUE is the bare symbol (no captures) or the partially
       -- applied chain (#lamK cap…), completed by callDyn at application
-      let (b', ds, k1) := desugarBinders body k
-      let f := s!"#lam{k1}"
-      let pvars := ps.foldl (fun ac e => surfaceVars e ac) []
-      let caps := (surfaceVars b').filter (fun v => !pvars.contains v)
-      let rule := Atom.expr [Atom.sym "=",
-        Atom.expr (Atom.sym f :: (caps.map Atom.var) ++ ps), b']
-      -- [SPEC translator.pl:253-254] value = F (no captures) or
-      -- partial(F, FreeVars)
-      let value := if caps.isEmpty then Atom.sym f
-        else partialValue f (caps.map Atom.var)
-      (value, ds ++ [rule], k1 + 1)
+      let (body', definitions, nextCounter) :=
+        desugarBinders body k
+      finishLambdaDesugaring ps body' definitions nextCounter
   | Atom.expr [Atom.sym "|->", Atom.var pv, body] =>
-      desugarBinders (Atom.expr [Atom.sym "|->", Atom.expr [Atom.var pv], body]) k
+      -- This spelling is semantically the singleton parameter list.  Handle
+      -- it directly rather than recursively constructing a larger atom.
+      let (body', definitions, nextCounter) :=
+        desugarBinders body k
+      finishLambdaDesugaring [Atom.var pv] body' definitions nextCounter
   | Atom.expr [Atom.sym "map-atom", l, Atom.var x, body] =>
       let (l', ds1, k1) := desugarBinders l k
       let (b', ds2, k2) := desugarBinders body k1
@@ -3390,22 +3450,65 @@ partial def desugarBinders (a : Atom) (k : Nat) :
       (Atom.expr [Atom.sym "foldl-atom", l', i', Atom.sym f],
        ds1 ++ ds2 ++ ds3 ++ [Atom.expr [Atom.sym "=",
          Atom.expr [Atom.sym f, Atom.var acc, Atom.var x], b']], k3 + 1)
-  | Atom.expr es =>
-      let (es', ds, k') := es.foldl
-        (fun (acc : List Atom × List Atom × Nat) e =>
-          let (e', d, k2) := desugarBinders e acc.2.2
-          (acc.1 ++ [e'], acc.2.1 ++ d, k2)) ([], [], k)
-      (Atom.expr es', ds, k')
+  | Atom.expr atoms =>
+      let (atoms', definitions, nextCounter) :=
+        desugarBinderList atoms k
+      (Atom.expr atoms', definitions, nextCounter)
   | other => (other, [], k)
+termination_by 2 * a.size
+decreasing_by
+  all_goals simp_all [Atom.size] <;> omega
+
+/-- Structurally recursive list companion for `desugarBinders`. -/
+def desugarBinderList : List Atom → Nat → List Atom × List Atom × Nat
+  | [], counter => ([], [], counter)
+  | atom :: rest, counter =>
+      let (atom', definitions, nextCounter) :=
+        desugarBinders atom counter
+      let (rest', restDefinitions, finalCounter) :=
+        desugarBinderList rest nextCounter
+      (atom' :: rest', definitions ++ restDefinitions, finalCounter)
+termination_by atoms _ =>
+  2 * (atoms.map Atom.size).sum + 1
+decreasing_by
+  all_goals
+    simp only [List.map_cons, List.sum_cons]
+    have positive : 0 < atom.size := by
+      cases atom <;> simp [Atom.size] <;> omega
+    omega
+
+end
+
+/-- Hoist binder-generated definitions without separating a split bang marker
+from the query it owns.
+
+The reader represents `!query` as the adjacent pair `!`, `query`.  Pinned
+PeTTa translates any lambda inside that runnable while processing the
+runnable, registering the synthesized clause before executing its translated
+goals [SPEC filereader.pl:20-24, translator.pl:244-261].  Therefore generated
+definitions belong before the marker/query pair, never between them.  Inline
+`(! query)` forms go through the ordinary branch and obey the same ordering.
+-/
+def desugarProgramAtoms : List Atom → Nat → List Atom × Nat
+  | [], counter => ([], counter)
+  | Atom.sym "!" :: query :: rest, counter =>
+      let (query', definitions, nextCounter) :=
+        desugarBinders query counter
+      let (rest', finalCounter) :=
+        desugarProgramAtoms rest nextCounter
+      (definitions ++ [Atom.sym "!", query'] ++ rest', finalCounter)
+  | atom :: rest, counter =>
+      let (atom', definitions, nextCounter) :=
+        desugarBinders atom counter
+      let (rest', finalCounter) :=
+        desugarProgramAtoms rest nextCounter
+      (definitions ++ [atom'] ++ rest', finalCounter)
 
 /-- Partition and compile a parsed program; bangs become queries
     `(goals, resultVar)`. -/
 def compileProgram (isBin : String → Bool) (atoms0 : List Atom) :
     CompileM (Prog × List (List Goal × Atom)) := do
-  let (atoms, _) := atoms0.foldl
-    (fun (acc : List Atom × Nat) a =>
-      let (a', ds, k') := desugarBinders a acc.2
-      (acc.1 ++ ds ++ [a'], k')) ([], 0)
+  let (atoms, _) := desugarProgramAtoms atoms0 0
   -- pass 1: collect rule heads, type decls, facts, bangs
   let mut decls : List (Atom × Atom) := []
   let mut facts : List Atom := []
@@ -3451,6 +3554,38 @@ inductive SourceForm where
   | importEnd (observable : Bool := true)
 deriving Repr, Inhabited, BEq
 
+/-- Source-form counterpart of `desugarProgramAtoms`.
+
+Only two adjacent atom forms can constitute a split runnable.  Typed import
+and registration boundaries are left in their original position, so malformed
+`!`-before-boundary inputs continue to be rejected by the sequential compiler
+rather than being silently reordered.  Generated definitions inherit the
+query form's visibility, while the bang marker retains its own visibility and
+therefore continues to control the query event.
+-/
+def desugarSourceForms : List SourceForm → Nat → List SourceForm × Nat
+  | [], counter => ([], counter)
+  | .atom (Atom.sym "!") bangObservable ::
+      .atom query queryObservable :: rest, counter =>
+      let (query', definitions, nextCounter) :=
+        desugarBinders query counter
+      let (rest', finalCounter) :=
+        desugarSourceForms rest nextCounter
+      (definitions.map (SourceForm.atom · queryObservable) ++
+        [.atom (Atom.sym "!") bangObservable,
+         .atom query' queryObservable] ++ rest',
+        finalCounter)
+  | .atom atom observable :: rest, counter =>
+      let (atom', definitions, nextCounter) :=
+        desugarBinders atom counter
+      let (rest', finalCounter) :=
+        desugarSourceForms rest nextCounter
+      (definitions.map (SourceForm.atom · observable) ++
+        [.atom atom' observable] ++ rest', finalCounter)
+  | form :: rest, counter =>
+      let (rest', finalCounter) := desugarSourceForms rest counter
+      (form :: rest', finalCounter)
+
 inductive TopEvent where
   | fact (a : Atom)
   | typeDecl (subj : Atom) (ty : Atom)
@@ -3469,20 +3604,7 @@ deriving Repr, Inhabited, BEq
 def compileProgramSequentialForms (isBin : String → Bool)
     (forms0 : List SourceForm) :
     CompileM (Prog × List TopEvent) := do
-  let (forms, _) := forms0.foldl
-    (fun (acc : List SourceForm × Nat) form =>
-      match form with
-      | .hostImport moduleName observable =>
-          (acc.1 ++ [.hostImport moduleName observable], acc.2)
-      | .prologRegister functions observable =>
-          (acc.1 ++ [.prologRegister functions observable], acc.2)
-      | .importBegin => (acc.1 ++ [.importBegin], acc.2)
-      | .importEnd observable =>
-          (acc.1 ++ [.importEnd observable], acc.2)
-      | .atom a observable =>
-          let (a', ds, k') := desugarBinders a acc.2
-          (acc.1 ++ ds.map (SourceForm.atom · observable) ++
-            [.atom a' observable], k')) ([], 0)
+  let (forms, _) := desugarSourceForms forms0 0
   let sourceAtoms := forms.filterMap fun
     | .atom atom _ => some atom
     | _ => none

@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=3d1c619fe5a4dc6c808f9c82c3812bb9b906f48f4b526ec3272599b275984204
+# compiler_sha256=20293857f9ac4bc5a5c9ba5d408d93ebcff473702d288e3c06a7566c6fe5eb86
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -127,13 +127,14 @@ RULE.normal	T30-34	X	-	N	GAP	no-clause-reference
 DESUGAR.quote_exact	T297-299	X	-	N	GAP	runtime-differential-pass; independent-opacity-proof-open
 DESUGAR.lambda_list	T244-261	S	-	N	FAIL	prepass-before-translator-hook-priority
 DESUGAR.lambda_var	T244-261	S	-	N	FAIL	extended-lambda-shape-before-translator-hook-priority
+APP.partial_apply	T59-61,T310-316,T324,T335-346	S	TranslatesPartialApplication;PartialCallAgrees;runClean_callDyn_partial_defined_eq_direct	SC	GAP	post-head untyped-complete fragment is sound/complete relative to an explicit state-indexed selectsUntypedComplete registry assumption and proper bound agreement: inhabitance, non-selection, and wrong-arity witnesses make the guard discriminating, bound arguments precede left-to-right new arguments, and one fresh output is allocated; sealed defined-base callDyn_partial redispatch is exact, while deriving that registry assumption from pinned type/arity state, proving reader-wide private-tag unforgeability, producing bound agreement from lambda captures, composing defined-base world ownership, and the typed/remaining-partial branches remain open
 DESUGAR.map5	T232-237	S	-	N	FAIL	prepass-before-translator-hook-priority
 DESUGAR.filter5	T238-243	S	-	N	FAIL	prepass-before-translator-hook-priority
 DESUGAR.foldl5	T225-231	S	-	N	FAIL	prepass-before-translator-hook-priority
 DESUGAR.expression_walk	-	P	-	N	FAIL	quote-barrier-fixed; other-data-barriers-unproved
 DESUGAR.leaf	-	P	-	N	GAP	identity-helper
 PROGRAM.static_predesugar	F13-45,T225-261	S	-	N	FAIL	rewrites-before-source-processing; quote-barrier-fixed
-PROGRAM.static_split_bang	F13-24	X	-	N	GAP	loader-reference-missing
+PROGRAM.static_split_bang	F13-24,F31-34	X	DesugarsProgram;desugarSourceForms_atoms_map	SC	PASS	reader-shaped adjacent marker/query ownership is sound/complete: generated definitions precede the still-adjacent marker/query pair while order, counter, and visibility are preserved; the former interposed-definition ordering is rejected
 PROGRAM.static_partition	F20-45	S	-	N	GAP	groups-rules-and-queries-not-source-order
 PROGRAM.static_compile_rules	F36-44	S	-	N	GAP	program-reference-missing
 PROGRAM.static_compile_queries	F31-35	S	-	N	GAP	program-reference-missing

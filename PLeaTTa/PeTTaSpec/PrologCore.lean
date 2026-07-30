@@ -673,6 +673,151 @@ inductive TranslatesArgs : TranslatorState → Nat → List Atom → List Term �
       TranslatesArgs state counter (source :: sources) (term :: terms)
         (headGoals ++ tailGoals) nextCounter
 
+namespace TranslatesArgs
+
+/-- Native argument translation preserves arity exactly.  This makes later
+branch-selection premises speak about source arity rather than an existential
+list of independently translated terms. -/
+theorem length_eq
+    {state : TranslatorState} {counter nextCounter : Nat}
+    {sources : List Atom} {terms : List Term} {goals : List Goal}
+    (translation :
+      TranslatesArgs state counter sources terms goals nextCounter) :
+    sources.length = terms.length := by
+  induction translation with
+  | nil =>
+      rfl
+  | cons head tail inductionHypothesis =>
+      simp only [List.length_cons, inductionHypothesis]
+
+end TranslatesArgs
+
+/-- Independent branch-selection interface for applying a partial closure.
+`selectsUntypedComplete state head arity` means pinned PeTTa found no
+state-visible type-chain branch and recognized `head/arity` as a complete
+callable predicate.  Keeping this proposition abstract prevents the local
+compiler equation from silently asserting the branch guard it is meant to
+prove later.
+[SPEC translator.pl:313-324,335-346] -/
+structure PartialApplicationRegistry where
+  selectsUntypedComplete : TranslatorState → String → Nat → Prop
+
+/-- Independent smart-dispatch fragment for applying an already-translated
+partial closure on the explicitly selected untyped-complete branch.  Pinned
+PeTTa recognizes `partial(Fun, Bound)`, appends the newly translated arguments
+after `Bound`, and emits the same direct output-last call as a complete
+source-defined application.
+
+This relation begins after head translation has produced the partial value;
+deriving the selector from type/arity state, lambda translation, and
+translator-hook priority remain separate obligations.  The zero-new-argument
+case is not special: it remains guarded by completeness at `bound.length`, so
+a faithful registry rejects an unsaturated partial value there.
+[SPEC translator.pl:59-61,310-316,324,335-346] -/
+inductive TranslatesPartialApplication
+    (registry : PartialApplicationRegistry) :
+    TranslatorState → Nat → String → List Term → List Atom → Term →
+      List Goal → Nat → Prop where
+  | apply {state : TranslatorState} {counter argumentCounter : Nat}
+      {head : String} {bound : List Term} {sources : List Atom}
+      {terms : List Term} {argumentGoals : List Goal}
+      (selected :
+        registry.selectsUntypedComplete state head
+          (bound.length + terms.length))
+      (arguments :
+        TranslatesArgs state counter sources terms argumentGoals
+          argumentCounter) :
+      TranslatesPartialApplication registry state counter head bound sources
+        (.variable (.generated argumentCounter))
+        (argumentGoals ++
+          [.call head
+            (bound ++ terms ++ [.variable (.generated argumentCounter)])])
+        (argumentCounter + 1)
+
+namespace TranslatesPartialApplication
+
+/-- The branch selector is observable at the source arity, not merely at the
+existential translated-term arity. -/
+theorem selected_at_source_arity
+    {registry : PartialApplicationRegistry}
+    {state : TranslatorState} {counter nextCounter : Nat}
+    {head : String} {bound : List Term} {sources : List Atom}
+    {result : Term} {goals : List Goal}
+    (translation :
+      TranslatesPartialApplication registry state counter head bound sources
+        result goals nextCounter) :
+    registry.selectsUntypedComplete state head
+      (bound.length + sources.length) := by
+  cases translation with
+  | apply selected arguments =>
+      simpa [arguments.length_eq] using selected
+
+end TranslatesPartialApplication
+
+/-- A selector choosing one exact program state, head, and complete arity.
+This is a proof witness, not the eventual derivation from pinned type/arity
+registries. -/
+def exactPartialApplicationRegistry
+    (expectedState : TranslatorState) (expectedHead : String)
+    (expectedArity : Nat) : PartialApplicationRegistry where
+  selectsUntypedComplete := fun state head arity =>
+    state = expectedState ∧ head = expectedHead ∧ arity = expectedArity
+
+/-- A selector with no chosen branch, used to show that the guard is
+discriminating rather than decorative. -/
+def emptyPartialApplicationRegistry : PartialApplicationRegistry where
+  selectsUntypedComplete := fun _ _ _ => False
+
+/-- The guarded relation is inhabited on the concrete captured-partial
+application shape used by the executable characterization fixture.
+[SPEC translator.pl:59-61,310-316,324,335-346] -/
+theorem partial_application_inhabited
+    (state : TranslatorState) (counter : Nat) :
+    TranslatesPartialApplication
+      (exactPartialApplicationRegistry state "pair" 2)
+      state counter "pair" [.integer 42] [.gnd (.int 43)]
+      (.variable (.generated counter))
+      [.call "pair"
+        [.integer 42, .integer 43, .variable (.generated counter)]]
+      (counter + 1) := by
+  have arguments :
+      TranslatesArgs state counter [.gnd (.int 43)] [.integer 43] []
+        counter :=
+    .cons (.literal (.integer 43)) .nil
+  simpa [exactPartialApplicationRegistry] using
+    (TranslatesPartialApplication.apply
+      (registry := exactPartialApplicationRegistry state "pair" 2)
+      (state := state) (counter := counter) (argumentCounter := counter)
+      (head := "pair") (bound := [.integer 42])
+      (sources := [.gnd (.int 43)]) (terms := [.integer 43])
+      (argumentGoals := []) (by simp [exactPartialApplicationRegistry])
+      arguments)
+
+/-- With no selected branch, no partial-application translation can be
+derived, even when argument translation itself succeeds. -/
+theorem non_selecting_registry_has_no_derivation
+    {state : TranslatorState} {counter nextCounter : Nat}
+    {head : String} {bound : List Term} {sources : List Atom}
+    {result : Term} {goals : List Goal} :
+    ¬ TranslatesPartialApplication emptyPartialApplicationRegistry
+      state counter head bound sources result goals nextCounter := by
+  intro translation
+  have selected := translation.selected_at_source_arity
+  simp [emptyPartialApplicationRegistry] at selected
+
+/-- Selecting `pair/1` cannot authorize the fixture's total arity two.  This
+pins the arity index as the guard that excludes a still-partial branch. -/
+theorem wrong_arity_registry_rejected
+    (state : TranslatorState) {counter nextCounter : Nat}
+    {result : Term} {goals : List Goal} :
+    ¬ TranslatesPartialApplication
+      (exactPartialApplicationRegistry state "pair" 1)
+      state counter "pair" [.integer 42] [.gnd (.int 43)]
+      result goals nextCounter := by
+  intro translation
+  have selected := translation.selected_at_source_arity
+  simp [exactPartialApplicationRegistry] at selected
+
 /-- Atomic refined type names supported by the first exact type-check bridge.
 The three unchecked names follow pinned translator priority. Truth spellings
 are excluded because their executable boolean encoding is not a type-name
