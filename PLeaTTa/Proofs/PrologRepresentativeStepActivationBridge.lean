@@ -6,6 +6,7 @@ Purpose: Compose the semantic retained-call frontier with the actual
   independent clausesPull and sealed executable eq_ok successors.
 Trusted boundary: none
 Main exports:
+  RepresentativeRetainedCallFrontier.activate_task_step_head,
   RepresentativeRetainedCallFrontier.activate_task_step
 -/
 import PLeaTTa.Proofs.PrologRepresentativeCallFrontierBridge
@@ -150,7 +151,7 @@ Only three semantic support obligations remain caller-visible:
 
 The frontier itself discharges the executable fresh-counter high-water and
 pins the retained alternative tail, world, counter, order, and multiplicity. -/
-theorem RepresentativeRetainedCallFrontier.activate_task_step
+theorem RepresentativeRetainedCallFrontier.activate_task_step_head
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {alpha support : List (LogicVar × String)}
     {canonical : TreeSubstitution} {referenceBase : Substitution}
@@ -162,10 +163,9 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step
     {branchTail : List ClauseBranch} {clauseTail : List PLeaTTa.Clause}
     {altTail : List PLeaTTa.Alt} {copied : PLeaTTa.Clause}
     {referencePayload : List Term}
-    {referenceRest : List PeTTaSpec.PrologCore.Goal}
     {argsv args : List Atom} {res : Atom}
     {rest : List PLeaTTa.Goal} {binding : Subst}
-    {qterm : Atom} {barrier callerBarrier startCounter : Nat}
+    {qterm : Atom} {barrier startCounter : Nat}
     {independentResult : Substitution}
     (entry :
       RepresentativeSupportedCallEntryRelates alpha opened before pending
@@ -175,10 +175,8 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step
         branch clause branchTail clauseTail altTail copied argsv args res rest
         binding qterm barrier startCounter)
     (payload :
-      TaskPayloadAgrees alpha support callerBarrier canonical referenceBase
-        referenceBindings binding
-        (.call opened.cursor.predicate referencePayload :: referenceRest)
-        (.call opened.cursor.predicate args res :: rest))
+      LocalCallPayloadAgrees alpha support canonical referenceBase
+        referenceBindings binding referencePayload args res)
     (payloadSupported :
       AlphaTermsSupported alpha support referencePayload)
     (openedArguments : opened.cursor.arguments = referencePayload)
@@ -227,7 +225,7 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step
       (activatedExecutableSuccessor pending copied rest qterm installed).counter =
         pending.persistent.counter := by
   obtain ⟨representative, oldCumulative, queryAtOpen⟩ :=
-    PLeaTTa.PrologRecursiveCallPayloadBridge.TaskPayloadAgrees.representativeNormalizedCallAgreesWith
+    PLeaTTa.PrologRecursiveCallPayloadBridge.LocalCallPayloadAgrees.representativeNormalizedCallAgreesWith
       payload payloadSupported opened.cursor openedArguments openedBindings
   have queryAtFinish :
       RepresentativeNormalizedCallAgreesWith alpha finish
@@ -356,5 +354,93 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step
       sourceOrdered, sourceStep, executableStep, ?_, taskCopied, retainedAlts,
       worldPreserved, counterPreserved⟩
   simpa only using cumulativeCopied
+
+/-- Compatibility wrapper for callers that still carry a uniformly tagged
+whole-task payload.
+
+The activation proof itself is head-only: the caller continuation's control
+barrier is irrelevant to selecting and installing the retained clause MGU.
+Projecting through `localCallPayload` makes that independence explicit while
+preserving the former API. -/
+theorem RepresentativeRetainedCallFrontier.activate_task_step
+    {prog : Prog} {gt : Metta.GroundingTable}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {referenceBindings : Substitution}
+    {opened : OpenedCall} {before : DemandDrivenStep.OpenConf}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor}
+    {branch : ClauseBranch} {clause : PLeaTTa.Clause}
+    {branchTail : List ClauseBranch} {clauseTail : List PLeaTTa.Clause}
+    {altTail : List PLeaTTa.Alt} {copied : PLeaTTa.Clause}
+    {referencePayload : List Term}
+    {referenceRest : List PeTTaSpec.PrologCore.Goal}
+    {argsv args : List Atom} {res : Atom}
+    {rest : List PLeaTTa.Goal} {binding : Subst}
+    {qterm : Atom} {barrier callerBarrier startCounter : Nat}
+    {independentResult : Substitution}
+    (entry :
+      RepresentativeSupportedCallEntryRelates alpha opened before pending
+        argsv args res rest binding qterm barrier startCounter)
+    (frontier :
+      RepresentativeRetainedCallFrontier alpha opened before pending finish
+        branch clause branchTail clauseTail altTail copied argsv args res rest
+        binding qterm barrier startCounter)
+    (payload :
+      TaskPayloadAgrees alpha support callerBarrier canonical referenceBase
+        referenceBindings binding
+        (.call opened.cursor.predicate referencePayload :: referenceRest)
+        (.call opened.cursor.predicate args res :: rest))
+    (payloadSupported :
+      AlphaTermsSupported alpha support referencePayload)
+    (openedArguments : opened.cursor.arguments = referencePayload)
+    (openedBindings : opened.cursor.bindings = referenceBindings)
+    (queryReferenceBelow :
+      GeneratedBelow finish.reservationStart (alpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ alpha.map Prod.snd →
+        name ∈
+          resolutionOccupiedVars
+            (args.map (PLeaTTa.subst binding)) res rest binding qterm)
+    (live :
+      AlphaRuntimeNamesLive support (copied.body ++ rest) qterm)
+    (resolved : HeadResolution branch independentResult) :
+    ∃ representative nextAlpha sourceCanonical flattened installed,
+      SharedRuntimeAlpha nextAlpha ∧
+      (∀ pair, pair ∈ alpha → pair ∈ nextAlpha) ∧
+      AlphaFreshFrontier nextAlpha branch.nextFresh (startCounter + 1) ∧
+      independentResult =
+        TreeSubstitution.reify (sourceCanonical ++ canonical) ++
+          referenceBase ∧
+      OrderedTreeMgu
+        (denoteEquations branch.normalizedHeadEquations) sourceCanonical ∧
+      RawStep opened.session (.clauses opened.scope finish) [] .none
+        opened.session
+        (.running
+          (.choice opened.scope
+            (.task opened.scope (branch.enter independentResult).rawBody
+              (branch.enter independentResult).bindings)
+            (.clauses opened.scope
+              (finish.advance branch branchTail)))) ∧
+      PLeaTTa.Step prog gt pending.pulled.toConf
+        (activatedExecutableSuccessor pending copied rest qterm installed) ∧
+      AlphaCumulativeResidualVariantAgreesOnWith
+        nextAlpha support (sourceCanonical ++ canonical) referenceBase
+        (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
+        (flattened ++ representative) ∧
+      TaskPayloadAgrees nextAlpha support barrier
+        (sourceCanonical ++ canonical) referenceBase independentResult
+        (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
+        branch.body copied.body ∧
+      (activatedExecutableSuccessor pending copied rest qterm installed).alts =
+        altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts ∧
+      (activatedExecutableSuccessor pending copied rest qterm installed).world =
+        pending.persistent.world ∧
+      (activatedExecutableSuccessor pending copied rest qterm installed).counter =
+        pending.persistent.counter :=
+  RepresentativeRetainedCallFrontier.activate_task_step_head entry frontier
+    (PrologRecursiveCallPayloadBridge.TaskPayloadAgrees.localCallPayload payload)
+    payloadSupported openedArguments openedBindings
+    queryReferenceBelow queryExecutableLive live resolved
 
 end PLeaTTa.PrologRepresentativeStepActivationBridge

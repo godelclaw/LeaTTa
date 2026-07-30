@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Fail closed when the audited Prolog-semantics ledger becomes stale."""
 
 from __future__ import annotations
@@ -138,6 +139,10 @@ PROLOG_REPRESENTATIVE_STEP_ACTIVATION_BRIDGE = (
 PROLOG_TASK_CONTINUATION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologTaskContinuationBridge.lean"
+)
+PROLOG_CONTROL_SEGMENT_SPINE_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologControlSegmentSpineBridge.lean"
 )
 PROLOG_REPRESENTATIVE_PRODUCT_ACTIVATION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
@@ -296,6 +301,8 @@ def check() -> list[str]:
             digest(PROLOG_REPRESENTATIVE_STEP_ACTIVATION_BRIDGE),
         "prolog_task_continuation_bridge_sha256":
             digest(PROLOG_TASK_CONTINUATION_BRIDGE),
+        "prolog_control_segment_spine_bridge_sha256":
+            digest(PROLOG_CONTROL_SEGMENT_SPINE_BRIDGE),
         "prolog_representative_product_activation_bridge_sha256":
             digest(PROLOG_REPRESENTATIVE_PRODUCT_ACTIVATION_BRIDGE),
         "prolog_activated_product_step_bridge_sha256":
