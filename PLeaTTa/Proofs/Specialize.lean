@@ -5588,8 +5588,10 @@ theorem callableHeadRewriteValid_specialize (isDefined isBin : String → Bool)
       | sym f =>
           cases hdef : isDefined f <;> cases hbin : isBin f <;>
             simp [hdef, hbin]
-      | var v => simp [partialHeadView?, chainListM]
-      | gnd g => simp [partialHeadView?, chainListM]
+      | var v =>
+          simp [partialHeadView?, partialView?]
+      | gnd g =>
+          simp [partialHeadView?, partialView?]
       | expr xs =>
           cases hp : partialHeadView? (.expr xs) with
           | none => simp [hp]
@@ -8290,8 +8292,7 @@ theorem chainListM_sound : (atom : Atom) → (atoms : List Atom) →
 theorem partialHeadView?_sound (concrete : Atom) (base : String)
     (bound : List Atom)
     (hview : partialHeadView? concrete = some (base, bound)) :
-    chainListM concrete =
-      some [Atom.sym "partial", Atom.sym base, chainOf bound] := by
+    partialView? concrete = some (base, chainOf bound) := by
   unfold partialHeadView? at hview
   split at hview
   next parsedBase boundList houter =>
@@ -8310,36 +8311,29 @@ theorem subst_denoted_partialHeadView (runtime binding : Subst)
     (hdenotes : SubstDenotesBinding runtime binding)
     (hview : partialHeadView? (Metta.Subst.apply binding head) =
       some (base, bound)) :
-    subst runtime head = chainOf
-      [Atom.sym "partial", Atom.sym base,
-        chainOf (bound.map (subst runtime))] := by
+    subst runtime head =
+      partialC base (chainOf (bound.map (subst runtime))) := by
   let concrete := Metta.Subst.apply binding head
   have houter := partialHeadView?_sound concrete base bound hview
-  have hshape := chainListM_sound concrete
-    [Atom.sym "partial", Atom.sym base, chainOf bound] houter
+  have hshape : concrete = partialC base (chainOf bound) :=
+    partialView?_sound houter
   have hinvisible := subst_apply_of_denotes runtime binding hdenotes head
   calc
     subst runtime head = subst runtime concrete := hinvisible.symm
-    _ = subst runtime (chainOf
-        [Atom.sym "partial", Atom.sym base, chainOf bound]) := by rw [hshape]
-    _ = chainOf
-        ([Atom.sym "partial", Atom.sym base, chainOf bound].map
-          (subst runtime)) := subst_chainOf runtime _
-    _ = chainOf [Atom.sym "partial", Atom.sym base,
-          chainOf (bound.map (subst runtime))] := by
-        simp [subst_chainOf]
+    _ = subst runtime (partialC base (chainOf bound)) := by rw [hshape]
+    _ = partialC base (chainOf (bound.map (subst runtime))) := by
+        simp [partialC, partialTagA, subst_chainOf]
 
-theorem chainListM_subst_denoted_partialHeadView (runtime binding : Subst)
+theorem partialView?_subst_denoted_partialHeadView (runtime binding : Subst)
     (head : Atom) (base : String) (bound : List Atom)
     (hdenotes : SubstDenotesBinding runtime binding)
     (hview : partialHeadView? (Metta.Subst.apply binding head) =
       some (base, bound)) :
-    chainListM (subst runtime head) =
-      some [Atom.sym "partial", Atom.sym base,
-        chainOf (bound.map (subst runtime))] := by
+    partialView? (subst runtime head) =
+      some (base, chainOf (bound.map (subst runtime))) := by
   rw [subst_denoted_partialHeadView runtime binding head base bound
     hdenotes hview]
-  exact chainListM_chainOf _
+  simp [partialC, partialView?, partialTagA]
 
 /-- Every atom supported by source residuals is literally fixed by a
     sequential residual state. -/
@@ -9884,8 +9878,7 @@ theorem callDyn_partial_steps_to_redispatch (prog : Prog) (gt : GroundingTable)
     (bound args : List Atom) (res : Atom) (rest : List Goal) (b : Subst)
     (hcur : c.cur = some (Goal.callDyn head args res :: rest, b))
     (hns : ∀ f, subst b head ≠ Atom.sym f)
-    (hp : chainListM (subst b head) =
-      some [Atom.sym "partial", Atom.sym base, boundList])
+    (hp : partialView? (subst b head) = some (base, boundList))
     (hbound : bound = (chainListM boundList).getD []) :
     Step prog gt c
       { c with cur := some (
@@ -9899,8 +9892,7 @@ theorem runClean_callDyn_partial_eq_redispatch (prog : Prog)
     (rest : List Goal) (b : Subst)
     (hcur : c.cur = some (Goal.callDyn head args res :: rest, b))
     (hns : ∀ f, subst b head ≠ Atom.sym f)
-    (hp : chainListM (subst b head) =
-      some [Atom.sym "partial", Atom.sym base, boundList])
+    (hp : partialView? (subst b head) = some (base, boundList))
     (hbound : bound = (chainListM boundList).getD []) :
     runClean prog gt (fuel + 2) c none =
       runClean prog gt (fuel + 1)
@@ -9932,8 +9924,7 @@ theorem runClean_callDyn_partial_defined_eq_direct (prog : Prog)
     (rest : List Goal) (b : Subst)
     (hcur : c.cur = some (Goal.callDyn head args res :: rest, b))
     (hns : ∀ f, subst b head ≠ Atom.sym f)
-    (hp : chainListM (subst b head) =
-      some [Atom.sym "partial", Atom.sym base, boundList])
+    (hp : partialView? (subst b head) = some (base, boundList))
     (hbound : bound = (chainListM boundList).getD [])
     (hdefined : c.world.clauseHeadCandidates base ≠ []) :
     runClean prog gt (fuel + 3) c none =
@@ -9964,8 +9955,7 @@ theorem runClean_callDyn_partial_builtin_eq_direct (prog : Prog)
     (rest : List Goal) (b : Subst)
     (hcur : c.cur = some (Goal.callDyn head args res :: rest, b))
     (hns : ∀ f, subst b head ≠ Atom.sym f)
-    (hp : chainListM (subst b head) =
-      some [Atom.sym "partial", Atom.sym base, boundList])
+    (hp : partialView? (subst b head) = some (base, boundList))
     (hbound : bound = (chainListM boundList).getD [])
     (hundefined : c.world.clauseHeadCandidates base = [])
     (hbuiltin : (GroundingTable.lookup gt base).isSome) :
@@ -10013,8 +10003,8 @@ theorem runClean_denoted_callDyn_partial_defined_eq_runtimeDirect
   have hnotSymbol : ∀ f, subst runtime head ≠ Atom.sym f := by
     intro f
     rw [hshape]
-    simp [chainOf, consC]
-  have hpartial := chainListM_subst_denoted_partialHeadView runtime binding
+    simp [partialC, chainOf]
+  have hpartial := partialView?_subst_denoted_partialHeadView runtime binding
     head base bound hdenotes hview
   have hbound : bound.map (subst runtime) =
       (chainListM (chainOf (bound.map (subst runtime)))).getD [] := by
@@ -10043,8 +10033,8 @@ theorem runClean_denoted_callDyn_partial_builtin_eq_runtimeDirect
   have hnotSymbol : ∀ f, subst runtime head ≠ Atom.sym f := by
     intro f
     rw [hshape]
-    simp [chainOf, consC]
-  have hpartial := chainListM_subst_denoted_partialHeadView runtime binding
+    simp [partialC, chainOf]
+  have hpartial := partialView?_subst_denoted_partialHeadView runtime binding
     head base bound hdenotes hview
   have hbound : bound.map (subst runtime) =
       (chainListM (chainOf (bound.map (subst runtime)))).getD [] := by

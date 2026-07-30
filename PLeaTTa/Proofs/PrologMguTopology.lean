@@ -923,7 +923,8 @@ theorem CanonicalRuntimeAgrees.runtime_variable_supported
       inductionHypothesis =>
       have argumentSupported := supported.2.1
       have argumentMember : name ∈ encodedArguments.vars := by
-        simpa [chainOf, consC, nilA, Atom.vars] using member
+        simpa [partialC, partialTagA, chainOf, consC, nilA, Atom.vars] using
+          member
       exact inductionHypothesis argumentSupported argumentMember
   | @cons headTree tailTree headAtom tailAtom head tail headInduction
       tailInduction =>
@@ -1035,7 +1036,8 @@ theorem CanonicalRuntimeAgrees.apply_of_supported
   | string value =>
       simpa using (CanonicalRuntimeAgrees.string (alpha := alpha) value)
   | partialValue arguments inductionHypothesis =>
-      simpa [TreeSubstitution.apply_node, subst_chainOf_local] using
+      simpa [partialC, partialTagA, TreeSubstitution.apply_node,
+        subst_chainOf_local] using
         (CanonicalRuntimeAgrees.partialValue
           (inductionHypothesis supported.2.1))
   | nil =>

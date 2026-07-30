@@ -205,7 +205,7 @@ def compileBinArity : String → Option Nat
   | _ => none
 
 def partialValue (f : String) (args : List Atom) : Atom :=
-  chainOf [Atom.sym "partial", Atom.sym f, chainOf args]
+  partialC f (chainOf args)
 
 private def chainListC : Atom → Option (List Atom)
   | Atom.sym "#nil" => some []
@@ -213,8 +213,8 @@ private def chainListC : Atom → Option (List Atom)
   | _ => none
 
 private def partialValue? (a : Atom) : Option (String × List Atom) :=
-  match chainListC a with
-  | some [Atom.sym "partial", Atom.sym f, boundList] =>
+  match partialView? a with
+  | some (f, boundList) =>
       (chainListC boundList).map (fun bound => (f, bound))
   | _ => none
 
@@ -1467,8 +1467,7 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
           [Goal.eq r compilerTrueA] [Goal.eq r compilerFalseA]], n1)
     | .hMatch, [sp, p] => do
         -- under-applied registered fun => partial value [SPEC translator.pl:58]
-        .ok (chainOf [Atom.sym "partial", Atom.sym "match",
-                      chainOf [chainify sp, chainify p]], [], n)
+        .ok (partialC "match" (chainOf [chainify sp, chainify p]), [], n)
     | .hDoubleEqual, [Atom.expr [Atom.sym "size-atom", e], kA] => do
         -- shape constraint: `(== (size-atom e) k)` with literal k constrains
         -- e's STRUCTURE (a k-slot chain) — structural, so enumeration

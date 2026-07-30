@@ -643,7 +643,8 @@ theorem canonicalRuntimeAgrees_apply
   | string value =>
       simpa using (CanonicalRuntimeAgrees.string (alpha := alpha) value)
   | partialValue arguments inductionHypothesis =>
-      simpa [TreeSubstitution.apply_node, subst_chainOf_local] using
+      simpa [partialC, partialTagA, TreeSubstitution.apply_node,
+        subst_chainOf_local] using
         (CanonicalRuntimeAgrees.partialValue inductionHypothesis)
   | nil =>
       simpa [nilA] using (CanonicalRuntimeAgrees.nil (alpha := alpha))
@@ -854,8 +855,9 @@ theorem CanonicalRuntimeAgrees.equivalent_of_same
   | partialValue arguments inductionHypothesis =>
       cases rightAgreement with
       | partialValue rightArguments =>
-          apply chainOf_equivalent
-          exact .cons (.symbol "partial")
+          apply AtomEquivalentWith.expression
+          exact .cons
+            (.ground (PLeaTTa.prologGroundIdentical_self _))
             (.cons (.symbol _) (.cons
               (inductionHypothesis rightArguments) .nil))
   | nil =>

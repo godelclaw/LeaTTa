@@ -5638,8 +5638,8 @@ def step (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf) : Conf :=
              -- [SPEC translator.pl:59-61] applying a partial(base, bound)
              -- appends the new args to bound and re-dispatches; anything
              -- else is data (:62-64)
-             match chainListM other with
-             | some [Atom.sym "partial", Atom.sym base, boundList] =>
+             match partialView? other with
+             | some (base, boundList) =>
                  let bound := (chainListM boundList).getD []
                  let g := Goal.callDyn (Atom.sym base) (bound ++ args) res
                  { c with cur := some (g :: rest, b) }
@@ -5775,7 +5775,7 @@ def step (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf) : Conf :=
         else
         let cs := c.world.resolutionCandidates f args.length
         if !(cs.any (fun cl => cl.params.length == args.length)) then
-          let pv := chainOf [Atom.sym "partial", Atom.sym f, chainOf args]
+          let pv := partialC f (chainOf args)
           { c with cur := some (Goal.eq res pv :: rest, b) }
         else
           let bc := barrierDepth c + 1
@@ -5788,7 +5788,7 @@ def step (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf) : Conf :=
         let av := args.map (subst b)
         -- under-applied builtin -> partial value (same root as .call)
         if binArity op != 0 && av.length < binArity op then
-          let pv := chainOf [Atom.sym "partial", Atom.sym op, chainOf av]
+          let pv := partialC op (chainOf av)
           { c with cur := some (Goal.eq res pv :: rest, b) }
         else
           binResolvedStep gt c op args res rest b av (subst b res)

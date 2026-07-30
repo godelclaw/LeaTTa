@@ -84,7 +84,7 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (hna : ¬ ((c.world.resolutionCandidates f args.length).any
         (fun cl => cl.params.length == args.length)))
       (g : Goal) (hg : g = Goal.eq res
-        (chainOf [Atom.sym "partial", Atom.sym f, chainOf args])) :
+        (partialC f (chainOf args))) :
       Step prog gt c { c with cur := some (g :: rest, b) }
   -- cached tabled call [SPEC lib_tabling.metta:7-11]: replay table answers
   | call_table_cached (c : Conf) (f : String) (args : List Atom) (res : Atom)
@@ -121,7 +121,7 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (hb : binArity op ≠ 0 ∧ (args.map (subst b)).length < binArity op)
       (h : c.cur = some (Goal.bin op args res :: rest, b))
       (g : Goal) (hg : g = Goal.eq res
-        (chainOf [Atom.sym "partial", Atom.sym op, chainOf (args.map (subst b))])) :
+        (partialC op (chainOf (args.map (subst b))))) :
       Step prog gt c { c with cur := some (g :: rest, b) }
   -- `translatePredicate` calls owned by the PLeaTTa world remain in the pure
   -- core: named spaces become `smatch`, while locally asserted/compiled
@@ -376,8 +376,7 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (bound : List Atom)
       (h : c.cur = some (Goal.callDyn hd args res :: rest, b))
       (hns : ∀ f, subst b hd ≠ Atom.sym f)
-      (hp : chainListM (subst b hd)
-        = some [Atom.sym "partial", Atom.sym base, boundList])
+      (hp : partialView? (subst b hd) = some (base, boundList))
       (hbd : bound = (chainListM boundList).getD [])
       (g : Goal) (hg : g = Goal.callDyn (Atom.sym base) (bound ++ args) res) :
       Step prog gt c { c with cur := some (g :: rest, b) }
@@ -385,8 +384,8 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (rest : List Goal) (b : Subst)
       (h : c.cur = some (Goal.callDyn hd args res :: rest, b))
       (hns : ∀ f, subst b hd ≠ Atom.sym f)
-      (hnp : ∀ base boundList, chainListM (subst b hd)
-        ≠ some [Atom.sym "partial", Atom.sym base, boundList])
+      (hnp : ∀ base boundList,
+        partialView? (subst b hd) ≠ some (base, boundList))
       (g : Goal) (hg : g = Goal.eq res (chainOf (subst b hd :: args))) :
       Step prog gt c { c with cur := some (g :: rest, b) }
   -- meta-circular eval [SPEC metta.pl:245]: re-compile the runtime value

@@ -259,7 +259,7 @@ theorem step_call (c : Conf) (f : String) (args : List Atom) (res : Atom)
           | false =>
               have hstep : step prog gt fuel c
                   = { c with cur := some (Goal.eq res
-                        (chainOf [Atom.sym "partial", Atom.sym f, chainOf args])
+                        (partialC f (chainOf args))
                         :: rest, b) } := by
                 unfold step; rw [h]
                 simp [hcan, he, ha]
@@ -325,22 +325,30 @@ theorem step_callDyn (c : Conf) (hd : Atom) (args : List Atom) (res : Atom)
       have hstep : step prog gt fuel c
           = { c with cur := some (Goal.eq res
                 (chainOf (Atom.var w :: args)) :: rest, b) } := by
-        unfold step; rw [h]; simp only [hhd, hcl]
+        unfold step
+        rw [h]
+        simp [hhd, partialView?]
       rw [hstep]
       refine Step.callDyn_data c hd args res rest b h ?_ ?_ _ ?_
       · intro f; rw [hhd]; simp
-      · intro base boundList; rw [hhd]; simp [chainListM]
+      · intro base boundList
+        rw [hhd]
+        simp [partialView?]
       · rw [hhd]
   | gnd gr =>
       have hcl : chainListM (Atom.gnd gr) = none := rfl
       have hstep : step prog gt fuel c
           = { c with cur := some (Goal.eq res
                 (chainOf (Atom.gnd gr :: args)) :: rest, b) } := by
-        unfold step; rw [h]; simp only [hhd, hcl]
+        unfold step
+        rw [h]
+        simp [hhd, partialView?]
       rw [hstep]
       refine Step.callDyn_data c hd args res rest b h ?_ ?_ _ ?_
       · intro f; rw [hhd]; simp
-      · intro base boundList; rw [hhd]; simp [chainListM]
+      · intro base boundList
+        rw [hhd]
+        simp [partialView?]
       · rw [hhd]
   | expr es =>
       unfold step; rw [h]; simp only [hhd]
@@ -374,8 +382,9 @@ theorem step_bin_nonlocal (c : Conf) (op : String) (args : List Atom)
         rw [Bool.and_eq_true] at h1
         exact ⟨by simpa using h1.1, by simpa using h1.2⟩
       have hstep : step prog gt fuel c
-          = { c with cur := some (Goal.eq res (chainOf [Atom.sym "partial",
-                Atom.sym op, chainOf (args.map (subst b))]) :: rest, b) } := by
+          = { c with cur := some (Goal.eq res
+                (partialC op (chainOf (args.map (subst b)))) ::
+                rest, b) } := by
         unfold step; rw [h]; simp only [h1, if_true]
       rw [hstep]
       exact Step.bin_partial c op args res rest b hb h _ rfl
@@ -666,8 +675,8 @@ theorem step_bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
         exact ⟨by simpa using h1.1, by simpa using h1.2⟩
       have hstep : step prog gt fuel c =
           { c with cur := some (Goal.eq res
-              (chainOf [Atom.sym "partial", Atom.sym op,
-                chainOf (args.map (subst b))]) :: rest, b) } := by
+              (partialC op (chainOf (args.map (subst b)))) ::
+              rest, b) } := by
         unfold step
         rw [h]
         simp only [h1, if_true]

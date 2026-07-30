@@ -35,7 +35,7 @@ inductive TermAgrees : Term → Atom → Prop where
   | partialValue {head : String} {terms : List Term} {encodedArguments : Atom}
       (arguments : ProperListAgrees terms encodedArguments) :
       TermAgrees (.compound "partial" [.atom head, .list terms none])
-        (chainOf [.sym "partial", .sym head, encodedArguments])
+        (partialC head encodedArguments)
   | properList {items : List Term} {encoded : Atom}
       (elements : ProperListAgrees items encoded) :
       TermAgrees (.list items none) encoded

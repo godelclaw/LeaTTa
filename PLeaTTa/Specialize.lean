@@ -27,8 +27,8 @@ def MetaClause.ofRule? (source : Atom) (compiled : Clause) : Option MetaClause :
   | _ => none
 
 def partialHeadView? (a : Atom) : Option (String × List Atom) :=
-  match chainListM a with
-  | some [Atom.sym "partial", Atom.sym base, bound] =>
+  match partialView? a with
+  | some (base, bound) =>
       (chainListM bound).map (base, ·)
   | _ => none
 

@@ -21,6 +21,7 @@ import PLeaTTa.Proofs.PrologMguDirectSimulation
 import PLeaTTa.Proofs.PrologMguVariant
 import PLeaTTa.Proofs.PrologActivationUnifierBridge
 import PLeaTTa.Proofs.PrologActivationFailureBridge
+import PLeaTTa.Proofs.PrologCanonicalRuntimeReading
 import PLeaTTa.Proofs.PrologGoalAlpha
 import PLeaTTa.Proofs.PrologActivationMacro
 import PLeaTTa.Proofs.PrologActivationBridge
@@ -1051,6 +1052,13 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologActivationFailureBridge.RetainedHeadFailureAgrees.step_correspondence
 #print axioms PLeaTTa.PrologActivationFailureBridge.repeated_variable_false_positive_agrees
 #print axioms PLeaTTa.PrologActivationFailureBridge.repeated_variable_false_positive_steps_together
+#print axioms PLeaTTa.PrologCanonicalRuntimeReading.CanonicalRuntimeReading.functional
+#print axioms PLeaTTa.PrologCanonicalRuntimeReading.literal_runtime_true_is_excluded
+#print axioms PLeaTTa.PrologCanonicalRuntimeReading.literal_runtime_nil_is_excluded
+#print axioms PLeaTTa.PrologCanonicalRuntimeReading.partial_value_is_admitted
+#print axioms PLeaTTa.PrologCanonicalRuntimeReading.partial_runtime_list_reading_is_excluded
+#print axioms PLeaTTa.PrologCanonicalRuntimeReading.source_partial_list_is_distinctly_admitted
+#print axioms PLeaTTa.chainListM_partialC
 #print axioms PLeaTTa.ClauseIndex.build_candidates
 #print axioms PLeaTTa.ClauseIndex.naiveCandidates_eq_head_filter
 #print axioms PLeaTTa.ClauseIndex.Valid.push
@@ -1113,7 +1121,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.chainListM_sound
 #print axioms PLeaTTa.partialHeadView?_sound
 #print axioms PLeaTTa.subst_denoted_partialHeadView
-#print axioms PLeaTTa.chainListM_subst_denoted_partialHeadView
+#print axioms PLeaTTa.partialView?_subst_denoted_partialHeadView
 #print axioms PLeaTTa.subst_eq_self_of_domain_free
 #print axioms PLeaTTa.subst_idempotent_of_topological
 #print axioms PLeaTTa.map_subst_idempotent_of_topological

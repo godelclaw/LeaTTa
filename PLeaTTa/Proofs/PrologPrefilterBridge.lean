@@ -55,7 +55,7 @@ inductive CanonicalRuntimeAgrees
       CanonicalRuntimeAgrees alpha
         (.node (.compound "partial")
           [.node (.atom head) [], argumentsTree])
-        (chainOf [.sym "partial", .sym head, encodedArguments])
+        (partialC head encodedArguments)
   | nil :
       CanonicalRuntimeAgrees alpha (.node .nil []) nilA
   | cons {headTree tailTree : Tree} {headAtom tailAtom : Atom}
@@ -195,7 +195,7 @@ theorem CanonicalRuntimeAgrees.prologMatchCompat_of_treeMayUnify
       leftArgumentsIH =>
       cases right with
       | «variable» =>
-          simp [chainOf, consC, nilA, PLeaTTa.prologMatchCompat]
+          simp [partialC, partialTagA, PLeaTTa.prologMatchCompat]
       | @partialValue rightHead rightTree rightAtom rightArguments =>
           have children := compatible.node_children
           cases children with
@@ -207,8 +207,7 @@ theorem CanonicalRuntimeAgrees.prologMatchCompat_of_treeMayUnify
                   subst rightHead
                   have arguments :=
                     leftArgumentsIH rightArguments argumentsCompatible
-                  simp [chainOf, consC, nilA,
-                    PLeaTTa.prologMatchCompat,
+                  simp [partialC, partialTagA, PLeaTTa.prologMatchCompat,
                     PLeaTTa.prologMatchCompatList, arguments]
       | atom | trueAtom | falseAtom | integer | float | string | nil | cons =>
           cases compatible

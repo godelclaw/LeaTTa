@@ -428,7 +428,7 @@ inductive AlphaTermAgrees (alpha : List (LogicVar × String)) :
       (arguments : AlphaProperListAgrees alpha terms encodedArguments) :
       AlphaTermAgrees alpha
         (.compound "partial" [.atom head, .list terms none])
-        (chainOf [.sym "partial", .sym head, encodedArguments])
+        (partialC head encodedArguments)
   | properList {items : List Term} {encoded : Atom}
       (elements : AlphaProperListAgrees alpha items encoded) :
       AlphaTermAgrees alpha (.list items none) encoded
@@ -543,7 +543,9 @@ theorem termAgrees_alpha_freshen
   · intro head terms encoded arguments inductionHypothesis termSupport
     have termsSupport : termsVariablesIn domain terms := by
       simpa [termVariablesIn, termsVariablesIn] using termSupport
-    simpa [renameAtomSuffix_chainOf, renameAtomSuffix_sym] using
+    simpa [partialC, partialTagA, renameAtomSuffix_expr,
+      renameAtomSuffix_chainOf,
+      renameAtomSuffix_sym, renameAtomSuffix_gnd] using
       (AlphaTermAgrees.partialValue
         (inductionHypothesis termsSupport))
   · intro items encoded elements inductionHypothesis termSupport

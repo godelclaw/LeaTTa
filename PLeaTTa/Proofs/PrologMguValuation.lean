@@ -98,7 +98,7 @@ theorem CanonicalRuntimeAgrees.instantiateOne_exists
           (CanonicalRuntimeAgrees.string (alpha := alpha) value)⟩
   | partialValue arguments inductionHypothesis =>
       obtain ⟨encoded, encodedAgreement⟩ := inductionHypothesis
-      exact ⟨chainOf [.sym "partial", .sym _, encoded], by
+      exact ⟨partialC _ encoded, by
         simpa [Tree.instantiateOne, Trees.instantiateOne] using
           (CanonicalRuntimeAgrees.partialValue encodedAgreement)⟩
   | nil =>
@@ -477,11 +477,11 @@ theorem CanonicalRuntimeAgrees.ground_exists
       obtain ⟨groundedArguments, groundedAgreement, closed⟩ :=
         inductionHypothesis
       exact
-        ⟨chainOf [.sym "partial", .sym _, groundedArguments],
+        ⟨partialC _ groundedArguments,
           by
             simpa [groundTree, groundTrees] using
               (CanonicalRuntimeAgrees.partialValue groundedAgreement),
-          by simp [chainOf, consC, nilA, Atom.vars, closed]⟩
+          by simp [partialC, partialTagA, Atom.vars, closed]⟩
   | nil =>
       exact ⟨nilA, by
         simpa [groundTree, groundTrees] using
@@ -581,7 +581,7 @@ theorem canonicalRuntimeAgrees_ground_apply
   | @partialValue head argumentsTree encodedArguments arguments
       inductionHypothesis =>
       simpa [TreeSubstitution.apply_node, groundTree, groundTrees,
-        groundTrees_eq_map, subst_chainOf] using
+        groundTrees_eq_map, partialC, partialTagA, subst_chainOf] using
           (CanonicalRuntimeAgrees.partialValue inductionHypothesis)
   | nil =>
       simpa [TreeSubstitution.apply_node, groundTree, groundTrees, nilA] using

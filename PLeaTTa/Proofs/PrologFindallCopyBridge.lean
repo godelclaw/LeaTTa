@@ -197,9 +197,9 @@ theorem termAgrees_alpha_rename
   · intro head terms encoded arguments inductionHypothesis support
     have termsSupport : termsVariablesIn domain terms := by
       simpa [termVariablesIn, termsVariablesIn] using support
-    simpa [Term.renameVariables, Terms.renameVariables,
-      renameAtomSuffix_chainOf,
-      renameAtomSuffix_sym] using
+    simpa [Term.renameVariables, Terms.renameVariables, partialC,
+      partialTagA, renameAtomSuffix_expr, renameAtomSuffix_chainOf,
+      renameAtomSuffix_sym, renameAtomSuffix_gnd] using
       (AlphaTermAgrees.partialValue
         (inductionHypothesis termsSupport))
   · intro items encoded elements inductionHypothesis support

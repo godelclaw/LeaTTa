@@ -512,16 +512,14 @@ private def dualIdentityCapturedWorld : PWorld :=
 
 #guard specializationName
   { parent := "map-flat"
-    bindings := [chainOf [Metta.Atom.sym "partial", Metta.Atom.sym "+",
-      chainOf [intAtom 1]]] } == "map-flat_Spec_[partial(+,[1])]"
+    bindings := [partialC "+" (chainOf [intAtom 1])] } ==
+      "map-flat_Spec_[partial(+,[1])]"
 
 #guard specializationName
   { parent := "higher-order-fun"
     bindings :=
-      [chainOf [Metta.Atom.sym "partial", Metta.Atom.sym "+",
-        chainOf [intAtom 1]],
-       chainOf [Metta.Atom.sym "partial", Metta.Atom.sym "*",
-        chainOf [intAtom 1]]] } ==
+      [partialC "+" (chainOf [intAtom 1]),
+       partialC "*" (chainOf [intAtom 1])] } ==
     "higher-order-fun_Spec_[partial(+,[1]),partial(*,[1])]"
 
 private def directDiscovery : Option SpecCandidate :=
@@ -536,8 +534,8 @@ private def directDiscovery : Option SpecCandidate :=
       [[("g", Metta.Atom.sym "g")]])
 
 private def repeatedResidualPartial (name : String) : Metta.Atom :=
-  chainOf [Metta.Atom.sym "partial", Metta.Atom.sym "cons",
-    chainOf [Metta.Atom.var name, Metta.Atom.var name]]
+  partialC "cons"
+    (chainOf [Metta.Atom.var name, Metta.Atom.var name])
 
 private def freshRepeatedBinding : Metta.Subst :=
   freshenSpecializationBinding capturedClause
@@ -717,7 +715,7 @@ private def emptyRegisteredSpecialization : PWorld :=
   "f_Spec_[g]" [Metta.Atom.sym "g"]
 
 private def partialValueOne : Metta.Atom :=
-  chainOf [Metta.Atom.sym "partial", Metta.Atom.sym "+", chainOf [intAtom 1]]
+  partialC "+" (chainOf [intAtom 1])
 
 private def partialSpecialized : PWorld × List Goal :=
   specializeGoals (fun name => name == "+") 100 specializerSeedWorld
@@ -764,8 +762,8 @@ private def openGuardBase : Metta.Subst :=
   partialSpecialized.1.selfAtoms
 
 private def nanPartialValue : Metta.Atom :=
-  chainOf [Metta.Atom.sym "partial", Metta.Atom.sym "+",
-    chainOf [Metta.Atom.gnd (.float (Float.ofBits 0x7ff8000000000000))]]
+  partialC "+"
+    (chainOf [Metta.Atom.gnd (.float (Float.ofBits 0x7ff8000000000000))])
 
 #guard !specializationBindingRuntimeSafe [("g", nanPartialValue)]
 

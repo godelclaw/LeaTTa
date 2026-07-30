@@ -201,6 +201,13 @@ private def nestedValue : HostValue :=
       .expr [.gnd (.int 10)]])) ==
   some ("atom_codes", [.var "NL", .list [.int 10]], ["NL"])
 
+-- Internal partial values cross the trusted SWI boundary as the real
+-- `partial/2` compound used by pinned PeTTa, never as the internal tag.
+#guard buildPrologCall
+    (chainOf [.sym "probe", partialC "+" nilA]) ==
+  some ("probe",
+    [.compound "partial" [.atom "+", .list []]], [])
+
 -- Prolog atoms and strings remain observably distinct, while nested lists and
 -- compounds decode into the executable chain representation.
 #guard (PrologTerm.atom "same").toAtom == Atom.sym "same"

@@ -2490,8 +2490,8 @@ def stepWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable)
               let goal := Goal.eq res (chainOf (Atom.sym f :: args))
               { c with cur := some (goal :: rest, next) }
         | other =>
-            match chainListM other with
-            | some [Atom.sym "partial", Atom.sym base, boundList] =>
+            match partialView? other with
+            | some (base, boundList) =>
                 let bound := (chainListM boundList).getD []
                 let goal := Goal.callDyn (Atom.sym base) (bound ++ args) res
                 { c with cur := some (goal :: rest, next) }
@@ -2569,8 +2569,7 @@ def stepWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable)
             let clauses := c.world.resolutionCandidates f args.length
             if !(clauses.any (fun clause =>
                 clause.params.length == args.length)) then
-              let partialValue :=
-                chainOf [Atom.sym "partial", Atom.sym f, chainOf args]
+              let partialValue := partialC f (chainOf args)
               { c with
                 cur := some (Goal.eq res partialValue :: rest, next) }
             else
@@ -2584,8 +2583,7 @@ def stepWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable)
         let allGround := preparedAtomsAllGround argsResult.1
         let afterArgs := argsResult.2
         if binArity op != 0 && av.length < binArity op then
-          let partialValue :=
-            chainOf [Atom.sym "partial", Atom.sym op, chainOf av]
+          let partialValue := partialC op (chainOf av)
           { c with
             cur := some (Goal.eq res partialValue :: rest, afterArgs) }
         else

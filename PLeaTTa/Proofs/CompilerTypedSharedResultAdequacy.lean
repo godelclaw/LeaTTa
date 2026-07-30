@@ -81,7 +81,7 @@ theorem unifyTopExact_unary_partial_alias (head left right : String)
     (different : left ≠ right) :
     unifyTopExact (partialValue head [.var left])
       (partialValue head [.var right]) = some [(left, .var right)] := by
-  unfold partialValue chainOf consC nilA unifyTopExact
+  unfold partialValue partialC partialTagA chainOf consC nilA unifyTopExact
   simp [Metta.Unify.unifyTopWith, Atom.size,
     Metta.Unify.unifyRoundsWith,
     Metta.Unify.decomposeAllWith, Metta.Unify.decomposeEqWith,
@@ -108,8 +108,8 @@ theorem bindTypedSharedResult_after_unary_partial
   have sharedSubst :
       subst [(output, partialValue head [.var left])] (.var output) =
         partialValue head [.var left] := by
-    simp [subst, substN, Metta.Subst.lookup, partialValue, chainOf,
-      consC, nilA, Ne.symm outputNeLeft]
+    simp [subst, substN, Metta.Subst.lookup, partialValue, partialC,
+      partialTagA, chainOf, consC, nilA, Ne.symm outputNeLeft]
   have branchSubst :
       subst [(output, partialValue head [.var left])]
         (partialValue head [.var right]) =
@@ -120,7 +120,8 @@ theorem bindTypedSharedResult_after_unary_partial
     by_cases same : name = output
     · subst name
       have equality : output = right := by
-        simpa [partialValue, chainOf, consC, nilA, Atom.vars] using member
+        simpa [partialValue, partialC, partialTagA, chainOf, consC, nilA,
+          Atom.vars] using member
       exact False.elim (outputNeRight equality)
     · simp [same]
   unfold bindTypedSharedResult
@@ -128,7 +129,7 @@ theorem bindTypedSharedResult_after_unary_partial
     branchSubst, unifyTopExact_unary_partial_alias head left right
       leftNeRight]
   simp [Metta.Subst.compose, Metta.Subst.apply, Metta.Subst.lookup,
-    partialValue, chainOf, consC, nilA]
+    partialValue, partialC, partialTagA, chainOf, consC, nilA]
 
 /-- The executable first raw branch binds a fresh shared output to the branch
 result exactly.  Later branches are a separate structural-decomposition
@@ -182,8 +183,8 @@ theorem foldlM_bindTypedSharedResult_two_unary_partial
     apply bindTypedSharedResult_fresh_initial
     · intro equality
       cases equality
-    · simp [Metta.Subst.occurs, partialValue, chainOf, consC, nilA,
-        outputNeLeft]
+    · simp [Metta.Subst.occurs, partialValue, partialC, partialTagA,
+        chainOf, consC, nilA, outputNeLeft]
   have second : bindTypedSharedResult (.var output) firstBinding
       (partialValue head [.var right], secondGoals) = .ok final := by
     simpa [firstBinding, final] using
@@ -255,10 +256,12 @@ theorem resolveTypedSharedResult_two_unary_partial
            [(partialValue head [.var left], firstGoals),
             (partialValue head [.var right], secondGoals)]) by rfl]
   congr 2
-  · simp [final, subst, substN, Metta.Subst.lookup, partialValue, chainOf,
-      consC, nilA, Ne.symm outputNeRight, Ne.symm leftNeRight]
+  · simp [final, subst, substN, Metta.Subst.lookup, partialValue, partialC,
+      partialTagA, chainOf, consC, nilA, Ne.symm outputNeRight,
+      Ne.symm leftNeRight]
   · simp [final, substCompiledBranches, subst, substN, Metta.Subst.lookup,
-      partialValue, chainOf, consC, nilA, Ne.symm outputNeLeft,
+      partialValue, partialC, partialTagA, chainOf, consC, nilA,
+      Ne.symm outputNeLeft,
       Ne.symm outputNeRight, Ne.symm leftNeRight]
 
 /-- Representation agreement for the same one-argument `partial/2` context
@@ -362,7 +365,8 @@ theorem two_unary_partial_bindings_agree
           (.var (compilerGeneratedName outputIndex)) =
         partialValue head [.var sourceName] := by
     simp [twoUnaryPartialExecutableBinding, subst, substN,
-      Metta.Subst.lookup, partialValue, chainOf, consC, nilA,
+      Metta.Subst.lookup, partialValue, partialC, partialTagA, chainOf,
+      consC, nilA,
       Ne.symm outputFresh, Ne.symm leftFresh]
   have executableLeft :
       subst
@@ -386,7 +390,8 @@ theorem two_unary_partial_bindings_agree
           (partialValue head [.var (compilerGeneratedName leftIndex)]) =
         partialValue head [.var sourceName] := by
     simp [twoUnaryPartialExecutableBinding, subst, substN,
-      Metta.Subst.lookup, partialValue, chainOf, consC, nilA,
+      Metta.Subst.lookup, partialValue, partialC, partialTagA, chainOf,
+      consC, nilA,
       Ne.symm generatedDifferent, Ne.symm outputFresh, Ne.symm leftFresh]
   have executableSecond :
       subst
@@ -395,7 +400,8 @@ theorem two_unary_partial_bindings_agree
           (partialValue head [.var sourceName]) =
         partialValue head [.var sourceName] := by
     simp [twoUnaryPartialExecutableBinding, subst, substN,
-      Metta.Subst.lookup, partialValue, chainOf, consC, nilA,
+      Metta.Subst.lookup, partialValue, partialC, partialTagA, chainOf,
+      consC, nilA,
       Ne.symm outputFresh, Ne.symm leftFresh]
   intro pair member
   simp only [twoUnaryPartialPairs, List.mem_cons, List.not_mem_nil, or_false]

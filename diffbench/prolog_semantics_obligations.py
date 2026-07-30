@@ -83,6 +83,10 @@ PROLOG_ACTIVATION_UNIFIER_BRIDGE = (
 PROLOG_ACTIVATION_FAILURE_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationFailureBridge.lean"
 )
+PROLOG_CANONICAL_RUNTIME_READING = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologCanonicalRuntimeReading.lean"
+)
 PROLOG_GOAL_ALPHA = ROOT / "PLeaTTa" / "Proofs" / "PrologGoalAlpha.lean"
 PROLOG_ACTIVATION_MACRO = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationMacro.lean"
@@ -179,6 +183,8 @@ def check() -> list[str]:
             digest(PROLOG_ACTIVATION_UNIFIER_BRIDGE),
         "prolog_activation_failure_bridge_sha256":
             digest(PROLOG_ACTIVATION_FAILURE_BRIDGE),
+        "prolog_canonical_runtime_reading_sha256":
+            digest(PROLOG_CANONICAL_RUNTIME_READING),
         "prolog_goal_alpha_sha256": digest(PROLOG_GOAL_ALPHA),
         "prolog_activation_macro_sha256": digest(PROLOG_ACTIVATION_MACRO),
         "prolog_activation_bridge_sha256": digest(PROLOG_ACTIVATION_BRIDGE),

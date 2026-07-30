@@ -432,11 +432,13 @@ theorem partialValue_namesAllowed {external : String → Prop}
       CompilerAtomsNamesAllowed external origin limit arguments) :
     CompilerAtomNamesAllowed external origin limit
       (partialValue head arguments) := by
-  unfold partialValue
-  apply chainOf_namesAllowed
+  unfold partialValue partialC
+  apply (compilerAtomNamesAllowed_expr_iff external origin limit
+    [partialTagA, Atom.sym head, chainOf arguments]).2
   simp only [compilerAtomsNamesAllowed_cons_iff,
     compilerAtomsNamesAllowed_nil, and_true]
-  exact ⟨by simp, by simp, chainOf_namesAllowed argumentsAllowed⟩
+  exact ⟨by simp [partialTagA], by simp,
+    chainOf_namesAllowed argumentsAllowed⟩
 
 theorem spacePat_namesAllowed {external : String → Prop}
     {origin limit : Nat} {space pattern : Atom}

@@ -94,7 +94,7 @@ inductive AtomDenotes (valuation : ExecutableValuation) :
   | partialValue {head : String} {items : List GroundTerm} {encoded : Atom}
       (arguments : ChainDenotes valuation items encoded) :
       AtomDenotes valuation
-        (chainOf [.sym "partial", .sym head, encoded])
+        (partialC head encoded)
         (.compound "partial" [.atom head, .list items none])
 
 /-- Denotation of PLeaTTa's internal `#c`/`#nil` proper-list encoding. -/
@@ -165,7 +165,8 @@ private theorem atomDenotes_variable {valuation : ExecutableValuation}
   | properList elements =>
       rw [← encodedEq] at elements
       exact False.elim (chainDenotes_variable_false elements)
-  | partialValue arguments => simp [chainOf, consC] at encodedEq
+  | partialValue arguments =>
+      simp [partialC, partialTagA] at encodedEq
 
 private theorem atomDenotes_symbol {valuation : ExecutableValuation}
     {name : String} {value : GroundTerm}
@@ -195,7 +196,8 @@ private theorem atomDenotes_symbol {valuation : ExecutableValuation}
       obtain ⟨nameEq, itemsEq⟩ := chainDenotes_symbol elements
       exact Or.inr (Or.inr (Or.inr ⟨nameEq,
         congrArg (fun items => GroundTerm.list items none) itemsEq⟩))
-  | partialValue arguments => simp [chainOf, consC] at encodedEq
+  | partialValue arguments =>
+      simp [partialC, partialTagA] at encodedEq
 
 private theorem atomDenotes_ground {valuation : ExecutableValuation}
     {ground : Metta.Ground} {value : GroundTerm}
@@ -222,7 +224,8 @@ private theorem atomDenotes_ground {valuation : ExecutableValuation}
   | properList elements =>
       rw [← encodedEq] at elements
       exact False.elim (chainDenotes_ground_false elements)
-  | partialValue arguments => simp [chainOf, consC] at encodedEq
+  | partialValue arguments =>
+      simp [partialC, partialTagA] at encodedEq
 
 private theorem atomDenotes_expression {valuation : ExecutableValuation}
     {atoms : List Atom} {value : GroundTerm}
@@ -433,7 +436,7 @@ theorem AtomDenotes.subst {valuation : ExecutableValuation}
   · intro _items _encoded _elements elementsIH
     exact .properList elementsIH
   · intro head _items _encoded _arguments argumentsIH
-    simpa [chainOf, consC, nilA] using
+    simpa [partialC, partialTagA, chainOf, consC, nilA] using
       (AtomDenotes.partialValue (head := head) argumentsIH)
   · simpa [nilA] using ChainDenotes.nil (valuation := valuation)
   · intro _value _atom _values _tail _head _rest headIH restIH

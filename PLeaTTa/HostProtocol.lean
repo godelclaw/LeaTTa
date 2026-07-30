@@ -106,14 +106,21 @@ partial def prologVars : Atom → List String
   | .expr items => (items.flatMap prologVars).eraseDups
   | _ => []
 
-/-- Reverse `chainify`: decode nested `#c`/`#nil` cons-chains back to surface
-    exprs.  The compiler stores a `translatePredicate` argument as chained data
+/-- Reverse `chainify`: decode nested `#c`/`#nil` cons-chains and the internal
+    partial-value tag back to surface exprs.  The compiler stores a
+    `translatePredicate` argument as chained data
     (`(#c is (#c $x (#c 2 #nil)))`), so it must be unchained before it parses as
-    the Prolog goal `(is $x 2)`. -/
+    the Prolog goal `(is $x 2)`.  Internal partial values become the real
+    `partial/2` compound expected by pinned PeTTa's SWI boundary. -/
 partial def deepUnchain (a : Atom) : Atom :=
-  match chainListM a with
-  | some elems => Atom.expr (elems.map deepUnchain)
-  | none => a
+  match partialView? a with
+  | some (functor, encodedArgs) =>
+      Atom.expr
+        [Atom.sym "partial", Atom.sym functor, deepUnchain encodedArgs]
+  | none =>
+      match chainListM a with
+      | some elems => Atom.expr (elems.map deepUnchain)
+      | none => a
 
 /-- Parse a `translatePredicate` argument `(functor a b ...)` into the Prolog
     call components (functor, marshalled arguments, requested variable names).

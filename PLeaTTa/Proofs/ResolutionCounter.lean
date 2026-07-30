@@ -1682,17 +1682,15 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
     apply below.replaceActive (Goal.call function args res :: rest) binding
       hcur
       (Goal.eq res
-        (chainOf [Atom.sym "partial", Atom.sym function, chainOf args]) :: rest)
+        (partialC function (chainOf args)) :: rest)
       binding
     intro name member
     simp only [specializationGoalsVars, specializationGoalVars,
       List.mem_append] at member ⊢
     rcases member with ((hres | hchain) | hrest) | hbinding
     · exact Or.inl (Or.inl (Or.inr hres))
-    · have houter := chainOf_vars_subset
-          [Atom.sym "partial", Atom.sym function, chainOf args] name hchain
-      have hinner : name ∈ (chainOf args).vars := by
-        simpa [Atom.vars] using houter
+    · have hinner : name ∈ (chainOf args).vars := by
+        simpa [partialC, partialTagA, Atom.vars] using hchain
       have hargs := chainOf_vars_subset args name hinner
       exact Or.inl (Or.inl (Or.inl hargs))
     · exact Or.inl (Or.inr hrest)
@@ -1753,19 +1751,16 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
     apply below.replaceActive (Goal.bin operation args res :: rest) binding
       hcur
       (Goal.eq res
-        (chainOf [Atom.sym "partial", Atom.sym operation,
-          chainOf (args.map (subst binding))]) :: rest)
+        (partialC operation
+          (chainOf (args.map (subst binding)))) :: rest)
       binding
     intro name member
     simp only [specializationGoalsVars, specializationGoalVars,
       List.mem_append] at member ⊢
     rcases member with ((hres | hchain) | hrest) | hbinding
     · exact Or.inl (Or.inl (Or.inr hres))
-    · have houter := chainOf_vars_subset
-          [Atom.sym "partial", Atom.sym operation,
-            chainOf (args.map (subst binding))] name hchain
-      have hinner : name ∈ (chainOf (args.map (subst binding))).vars := by
-        simpa [Atom.vars] using houter
+    · have hinner : name ∈ (chainOf (args.map (subst binding))).vars := by
+        simpa [partialC, partialTagA, Atom.vars] using hchain
       have hsubstituted := chainOf_vars_subset
         (args.map (subst binding)) name hinner
       rcases substAtomList_vars_origin binding args name hsubstituted with
@@ -2231,11 +2226,10 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
       rw [hbound] at member
       rcases chainListM_getD_vars_subset boundList [] name member with
         hboundList | himpossible
-      · have hinside : name ∈
-            [Atom.sym "partial", Atom.sym base, boundList].flatMap Atom.vars := by
-          simp [Atom.vars, hboundList]
-        have hsubHead := chainListM_vars_subset (subst binding head)
-          [Atom.sym "partial", Atom.sym base, boundList] hpartial name hinside
+      · have hpartialShape := partialView?_sound hpartial
+        have hsubHead : name ∈ (subst binding head).vars := by
+          rw [hpartialShape]
+          simpa [partialC, partialTagA, Atom.vars] using hboundList
         rcases subst_vars_origin binding head name hsubHead with
           hheadOrigin | hrange
         · exact (PersistentSubst.resolutionSeedHighWaterNames_le_iff _

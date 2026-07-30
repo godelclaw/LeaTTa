@@ -177,7 +177,7 @@ theorem TermAgrees.subst_of_variableStateOn
   · intro head terms encoded arguments induction termSupport
     have termsSupport : termsVariablesIn domain terms := by
       simpa [termVariablesIn, termsVariablesIn] using termSupport
-    simpa [chainOf, consC, nilA] using
+    simpa [partialC, partialTagA, chainOf, consC, nilA] using
       TermAgrees.partialValue (induction termsSupport)
   · intro items encoded elements induction termSupport
     have itemsSupport : termsVariablesIn domain items := by
