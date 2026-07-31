@@ -8,8 +8,11 @@ Trusted boundary: none
 Main exports:
   RetainedAlternativeSegment.afterPulledHead,
   PulledHeadOffsetAgrees,
+  SpinedPostFailureFrontierResourceRelatesAt,
   SpinedPostFailureFrontierResourceRelates,
-  RejectedPullsN.sourceProductContextStepsN
+  RejectedPullsN.path_unique,
+  RejectedPullsN.sourceProductContextStepsNAt,
+  SpinedActiveProductResourceRelatesAt.afterUnifyFailureRetained
 -/
 import PLeaTTa.Proofs.PrologBodyFailureBacktrackingBridge
 import PLeaTTa.Proofs.PrologProductResourceTransitionBridge
@@ -250,10 +253,10 @@ while the independent source is still at its unadvanced cursor.
 
 The executable head prefix is kept outside the caller spine: no source body
 region exists until the next source activation. -/
-structure SpinedPostFailureFrontierRelates
+structure SpinedPostFailureFrontierRelatesAt
     (freshFrontier : FreshFrontierRelation)
     (alpha : List (LogicVar × String))
-    (opened : OpenedCall)
+    (opened : OpenedCall) (session : Session)
     (pending : DemandDrivenCallStep.PendingCall)
     (bodyBarrier callerBarrier : Nat)
     (callerReferences : List PeTTaSpec.PrologCore.Goal)
@@ -265,7 +268,9 @@ structure SpinedPostFailureFrontierRelates
     (remainingAlts : List PLeaTTa.Alt)
     (state : OpenConf) : Prop where
   persistent :
-    SessionRelatesPersistent freshFrontier opened.session state.persistent
+    SessionRelatesPersistent freshFrontier session state.persistent
+  sessionAdvanced :
+    SessionHighWatersExtend opened.session session
   callerSpine :
     ControlSpineAgrees alpha
       ({ barrier := callerBarrier
@@ -295,6 +300,51 @@ structure SpinedPostFailureFrontierRelates
     state.control.barriers =
       PLeaTTa.pushBarrierCache pending.outer.barriers
   frames : state.frames = pending.frames
+
+/-- Exact opener-session specialization of the post-failure control phase. -/
+abbrev SpinedPostFailureFrontierRelates
+    (freshFrontier : FreshFrontierRelation)
+    (alpha : List (LogicVar × String))
+    (opened : OpenedCall)
+    (pending : DemandDrivenCallStep.PendingCall)
+    (bodyBarrier callerBarrier : Nat)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (outer : List ControlSegment)
+    (qterm : Atom)
+    (copied : PLeaTTa.Clause)
+    (resource : RetainedAlternativeSegment)
+    (remainingAlts : List PLeaTTa.Alt)
+    (state : OpenConf) : Prop :=
+  SpinedPostFailureFrontierRelatesAt freshFrontier alpha opened
+    opened.session pending bodyBarrier callerBarrier callerReferences
+    callerExecutables outer qterm copied resource remainingAlts state
+
+/-- A post-failure frontier cannot be reindexed below the call-opening fresh
+high-water.  The retained cursor was allocated at that historical frontier. -/
+theorem SpinedPostFailureFrontierRelatesAt.rejectsFreshRegression
+    {freshFrontier : FreshFrontierRelation}
+    {alpha : List (LogicVar × String)}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {qterm : Atom}
+    {copied : PLeaTTa.Clause}
+    {resource : RetainedAlternativeSegment}
+    {remainingAlts : List PLeaTTa.Alt}
+    {state : OpenConf}
+    (agreement :
+      SpinedPostFailureFrontierRelatesAt freshFrontier alpha opened session
+        pending bodyBarrier callerBarrier callerReferences callerExecutables
+        outer qterm copied resource remainingAlts state)
+    (regressed :
+      session.resolver.nextFresh < opened.session.resolver.nextFresh) :
+    False :=
+  SessionHighWatersExtend.rejects_fresh_regression regressed
+    agreement.sessionAdvanced
 
 /-- Resource-stack facts in the executable-ahead post-failure phase.
 
@@ -336,7 +386,44 @@ structure PostFailureFrontierResourceStackAgrees
 The literal source term makes the phase observable: the source still contains
 `.clauses cursor`, whereas the executable has already installed `branch` in
 its current goal prefix. -/
-structure SpinedPostFailureFrontierResourceRelates
+structure SpinedPostFailureFrontierResourceRelatesAt
+    (freshFrontier : FreshFrontierRelation)
+    (alpha : List (LogicVar × String))
+    (opened : OpenedCall) (session : Session)
+    (pending : DemandDrivenCallStep.PendingCall)
+    (bodyBarrier callerBarrier : Nat)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (outer : List ControlSegment)
+    (qterm : Atom)
+    (cursor : PreparedCursor)
+    (branch : ClauseBranch) (clause : PLeaTTa.Clause)
+    (branchTail : List ClauseBranch)
+    (copied : PLeaTTa.Clause)
+    (resource : RetainedAlternativeSegment)
+    (remainingAlts : List PLeaTTa.Alt)
+    (resources : List RetainedAlternativeSegment)
+    (callerScope outerScope : CutScopeId)
+    (context : ActiveProductContext)
+    (baseAlts : List PLeaTTa.Alt)
+    (source : Search) (state : OpenConf) : Prop where
+  control :
+    SpinedPostFailureFrontierRelatesAt freshFrontier alpha opened session pending
+      bodyBarrier callerBarrier callerReferences callerExecutables outer qterm
+      copied resource remainingAlts state
+  resourceStack :
+    PostFailureFrontierResourceStackAgrees alpha qterm bodyBarrier
+      callerBarrier pending cursor branch clause branchTail copied resource
+      remainingAlts outer resources callerScope outerScope context baseAlts
+      state
+  sourceShape :
+    source =
+      ActiveProductContext.plug context
+        (sourceProductFrontier callerScope opened cursor callerReferences)
+
+/-- Exact opener-session specialization of the retained post-failure
+frontier. -/
+abbrev SpinedPostFailureFrontierResourceRelates
     (freshFrontier : FreshFrontierRelation)
     (alpha : List (LogicVar × String))
     (opened : OpenedCall)
@@ -356,28 +443,137 @@ structure SpinedPostFailureFrontierResourceRelates
     (callerScope outerScope : CutScopeId)
     (context : ActiveProductContext)
     (baseAlts : List PLeaTTa.Alt)
-    (source : Search) (state : OpenConf) : Prop where
-  control :
-    SpinedPostFailureFrontierRelates freshFrontier alpha opened pending
-      bodyBarrier callerBarrier callerReferences callerExecutables outer qterm
-      copied resource remainingAlts state
-  resourceStack :
-    PostFailureFrontierResourceStackAgrees alpha qterm bodyBarrier
-      callerBarrier pending cursor branch clause branchTail copied resource
-      remainingAlts outer resources callerScope outerScope context baseAlts
-      state
-  sourceShape :
-    source =
-      ActiveProductContext.plug context
-        (sourceProductFrontier callerScope opened cursor callerReferences)
+    (source : Search) (state : OpenConf) : Prop :=
+  SpinedPostFailureFrontierResourceRelatesAt freshFrontier alpha opened
+    opened.session pending bodyBarrier callerBarrier callerReferences
+    callerExecutables outer qterm cursor branch clause branchTail copied
+    resource remainingAlts resources callerScope outerScope context baseAlts
+    source state
 
 /-! ## Exact source-prefix lifting -/
+
+/-- A fixed rejected-pull count and starting cursor determine the exact
+ending cursor.
+
+Each successor must consume the unique head/tail decomposition of the current
+remaining list.  Thus the path witness exported by the retained-failure
+producer is reusable compositional evidence, not a choice among alternate
+endpoint-equal scans. -/
+theorem RejectedPullsN.path_unique
+    {count : Nat} {before after after' : PreparedCursor}
+    (left : RejectedPullsN count before after)
+    (right : RejectedPullsN count before after') :
+    after = after' := by
+  induction left generalizing after' with
+  | zero cursor =>
+      cases right
+      rfl
+  | succ count cursor branch branches finish remaining clash tail
+      inductionHypothesis =>
+      cases right with
+      | succ _ _ branch' branches' finish' remaining' clash' tail' =>
+          have sameHead :
+              branch :: branches = branch' :: branches' :=
+            remaining.symm.trans remaining'
+          rcases List.cons.inj sameHead with ⟨rfl, rfl⟩
+          exact inductionHypothesis tail'
 
 /-- Exactly counted conservative cursor rejections lift through both the
 current predicate product and every older active source frame.
 
 Every source-only rejection remains a present transition.  The observation
 sequence stays exactly empty; no stuttering quotient is used. -/
+theorem RejectedPullsN.sourceProductContextStepsNAt
+    {count : Nat} {before after : PreparedCursor}
+    (pulls : RejectedPullsN count before after)
+    (context : ActiveProductContext)
+    (callerScope : CutScopeId) (opened : OpenedCall)
+    (session : Session)
+    (referenceRest : List PeTTaSpec.PrologCore.Goal) :
+    StepsN count
+      (.running session
+        (ActiveProductContext.plug context
+          (sourceProductFrontier callerScope opened before referenceRest)))
+      []
+      (.running session
+        (ActiveProductContext.plug context
+          (sourceProductFrontier callerScope opened after referenceRest))) := by
+  induction pulls with
+  | zero cursor =>
+      exact .zero _
+  | succ count cursor branch branches finish remaining clash tail
+      inductionHypothesis =>
+      have pulled :
+          LocalPull cursor (.silent (cursor.advance branch branches)) :=
+        .rejected cursor branch branches remaining clash
+      have leaf :
+          RawStep session (.clauses opened.scope cursor) [] .none
+            session
+            (.running
+              (.clauses opened.scope (cursor.advance branch branches))) := by
+        simpa [localPullEvents, localPullTarget] using
+          (RawStep.clausesPull opened.scope cursor
+            (.silent (cursor.advance branch branches)) session pulled)
+      have boundary :
+          RawStep session
+            (.cutBoundary opened.scope (.clauses opened.scope cursor))
+            [] .none session
+            (.running
+              (.cutBoundary opened.scope
+                (.clauses opened.scope
+                  (cursor.advance branch branches)))) :=
+        .cutBoundaryProgress opened.scope _ _ [] session
+          session leaf
+      have wrapped :
+          RawStep session
+            (sourceProductFrontier callerScope opened cursor referenceRest)
+            [] .none session
+            (.running
+              (sourceProductFrontier callerScope opened
+                (cursor.advance branch branches) referenceRest)) := by
+        exact
+          .productProgress callerScope _ _ referenceRest [] .none
+            session session boundary
+            (by simp [Trace.AnswerFree])
+      have lifted :
+          RawStep session
+            (ActiveProductContext.plug context
+              (sourceProductFrontier callerScope opened cursor referenceRest))
+            [] .none session
+            (.running
+              (ActiveProductContext.plug context
+                (sourceProductFrontier callerScope opened
+                  (cursor.advance branch branches) referenceRest))) :=
+        ActiveProductContext.liftProgress context wrapped
+          (by simp [Trace.AnswerFree])
+      have first :
+          Transition
+            (.running session
+              (ActiveProductContext.plug context
+                (sourceProductFrontier callerScope opened cursor
+                  referenceRest)))
+            []
+            (.running session
+              (ActiveProductContext.plug context
+                (sourceProductFrontier callerScope opened
+                  (cursor.advance branch branches) referenceRest))) :=
+        .ordinary _ _ _ _ _ lifted
+      simpa using
+        (StepsN.succ count
+          (.running session
+            (ActiveProductContext.plug context
+              (sourceProductFrontier callerScope opened cursor referenceRest)))
+          (.running session
+            (ActiveProductContext.plug context
+              (sourceProductFrontier callerScope opened
+                (cursor.advance branch branches) referenceRest)))
+          (.running session
+            (ActiveProductContext.plug context
+              (sourceProductFrontier callerScope opened finish referenceRest)))
+          [] [] first inductionHypothesis)
+
+/-- Backward-compatible opener-session specialization of the exact rejected
+source prefix. -/
 theorem RejectedPullsN.sourceProductContextStepsN
     {count : Nat} {before after : PreparedCursor}
     (pulls : RejectedPullsN count before after)
@@ -391,80 +587,9 @@ theorem RejectedPullsN.sourceProductContextStepsN
       []
       (.running opened.session
         (ActiveProductContext.plug context
-          (sourceProductFrontier callerScope opened after referenceRest))) := by
-  induction pulls with
-  | zero cursor =>
-      exact .zero _
-  | succ count cursor branch branches finish remaining clash tail
-      inductionHypothesis =>
-      have pulled :
-          LocalPull cursor (.silent (cursor.advance branch branches)) :=
-        .rejected cursor branch branches remaining clash
-      have leaf :
-          RawStep opened.session (.clauses opened.scope cursor) [] .none
-            opened.session
-            (.running
-              (.clauses opened.scope (cursor.advance branch branches))) := by
-        simpa [localPullEvents, localPullTarget] using
-          (RawStep.clausesPull opened.scope cursor
-            (.silent (cursor.advance branch branches)) opened.session pulled)
-      have boundary :
-          RawStep opened.session
-            (.cutBoundary opened.scope (.clauses opened.scope cursor))
-            [] .none opened.session
-            (.running
-              (.cutBoundary opened.scope
-                (.clauses opened.scope
-                  (cursor.advance branch branches)))) :=
-        .cutBoundaryProgress opened.scope _ _ [] opened.session
-          opened.session leaf
-      have wrapped :
-          RawStep opened.session
-            (sourceProductFrontier callerScope opened cursor referenceRest)
-            [] .none opened.session
-            (.running
-              (sourceProductFrontier callerScope opened
-                (cursor.advance branch branches) referenceRest)) := by
-        exact
-          .productProgress callerScope _ _ referenceRest [] .none
-            opened.session opened.session boundary
-            (by simp [Trace.AnswerFree])
-      have lifted :
-          RawStep opened.session
-            (ActiveProductContext.plug context
-              (sourceProductFrontier callerScope opened cursor referenceRest))
-            [] .none opened.session
-            (.running
-              (ActiveProductContext.plug context
-                (sourceProductFrontier callerScope opened
-                  (cursor.advance branch branches) referenceRest))) :=
-        ActiveProductContext.liftProgress context wrapped
-          (by simp [Trace.AnswerFree])
-      have first :
-          Transition
-            (.running opened.session
-              (ActiveProductContext.plug context
-                (sourceProductFrontier callerScope opened cursor
-                  referenceRest)))
-            []
-            (.running opened.session
-              (ActiveProductContext.plug context
-                (sourceProductFrontier callerScope opened
-                  (cursor.advance branch branches) referenceRest))) :=
-        .ordinary _ _ _ _ _ lifted
-      simpa using
-        (StepsN.succ count
-          (.running opened.session
-            (ActiveProductContext.plug context
-              (sourceProductFrontier callerScope opened cursor referenceRest)))
-          (.running opened.session
-            (ActiveProductContext.plug context
-              (sourceProductFrontier callerScope opened
-                (cursor.advance branch branches) referenceRest)))
-          (.running opened.session
-            (ActiveProductContext.plug context
-              (sourceProductFrontier callerScope opened finish referenceRest)))
-          [] [] first inductionHypothesis)
+          (sourceProductFrontier callerScope opened after referenceRest))) :=
+  PLeaTTa.PrologBodyFailureResourceTransitionBridge.RejectedPullsN.sourceProductContextStepsNAt
+    pulls context callerScope opened opened.session referenceRest
 
 /-! ## Retained body-failure transition -/
 
@@ -476,12 +601,13 @@ conservative rejected prefix.  The executable takes one real equality-failure
 transition whose eager `pull` installs the next retained clause.  The theorem
 constructs the offset resource directly from the predecessor resource's owned
 `ResolutionScan`; it does not replay call entry or invent a pending call. -/
-theorem SpinedActiveProductResourceRelates.afterUnifyFailureRetained
+theorem SpinedActiveProductResourceRelatesAt.afterUnifyFailureRetained
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {freshFrontier : FreshFrontierRelation}
     {alpha support : List (LogicVar × String)}
     {canonical : TreeSubstitution} {referenceBase : Substitution}
-    {opened : OpenedCall} {pending : DemandDrivenCallStep.PendingCall}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
     {finish : PreparedCursor} {selected : ClauseBranch}
     {selectedTail : List ClauseBranch}
     {altTail : List PLeaTTa.Alt}
@@ -498,12 +624,12 @@ theorem SpinedActiveProductResourceRelates.afterUnifyFailureRetained
     {source : Search} {state : OpenConf}
     {left right : Term}
     (agreement :
-      SpinedActiveProductResourceRelates freshFrontier alpha support canonical
-        referenceBase opened pending finish selected selectedTail altTail
-        bodyBarrier callerBarrier (.unify left right :: bodyRest)
-        bodyExecutables callerReferences callerExecutables outer current
-        runtime qterm active resources callerScope outerScope context baseAlts
-        source state)
+      SpinedActiveProductResourceRelatesAt freshFrontier alpha support
+        canonical referenceBase opened session pending finish selected
+        selectedTail altTail bodyBarrier callerBarrier
+        (.unify left right :: bodyRest) bodyExecutables callerReferences
+        callerExecutables outer current runtime qterm active resources
+        callerScope outerScope context baseAlts source state)
     (leftSupported :
       AlphaTreeSupported alpha support (Term.denote left))
     (rightSupported :
@@ -529,19 +655,21 @@ theorem SpinedActiveProductResourceRelates.afterUnifyFailureRetained
       (∀ clause ∈ skippedClauses,
         resolutionClauseRetained active.argsv
           (PLeaTTa.subst active.binding active.res) clause = false) ∧
+      RejectedPullsN count (finish.advance selected selectedTail) next ∧
       StepsN (count + 1)
-        (.running opened.session source)
+        (.running session source)
         []
-        (.running opened.session
+        (.running session
           (ActiveProductContext.plug context
             (sourceProductFrontier callerScope opened next
               callerReferences))) ∧
       DemandDrivenCallStep.Step prog gt (.ready state)
         (.ready (unifyFailureSuccessor state)) ∧
-      SpinedPostFailureFrontierResourceRelates freshFrontier alpha opened
-        pending bodyBarrier callerBarrier callerReferences callerExecutables
-        outer qterm next nextBranch nextClause nextBranchTail nextCopied active
-        nextAltTail resources callerScope outerScope context baseAlts
+      SpinedPostFailureFrontierResourceRelatesAt freshFrontier alpha opened
+        session pending bodyBarrier callerBarrier callerReferences
+        callerExecutables outer qterm next nextBranch nextClause nextBranchTail
+        nextCopied active nextAltTail resources callerScope outerScope context
+        baseAlts
         (ActiveProductContext.plug context
           (sourceProductFrontier callerScope opened next callerReferences))
         (unifyFailureSuccessor state) := by
@@ -615,21 +743,21 @@ theorem SpinedActiveProductResourceRelates.afterUnifyFailureRetained
         simp at filteredMember
 
   have firstFocus :
-      RawStep opened.session
+      RawStep session
         (activeSourceProduct callerScope opened finish selected selectedTail
           current (.unify left right :: bodyRest) callerReferences)
-        [] .none opened.session
+        [] .none session
         (.running
           (sourceProductFrontier callerScope opened advanced
             callerReferences)) :=
-    activeSourceProduct_unifyFailure callerScope opened finish selected
-      selectedTail current left right bodyRest callerReferences clash
+    activeSourceProduct_unifyFailureAt callerScope opened session finish
+      selected selectedTail current left right bodyRest callerReferences clash
   have firstLifted :
-      RawStep opened.session
+      RawStep session
         (ActiveProductContext.plug context
           (activeSourceProduct callerScope opened finish selected selectedTail
             current (.unify left right :: bodyRest) callerReferences))
-        [] .none opened.session
+        [] .none session
         (.running
           (ActiveProductContext.plug context
             (sourceProductFrontier callerScope opened advanced
@@ -638,63 +766,63 @@ theorem SpinedActiveProductResourceRelates.afterUnifyFailureRetained
       (by simp [Trace.AnswerFree])
   have firstTransition :
       Transition
-        (.running opened.session
+        (.running session
           (ActiveProductContext.plug context
             (activeSourceProduct callerScope opened finish selected
               selectedTail current (.unify left right :: bodyRest)
               callerReferences)))
         []
-        (.running opened.session
+        (.running session
           (ActiveProductContext.plug context
             (sourceProductFrontier callerScope opened advanced
               callerReferences))) :=
     .ordinary _ _ _ _ _ firstLifted
   have firstSteps :
       PeTTaSpec.PrologCore.GoalSemantics.StepsN 1
-        (.running opened.session
+        (.running session
           (ActiveProductContext.plug context
             (activeSourceProduct callerScope opened finish selected
               selectedTail current (.unify left right :: bodyRest)
               callerReferences)))
         []
-        (.running opened.session
+        (.running session
           (ActiveProductContext.plug context
             (sourceProductFrontier callerScope opened advanced
               callerReferences))) := by
     simpa using
       (StepsN.succ 0
-        (.running opened.session
+        (.running session
           (ActiveProductContext.plug context
             (activeSourceProduct callerScope opened finish selected
               selectedTail current (.unify left right :: bodyRest)
               callerReferences)))
-        (.running opened.session
+        (.running session
           (ActiveProductContext.plug context
             (sourceProductFrontier callerScope opened advanced
               callerReferences)))
-        (.running opened.session
+        (.running session
           (ActiveProductContext.plug context
             (sourceProductFrontier callerScope opened advanced
               callerReferences)))
         [] [] firstTransition (.zero _))
   have tailSteps :
       PeTTaSpec.PrologCore.GoalSemantics.StepsN count
-        (.running opened.session
+        (.running session
           (ActiveProductContext.plug context
             (sourceProductFrontier callerScope opened advanced
               callerReferences)))
         []
-        (.running opened.session
+        (.running session
           (ActiveProductContext.plug context
             (sourceProductFrontier callerScope opened next
               callerReferences))) :=
-    PLeaTTa.PrologBodyFailureResourceTransitionBridge.RejectedPullsN.sourceProductContextStepsN
-      pulls context callerScope opened callerReferences
+    PLeaTTa.PrologBodyFailureResourceTransitionBridge.RejectedPullsN.sourceProductContextStepsNAt
+      pulls context callerScope opened session callerReferences
   have sourceSteps :
       PeTTaSpec.PrologCore.GoalSemantics.StepsN (count + 1)
-        (.running opened.session source)
+        (.running session source)
         []
-        (.running opened.session
+        (.running session
           (ActiveProductContext.plug context
             (sourceProductFrontier callerScope opened next
               callerReferences))) := by
@@ -928,16 +1056,18 @@ theorem SpinedActiveProductResourceRelates.afterUnifyFailureRetained
       (unifyFailureSuccessor state).frames = pending.frames := by
     simpa [unifyFailureSuccessor] using agreement.control.frames
   have successorPersistent :
-      SessionRelatesPersistent freshFrontier opened.session
+      SessionRelatesPersistent freshFrontier session
         (unifyFailureSuccessor state).persistent := by
     rw [unifyFailureSuccessor_persistent]
     exact persistentAgreement
   have postControl :
-      SpinedPostFailureFrontierRelates freshFrontier alpha opened pending
-        bodyBarrier callerBarrier callerReferences callerExecutables outer
-        qterm nextCopied active nextAltTail (unifyFailureSuccessor state) := by
+      SpinedPostFailureFrontierRelatesAt freshFrontier alpha opened session
+        pending bodyBarrier callerBarrier callerReferences callerExecutables
+        outer qterm nextCopied active nextAltTail
+        (unifyFailureSuccessor state) := by
     refine
-      ⟨successorPersistent, payload.control.tail, successorCur,
+      ⟨successorPersistent, agreement.control.sessionAdvanced,
+        payload.control.tail, successorCur,
         agreement.resourceStack.activeRest,
         successorQueryFromState.trans currentQuery,
         agreement.resourceStack.activeQuery,
@@ -969,14 +1099,103 @@ theorem SpinedActiveProductResourceRelates.afterUnifyFailureRetained
       agreement.resourceStack.outerAlignment,
       agreement.resourceStack.suspendedOuterAlts, successorExactBank⟩
   have post :
+      SpinedPostFailureFrontierResourceRelatesAt freshFrontier alpha opened
+        session pending bodyBarrier callerBarrier callerReferences
+        callerExecutables outer qterm next nextBranch nextClause nextBranchTail
+        nextCopied active nextAltTail resources callerScope outerScope context
+        baseAlts
+        (ActiveProductContext.plug context
+          (sourceProductFrontier callerScope opened next callerReferences))
+        (unifyFailureSuccessor state) :=
+    ⟨postControl, postResource, rfl⟩
+  exact
+    ⟨count, skippedBranches, skippedClauses, candidates, next, nextBranch,
+      nextClause, nextBranchTail, nextClauseTail, nextAltTail, nextCopied,
+      selectedTailEq, candidatesEq, branchCount, clauseCount, skippedRejected,
+      pulls, sourceSteps, executableStep, post⟩
+
+/-- Backward-compatible opener-session projection of retained body failure.
+
+The current-session theorem additionally exposes the exact rejected-pull proof
+object.  This specialization preserves the historical API while discarding
+only that new witness. -/
+theorem SpinedActiveProductResourceRelates.afterUnifyFailureRetained
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {selected : ClauseBranch}
+    {selectedTail : List ClauseBranch}
+    {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyRest callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {state : OpenConf}
+    {left right : Term}
+    (agreement :
+      SpinedActiveProductResourceRelates freshFrontier alpha support canonical
+        referenceBase opened pending finish selected selectedTail altTail
+        bodyBarrier callerBarrier (.unify left right :: bodyRest)
+        bodyExecutables callerReferences callerExecutables outer current
+        runtime qterm active resources callerScope outerScope context baseAlts
+        source state)
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote left))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote right))
+    (currentSafe : Substitution.BooleanAliasSafe current)
+    (leftAliasSafe : TermBooleanAliasSafe left)
+    (rightAliasSafe : TermBooleanAliasSafe right)
+    (clash : ¬ ∃ result, UnifyResolution current left right result)
+    (nonempty : active.alts ≠ []) :
+    ∃ (count : Nat)
+        (skippedBranches : List ClauseBranch)
+        (skippedClauses candidates : List PLeaTTa.Clause)
+        (next : PreparedCursor)
+        (nextBranch : ClauseBranch) (nextClause : PLeaTTa.Clause)
+        (nextBranchTail : List ClauseBranch)
+        (nextClauseTail : List PLeaTTa.Clause)
+        (nextAltTail : List PLeaTTa.Alt)
+        (nextCopied : PLeaTTa.Clause),
+      selectedTail = skippedBranches ++ (nextBranch :: nextBranchTail) ∧
+      candidates = skippedClauses ++ (nextClause :: nextClauseTail) ∧
+      skippedBranches.length = count ∧
+      skippedClauses.length = count ∧
+      (∀ clause ∈ skippedClauses,
+        resolutionClauseRetained active.argsv
+          (PLeaTTa.subst active.binding active.res) clause = false) ∧
+      StepsN (count + 1)
+        (.running opened.session source)
+        []
+        (.running opened.session
+          (ActiveProductContext.plug context
+            (sourceProductFrontier callerScope opened next
+              callerReferences))) ∧
+      DemandDrivenCallStep.Step prog gt (.ready state)
+        (.ready (unifyFailureSuccessor state)) ∧
       SpinedPostFailureFrontierResourceRelates freshFrontier alpha opened
         pending bodyBarrier callerBarrier callerReferences callerExecutables
         outer qterm next nextBranch nextClause nextBranchTail nextCopied active
         nextAltTail resources callerScope outerScope context baseAlts
         (ActiveProductContext.plug context
           (sourceProductFrontier callerScope opened next callerReferences))
-        (unifyFailureSuccessor state) :=
-    ⟨postControl, postResource, rfl⟩
+        (unifyFailureSuccessor state) := by
+  rcases
+      PLeaTTa.PrologBodyFailureResourceTransitionBridge.SpinedActiveProductResourceRelatesAt.afterUnifyFailureRetained
+        agreement leftSupported rightSupported currentSafe leftAliasSafe
+        rightAliasSafe clash nonempty with
+    ⟨count, skippedBranches, skippedClauses, candidates, next, nextBranch,
+      nextClause, nextBranchTail, nextClauseTail, nextAltTail, nextCopied,
+      selectedTailEq, candidatesEq, branchCount, clauseCount, skippedRejected,
+      _pulls, sourceSteps, executableStep, post⟩
   exact
     ⟨count, skippedBranches, skippedClauses, candidates, next, nextBranch,
       nextClause, nextBranchTail, nextClauseTail, nextAltTail, nextCopied,

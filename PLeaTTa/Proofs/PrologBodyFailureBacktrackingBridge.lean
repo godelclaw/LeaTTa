@@ -6,6 +6,7 @@ Purpose: Relate primitive failure inside an entered local clause body to the
   exact next source/executable retained-alternative frontier.
 Trusted boundary: none
 Main exports:
+  activeSourceProduct_unifyFailureAt,
   activeSourceProduct_unifyFailure,
   SegmentedActiveProductRelates.afterUnifyFailure,
   SegmentedActiveProductRelates.unifyFailureSuccessor_retained,
@@ -60,6 +61,53 @@ the immutable retained cursor in one top-level source transition.
 The leaf's completion observation is consumed by `choiceComplete`; the
 predicate cut boundary and caller product publish no observation.  The body
 tail and caller tail are discarded exactly as Prolog backtracking requires. -/
+theorem activeSourceProduct_unifyFailureAt
+    (callerScope : CutScopeId) (opened : OpenedCall)
+    (session : Session)
+    (finish : PreparedCursor) (branch : ClauseBranch)
+    (branchTail : List ClauseBranch) (current : Substitution)
+    (left right : Term)
+    (bodyRest referenceRest : List PeTTaSpec.PrologCore.Goal)
+    (clash : ¬ ∃ result, UnifyResolution current left right result) :
+    RawStep session
+      (activeSourceProduct callerScope opened finish branch branchTail current
+        (.unify left right :: bodyRest) referenceRest)
+      [] .none session
+      (.running
+        (sourceProductFrontier callerScope opened
+          (finish.advance branch branchTail) referenceRest)) := by
+  have leaf :
+      RawStep session
+        (.task opened.scope (.unify left right :: bodyRest) current)
+        [.completed] .none session (.terminal .completed) :=
+    .taskUnifyFailure opened.scope left right bodyRest current session
+      clash
+  have choice :
+      RawStep session
+        (.choice opened.scope
+          (.task opened.scope (.unify left right :: bodyRest) current)
+          (.clauses opened.scope (finish.advance branch branchTail)))
+        [] .none session
+        (.running
+          (.clauses opened.scope (finish.advance branch branchTail))) :=
+    .choiceComplete opened.scope _ _ session session leaf
+  have boundary :
+      RawStep session
+        (.cutBoundary opened.scope
+          (.choice opened.scope
+            (.task opened.scope (.unify left right :: bodyRest) current)
+            (.clauses opened.scope (finish.advance branch branchTail))))
+        [] .none session
+        (.running
+          (.cutBoundary opened.scope
+            (.clauses opened.scope (finish.advance branch branchTail)))) :=
+    .cutBoundaryProgress opened.scope _ _ [] session session
+      choice
+  exact
+    .productProgress callerScope _ _ referenceRest [] .none
+      session session boundary (by simp [Trace.AnswerFree])
+
+/-- Exact opener-session specialization of primitive body failure. -/
 theorem activeSourceProduct_unifyFailure
     (callerScope : CutScopeId) (opened : OpenedCall)
     (finish : PreparedCursor) (branch : ClauseBranch)
@@ -73,37 +121,9 @@ theorem activeSourceProduct_unifyFailure
       [] .none opened.session
       (.running
         (sourceProductFrontier callerScope opened
-          (finish.advance branch branchTail) referenceRest)) := by
-  have leaf :
-      RawStep opened.session
-        (.task opened.scope (.unify left right :: bodyRest) current)
-        [.completed] .none opened.session (.terminal .completed) :=
-    .taskUnifyFailure opened.scope left right bodyRest current opened.session
-      clash
-  have choice :
-      RawStep opened.session
-        (.choice opened.scope
-          (.task opened.scope (.unify left right :: bodyRest) current)
-          (.clauses opened.scope (finish.advance branch branchTail)))
-        [] .none opened.session
-        (.running
-          (.clauses opened.scope (finish.advance branch branchTail))) :=
-    .choiceComplete opened.scope _ _ opened.session opened.session leaf
-  have boundary :
-      RawStep opened.session
-        (.cutBoundary opened.scope
-          (.choice opened.scope
-            (.task opened.scope (.unify left right :: bodyRest) current)
-            (.clauses opened.scope (finish.advance branch branchTail))))
-        [] .none opened.session
-        (.running
-          (.cutBoundary opened.scope
-            (.clauses opened.scope (finish.advance branch branchTail)))) :=
-    .cutBoundaryProgress opened.scope _ _ [] opened.session opened.session
-      choice
-  exact
-    .productProgress callerScope _ _ referenceRest [] .none
-      opened.session opened.session boundary (by simp [Trace.AnswerFree])
+          (finish.advance branch branchTail) referenceRest)) :=
+  activeSourceProduct_unifyFailureAt callerScope opened opened.session finish
+    branch branchTail current left right bodyRest referenceRest clash
 
 /-! ## Paired primitive body failure -/
 
