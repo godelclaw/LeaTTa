@@ -392,6 +392,19 @@ def CutExactControlFrontiers : ControlFrontierRelations :=
     exception := fun _ _ => True
     collection := fun _ _ => True }
 
+/-- Exact chronology for every typed control allocator.  This is deliberately
+stronger than the currently deployed fragment: it is a tripwire requiring
+future `catch/3` and collection refinements to allocate their cut, exception,
+and collection identities on both sides in lockstep.
+
+Equality here is only an allocation-count invariant.  It does not replace the
+occurrence-indexed control/resource zipper that pairs active nominal source
+scopes with anonymous executable frames. -/
+def ExactControlFrontiers : ControlFrontierRelations :=
+  { cut := Eq
+    exception := Eq
+    collection := Eq }
+
 /-- Full open-state persistent agreement.  Sealed world/fresh state and all
 three typed open-only frontiers are present in one relation; which numeric
 correspondence is justified remains an explicit parameter.
@@ -416,6 +429,21 @@ structure SessionRelatesOpenConf
       state.scopes.nextCollectionScope
 
 namespace SessionRelatesOpenConf
+
+/-- The independent root session and the fine root wrapper begin with the
+same three control frontiers.  Database/fresh agreement remains an explicit
+premise because those representations are independent; only the control
+base case is definitionally exact. -/
+theorem exact_root
+    (freshFrontier : FreshFrontierRelation)
+    (resolverSession : LocalSession) (conf : PLeaTTa.Conf)
+    (frames : List Frame)
+    (persistent :
+      SessionRelatesPersistent freshFrontier
+        (rootSession resolverSession) (persistentOf conf)) :
+    SessionRelatesOpenConf freshFrontier ExactControlFrontiers
+      (rootSession resolverSession) (OpenConf.ofConf conf frames) := by
+  exact ⟨persistent, rfl, rfl, rfl⟩
 
 /-- Ordinary sealed advancement cannot alter any open-only frontier.  The
 caller supplies only the changed world/fresh agreement; control chronology is
@@ -501,6 +529,193 @@ theorem cutExact_afterLocalCall
   rw [openLocalCall_nextCutScope, scopes,
     DemandDrivenStep.ScopeHighWaters.afterLocalCall_cut]
   exact congrArg Nat.succ agreement.cut
+
+/-- A source `findall/3` allocation cannot be laundered through an unchanged
+fine state when all three typed frontiers are exact.  The collection field,
+not the simultaneously advanced cut field, supplies the contradiction. -/
+theorem exact_rejects_source_findall_advance
+    {freshFrontier : FreshFrontierRelation}
+    {session : Session} {state : OpenConf}
+    (agreement :
+      SessionRelatesOpenConf freshFrontier ExactControlFrontiers
+        session state) :
+    ¬ SessionRelatesOpenConf freshFrontier ExactControlFrontiers
+      (openFindall session).session state := by
+  intro advanced
+  have beforeCollection := agreement.collection
+  have afterCollection := advanced.collection
+  change
+    session.nextCollectionScope = state.scopes.nextCollectionScope
+      at beforeCollection
+  change
+    (openFindall session).session.nextCollectionScope =
+      state.scopes.nextCollectionScope at afterCollection
+  rw [openFindall_nextCollectionScope] at afterCollection
+  omega
+
+/-- Conversely, advancing the fine `findall/3` frontiers without performing
+the source allocation is rejected.  This makes exactness bidirectional rather
+than merely preventing source-only motion. -/
+theorem exact_rejects_fine_findall_advance
+    {freshFrontier : FreshFrontierRelation}
+    {session : Session} {state : OpenConf}
+    (agreement :
+      SessionRelatesOpenConf freshFrontier ExactControlFrontiers
+        session state) :
+    ¬ SessionRelatesOpenConf freshFrontier ExactControlFrontiers session
+      { state with scopes := state.scopes.afterFindall } := by
+  intro advanced
+  have beforeCollection := agreement.collection
+  have afterCollection := advanced.collection
+  change
+    session.nextCollectionScope = state.scopes.nextCollectionScope
+      at beforeCollection
+  change
+    session.nextCollectionScope =
+      state.scopes.afterFindall.nextCollectionScope at afterCollection
+  rw [DemandDrivenStep.ScopeHighWaters.afterFindall_collection]
+    at afterCollection
+  omega
+
+/-- Advancing the sealed general-purpose counter cannot stand in for the
+source collection allocation.  The fine control frontier must itself move. -/
+theorem exact_rejects_findall_counter_only_advance
+    {freshFrontier : FreshFrontierRelation}
+    {session : Session} {state : OpenConf}
+    (agreement :
+      SessionRelatesOpenConf freshFrontier ExactControlFrontiers
+        session state) :
+    ¬ SessionRelatesOpenConf freshFrontier ExactControlFrontiers
+      (openFindall session).session
+      (state.stepOpen
+        { state.toConf with counter := state.persistent.counter + 1 }) := by
+  intro advanced
+  have beforeCollection := agreement.collection
+  have afterCollection := advanced.collection
+  change
+    session.nextCollectionScope = state.scopes.nextCollectionScope
+      at beforeCollection
+  change
+    (openFindall session).session.nextCollectionScope =
+      (state.stepOpen
+        { state.toConf with
+          counter := state.persistent.counter + 1 }).scopes.nextCollectionScope
+      at afterCollection
+  rw [openFindall_nextCollectionScope,
+    DemandDrivenStep.OpenConf.stepOpen_scopes] at afterCollection
+  omega
+
+/-- Swapping the cut and collection banks becomes observably wrong after one
+local-call entry has advanced cut alone.  The equal incoming-bank premise is
+intentional: it supplies the concrete initially synchronized chronology, and
+the local call then separates the two values before the swap is tested.
+
+Without that separating prefix, swapping two equal naturals would be a
+vacuous anti-witness even though the relation fields remain typed. -/
+theorem exact_rejects_swapped_afterLocalCall
+    {freshFrontier : FreshFrontierRelation}
+    {session : Session} {state : OpenConf}
+    (agreement :
+      SessionRelatesOpenConf freshFrontier ExactControlFrontiers
+        session state)
+    (incomingBanksEqual :
+      session.nextCutScope = session.nextCollectionScope)
+    (request : CallRequest) :
+    ¬ SessionRelatesOpenConf freshFrontier ExactControlFrontiers
+      (openLocalCall session request).session
+      { state with
+        scopes :=
+          { state.scopes.afterLocalCall with
+            nextCutScope :=
+              state.scopes.afterLocalCall.nextCollectionScope
+            nextCollectionScope :=
+              state.scopes.afterLocalCall.nextCutScope } } := by
+  intro swapped
+  have beforeCut := agreement.cut
+  have beforeCollection := agreement.collection
+  have afterCut := swapped.cut
+  change session.nextCutScope = state.scopes.nextCutScope at beforeCut
+  change
+    session.nextCollectionScope = state.scopes.nextCollectionScope
+      at beforeCollection
+  change
+    (openLocalCall session request).session.nextCutScope =
+      state.scopes.afterLocalCall.nextCollectionScope at afterCut
+  rw [openLocalCall_nextCutScope,
+    DemandDrivenStep.ScopeHighWaters.afterLocalCall_collection] at afterCut
+  omega
+
+/-- Exact control chronology is preserved by a paired local-call entry.
+This strengthens `cutExact_afterLocalCall`: the source and fine transition
+must also preserve equal exception and collection frontiers. -/
+theorem exact_afterLocalCall
+    {freshFrontier : FreshFrontierRelation}
+    {session : Session} {state target : OpenConf}
+    {request : CallRequest}
+    (agreement :
+      SessionRelatesOpenConf freshFrontier ExactControlFrontiers
+        session state)
+    (persistent :
+      SessionRelatesPersistent freshFrontier
+        (openLocalCall session request).session target.persistent)
+    (scopes : target.scopes = state.scopes.afterLocalCall) :
+    SessionRelatesOpenConf freshFrontier ExactControlFrontiers
+      (openLocalCall session request).session target := by
+  refine ⟨persistent, ?_, ?_, ?_⟩
+  · change
+      (openLocalCall session request).session.nextCutScope =
+        target.scopes.nextCutScope
+    rw [openLocalCall_nextCutScope, scopes,
+      DemandDrivenStep.ScopeHighWaters.afterLocalCall_cut]
+    exact congrArg Nat.succ agreement.cut
+  · change
+      (openLocalCall session request).session.nextExceptionScope =
+        target.scopes.nextExceptionScope
+    rw [openLocalCall_nextExceptionScope, scopes,
+      DemandDrivenStep.ScopeHighWaters.afterLocalCall_exception]
+    exact agreement.exception
+  · change
+      (openLocalCall session request).session.nextCollectionScope =
+        target.scopes.nextCollectionScope
+    rw [openLocalCall_nextCollectionScope, scopes,
+      DemandDrivenStep.ScopeHighWaters.afterLocalCall_collection]
+    exact agreement.collection
+
+/-- Exact control chronology is preserved by a paired `findall/3` entry:
+cut and collection advance once, exception is unchanged, and the persistent
+relation is supplied independently because control allocation does not
+justify any world or fresh-name change. -/
+theorem exact_afterFindall
+    {freshFrontier : FreshFrontierRelation}
+    {session : Session} {state target : OpenConf}
+    (agreement :
+      SessionRelatesOpenConf freshFrontier ExactControlFrontiers
+        session state)
+    (persistent :
+      SessionRelatesPersistent freshFrontier
+        (openFindall session).session target.persistent)
+    (scopes : target.scopes = state.scopes.afterFindall) :
+    SessionRelatesOpenConf freshFrontier ExactControlFrontiers
+      (openFindall session).session target := by
+  refine ⟨persistent, ?_, ?_, ?_⟩
+  · change
+      (openFindall session).session.nextCutScope =
+        target.scopes.nextCutScope
+    rw [openFindall_nextCutScope, scopes,
+      DemandDrivenStep.ScopeHighWaters.afterFindall_cut]
+    exact congrArg Nat.succ agreement.cut
+  · change
+      (openFindall session).session.nextExceptionScope =
+        target.scopes.nextExceptionScope
+    rw [openFindall_nextExceptionScope, scopes,
+      DemandDrivenStep.ScopeHighWaters.afterFindall_exception]
+    exact agreement.exception
+  · change
+      (openFindall session).session.nextCollectionScope =
+        target.scopes.nextCollectionScope
+    rw [openFindall_nextCollectionScope, scopes,
+      DemandDrivenStep.ScopeHighWaters.afterFindall_collection]
+    exact congrArg Nat.succ agreement.collection
 
 end SessionRelatesOpenConf
 

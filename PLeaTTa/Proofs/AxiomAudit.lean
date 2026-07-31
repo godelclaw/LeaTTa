@@ -6,6 +6,7 @@ import PLeaTTa.Proofs.FindallCopy
 import PLeaTTa.Proofs.PrologFindallCopyBridge
 import PLeaTTa.Proofs.DemandDrivenCallStep
 import PLeaTTa.Proofs.PrologStateBridge
+import PLeaTTa.Proofs.PrologFindallEntryBridge
 import PLeaTTa.Proofs.PrologAlphaFreshFrontierBridge
 import PLeaTTa.Proofs.PrologCallEntryBridge
 import PLeaTTa.Proofs.PrologCallStepBridge
@@ -1732,10 +1733,20 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologStateBridge.retractId_snapshot_separation
 #print axioms PLeaTTa.PrologStateBridge.openCatch_preserves_persistent_relation
 #print axioms PLeaTTa.PrologStateBridge.openFindall_preserves_persistent_relation
+#print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.exact_root
 #print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.stepOpen
 #print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.cutExact_rejects_source_advance
 #print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.cutExact_rejects_counter_only_advance
 #print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.cutExact_afterLocalCall
+#print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.exact_rejects_source_findall_advance
+#print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.exact_rejects_fine_findall_advance
+#print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.exact_rejects_findall_counter_only_advance
+#print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.exact_rejects_swapped_afterLocalCall
+#print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.exact_afterLocalCall
+#print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.exact_afterFindall
+#print axioms PLeaTTa.PrologFindallEntryBridge.taskFindall_findallEnter_control_correspondence
+#print axioms PLeaTTa.PrologFindallEntryBridge.FindallControlEntryRelates.frames_ne_before
+#print axioms PLeaTTa.PrologFindallEntryBridge.FindallControlEntryRelates.indices_exact
 #print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_reference
 #print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_executable
 #print axioms PLeaTTa.PrologStateBridge.buildFreshening_apply_member

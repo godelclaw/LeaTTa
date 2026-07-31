@@ -37,6 +37,9 @@ DEMAND_DRIVEN_CALL_STEP = (
     ROOT / "PLeaTTa" / "Proofs" / "DemandDrivenCallStep.lean"
 )
 PROLOG_STATE_BRIDGE = ROOT / "PLeaTTa" / "Proofs" / "PrologStateBridge.lean"
+PROLOG_FINDALL_ENTRY_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologFindallEntryBridge.lean"
+)
 PROLOG_ALPHA_FRESH_FRONTIER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologAlphaFreshFrontierBridge.lean"
 )
@@ -342,6 +345,8 @@ def check() -> list[str]:
             digest(PROLOG_FINDALL_COPY_BRIDGE),
         "demand_driven_call_step_sha256": digest(DEMAND_DRIVEN_CALL_STEP),
         "prolog_state_bridge_sha256": digest(PROLOG_STATE_BRIDGE),
+        "prolog_findall_entry_bridge_sha256":
+            digest(PROLOG_FINDALL_ENTRY_BRIDGE),
         "prolog_alpha_fresh_frontier_bridge_sha256":
             digest(PROLOG_ALPHA_FRESH_FRONTIER_BRIDGE),
         "prolog_call_entry_bridge_sha256": digest(PROLOG_CALL_ENTRY_BRIDGE),
