@@ -266,6 +266,10 @@ PROLOG_COLLECTION_BOUNDED_PRODUCT_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologCollectionBoundedProductBridge.lean"
 )
+PROLOG_NESTED_CALL_ENTRY_PAYLOAD_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologNestedCallEntryPayloadBridge.lean"
+)
 PROLOG_RETAINED_PAYLOAD_SNAPSHOT_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRetainedPayloadSnapshotBridge.lean"
@@ -545,6 +549,8 @@ def check() -> list[str]:
             digest(PROLOG_PRODUCT_ACTIVE_CONTROL_EMBEDDING_BRIDGE),
         "prolog_collection_bounded_product_bridge_sha256":
             digest(PROLOG_COLLECTION_BOUNDED_PRODUCT_BRIDGE),
+        "prolog_nested_call_entry_payload_bridge_sha256":
+            digest(PROLOG_NESTED_CALL_ENTRY_PAYLOAD_BRIDGE),
         "prolog_retained_payload_snapshot_bridge_sha256":
             digest(PROLOG_RETAINED_PAYLOAD_SNAPSHOT_BRIDGE),
         "prolog_retained_payload_catchup_bridge_sha256":
