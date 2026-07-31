@@ -433,6 +433,71 @@ theorem pullAux_eq
 
 end OriginPrefixFallsThrough
 
+namespace AnswerOriginResourceAgrees
+
+/-- If the literal successor of one exact answer origin completes in the
+next source transition, every alternative region owned by that origin must
+fall through.  A choice successor cannot satisfy the premise:
+`choiceComplete` enters its right branch rather than terminating.  Cut
+boundaries merely propagate the same completion proof inward.
+
+This is the source-driven exhaustion bridge used to justify an executable
+terminal answer-pull without assuming terminality independently. -/
+theorem fallsThrough_of_next_completed
+    {alpha : List (LogicVar × String)}
+    {leafScope : CutScopeId}
+    {bindings : OpenSubstitution.Substitution}
+    {source next : Search}
+    {origin : AnswerOrigin leafScope bindings source next}
+    {beforeResources afterResources : List RetainedAlternativeSegment}
+    {beforeAlts afterAlts : List PLeaTTa.Alt}
+    (agreement :
+      AnswerOriginResourceAgrees alpha origin beforeResources afterResources
+        beforeAlts afterAlts)
+    {before after : Session}
+    (completed :
+      RawStep before next [.completed] .none after
+        (.terminal .completed)) :
+    OriginPrefixFallsThrough alpha agreement := by
+  exact AnswerOriginResourceAgrees.rec
+    (motive_1 := fun _ _ _ _ => True)
+    (motive_2 := fun {_} {_} {_} {next} _ _ _ _ _ originAgreement =>
+      ∀ {before after : Session},
+        RawStep before next [.completed] .none after
+          (.terminal .completed) →
+        OriginPrefixFallsThrough alpha originAgreement)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by intros; trivial)
+    (by
+      intro leafScope bindings resources alts before after completed
+      exact OriginPrefixFallsThrough.task leafScope bindings resources alts rfl)
+    (by
+      intro scope right leafScope bindings left next insideOrigin
+        beforeResources afterResources regionResources beforeAlts afterAlts
+        regionAlts insideAgreement regionAgreement insideIH regionIH before
+        after completed
+      have target_ne :
+          ∀ {events signal nextAfter target},
+            RawStep before (.choice scope next right) events signal nextAfter
+              target →
+            target ≠ .terminal .completed := by
+        intro events signal nextAfter target step targetEq
+        cases step <;> cases targetEq
+      exact False.elim (target_ne completed rfl))
+    (by
+      intro scope leafScope bindings body next insideOrigin beforeResources
+        afterResources beforeAlts afterAlts insideAgreement insideIH before
+        after completed
+      cases completed with
+      | cutBoundaryComplete _ _ _ _ child =>
+          have insideFalls := insideIH child
+          exact .cutBoundary scope insideOrigin insideAgreement insideFalls (by
+            simpa [PLeaTTa.pullAux] using insideFalls.pullAux_eq))
+    agreement completed
+
+end AnswerOriginResourceAgrees
+
 /-! ## Total structural classification -/
 
 namespace AnswerOriginResourceAgrees

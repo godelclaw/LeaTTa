@@ -85,6 +85,10 @@ PROLOG_ANSWER_PULL_CLASSIFICATION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologAnswerPullClassificationBridge.lean"
 )
+PROLOG_FINDALL_ANSWER_EXIT_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologFindallAnswerExitBridge.lean"
+)
 PROLOG_ANSWER_SOURCE_CATCHUP_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologAnswerSourceCatchupBridge.lean"
@@ -426,6 +430,8 @@ def check() -> list[str]:
             digest(PROLOG_FINDALL_ANSWER_RESOURCE_BRIDGE),
         "prolog_answer_pull_classification_bridge_sha256":
             digest(PROLOG_ANSWER_PULL_CLASSIFICATION_BRIDGE),
+        "prolog_findall_answer_exit_bridge_sha256":
+            digest(PROLOG_FINDALL_ANSWER_EXIT_BRIDGE),
         "prolog_answer_source_catchup_bridge_sha256":
             digest(PROLOG_ANSWER_SOURCE_CATCHUP_BRIDGE),
         "prolog_alpha_fresh_frontier_bridge_sha256":

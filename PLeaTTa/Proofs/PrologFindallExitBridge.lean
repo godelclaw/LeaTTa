@@ -51,6 +51,27 @@ theorem completed_step_has_no_active_collections
     activeCollectionCells search = some [] :=
   completed_target_has_no_active_collections step rfl
 
+set_option maxRecDepth 10000 in
+/-- A raw transition that reaches ordinary completion cannot change the
+persistent source session.  Session-changing primitive rules always produce
+a running continuation; completion itself and every wrapper that propagates
+it merely thread the child's endpoints. -/
+theorem RawStep.completed_session_exact
+    {before after : Session} {search : Search}
+    {events : List Observation} {signal : Trace.CutSignal}
+    {target : RawTarget}
+    (step : RawStep before search events signal after target)
+    (eventsExact : events = [.completed])
+    (signalExact : signal = .none)
+    (targetExact : target = .terminal .completed) :
+    after = before := by
+  induction step <;>
+    try { cases targetExact } <;>
+    try { cases signalExact } <;>
+    try { cases eventsExact } <;>
+    try rfl
+  all_goals solve_by_elim
+
 /-- One actual active `findall/3` exit, closed under exactly the wrappers that
 can lie on the leftmost source control path.
 
@@ -128,6 +149,30 @@ inductive ActiveFindallExit :
         (.product scope next tail) cell
 
 namespace ActiveFindallExit
+
+/-- Exiting an active collector preserves the source session exactly.  This
+is inherited from the real child-completion transition and remains true
+under every allowed leftmost control wrapper. -/
+theorem session_exact
+    {before after : Session} {search next : Search}
+    {cell : SourceCollectionCell}
+    (exit : ActiveFindallExit before search after next cell) :
+    after = before := by
+  induction exit with
+  | here _ _ _ _ _ _ _ _ _ _ _ child =>
+      exact
+        PLeaTTa.PrologFindallExitBridge.RawStep.completed_session_exact
+          child rfl rfl rfl
+  | underChoice _ _ inside inductionHypothesis =>
+      exact inductionHypothesis
+  | underCut _ inside inductionHypothesis =>
+      exact inductionHypothesis
+  | underCatch _ _ _ _ _ inside inductionHypothesis =>
+      exact inductionHypothesis
+  | underCollection _ _ _ _ _ _ _ _ inside inductionHypothesis =>
+      exact inductionHypothesis
+  | underProduct _ _ inside inductionHypothesis =>
+      exact inductionHypothesis
 
 /-- Every contextual exit is an actual source transition with no public
 observation and no escaping cut signal. -/
