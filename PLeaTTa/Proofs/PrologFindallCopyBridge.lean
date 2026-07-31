@@ -548,6 +548,43 @@ theorem CollectionCopyFrontier.payment_initial
       (FindallCopy.BagCopyState.initial counter executableRawRev.reverse) := by
   exact ⟨List.rel_reverse agreement.debt, .nil⟩
 
+/-- The exact terminal state of the bounded executable payment phase.  Naming
+this state prevents later composition proofs from maintaining a second,
+independently reconstructed account of the copied bag or returned counter. -/
+def paidCollectionCopyState (counter : Nat)
+    (executableRawRev : List Atom) : FindallCopy.BagCopyState :=
+  { remaining := []
+    copiedRev :=
+      (copyFindallBag counter executableRawRev.reverse).values.reverse
+    counter :=
+      (copyFindallBag counter executableRawRev.reverse).counter }
+
+/-- The complete bounded phase reaches the literal macro-copy endpoint and
+pays every debt there.  This strengthens the existential wrapper below: the
+same `copyFindallBag` fold supplies both the microstep endpoint and all later
+exit-counter/bag equations. -/
+theorem CollectionCopyFrontier.payment_exact_target
+    {referenceFrontier executableFrontier : Nat}
+    {referenceCopiedRev : List Term} {executableRawRev : List Atom}
+    (agreement :
+      CollectionCopyFrontier referenceFrontier executableFrontier
+        referenceCopiedRev executableRawRev)
+    (counter : Nat) :
+    FindallCopy.BagCopyStepsN executableRawRev.length
+        (FindallCopy.BagCopyState.initial counter executableRawRev.reverse)
+        (paidCollectionCopyState counter executableRawRev) ∧
+      CopyPaymentAgrees referenceFrontier [] referenceCopiedRev
+        (paidCollectionCopyState counter executableRawRev) := by
+  constructor
+  · simpa [paidCollectionCopyState] using
+      (FindallCopy.BagCopyStepsN.run_initial
+        counter executableRawRev.reverse)
+  · have paidDiscovery := agreement.pay counter
+    have paidReverse := List.rel_reverse paidDiscovery
+    exact
+      ⟨.nil, by
+        simpa [paidCollectionCopyState] using paidReverse⟩
+
 /-- The complete bounded phase pays every debt entry in exactly one
 microstep, ends with no outstanding reference value, and leaves the private
 reverse accumulators pointwise alpha-related. -/
@@ -563,25 +600,10 @@ theorem CollectionCopyFrontier.payment_exact
         (FindallCopy.BagCopyState.initial counter executableRawRev.reverse)
         final ∧
       CopyPaymentAgrees referenceFrontier [] referenceCopiedRev final := by
-  let copied := copyFindallBag counter executableRawRev.reverse
-  let final : FindallCopy.BagCopyState :=
-    { remaining := []
-      copiedRev := copied.values.reverse
-      counter := copied.counter }
-  have run :
-      FindallCopy.BagCopyStepsN executableRawRev.length
-        (FindallCopy.BagCopyState.initial counter executableRawRev.reverse)
-        final := by
-    simpa [final, copied] using
-      (FindallCopy.BagCopyStepsN.run_initial
-        counter executableRawRev.reverse)
-  have paidDiscovery := agreement.pay counter
-  have paidReverse := List.rel_reverse paidDiscovery
-  have paid :
-      List.Forall₂ RuntimeTermAgrees referenceCopiedRev
-        copied.values.reverse := by
-    simpa [copied] using paidReverse
-  exact ⟨final, run, .mk .nil paid⟩
+  exact
+    ⟨paidCollectionCopyState counter executableRawRev,
+      (agreement.payment_exact_target counter).1,
+      (agreement.payment_exact_target counter).2⟩
 
 /-- One certified executable microstep pays exactly the head debt entry and
 prepends exactly one alpha-related copied value. -/

@@ -9,6 +9,7 @@ import PLeaTTa.Proofs.PrologStateBridge
 import PLeaTTa.Proofs.PrologFindallEntryBridge
 import PLeaTTa.Proofs.PrologFindallFrameZipperBridge
 import PLeaTTa.Proofs.PrologFindallExitBridge
+import PLeaTTa.Proofs.PrologFindallExitPayloadBridge
 import PLeaTTa.Proofs.PrologAlphaFreshFrontierBridge
 import PLeaTTa.Proofs.PrologCallEntryBridge
 import PLeaTTa.Proofs.PrologCallStepBridge
@@ -1707,6 +1708,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologFindallCopyBridge.CollectionCopyFrontier.collect
 #print axioms PLeaTTa.PrologFindallCopyBridge.CollectionCopyFrontier.pay
 #print axioms PLeaTTa.PrologFindallCopyBridge.CollectionSessionRelates.collect
+#print axioms PLeaTTa.PrologFindallCopyBridge.CollectionCopyFrontier.payment_exact_target
 #print axioms PLeaTTa.PrologFindallCopyBridge.CollectionCopyFrontier.payment_exact
 #print axioms PLeaTTa.PrologFindallCopyBridge.CopyPaymentAgrees.next
 #print axioms PLeaTTa.PrologFindallCopyBridge.witness_copy_debt_frontiers_need_not_equal
@@ -1771,6 +1773,18 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologFindallExitBridge.ContextualFindallExitRelates.counter_after_copy
 #print axioms PLeaTTa.PrologFindallExitBridge.ActiveFindallExit.wrong_head_frame_rejected
 #print axioms PLeaTTa.PrologFindallExitBridge.direct_empty_generator_exit_inhabited
+#print axioms PLeaTTa.PrologFindallExitPayloadBridge.FindallFramePayloadAgrees.of_variableState
+#print axioms PLeaTTa.PrologFindallExitPayloadBridge.FindallExitPayloadAgrees.paidBag
+#print axioms PLeaTTa.PrologFindallExitPayloadBridge.FindallExitPayloadAgrees.boundedPayment
+#print axioms PLeaTTa.PrologFindallExitPayloadBridge.FindallExitPayloadAgrees.rejoinPayload
+#print axioms PLeaTTa.PrologFindallExitPayloadBridge.ContextualFindallExitPayloadRelates.bounded_copy_rejoin_exact
+#print axioms PLeaTTa.PrologFindallExitPayloadBridge.ContextualFindallExitPayloadRelates.bag_length_exact
+#print axioms PLeaTTa.PrologFindallExitPayloadBridge.runtimeIntegerAgrees_exact
+#print axioms PLeaTTa.PrologFindallExitPayloadBridge.swapped_integer_bag_rejected
+#print axioms PLeaTTa.PrologFindallExitPayloadBridge.correct_raw_accumulator_orientation_accepted
+#print axioms PLeaTTa.PrologFindallExitPayloadBridge.wrong_raw_accumulator_orientation_rejected
+#print axioms PLeaTTa.PrologFindallExitPayloadBridge.ground_empty_exit_payload_inhabited
+#print axioms PLeaTTa.PrologFindallExitPayloadBridge.ground_two_answer_exit_payload_inhabited
 #print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_reference
 #print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_executable
 #print axioms PLeaTTa.PrologStateBridge.buildFreshening_apply_member
