@@ -109,10 +109,10 @@ that can lie on the leftmost source control path.  Crossing an outer
 collection uses `collectionProgress`, never `collectionAnswer`: the inner
 solution is consumed exactly once.
 
-The direct constructor is fail-closed about nested collectors: until the raw
-event-shape classifier is exported, it requires exact empty active-collection
-proofs on both child endpoints rather than inferring them from an unconstrained
-cleanup batch. -/
+The direct constructor needs no side condition about nested collectors:
+`RawStep.answer_activeCollectionCells_empty` derives that an exact answer
+cannot cross a live collection boundary, because the innermost collector
+would consume it. -/
 inductive ActiveFindallAnswer :
     Session → Search → Session → Search → SourceCollectionCell →
       Substitution → Prop where
@@ -126,9 +126,7 @@ inductive ActiveFindallAnswer :
       (child :
         RawStep before (.cutBoundary cutScope body)
           [.answer answerBindings] .none childAfter
-          (.running (.cutBoundary cutScope next)))
-      (beforeEmpty : activeCollectionCells body = some [])
-      (afterEmpty : activeCollectionCells next = some []) :
+          (.running (.cutBoundary cutScope next))) :
       ActiveFindallAnswer before
         (.collectionBoundary collectionScope callerScope
           (.cutBoundary cutScope body) template output entryBindings tail
@@ -213,8 +211,7 @@ theorem sourceStep
       (.running next) := by
   induction answer with
   | here before childAfter callerScope cutScope collectionScope body next
-      template output entryBindings tail reversed answerBindings child
-      beforeEmpty afterEmpty =>
+      template output entryBindings tail reversed answerBindings child =>
       exact
         .collectionAnswer collectionScope callerScope
           (.cutBoundary cutScope body) (.cutBoundary cutScope next)
@@ -261,12 +258,14 @@ theorem cells_replace
           some (afterAnswer cell childAfter answerBindings :: cells) := by
   induction answer with
   | here before childAfter callerScope cutScope collectionScope body next
-      template output entryBindings tail reversed answerBindings child
-      beforeEmpty afterEmpty =>
+      template output entryBindings tail reversed answerBindings child =>
+      have empty :=
+        PrologFindallFrameZipperBridge.RawStep.answer_activeCollectionCells_empty
+          child
       refine ⟨[], ?_, ?_⟩
-      · simp [activeCollectionCells, beforeEmpty]
-      · simp [activeCollectionCells, afterEmpty, afterAnswer,
-          sourceCollectionCell]
+      · simpa [activeCollectionCells] using empty.1
+      · simpa [activeCollectionCells, afterAnswer, sourceCollectionCell]
+          using empty.2
   | underChoice scope right inside inductionHypothesis =>
       rcases inductionHypothesis with ⟨cells, beforeCells, afterCells⟩
       exact
@@ -672,12 +671,10 @@ theorem nested_answer_only_updates_innermost_cell :
           (.integer 8) [] [] [])
         [(.source "x", .integer 1)] := by
     apply ActiveFindallAnswer.here
-    · exact
-        .cutBoundaryProgress 2 _ _ [.answer
-          [(.source "x", .integer 1)]] _ _
-          (.taskAnswer 2 [(.source "x", .integer 1)] ({} : Session))
-    · rfl
-    · rfl
+    exact
+      .cutBoundaryProgress 2 _ _ [.answer
+        [(.source "x", .integer 1)]] _ _
+        (.taskAnswer 2 [(.source "x", .integer 1)] ({} : Session))
   have nested :
       ActiveFindallAnswer ({} : Session)
         (.collectionBoundary ⟨1⟩ 0
@@ -770,12 +767,10 @@ theorem ground_direct_answer_correspondence_inhabited
           (.integer 9) [] [] [])
         [(.source "x", .integer 1)] := by
     apply ActiveFindallAnswer.here
-    · exact
-        .cutBoundaryProgress 1 _ _ [.answer
-          [(.source "x", .integer 1)]] _ _
-          (.taskAnswer 1 [(.source "x", .integer 1)] ({} : Session))
-    · rfl
-    · rfl
+    exact
+      .cutBoundaryProgress 1 _ _ [.answer
+        [(.source "x", .integer 1)]] _ _
+        (.taskAnswer 1 [(.source "x", .integer 1)] ({} : Session))
   have occurrences :
       CollectionOccurrenceAgrees
         (.collectionBoundary ⟨1⟩ 0

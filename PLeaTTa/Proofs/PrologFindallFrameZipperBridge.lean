@@ -129,6 +129,86 @@ theorem cutBoundary_running_shape
           [sourceCollectionCell cutScope collectionScope callerScope template
             output entryBindings tail reversed] := rfl
 
+/-- Exact target shape forced by an emitted answer.  An answer-producing raw
+step remains running and exposes no live collection occurrence; a terminal
+target is impossible in that same transition. -/
+def AnswerSuccessorCollectionFree : RawTarget → Prop
+  | .terminal _ => False
+  | .running next => activeCollectionCells next = some []
+
+/-- Any emitted source answer is outside every live collection boundary:
+the innermost `collectionAnswer` consumes such an observation.  Both the
+source and its raw target are therefore collection-free.
+
+This is an event-membership inversion over the complete `RawStep` grammar,
+not a reachability assumption supplied by a later bisimulation. -/
+theorem RawStep.answer_mem_activeCollectionFree
+    {before after : Session} {search : Search}
+    {events : List Observation} {signal : Trace.CutSignal}
+    {target : RawTarget}
+    (step : RawStep before search events signal after target)
+    {bindings : Substitution}
+    (present : .answer bindings ∈ events) :
+    activeCollectionCells search = some [] ∧
+      AnswerSuccessorCollectionFree target := by
+  induction step generalizing bindings
+  case clausesPull pulled =>
+    cases pulled <;>
+      simp_all [localPullEvents]
+  all_goals
+    simp_all [AnswerSuccessorCollectionFree, activeCollectionCells,
+      Trace.AnswerFree]
+  -- The remaining goals are transparent left-path wrappers: choice
+  -- progress/commit, cut-boundary progress/catch/pass, and catch progress.
+  -- Each conclusion is exactly the corresponding child induction hypothesis.
+  all_goals solve_by_elim
+
+/-- Exact one-answer/running specialization used by the active-collector
+producer. -/
+theorem RawStep.answer_activeCollectionCells_empty
+    {before after : Session} {search next : Search}
+    {bindings : Substitution}
+    (step :
+      RawStep before search [.answer bindings] .none after
+        (.running next)) :
+    activeCollectionCells search = some [] ∧
+      activeCollectionCells next = some [] := by
+  simpa [AnswerSuccessorCollectionFree] using
+    answer_mem_activeCollectionFree step (bindings := bindings) (by simp)
+
+/-- One raw transition cannot both emit an answer and terminate (successfully
+or exceptionally). -/
+theorem RawStep.answer_mem_not_terminal
+    {before after : Session} {search : Search}
+    {events : List Observation} {signal : Trace.CutSignal}
+    {target : RawTarget}
+    (step : RawStep before search events signal after target)
+    {bindings : Substitution}
+    (present : .answer bindings ∈ events)
+    (tag : RawTerminal) :
+    target ≠ .terminal tag := by
+  intro terminal
+  subst target
+  exact (answer_mem_activeCollectionFree step present).2
+
+/-- A live collection consumes every child answer; no collection-boundary
+transition can expose one to its enclosing context. -/
+theorem RawStep.collectionBoundary_answerFree
+    {before after : Session} {collectionScope : CollectionScopeId}
+    {callerScope : CutScopeId} {body : Search} {template output : Term}
+    {entryBindings : Substitution} {tail : List PeTTaSpec.PrologCore.Goal}
+    {reversed : List Term} {events : List Observation}
+    {signal : Trace.CutSignal} {target : RawTarget}
+    (step :
+      RawStep before
+        (.collectionBoundary collectionScope callerScope body template output
+          entryBindings tail reversed)
+        events signal after target) :
+    Trace.AnswerFree events := by
+  intro bindings present
+  have empty := (answer_mem_activeCollectionFree step present).1
+  cases body <;> simp [activeCollectionCells] at empty
+
 /-- Exact aligned length; no source occurrence or executable frame may be
 inserted, dropped, or duplicated independently. -/
 theorem CollectionOccurrenceAgrees.length_eq
