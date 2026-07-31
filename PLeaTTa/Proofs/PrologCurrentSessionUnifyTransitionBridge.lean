@@ -110,7 +110,9 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccess
         ActiveProductContext.plug context
           (activeSourceProduct callerScope opened finish branch branchTail
             result bodyRest callerReferences)
-      state.control.cur =
+      AlphaTermAgrees alpha left executableLeft ∧
+        AlphaTermAgrees alpha right executableRight ∧
+        state.control.cur =
           some
             (spelling.goal executableLeft executableRight ::
               executableTail,
@@ -295,7 +297,7 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccess
 
   exact
     ⟨spelling, executableLeft, executableRight, bodyExecutableTail,
-      sourceExtension, installed, executableHead, sourceStep, executableStep,
-      ⟨nextCore, nextEndpoints⟩⟩
+      sourceExtension, installed, leftAgreement, rightAgreement,
+      executableHead, sourceStep, executableStep, ⟨nextCore, nextEndpoints⟩⟩
 
 end PLeaTTa.PrologCurrentSessionUnifyTransitionBridge

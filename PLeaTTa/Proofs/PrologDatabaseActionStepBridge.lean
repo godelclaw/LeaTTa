@@ -121,6 +121,15 @@ def assertionSuccessor (operation : AssertionOperation)
       counter := state.persistent.counter + 1 }
     state.frames
 
+/-- Both supported assertion operations advance the logical-update generation
+exactly once. -/
+@[simp] theorem AssertionOperation.update_generation
+    (operation : AssertionOperation) (database : Resolver.Database)
+    (clause : Resolver.LocalClause) :
+    (operation.update database clause).generation =
+      database.generation + 1 := by
+  cases operation <;> rfl
+
 @[simp] theorem assertionSuccessor_world
     (operation : AssertionOperation) (state : OpenConf)
     (executableResult : Atom) (executableTail : List PLeaTTa.Goal)

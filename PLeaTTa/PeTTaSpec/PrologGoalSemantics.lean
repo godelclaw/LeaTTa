@@ -5468,7 +5468,14 @@ private def databaseActionWitnessPayload : Term :=
   .compound "p" [.atom "late"]
 
 private def databaseActionWitnessResult : Term :=
-  .atom "$not_true"
+  .variable (.generated 10)
+
+private def databaseActionWitnessResultBindings : Substitution :=
+  TreeSubstitution.reify
+    [(.generated 10, Term.denote (.atom "true"))]
+
+private def databaseActionWitnessFailure : Goal :=
+  .unify (.atom "false") (.atom "true")
 
 private def databaseActionWitnessSession : Session :=
   { resolver := Resolver.witnessSession, nextCutScope := 2 }
@@ -5485,7 +5492,8 @@ private def databaseActionWitnessStart : State :=
     (.choice 0
       (.task 1
         [.call "assertzPredicate"
-          [databaseActionWitnessPayload, databaseActionWitnessResult]]
+          [databaseActionWitnessPayload, databaseActionWitnessResult],
+          databaseActionWitnessFailure]
         [])
       (.clauses 1 Resolver.witnessPreparedCursor))
 
@@ -5493,35 +5501,56 @@ private def databaseActionWitnessMiddle : State :=
   .running databaseActionWitnessAfterSession
     (.choice 0
       (.task 1
-        [.unify databaseActionWitnessResult (.atom "true")]
+        [.unify databaseActionWitnessResult (.atom "true"),
+          databaseActionWitnessFailure]
         [])
+      (.clauses 1 Resolver.witnessPreparedCursor))
+
+private def databaseActionWitnessAfterResult : State :=
+  .running databaseActionWitnessAfterSession
+    (.choice 0
+      (.task 1 [databaseActionWitnessFailure]
+        databaseActionWitnessResultBindings)
       (.clauses 1 Resolver.witnessPreparedCursor))
 
 private def databaseActionWitnessFinish : State :=
   .running databaseActionWitnessAfterSession
     (.clauses 1 Resolver.witnessPreparedCursor)
 
-private theorem databaseActionWitnessResult_clash :
+private theorem databaseActionWitnessResult_resolves :
+    UnifyResolution [] databaseActionWitnessResult (.atom "true")
+      databaseActionWitnessResultBindings := by
+  refine ⟨databaseActionWitnessResultBindings, ?_, by simp⟩
+  simpa [databaseActionWitnessResult, databaseActionWitnessResultBindings,
+    Substitution.applyTerm] using
+    (computes_singleton_left_variable (.generated 10) (.atom "true")
+      (by simp [Term.denote])
+      (by simp [Term.denote, Tree.occurs, Trees.occurs]))
+
+private theorem databaseActionWitnessFailure_clash :
     ¬ ∃ result,
-      UnifyResolution [] databaseActionWitnessResult (.atom "true")
-        result := by
+      UnifyResolution databaseActionWitnessResultBindings
+        (.atom "false") (.atom "true") result := by
   rintro ⟨result, extension, computed, resultEquality⟩
   have unifies :
       DenotationalUnifier extension
-        databaseActionWitnessResult (.atom "true") := by
+        (.atom "false") (.atom "true") := by
     have raw := computed.isMostGeneral.1
-      (databaseActionWitnessResult, .atom "true") (by simp)
-    simpa [databaseActionWitnessResult] using raw
-  exact distinct_atoms_have_no_denotational_unifier "$not_true" "true"
-    (by decide) ⟨extension, by simpa [databaseActionWitnessResult] using unifies⟩
+      ((databaseActionWitnessResultBindings.applyTerm (.atom "false")),
+        databaseActionWitnessResultBindings.applyTerm (.atom "true"))
+      (by simp)
+    simpa [databaseActionWitnessResultBindings, TreeSubstitution.reify,
+      Tree.reify, Substitution.applyTerm, Term.instantiateOne] using raw
+  exact distinct_atoms_have_no_denotational_unifier "false" "true"
+    (by decide) ⟨extension, unifies⟩
 
 /-- A dynamic assertion is observed and remains in the persistent session
-even when its generated result equality fails and DFS backtracks into a
-previously retained right branch.  The failure's completion marker is
-correctly consumed by the choice rather than being exposed as whole-query
-completion. -/
+after its compiler-shaped generated result succeeds and a later rigid goal
+fails.  DFS then backtracks into a previously retained right branch.  The
+failure's completion marker is correctly consumed by the choice rather than
+being exposed as whole-query completion. -/
 theorem assertz_effect_survives_failed_branch :
-    StepsN 2 databaseActionWitnessStart
+    StepsN 3 databaseActionWitnessStart
       [.effect databaseActionWitnessEffect]
       databaseActionWitnessFinish := by
   have actionStep :
@@ -5533,29 +5562,45 @@ theorem assertz_effect_survives_failed_branch :
         [.effect databaseActionWitnessEffect]
         databaseActionWitnessSession databaseActionWitnessAfterSession
         (.taskAssertz 1 databaseActionWitnessPayload
-          databaseActionWitnessResult [] [] databaseActionWitnessSession
+          databaseActionWitnessResult [databaseActionWitnessFailure] []
+          databaseActionWitnessSession
           (Resolver.witnessClause "late")
           (predicate := "assertzPredicate")
           (arguments :=
             [databaseActionWitnessPayload, databaseActionWitnessResult])
           rfl rfl))
-  have backtrackStep :
+  have resultStep :
       Transition databaseActionWitnessMiddle []
+        databaseActionWitnessAfterResult := by
+    exact .ordinary _ _ _ _ _
+      (.choiceProgress 0 _ _ _ []
+        databaseActionWitnessAfterSession databaseActionWitnessAfterSession
+        (.taskUnifySuccess 1 databaseActionWitnessResult (.atom "true")
+          [databaseActionWitnessFailure] []
+          databaseActionWitnessResultBindings
+          databaseActionWitnessAfterSession
+          databaseActionWitnessResult_resolves))
+  have backtrackStep :
+      Transition databaseActionWitnessAfterResult []
         databaseActionWitnessFinish := by
     exact .ordinary _ _ _ _ _
       (.choiceComplete 0 _ _
         databaseActionWitnessAfterSession databaseActionWitnessAfterSession
-        (.taskUnifyFailure 1 databaseActionWitnessResult (.atom "true")
-          [] [] databaseActionWitnessAfterSession
-          databaseActionWitnessResult_clash))
+        (.taskUnifyFailure 1 (.atom "false") (.atom "true")
+          [] databaseActionWitnessResultBindings
+          databaseActionWitnessAfterSession
+          databaseActionWitnessFailure_clash))
   simpa [databaseActionWitnessStart, databaseActionWitnessMiddle,
-    databaseActionWitnessFinish] using
-    (StepsN.succ 1 databaseActionWitnessStart databaseActionWitnessMiddle
+    databaseActionWitnessAfterResult, databaseActionWitnessFinish] using
+    (StepsN.succ 2 databaseActionWitnessStart databaseActionWitnessMiddle
       databaseActionWitnessFinish
       [.effect databaseActionWitnessEffect] [] actionStep
-      (StepsN.succ 0 databaseActionWitnessMiddle
-        databaseActionWitnessFinish databaseActionWitnessFinish
-        [] [] backtrackStep (.zero databaseActionWitnessFinish)))
+      (StepsN.succ 1 databaseActionWitnessMiddle
+        databaseActionWitnessAfterResult databaseActionWitnessFinish
+        [] [] resultStep
+        (StepsN.succ 0 databaseActionWitnessAfterResult
+          databaseActionWitnessFinish databaseActionWitnessFinish
+          [] [] backtrackStep (.zero databaseActionWitnessFinish))))
 
 /-- The preceding real execution distinguishes persistent LUV state from
 backtrackable control: the parked cursor retains its old ordered snapshot,
