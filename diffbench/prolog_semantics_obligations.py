@@ -258,6 +258,14 @@ PROLOG_PRODUCT_RESOURCE_TRANSITION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologProductResourceTransitionBridge.lean"
 )
+PROLOG_PRODUCT_ACTIVE_CONTROL_EMBEDDING_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologProductActiveControlEmbeddingBridge.lean"
+)
+PROLOG_COLLECTION_BOUNDED_PRODUCT_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologCollectionBoundedProductBridge.lean"
+)
 PROLOG_RETAINED_PAYLOAD_SNAPSHOT_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRetainedPayloadSnapshotBridge.lean"
@@ -533,6 +541,10 @@ def check() -> list[str]:
             digest(PROLOG_PRODUCT_RESOURCE_CONTEXT_BRIDGE),
         "prolog_product_resource_transition_bridge_sha256":
             digest(PROLOG_PRODUCT_RESOURCE_TRANSITION_BRIDGE),
+        "prolog_product_active_control_embedding_bridge_sha256":
+            digest(PROLOG_PRODUCT_ACTIVE_CONTROL_EMBEDDING_BRIDGE),
+        "prolog_collection_bounded_product_bridge_sha256":
+            digest(PROLOG_COLLECTION_BOUNDED_PRODUCT_BRIDGE),
         "prolog_retained_payload_snapshot_bridge_sha256":
             digest(PROLOG_RETAINED_PAYLOAD_SNAPSHOT_BRIDGE),
         "prolog_retained_payload_catchup_bridge_sha256":
