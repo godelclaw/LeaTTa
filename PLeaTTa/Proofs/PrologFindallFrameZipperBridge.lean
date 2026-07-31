@@ -485,6 +485,9 @@ structure ContextualFindallEntryRelates
     (template : Atom) (sub : List PLeaTTa.Goal) (result : Atom)
     (rest : List PLeaTTa.Goal) (binding : Subst)
     (after : OpenConf) : Prop where
+  fineHead :
+    before.toConf.cur =
+      some (PLeaTTa.Goal.findall template sub result :: rest, binding)
   fineStep : DemandDrivenStep.Step prog gt before after
   target :
     after = enterFindall before template sub result rest binding
@@ -550,7 +553,8 @@ theorem enterActiveFindall_findallEnter_occurrence_prepend
     exact
       beforeOccurrences.prepend entered.cellsPrepend headAgreement
   exact
-    { fineStep :=
+    { fineHead := head
+      fineStep :=
         .findallEnter before template sub result rest binding head
       target := rfl
       afterAgreement := afterAgreement'

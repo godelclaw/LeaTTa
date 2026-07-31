@@ -2172,6 +2172,40 @@ control.  The dynamic world and global high-water remain current. -/
       cases persistent
       rfl
 
+/-- Failed primitive unification may pull another alternative, but it never
+manufactures a nested-run answer. -/
+@[simp] theorem unifyFailureSuccessor_answers (state : OpenConf) :
+    (unifyFailureSuccessor state).control.answers = state.control.answers := by
+  change
+    (PLeaTTa.pull { state.toConf with cur := none }).answers =
+      state.control.answers
+  unfold PLeaTTa.pull
+  generalize outcomeEq :
+    PLeaTTa.pullAuxTracked state.toConf.barriers state.toConf.alts = outcome
+  rcases outcome with ⟨outcome, barriers⟩
+  cases outcome <;> rfl
+
+@[simp] theorem unifyFailureSuccessor_frames (state : OpenConf) :
+    (unifyFailureSuccessor state).frames = state.frames := by
+  rfl
+
+@[simp] theorem unifyFailureSuccessor_scopes (state : OpenConf) :
+    (unifyFailureSuccessor state).scopes = state.scopes := by
+  rfl
+
+/-- With no retained alternative, the sealed failed-unification pull reaches
+an actual terminal generator.  The barrier cache may normalize on exhaustion;
+terminality depends only on current work and alternatives. -/
+theorem unifyFailureSuccessor_terminal_of_alts_empty
+    (state : OpenConf) (empty : state.control.alts = []) :
+    PLeaTTa.Terminal (unifyFailureSuccessor state).toConf := by
+  have sealedEmpty : state.toConf.alts = [] := by
+    simpa [OpenConf.toConf, Control.toConf] using empty
+  constructor <;>
+    cases cache : state.toConf.barriers <;>
+      simp [unifyFailureSuccessor, PLeaTTa.pull, PLeaTTa.pullAux,
+        PLeaTTa.pullAuxTracked, PLeaTTa.pullAuxCached, sealedEmpty, cache]
+
 /-- Either sealed equality spelling takes exactly one failure transition in
 the findall/call-fine lane.  The target includes the sealed machine's eager
 DFS pull rather than fabricating a branch-completion state. -/

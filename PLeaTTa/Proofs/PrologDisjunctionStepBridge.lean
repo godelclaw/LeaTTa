@@ -209,6 +209,17 @@ def literalAmbPulledSuccessor
       state.control.qterm := by
   rfl
 
+/-- Literal scheduling changes only the active branch and alternative bank;
+the private answer accumulator remains owned by the surrounding collector. -/
+@[simp] theorem literalAmbPulledSuccessor_answers
+    (state : OpenConf) (executableOutput executableValue : Metta.Atom)
+    (remainingBranches : List (Metta.Atom × List PLeaTTa.Goal))
+    (executableTail : List PLeaTTa.Goal) (runtime : Metta.Subst) :
+    (literalAmbPulledSuccessor state executableOutput executableValue
+      remainingBranches executableTail runtime).control.answers =
+      state.control.answers := by
+  rfl
+
 @[simp] theorem literalAmbPulledSuccessor_frames
     (state : OpenConf) (executableOutput executableValue : Metta.Atom)
     (remainingBranches : List (Metta.Atom × List PLeaTTa.Goal))

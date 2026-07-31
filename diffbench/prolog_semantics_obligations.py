@@ -56,6 +56,10 @@ PROLOG_FINDALL_DISJUNCTION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologFindallDisjunctionBridge.lean"
 )
+PROLOG_FINDALL_DISJUNCTION_EXIT_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologFindallDisjunctionExitBridge.lean"
+)
 PROLOG_FINDALL_EXIT_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologFindallExitBridge.lean"
 )
@@ -406,6 +410,8 @@ def check() -> list[str]:
             digest(PROLOG_ACTIVE_CONTROL_CONTEXT_BRIDGE),
         "prolog_findall_disjunction_bridge_sha256":
             digest(PROLOG_FINDALL_DISJUNCTION_BRIDGE),
+        "prolog_findall_disjunction_exit_bridge_sha256":
+            digest(PROLOG_FINDALL_DISJUNCTION_EXIT_BRIDGE),
         "prolog_findall_exit_bridge_sha256":
             digest(PROLOG_FINDALL_EXIT_BRIDGE),
         "prolog_findall_exit_payload_bridge_sha256":
