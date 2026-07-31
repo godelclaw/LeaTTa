@@ -147,6 +147,34 @@ theorem afterLocalCall_ne (scopes : ScopeHighWaters) :
   simp only [afterLocalCall_cut] at cutSame
   omega
 
+/-- One executable `findall/3` entry allocates independent cut and
+collection delimiters.  It cannot consume an exception identity.  Allocation
+happens at entry even when the generator later fails or diverges. -/
+def afterFindall (scopes : ScopeHighWaters) : ScopeHighWaters :=
+  { scopes with
+    nextCutScope := scopes.nextCutScope + 1
+    nextCollectionScope := scopes.nextCollectionScope + 1 }
+
+@[simp] theorem afterFindall_cut (scopes : ScopeHighWaters) :
+    scopes.afterFindall.nextCutScope = scopes.nextCutScope + 1 := rfl
+
+@[simp] theorem afterFindall_exception (scopes : ScopeHighWaters) :
+    scopes.afterFindall.nextExceptionScope =
+      scopes.nextExceptionScope := rfl
+
+@[simp] theorem afterFindall_collection (scopes : ScopeHighWaters) :
+    scopes.afterFindall.nextCollectionScope =
+      scopes.nextCollectionScope + 1 := rfl
+
+/-- Collector entry changes both of its typed allocation banks. -/
+theorem afterFindall_ne (scopes : ScopeHighWaters) :
+    scopes.afterFindall ≠ scopes := by
+  intro same
+  have collectionSame :=
+    congrArg ScopeHighWaters.nextCollectionScope same
+  simp only [afterFindall_collection] at collectionSame
+  omega
+
 end ScopeHighWaters
 
 /-- Fine-grained executable state.  `frames` owns suspended continuations;
@@ -232,7 +260,8 @@ def enterFindall (state : OpenConf) (template : Atom) (sub : List Goal)
       rest := rest
       binding := binding }
   { state.stepOpen (subConfOf state.toConf sub binding template) with
-    frames := .findall frame :: state.frames }
+    frames := .findall frame :: state.frames
+    scopes := state.scopes.afterFindall }
 
 /-- Rejoin a terminal generator.  Only the bag and suspended control are
 restored; the persistent world and high-water come exclusively from `inner`. -/
@@ -304,13 +333,42 @@ def answerSuccessor (inner : Conf) (binding : Subst) : Conf :=
       simp only [List.map_cons]
       rw [inner.answerKeys_sound] }
 
+@[simp] theorem enterFindall_ofConfWith (outer : Conf) (frames : List Frame)
+    (scopes : ScopeHighWaters)
+    (template : Atom) (sub : List Goal) (result : Atom)
+    (rest : List Goal) (binding : Subst) :
+    enterFindall (OpenConf.ofConfWith outer frames scopes)
+        template sub result rest binding =
+      OpenConf.ofConfWith (subConfOf outer sub binding template)
+        (.findall (findallFrameOf outer template result rest binding) ::
+          frames)
+        scopes.afterFindall := by
+  rfl
+
 @[simp] theorem enterFindall_ofConf (outer : Conf) (frames : List Frame)
     (template : Atom) (sub : List Goal) (result : Atom)
     (rest : List Goal) (binding : Subst) :
     enterFindall (OpenConf.ofConf outer frames) template sub result rest binding =
-      OpenConf.ofConf (subConfOf outer sub binding template)
+      OpenConf.ofConfWith (subConfOf outer sub binding template)
         (.findall (findallFrameOf outer template result rest binding) ::
-          frames) := by
+          frames)
+        ({} : ScopeHighWaters).afterFindall := by
+  rfl
+
+@[simp] theorem resumeFindall_ofConfWith (outer inner : Conf)
+    (frames : List Frame) (scopes : ScopeHighWaters)
+    (template result : Atom)
+    (rest : List Goal) (binding : Subst) :
+    resumeFindall
+        (OpenConf.ofConfWith inner
+          (.findall (findallFrameOf outer template result rest binding) ::
+            frames)
+          scopes)
+        (findallFrameOf outer template result rest binding) frames =
+      OpenConf.ofConfWith
+        (findallSuccessor outer inner result rest binding) frames scopes := by
+  cases outer
+  cases inner
   rfl
 
 @[simp] theorem resumeFindall_ofConf (outer inner : Conf)
@@ -323,9 +381,8 @@ def answerSuccessor (inner : Conf) (binding : Subst) : Conf :=
         (findallFrameOf outer template result rest binding) frames =
       OpenConf.ofConf (findallSuccessor outer inner result rest binding)
         frames := by
-  cases outer
-  cases inner
-  rfl
+  exact resumeFindall_ofConfWith outer inner frames {}
+    template result rest binding
 
 @[simp] theorem enterFindall_persistent (state : OpenConf)
     (template : Atom) (sub : List Goal) (result : Atom) (rest : List Goal)
@@ -395,6 +452,28 @@ inductive Step (prog : Prog) (gt : GroundingTable) :
       (done : PLeaTTa.Terminal inner.toConf) :
       Step prog gt inner (resumeFindall inner frame remaining)
 
+/-- Collector allocation is witnessed by the actual fine entry transition,
+not merely by the allocator helper.  The exception bank is the negative
+control: `findall/3` cannot consume from it. -/
+theorem findall_entry_scopes_exact
+    (prog : Prog) (gt : GroundingTable) (state : OpenConf)
+    (template : Atom) (sub : List Goal) (result : Atom)
+    (rest : List Goal) (binding : Subst)
+    (head : state.toConf.cur =
+      some (Goal.findall template sub result :: rest, binding)) :
+    Step prog gt state
+        (enterFindall state template sub result rest binding) ∧
+      (enterFindall state template sub result rest binding).scopes.nextCutScope =
+        state.scopes.nextCutScope + 1 ∧
+      (enterFindall state template sub result rest
+          binding).scopes.nextExceptionScope =
+        state.scopes.nextExceptionScope ∧
+      (enterFindall state template sub result rest
+          binding).scopes.nextCollectionScope =
+        state.scopes.nextCollectionScope + 1 := by
+  refine ⟨.findallEnter state template sub result rest binding head, ?_⟩
+  simp [enterFindall]
+
 /-- Exact step-counted closure.  Silent/private generator progress remains a
 step and therefore cannot be erased into an observation-list equality. -/
 inductive StepsN (prog : Prog) (gt : GroundingTable) :
@@ -426,24 +505,30 @@ one recursively structured inner run plus its entry and exit.  This gives one
 induction principle for arbitrarily nested terminating collectors without
 turning their nonterminal prefixes into atomic steps. -/
 inductive MacroStepsN (prog : Prog) (gt : GroundingTable) :
-    Nat → Conf → Conf → Prop where
-  | zero (state : Conf) : MacroStepsN prog gt 0 state state
+    Nat → Conf → ScopeHighWaters → Conf → ScopeHighWaters → Prop where
+  | zero (state : Conf) (scopes : ScopeHighWaters) :
+      MacroStepsN prog gt 0 state scopes state scopes
   | ordinary (n : Nat) (before middle after : Conf)
+      (scopes finalScopes : ScopeHighWaters)
       (notFindall : ¬ findallRunHead before)
       (step : PLeaTTa.Step prog gt before middle)
-      (tail : MacroStepsN prog gt n middle after) :
-      MacroStepsN prog gt (n + 1) before after
+      (tail : MacroStepsN prog gt n middle scopes after finalScopes) :
+      MacroStepsN prog gt (n + 1) before scopes after finalScopes
   | findall (innerCount tailCount : Nat) (outer inner finish : Conf)
+      (outerScopes innerScopes finishScopes : ScopeHighWaters)
       (template : Atom) (sub : List Goal) (result : Atom)
       (rest : List Goal) (binding : Subst)
       (head : outer.cur =
         some (Goal.findall template sub result :: rest, binding))
       (innerRun : MacroStepsN prog gt innerCount
-        (subConfOf outer sub binding template) inner)
+        (subConfOf outer sub binding template) outerScopes.afterFindall
+        inner innerScopes)
       (done : PLeaTTa.Terminal inner)
       (tail : MacroStepsN prog gt tailCount
-        (findallSuccessor outer inner result rest binding) finish) :
-      MacroStepsN prog gt (innerCount + 2 + tailCount) outer finish
+        (findallSuccessor outer inner result rest binding) innerScopes
+        finish finishScopes) :
+      MacroStepsN prog gt (innerCount + 2 + tailCount)
+        outer outerScopes finish finishScopes
 
 namespace MacroStepsN
 
@@ -451,35 +536,45 @@ namespace MacroStepsN
 the prefix parser when an open collector closes and rejoins its caller. -/
 theorem trans {prog : Prog} {gt : GroundingTable}
     {left middle right : Conf} {m n : Nat}
-    (first : MacroStepsN prog gt m left middle)
-    (second : MacroStepsN prog gt n middle right) :
-    MacroStepsN prog gt (m + n) left right := by
+    {leftScopes middleScopes rightScopes : ScopeHighWaters}
+    (first : MacroStepsN prog gt m
+      left leftScopes middle middleScopes)
+    (second : MacroStepsN prog gt n
+      middle middleScopes right rightScopes) :
+    MacroStepsN prog gt (m + n) left leftScopes right rightScopes := by
   induction first with
-  | zero state => simpa using second
-  | ordinary k before stepMiddle after notFindall step tail tailIH =>
-      have combined := MacroStepsN.ordinary (k + n) before stepMiddle right
-        notFindall step (tailIH second)
+  | zero state scopes => simpa using second
+  | ordinary k before stepMiddle after scopes finalScopes notFindall step tail
+      tailIH =>
+      have combined :=
+        MacroStepsN.ordinary (k + n) before stepMiddle right
+          scopes rightScopes notFindall step (tailIH second)
       have lengthEq : k + n + 1 = k + 1 + n := by omega
       rw [lengthEq] at combined
       exact combined
-  | findall innerCount tailCount outer inner finish template sub result rest
-      binding head innerRun done tail innerIH tailIH =>
+  | findall innerCount tailCount outer inner finish outerScopes innerScopes
+      finishScopes template sub result rest binding head innerRun done tail
+      innerIH tailIH =>
       simpa [Nat.add_assoc] using
         MacroStepsN.findall innerCount (tailCount + n) outer inner right
-          template sub result rest binding head innerRun done (tailIH second)
+          outerScopes innerScopes rightScopes template sub result rest binding
+          head innerRun done (tailIH second)
 
 /-- Erasing fine collector boundaries from a structured terminating run gives
 an ordinary sealed run.  Nested collectors collapse recursively. -/
 theorem toStepStar {prog : Prog} {gt : GroundingTable}
     {n : Nat} {before after : Conf}
-    (execution : MacroStepsN prog gt n before after) :
+    {beforeScopes afterScopes : ScopeHighWaters}
+    (execution : MacroStepsN prog gt n
+      before beforeScopes after afterScopes) :
     PLeaTTa.StepStar prog gt before after := by
   induction execution with
-  | zero state => exact .refl state
-  | ordinary n before middle after _ step _ tailIH =>
+  | zero state scopes => exact .refl state
+  | ordinary n before middle after scopes finalScopes _ step _ tailIH =>
       exact .tail before middle after step tailIH
-  | findall innerCount tailCount outer inner finish template sub result rest
-      binding head innerRun done tail innerIH tailIH =>
+  | findall innerCount tailCount outer inner finish outerScopes innerScopes
+      finishScopes template sub result rest binding head innerRun done tail
+      innerIH tailIH =>
       apply PLeaTTa.StepStar.tail outer
         (findallSuccessor outer inner result rest binding) finish
       · simpa [findallSuccessor] using
@@ -493,48 +588,263 @@ theorem toStepStar {prog : Prog} {gt : GroundingTable}
 stack gives its exact fine-step count.  Every nested collector contributes
 one entry and one exit; every private inner transition remains present. -/
 theorem lift {prog : Prog} {gt : GroundingTable}
-    {n : Nat} {before after : Conf} (frames : List Frame)
-    (execution : MacroStepsN prog gt n before after) :
-    StepsN prog gt n (OpenConf.ofConf before frames)
-      (OpenConf.ofConf after frames) := by
+    {n : Nat} {before after : Conf}
+    {beforeScopes afterScopes : ScopeHighWaters}
+    (frames : List Frame)
+    (execution : MacroStepsN prog gt n
+      before beforeScopes after afterScopes) :
+    StepsN prog gt n (OpenConf.ofConfWith before frames beforeScopes)
+      (OpenConf.ofConfWith after frames afterScopes) := by
   induction execution generalizing frames with
-  | zero state => exact .zero _
-  | ordinary n before middle after notFindall machineStep tail tailIH =>
-      apply StepsN.succ n _ (OpenConf.ofConf middle frames) _
+  | zero state scopes => exact .zero _
+  | ordinary n before middle after scopes finalScopes notFindall machineStep
+      tail tailIH =>
+      apply StepsN.succ n _
+        (OpenConf.ofConfWith middle frames scopes) _
       · exact .ordinary _ middle (by simpa using notFindall)
           (by simpa using machineStep)
       · exact tailIH frames
-  | findall innerCount tailCount outer inner finish template sub result rest
-      binding head innerRun done tail innerIH tailIH =>
+  | findall innerCount tailCount outer inner finish outerScopes innerScopes
+      finishScopes template sub result rest binding head innerRun done tail
+      innerIH tailIH =>
       let frame := findallFrameOf outer template result rest binding
-      let entered := OpenConf.ofConf (subConfOf outer sub binding template)
-        (.findall frame :: frames)
-      let resumed := OpenConf.ofConf
-        (findallSuccessor outer inner result rest binding) frames
-      have entryStep : Step prog gt (OpenConf.ofConf outer frames) entered := by
+      let entered :=
+        OpenConf.ofConfWith (subConfOf outer sub binding template)
+          (.findall frame :: frames) outerScopes.afterFindall
+      let resumed :=
+        OpenConf.ofConfWith
+          (findallSuccessor outer inner result rest binding)
+          frames innerScopes
+      have entryStep : Step prog gt
+          (OpenConf.ofConfWith outer frames outerScopes) entered := by
         simpa [entered, frame] using
-          (Step.findallEnter (OpenConf.ofConf outer frames) template sub result
-            rest binding (by simpa using head))
-      have entryRun : StepsN prog gt 1 (OpenConf.ofConf outer frames)
-          entered := by
+          (Step.findallEnter
+            (OpenConf.ofConfWith outer frames outerScopes)
+            template sub result rest binding (by simpa using head))
+      have entryRun : StepsN prog gt 1
+          (OpenConf.ofConfWith outer frames outerScopes) entered := by
         simpa using StepsN.succ 0 _ entered entered entryStep (.zero entered)
       have nestedRun : StepsN prog gt innerCount entered
-          (OpenConf.ofConf inner (.findall frame :: frames)) := by
+          (OpenConf.ofConfWith inner
+            (.findall frame :: frames) innerScopes) := by
         simpa [entered] using innerIH (.findall frame :: frames)
       have exitStep : Step prog gt
-          (OpenConf.ofConf inner (.findall frame :: frames)) resumed := by
+          (OpenConf.ofConfWith inner
+            (.findall frame :: frames) innerScopes) resumed := by
         simpa [resumed, frame] using
           (Step.findallExit
-            (OpenConf.ofConf inner (.findall frame :: frames)) frame frames rfl
+            (OpenConf.ofConfWith inner
+              (.findall frame :: frames) innerScopes)
+            frame frames rfl
             (by simpa using done))
       have exitRun : StepsN prog gt 1
-          (OpenConf.ofConf inner (.findall frame :: frames)) resumed := by
+          (OpenConf.ofConfWith inner
+            (.findall frame :: frames) innerScopes) resumed := by
         simpa using StepsN.succ 0 _ resumed resumed exitStep (.zero resumed)
       have tailRun : StepsN prog gt tailCount resumed
-          (OpenConf.ofConf finish frames) := by
+          (OpenConf.ofConfWith finish frames finishScopes) := by
         simpa [resumed] using tailIH frames
       have combined := entryRun.trans (nestedRun.trans (exitRun.trans tailRun))
       simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using combined
+
+/-- Structured collector runs never roll back either allocator they own and
+never consume an exception identity.  This is independent of the sealed
+configuration projection, which deliberately cannot see these fields. -/
+theorem scopes_mono {prog : Prog} {gt : GroundingTable}
+    {n : Nat} {before after : Conf}
+    {beforeScopes afterScopes : ScopeHighWaters}
+    (execution : MacroStepsN prog gt n
+      before beforeScopes after afterScopes) :
+    beforeScopes.nextCutScope ≤ afterScopes.nextCutScope ∧
+      beforeScopes.nextExceptionScope = afterScopes.nextExceptionScope ∧
+      beforeScopes.nextCollectionScope ≤
+        afterScopes.nextCollectionScope := by
+  induction execution with
+  | zero state scopes =>
+      exact ⟨Nat.le_refl _, rfl, Nat.le_refl _⟩
+  | ordinary n before middle after scopes finalScopes notFindall step tail
+      tailIH =>
+      exact tailIH
+  | findall innerCount tailCount outer inner finish outerScopes innerScopes
+      finishScopes template sub result rest binding head innerRun done tail
+      innerIH tailIH =>
+      rcases innerIH with
+        ⟨innerCut, innerException, innerCollection⟩
+      rcases tailIH with
+        ⟨tailCut, tailException, tailCollection⟩
+      constructor
+      · simp only [ScopeHighWaters.afterFindall_cut] at innerCut
+        omega
+      constructor
+      · simpa only [ScopeHighWaters.afterFindall_exception] using
+          innerException.trans tailException
+      · simp only [ScopeHighWaters.afterFindall_collection] at innerCollection
+        omega
+
+/-- Since `findall/3` is the only fine macro that advances either delimiter
+bank, cut and collection allocations stay paired across every structured
+terminating run.  This is deliberately local to `MacroStepsN`: the
+call-aware source semantics also allocates cut scopes for ordinary local
+calls, so this equation must not be exported as a cross-layer invariant. -/
+theorem cut_collection_balance {prog : Prog} {gt : GroundingTable}
+    {n : Nat} {before after : Conf}
+    {beforeScopes afterScopes : ScopeHighWaters}
+    (execution : MacroStepsN prog gt n
+      before beforeScopes after afterScopes) :
+    afterScopes.nextCutScope + beforeScopes.nextCollectionScope =
+      afterScopes.nextCollectionScope + beforeScopes.nextCutScope := by
+  induction execution with
+  | zero state scopes =>
+      omega
+  | ordinary n before middle after scopes finalScopes notFindall step tail
+      tailIH =>
+      exact tailIH
+  | findall innerCount tailCount outer inner finish outerScopes innerScopes
+      finishScopes template sub result rest binding head innerRun done tail
+      innerIH tailIH =>
+      simp only [ScopeHighWaters.afterFindall_cut,
+        ScopeHighWaters.afterFindall_collection] at innerIH
+      omega
+
+/-- A collector consumes one fresh cut and collection identity at entry, and
+its tail retains every further allocation made by the nested generator.  In
+particular, resuming from the stale post-entry frontier is not admitted. -/
+theorem findall_retains_nested_scopes {prog : Prog} {gt : GroundingTable}
+    {innerCount tailCount : Nat} {outer inner finish : Conf}
+    {outerScopes innerScopes finishScopes : ScopeHighWaters}
+    {template result : Atom} {sub rest : List Goal} {binding : Subst}
+    (innerRun : MacroStepsN prog gt innerCount
+      (subConfOf outer sub binding template) outerScopes.afterFindall
+      inner innerScopes)
+    (tail : MacroStepsN prog gt tailCount
+      (findallSuccessor outer inner result rest binding) innerScopes
+      finish finishScopes) :
+    outerScopes.nextCutScope < finishScopes.nextCutScope ∧
+      outerScopes.nextCollectionScope <
+        finishScopes.nextCollectionScope ∧
+      innerScopes.nextCutScope ≤ finishScopes.nextCutScope ∧
+      innerScopes.nextCollectionScope ≤
+        finishScopes.nextCollectionScope := by
+  rcases innerRun.scopes_mono with
+    ⟨innerCut, innerException, innerCollection⟩
+  rcases tail.scopes_mono with
+    ⟨tailCut, tailException, tailCollection⟩
+  simp only [ScopeHighWaters.afterFindall_cut] at innerCut
+  simp only [ScopeHighWaters.afterFindall_collection] at innerCollection
+  omega
+
+/-- Two connected collector entries cannot reuse the first entry's
+identities.  This is the arithmetic guard for both nested and sibling
+collectors: the second body starts from the first body's actual output
+frontier, not from a stale copy of the original state. -/
+theorem two_findall_entries_accumulate {prog : Prog} {gt : GroundingTable}
+    {firstCount secondCount : Nat}
+    {firstStart firstFinish secondStart secondFinish : Conf}
+    {startScopes middleScopes finishScopes : ScopeHighWaters}
+    (firstBody : MacroStepsN prog gt firstCount
+      firstStart startScopes.afterFindall firstFinish middleScopes)
+    (secondBody : MacroStepsN prog gt secondCount
+      secondStart middleScopes.afterFindall secondFinish finishScopes) :
+    startScopes.nextCutScope + 2 ≤ finishScopes.nextCutScope ∧
+      startScopes.nextCollectionScope + 2 ≤
+        finishScopes.nextCollectionScope ∧
+      startScopes.nextExceptionScope =
+        finishScopes.nextExceptionScope := by
+  rcases firstBody.scopes_mono with
+    ⟨firstCut, firstException, firstCollection⟩
+  rcases secondBody.scopes_mono with
+    ⟨secondCut, secondException, secondCollection⟩
+  simp only [ScopeHighWaters.afterFindall_cut] at firstCut secondCut
+  simp only [ScopeHighWaters.afterFindall_collection] at firstCollection secondCollection
+  simp only [ScopeHighWaters.afterFindall_exception] at firstException secondException
+  omega
+
+/-- Constructor-level anti-stale witness for sibling collectors.  The first
+collector rejoins its actual tail frontier, `between` carries that frontier
+to the second source head, and the second `MacroStepsN.findall` is constructed
+there.  Thus the combined derivation itself—not merely arithmetic premises—
+forces two distinct cut and collection allocations.  Reusing
+`startScopes.afterFindall` at the second entry would make this construction
+ill-typed.
+
+The intervening run is explicit because a real first collector rejoins at
+its result-unification goal before reaching its sibling. -/
+theorem sibling_findalls_construct_and_accumulate
+    {prog : Prog} {gt : GroundingTable}
+    {firstInnerCount betweenCount secondInnerCount tailCount : Nat}
+    {firstOuter firstInner secondOuter secondInner finish : Conf}
+    {startScopes firstInnerScopes secondOuterScopes secondInnerScopes
+      finishScopes : ScopeHighWaters}
+    {firstTemplate secondTemplate firstResult secondResult : Atom}
+    {firstSub firstRest secondSub secondRest : List Goal}
+    {firstBinding secondBinding : Subst}
+    (firstHead : firstOuter.cur =
+      some (Goal.findall firstTemplate firstSub firstResult :: firstRest,
+        firstBinding))
+    (firstInnerRun : MacroStepsN prog gt firstInnerCount
+      (subConfOf firstOuter firstSub firstBinding firstTemplate)
+      startScopes.afterFindall firstInner firstInnerScopes)
+    (firstDone : PLeaTTa.Terminal firstInner)
+    (between : MacroStepsN prog gt betweenCount
+      (findallSuccessor firstOuter firstInner firstResult firstRest
+        firstBinding)
+      firstInnerScopes secondOuter secondOuterScopes)
+    (secondHead : secondOuter.cur =
+      some (Goal.findall secondTemplate secondSub secondResult :: secondRest,
+        secondBinding))
+    (secondInnerRun : MacroStepsN prog gt secondInnerCount
+      (subConfOf secondOuter secondSub secondBinding secondTemplate)
+      secondOuterScopes.afterFindall secondInner secondInnerScopes)
+    (secondDone : PLeaTTa.Terminal secondInner)
+    (tail : MacroStepsN prog gt tailCount
+      (findallSuccessor secondOuter secondInner secondResult secondRest
+        secondBinding)
+      secondInnerScopes finish finishScopes) :
+    ∃ _ : MacroStepsN prog gt
+        (firstInnerCount + 2 +
+          (betweenCount + (secondInnerCount + 2 + tailCount)))
+        firstOuter startScopes finish finishScopes,
+      startScopes.nextCutScope + 2 ≤ finishScopes.nextCutScope ∧
+      startScopes.nextCollectionScope + 2 ≤
+        finishScopes.nextCollectionScope ∧
+      startScopes.nextExceptionScope =
+        finishScopes.nextExceptionScope ∧
+      finishScopes.nextCollectionScope ≠
+        startScopes.nextCollectionScope + 1 := by
+  let secondRun : MacroStepsN prog gt
+      (secondInnerCount + 2 + tailCount)
+      secondOuter secondOuterScopes finish finishScopes :=
+    .findall secondInnerCount tailCount secondOuter secondInner finish
+      secondOuterScopes secondInnerScopes finishScopes secondTemplate
+      secondSub secondResult secondRest secondBinding secondHead
+      secondInnerRun secondDone tail
+  let firstTail : MacroStepsN prog gt
+      (betweenCount + (secondInnerCount + 2 + tailCount))
+      (findallSuccessor firstOuter firstInner firstResult firstRest
+        firstBinding)
+      firstInnerScopes finish finishScopes :=
+    between.trans secondRun
+  let execution : MacroStepsN prog gt
+      (firstInnerCount + 2 +
+        (betweenCount + (secondInnerCount + 2 + tailCount)))
+      firstOuter startScopes finish finishScopes :=
+    .findall firstInnerCount
+      (betweenCount + (secondInnerCount + 2 + tailCount))
+      firstOuter firstInner finish startScopes firstInnerScopes finishScopes
+      firstTemplate firstSub firstResult firstRest firstBinding firstHead
+      firstInnerRun firstDone firstTail
+  rcases firstInnerRun.scopes_mono with
+    ⟨firstInnerCut, firstInnerException, firstInnerCollection⟩
+  rcases between.scopes_mono with
+    ⟨betweenCut, betweenException, betweenCollection⟩
+  rcases secondInnerRun.scopes_mono with
+    ⟨secondInnerCut, secondInnerException, secondInnerCollection⟩
+  rcases tail.scopes_mono with
+    ⟨tailCut, tailException, tailCollection⟩
+  simp only [ScopeHighWaters.afterFindall_cut] at firstInnerCut secondInnerCut
+  simp only [ScopeHighWaters.afterFindall_collection] at firstInnerCollection secondInnerCollection
+  simp only [ScopeHighWaters.afterFindall_exception] at firstInnerException secondInnerException
+  exact ⟨execution, by omega, by omega, by omega, by omega⟩
 
 end MacroStepsN
 
@@ -543,24 +853,29 @@ end MacroStepsN
 already completed caller macro, the pending collector entry, and recursively
 parses the active generator above the newly pushed frame. -/
 inductive MacroPrefixN (prog : Prog) (gt : GroundingTable) :
-    List Frame → Nat → Conf → OpenConf → Prop where
+    List Frame → Nat → Conf → ScopeHighWaters → OpenConf → Prop where
   | closed (baseFrames : List Frame) (n : Nat) (start finish : Conf)
-      (run : MacroStepsN prog gt n start finish) :
-      MacroPrefixN prog gt baseFrames n start
-        (OpenConf.ofConf finish baseFrames)
+      (startScopes finishScopes : ScopeHighWaters)
+      (run : MacroStepsN prog gt n
+        start startScopes finish finishScopes) :
+      MacroPrefixN prog gt baseFrames n start startScopes
+        (OpenConf.ofConfWith finish baseFrames finishScopes)
   | suspended (baseFrames : List Frame) (beforeCount innerCount : Nat)
       (start outer : Conf)
+      (startScopes outerScopes : ScopeHighWaters)
       (template : Atom) (sub : List Goal) (result : Atom)
       (rest : List Goal) (binding : Subst) (target : OpenConf)
-      (before : MacroStepsN prog gt beforeCount start outer)
+      (before : MacroStepsN prog gt beforeCount
+        start startScopes outer outerScopes)
       (head : outer.cur =
         some (Goal.findall template sub result :: rest, binding))
       (inner : MacroPrefixN prog gt
         (.findall (findallFrameOf outer template result rest binding) ::
           baseFrames)
-        innerCount (subConfOf outer sub binding template) target) :
+        innerCount (subConfOf outer sub binding template)
+        outerScopes.afterFindall target) :
       MacroPrefixN prog gt baseFrames (beforeCount + 1 + innerCount)
-        start target
+        start startScopes target
 
 namespace MacroPrefixN
 
@@ -592,13 +907,16 @@ theorem step_preserves_suffix_of_strict {prog : Prog} {gt : GroundingTable}
 
 /-- Every parsed target owns a stack extending its protected caller suffix. -/
 theorem frames_suffix {prog : Prog} {gt : GroundingTable}
-    {baseFrames : List Frame} {n : Nat} {start : Conf} {target : OpenConf}
-    (parsed : MacroPrefixN prog gt baseFrames n start target) :
+    {baseFrames : List Frame} {n : Nat} {start : Conf}
+    {startScopes : ScopeHighWaters} {target : OpenConf}
+    (parsed : MacroPrefixN prog gt
+      baseFrames n start startScopes target) :
     ∃ extra, target.frames = extra ++ baseFrames := by
   induction parsed with
   | closed => exact ⟨[], rfl⟩
-  | suspended baseFrames beforeCount innerCount start outer template sub result rest binding
-      target before head inner innerIH =>
+  | suspended baseFrames beforeCount innerCount start outer startScopes
+      outerScopes template sub result rest binding target before head inner
+      innerIH =>
       rcases innerIH with ⟨extra, framesEq⟩
       refine ⟨extra ++ [.findall
         (findallFrameOf outer template result rest binding)], ?_⟩
@@ -610,14 +928,17 @@ theorem open_frames_cons_suffix {prog : Prog} {gt : GroundingTable}
     {baseFrames : List Frame} {beforeCount innerCount : Nat}
     {start outer : Conf} {template : Atom} {sub : List Goal}
     {result : Atom} {rest : List Goal} {binding : Subst}
+    {startScopes outerScopes : ScopeHighWaters}
     {target : OpenConf}
-    (_before : MacroStepsN prog gt beforeCount start outer)
+    (_before : MacroStepsN prog gt beforeCount
+      start startScopes outer outerScopes)
     (_head : outer.cur =
       some (Goal.findall template sub result :: rest, binding))
     (inner : MacroPrefixN prog gt
       (.findall (findallFrameOf outer template result rest binding) ::
         baseFrames)
-      innerCount (subConfOf outer sub binding template) target) :
+      innerCount (subConfOf outer sub binding template)
+      outerScopes.afterFindall target) :
     ∃ top extra, target.frames = top :: (extra ++ baseFrames) := by
   rcases inner.frames_suffix with ⟨extra, framesEq⟩
   cases extra with
@@ -638,30 +959,41 @@ folded into one `MacroStepsN.findall`, whereas an exit above a still-open
 inner parser is delegated recursively. -/
 theorem advance {prog : Prog} {gt : GroundingTable}
     {baseFrames : List Frame} {n : Nat} {start : Conf}
+    {startScopes : ScopeHighWaters}
     {before after : OpenConf}
-    (parsed : MacroPrefixN prog gt baseFrames n start before)
+    (parsed : MacroPrefixN prog gt
+      baseFrames n start startScopes before)
     (oneStep : Step prog gt before after)
     (afterSuffix : ∃ extra, after.frames = extra ++ baseFrames) :
-    MacroPrefixN prog gt baseFrames (n + 1) start after := by
+    MacroPrefixN prog gt baseFrames (n + 1)
+      start startScopes after := by
   induction parsed generalizing after with
-  | closed baseFrames n start finish run =>
+  | closed baseFrames n start finish startScopes finishScopes run =>
       cases oneStep with
       | ordinary next notFindall machineStep =>
-          let tail : MacroStepsN prog gt 1 finish next :=
-            .ordinary 0 finish next next notFindall machineStep (.zero next)
+          let tail : MacroStepsN prog gt 1
+              finish finishScopes next finishScopes :=
+            .ordinary 0 finish next next finishScopes finishScopes
+              notFindall machineStep (.zero next finishScopes)
           simpa [OpenConf.stepOpen, OpenConf.ofConfWith, OpenConf.ofConf] using
             MacroPrefixN.closed baseFrames (n + 1) start next
+              startScopes finishScopes
               (run.trans tail)
       | findallEnter template sub result rest binding head =>
           let frame := findallFrameOf finish template result rest binding
           let innerStart := subConfOf finish sub binding template
           have inner : MacroPrefixN prog gt (.findall frame :: baseFrames) 0
-              innerStart (OpenConf.ofConf innerStart
-                (.findall frame :: baseFrames)) :=
-            .closed _ 0 innerStart innerStart (.zero innerStart)
+              innerStart finishScopes.afterFindall
+              (OpenConf.ofConfWith innerStart
+                (.findall frame :: baseFrames)
+                finishScopes.afterFindall) :=
+            .closed _ 0 innerStart innerStart
+              finishScopes.afterFindall finishScopes.afterFindall
+              (.zero innerStart finishScopes.afterFindall)
           simpa [frame, innerStart] using
-            MacroPrefixN.suspended baseFrames n 0 start finish template sub
-              result rest binding _ run (by simpa using head) inner
+            MacroPrefixN.suspended baseFrames n 0 start finish
+              startScopes finishScopes template sub result rest binding _
+              run (by simpa using head) inner
       | findallExit frame remaining frameHead done =>
           rcases afterSuffix with ⟨extra, afterFrames⟩
           have baseEq : baseFrames = .findall frame :: remaining := by
@@ -672,8 +1004,9 @@ theorem advance {prog : Prog} {gt : GroundingTable}
           have shorter := congrArg List.length remainingEq
           simp at longer shorter
           omega
-  | suspended baseFrames beforeCount innerCount start outer template sub result
-      rest binding target beforeRun head innerParsed innerIH =>
+  | suspended baseFrames beforeCount innerCount start outer startScopes
+      outerScopes template sub result rest binding target beforeRun head
+      innerParsed innerIH =>
       cases oneStep with
       | ordinary next notFindall machineStep =>
           rcases innerParsed.frames_suffix with ⟨extra, targetFrames⟩
@@ -689,8 +1022,8 @@ theorem advance {prog : Prog} {gt : GroundingTable}
             ⟨extra, by simpa using targetFrames⟩
           have advanced := innerIH recursiveStep recursiveSuffix
           have rebuilt := MacroPrefixN.suspended baseFrames beforeCount
-            (innerCount + 1) start outer template sub result rest binding _
-            beforeRun head advanced
+            (innerCount + 1) start outer startScopes outerScopes
+            template sub result rest binding _ beforeRun head advanced
           simpa [Nat.add_assoc] using rebuilt
       | findallEnter nestedTemplate nestedSub nestedResult nestedRest
           nestedBinding nestedHead =>
@@ -717,12 +1050,13 @@ theorem advance {prog : Prog} {gt : GroundingTable}
             simp [enterFindall, nestedFrame, targetFrames]
           have advanced := innerIH recursiveStep recursiveSuffix
           have rebuilt := MacroPrefixN.suspended baseFrames beforeCount
-            (innerCount + 1) start outer template sub result rest binding _
-            beforeRun head advanced
+            (innerCount + 1) start outer startScopes outerScopes
+            template sub result rest binding _ beforeRun head advanced
           simpa [Nat.add_assoc] using rebuilt
       | findallExit exitFrame remaining frameHead done =>
           cases innerParsed with
-          | closed innerBase innerCount innerStart innerFinish innerRun =>
+          | closed innerBase innerCount innerStart innerFinish
+              innerStartScopes innerFinishScopes innerRun =>
               have frameEq :
                   findallFrameOf outer template result rest binding =
                     exitFrame := by
@@ -733,21 +1067,26 @@ theorem advance {prog : Prog} {gt : GroundingTable}
               subst remaining
               let successor :=
                 findallSuccessor outer innerFinish result rest binding
-              let collector : MacroStepsN prog gt (innerCount + 2) outer
-                  successor :=
-                .findall innerCount 0 outer innerFinish successor template sub
-                  result rest binding head innerRun (by simpa using done)
-                  (.zero successor)
+              let collector : MacroStepsN prog gt (innerCount + 2)
+                  outer outerScopes successor innerFinishScopes :=
+                .findall innerCount 0 outer innerFinish successor
+                  outerScopes innerFinishScopes innerFinishScopes
+                  template sub result rest binding head innerRun
+                  (by simpa using done)
+                  (.zero successor innerFinishScopes)
               have combined := beforeRun.trans collector
               have combined' : MacroStepsN prog gt
-                  ((beforeCount + 1 + innerCount) + 1) start successor := by
+                  ((beforeCount + 1 + innerCount) + 1)
+                  start startScopes successor innerFinishScopes := by
                 simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
                   combined
               simpa [successor] using
-                MacroPrefixN.closed baseFrames _ start successor combined'
+                MacroPrefixN.closed baseFrames _ start successor
+                  startScopes innerFinishScopes combined'
           | suspended nestedBase nestedBeforeCount nestedInnerCount nestedStart
-              nestedOuter nestedTemplate nestedSub nestedResult nestedRest
-              nestedBinding nestedTarget nestedBefore nestedHead nestedInner =>
+              nestedOuter nestedStartScopes nestedOuterScopes nestedTemplate
+              nestedSub nestedResult nestedRest nestedBinding nestedTarget
+              nestedBefore nestedHead nestedInner =>
               have strict : ∃ top extra,
                   target.frames = top ::
                     (extra ++
@@ -762,8 +1101,8 @@ theorem advance {prog : Prog} {gt : GroundingTable}
                 step_preserves_suffix_of_strict strict recursiveStep
               have advanced := innerIH recursiveStep recursiveSuffix
               have rebuilt := MacroPrefixN.suspended baseFrames beforeCount
-                _ start outer template sub result rest binding _
-                beforeRun head advanced
+                _ start outer startScopes outerScopes template sub result rest
+                binding _ beforeRun head advanced
               simpa [Nat.add_assoc] using rebuilt
 
 /-- Extend a top-level parsed prefix by an arbitrary fine run.  With no
@@ -771,11 +1110,12 @@ protected caller frames, every intermediate target trivially has the empty
 list as a suffix, so `advance` can be iterated without an additional safety
 premise. -/
 theorem extendRoot {prog : Prog} {gt : GroundingTable}
-    {m n : Nat} {start : Conf} {before after : OpenConf}
-    (parsed : MacroPrefixN prog gt [] m start before)
+    {m n : Nat} {start : Conf} {startScopes : ScopeHighWaters}
+    {before after : OpenConf}
+    (parsed : MacroPrefixN prog gt [] m start startScopes before)
     (execution : StepsN prog gt n before after) :
-    MacroPrefixN prog gt [] (m + n) start after := by
-  induction execution generalizing m start with
+    MacroPrefixN prog gt [] (m + n) start startScopes after := by
+  induction execution generalizing m start startScopes with
   | zero state => simpa using parsed
   | succ count before middle after oneStep tail tailIH =>
       have middleSuffix : ∃ extra, middle.frames = extra ++ ([] : List Frame) :=
@@ -789,28 +1129,35 @@ theorem extendRoot {prog : Prog} {gt : GroundingTable}
 /-- Parse any top-level fine run into either a closed macro run or an explicit
 stack of unpaired collector entries. -/
 theorem ofRootSteps {prog : Prog} {gt : GroundingTable}
-    {n : Nat} {start : Conf} {target : OpenConf}
-    (execution : StepsN prog gt n (OpenConf.ofConf start []) target) :
-    MacroPrefixN prog gt [] n start target := by
-  have initial : MacroPrefixN prog gt [] 0 start
-      (OpenConf.ofConf start []) :=
-    .closed [] 0 start start (.zero start)
+    {n : Nat} {start : Conf} {startScopes : ScopeHighWaters}
+    {target : OpenConf}
+    (execution : StepsN prog gt n
+      (OpenConf.ofConfWith start [] startScopes) target) :
+    MacroPrefixN prog gt [] n start startScopes target := by
+  have initial : MacroPrefixN prog gt [] 0 start startScopes
+      (OpenConf.ofConfWith start [] startScopes) :=
+    .closed [] 0 start start startScopes startScopes
+      (.zero start startScopes)
   simpa using initial.extendRoot execution
 
 /-- A top-level parsed prefix is either a closed macro with an exact plain
 endpoint, or it still owns at least one suspended collector frame. -/
 theorem root_closed_or_has_frames {prog : Prog} {gt : GroundingTable}
-    {n : Nat} {start : Conf} {target : OpenConf}
-    (parsed : MacroPrefixN prog gt [] n start target) :
-    (∃ finish,
-        target = OpenConf.ofConf finish [] ∧
-        MacroStepsN prog gt n start finish) ∨
+    {n : Nat} {start : Conf} {startScopes : ScopeHighWaters}
+    {target : OpenConf}
+    (parsed : MacroPrefixN prog gt [] n start startScopes target) :
+    (∃ finish finishScopes,
+        target = OpenConf.ofConfWith finish [] finishScopes ∧
+        MacroStepsN prog gt n
+          start startScopes finish finishScopes) ∨
       target.frames ≠ [] := by
   cases parsed with
-  | closed baseFrames count parsedStart parsedFinish run =>
-      exact Or.inl ⟨parsedFinish, rfl, run⟩
-  | suspended baseFrames beforeCount innerCount parsedStart outer template sub
-      result rest binding target beforeRun head inner =>
+  | closed baseFrames count parsedStart parsedFinish parsedStartScopes
+      parsedFinishScopes run =>
+      exact Or.inl ⟨parsedFinish, parsedFinishScopes, rfl, run⟩
+  | suspended baseFrames beforeCount innerCount parsedStart outer
+      parsedStartScopes outerScopes template sub result rest binding target
+      beforeRun head inner =>
       right
       rcases open_frames_cons_suffix beforeRun head inner with
         ⟨top, extra, framesEq⟩
@@ -824,16 +1171,22 @@ to an empty frame stack excludes the suspended case, so every such raw
 endpoints. -/
 theorem closedRootSteps_complete {prog : Prog} {gt : GroundingTable}
     {n : Nat} {start finish : Conf}
-    (execution : StepsN prog gt n (OpenConf.ofConf start [])
-      (OpenConf.ofConf finish [])) :
-    MacroStepsN prog gt n start finish := by
+    {startScopes finishScopes : ScopeHighWaters}
+    (execution : StepsN prog gt n
+      (OpenConf.ofConfWith start [] startScopes)
+      (OpenConf.ofConfWith finish [] finishScopes)) :
+    MacroStepsN prog gt n start startScopes finish finishScopes := by
   have parsed := ofRootSteps execution
   rcases parsed.root_closed_or_has_frames with
-    ⟨parsedFinish, endpoint, run⟩ | stillOpen
+    ⟨parsedFinish, parsedFinishScopes, endpoint, run⟩ | stillOpen
   · have finishEq : finish = parsedFinish := by
       have projected := congrArg OpenConf.toConf endpoint
       simpa using projected
     subst parsedFinish
+    have scopesEq : finishScopes = parsedFinishScopes := by
+      have projected := congrArg OpenConf.scopes endpoint
+      simpa using projected
+    subst parsedFinishScopes
     exact run
   · exact False.elim (stillOpen rfl)
 
@@ -841,10 +1194,12 @@ theorem closedRootSteps_complete {prog : Prog} {gt : GroundingTable}
 is count-preserving in both directions and includes arbitrary collector
 nesting; open prefixes are intentionally outside the right-hand side. -/
 theorem closedRootSteps_iff_macro {prog : Prog} {gt : GroundingTable}
-    {n : Nat} {start finish : Conf} :
-    StepsN prog gt n (OpenConf.ofConf start [])
-        (OpenConf.ofConf finish []) ↔
-      MacroStepsN prog gt n start finish := by
+    {n : Nat} {start finish : Conf}
+    {startScopes finishScopes : ScopeHighWaters} :
+    StepsN prog gt n
+        (OpenConf.ofConfWith start [] startScopes)
+        (OpenConf.ofConfWith finish [] finishScopes) ↔
+      MacroStepsN prog gt n start startScopes finish finishScopes := by
   constructor
   · exact closedRootSteps_complete
   · intro structured
@@ -855,8 +1210,10 @@ Unlike answer-list projection, this theorem is obtained only after the exact
 frame-bracket parser has ruled out every unpaired open prefix. -/
 theorem closedRootSteps_collapse_to_sealed {prog : Prog}
     {gt : GroundingTable} {n : Nat} {start finish : Conf}
-    (execution : StepsN prog gt n (OpenConf.ofConf start [])
-      (OpenConf.ofConf finish [])) :
+    {startScopes finishScopes : ScopeHighWaters}
+    (execution : StepsN prog gt n
+      (OpenConf.ofConfWith start [] startScopes)
+      (OpenConf.ofConfWith finish [] finishScopes)) :
     PLeaTTa.StepStar prog gt start finish :=
   (closedRootSteps_complete execution).toStepStar
 
@@ -869,23 +1226,29 @@ This is the reusable terminating-run bridge; it does not claim that an
 unstructured `StepsN` derivation has already been parsed into `MacroStepsN`. -/
 theorem findall_nested_run_expands_and_collapses
     (prog : Prog) (gt : GroundingTable) (outer inner : Conf)
-    (frames : List Frame) (template : Atom) (sub : List Goal)
+    (frames : List Frame) (scopes innerScopes : ScopeHighWaters)
+    (template : Atom) (sub : List Goal)
     (result : Atom) (rest : List Goal) (binding : Subst) (n : Nat)
     (head : outer.cur =
       some (Goal.findall template sub result :: rest, binding))
     (innerRun : MacroStepsN prog gt n
-      (subConfOf outer sub binding template) inner)
+      (subConfOf outer sub binding template) scopes.afterFindall
+      inner innerScopes)
     (done : PLeaTTa.Terminal inner) :
-    StepsN prog gt (n + 2) (OpenConf.ofConf outer frames)
-        (OpenConf.ofConf
-          (findallSuccessor outer inner result rest binding) frames) ∧
+    StepsN prog gt (n + 2)
+        (OpenConf.ofConfWith outer frames scopes)
+        (OpenConf.ofConfWith
+          (findallSuccessor outer inner result rest binding)
+          frames innerScopes) ∧
       PLeaTTa.Step prog gt outer
         (findallSuccessor outer inner result rest binding) := by
-  let structured : MacroStepsN prog gt (n + 2) outer
-      (findallSuccessor outer inner result rest binding) :=
+  let structured : MacroStepsN prog gt (n + 2)
+      outer scopes
+      (findallSuccessor outer inner result rest binding) innerScopes :=
     .findall n 0 outer inner
       (findallSuccessor outer inner result rest binding)
-      template sub result rest binding head innerRun done (.zero _)
+      scopes innerScopes innerScopes template sub result rest binding
+      head innerRun done (.zero _ innerScopes)
   constructor
   · exact structured.lift frames
   · simpa [findallSuccessor] using
@@ -906,8 +1269,9 @@ theorem empty_generator_findall_is_three_fine_steps
     ∃ inner,
       PLeaTTa.Terminal inner ∧
       StepsN prog gt 3 (OpenConf.ofConf outer frames)
-        (OpenConf.ofConf
-          (findallSuccessor outer inner result rest binding) frames) ∧
+        (OpenConf.ofConfWith
+          (findallSuccessor outer inner result rest binding)
+          frames ({} : ScopeHighWaters).afterFindall) ∧
       PLeaTTa.Step prog gt outer
         (findallSuccessor outer inner result rest binding) := by
   let start := subConfOf outer [] binding template
@@ -922,12 +1286,22 @@ theorem empty_generator_findall_is_three_fine_steps
     cases hbarriers : outer.barriers <;>
       simp [inner, start, answerSuccessor, subConfOf, PLeaTTa.Terminal, pull,
         pullAuxTracked, pullAuxCached, pullAux, resetBarrierCache, hbarriers]
-  have innerRun : MacroStepsN prog gt 1 start inner := by
-    simpa using MacroStepsN.ordinary 0 start inner inner notFindall answerStep
-      (.zero inner)
+  have innerRun : MacroStepsN prog gt 1
+      start ({} : ScopeHighWaters).afterFindall
+      inner ({} : ScopeHighWaters).afterFindall := by
+    simpa using MacroStepsN.ordinary 0 start inner inner
+      ({} : ScopeHighWaters).afterFindall
+      ({} : ScopeHighWaters).afterFindall
+      notFindall answerStep
+      (.zero inner ({} : ScopeHighWaters).afterFindall)
   have bridge := findall_nested_run_expands_and_collapses prog gt outer inner
-    frames template [] result rest binding 1 head innerRun done
-  exact ⟨inner, done, by simpa using bridge.1, bridge.2⟩
+    frames {} ({} : ScopeHighWaters).afterFindall
+    template [] result rest binding 1 head innerRun done
+  exact
+    ⟨inner, done,
+      by
+        simpa [OpenConf.ofConf, OpenConf.ofConfWith] using bridge.1,
+      bridge.2⟩
 
 /-- An empty generator succeeds once, and the sealed collector copies its
 residual variable before placing it in the bag.  The nested run still records
@@ -948,8 +1322,9 @@ theorem empty_generator_findall_copies_source_variable
         (subConfOf outer [] [] (.var source)) [] ∧
       PLeaTTa.Terminal inner ∧
       StepsN prog gt 3 (OpenConf.ofConf outer frames)
-        (OpenConf.ofConf
-          (findallSuccessor outer inner result rest []) frames) ∧
+        (OpenConf.ofConfWith
+          (findallSuccessor outer inner result rest [])
+          frames ({} : ScopeHighWaters).afterFindall) ∧
       PLeaTTa.Step prog gt outer
         (findallSuccessor outer inner result rest []) ∧
       inner.answerValues = [.var source] ∧
@@ -968,16 +1343,26 @@ theorem empty_generator_findall_copies_source_variable
     cases hbarriers : outer.barriers <;>
       simp [inner, start, answerSuccessor, subConfOf, PLeaTTa.Terminal, pull,
         pullAuxTracked, pullAuxCached, pullAux, resetBarrierCache, hbarriers]
-  have innerRun : MacroStepsN prog gt 1 start inner := by
-    simpa using MacroStepsN.ordinary 0 start inner inner notFindall answerStep
-      (.zero inner)
+  have innerRun : MacroStepsN prog gt 1
+      start ({} : ScopeHighWaters).afterFindall
+      inner ({} : ScopeHighWaters).afterFindall := by
+    simpa using MacroStepsN.ordinary 0 start inner inner
+      ({} : ScopeHighWaters).afterFindall
+      ({} : ScopeHighWaters).afterFindall
+      notFindall answerStep
+      (.zero inner ({} : ScopeHighWaters).afterFindall)
   have bridge := findall_nested_run_expands_and_collapses prog gt outer inner
-    frames (.var source) [] result rest [] 1 head innerRun done
+    frames {} ({} : ScopeHighWaters).afterFindall
+    (.var source) [] result rest [] 1 head innerRun done
   have answers : inner.answerValues = [.var source] := by
     cases hbarriers : outer.barriers <;>
       simp [inner, start, answerSuccessor, subConfOf, Conf.answerValues, pull,
         pullAuxTracked, pullAuxCached, pullAux, resetBarrierCache, hbarriers]
-  refine ⟨inner, rfl, done, by simpa using bridge.1, bridge.2, answers, ?_⟩
+  refine
+    ⟨inner, rfl, done,
+      by
+        simpa [OpenConf.ofConf, OpenConf.ofConfWith] using bridge.1,
+      bridge.2, answers, ?_⟩
   let seed := advanceCounterPastAtoms inner.counter [.var source]
   refine
     ⟨source ++ resolutionCompactSuffix seed, ?_,
@@ -1179,7 +1564,7 @@ theorem findall_prefix_lifts
             result := result
             rest := rest
             binding := binding } :: outer.frames)
-        outer.scopes) := by
+        outer.scopes.afterFindall) := by
   apply StepsN.succ n outer
     (enterFindall outer template sub result rest binding) _
   · exact .findallEnter outer template sub result rest binding head
@@ -1191,7 +1576,47 @@ theorem findall_prefix_lifts
             result := result
             rest := rest
             binding := binding } :: outer.frames)
-        outer.scopes
+        outer.scopes.afterFindall
+
+/-- Entry allocation is already present on every finite still-open generator
+prefix.  No completion premise is available here, so a divergent generator
+cannot defer or roll back its delimiter identities. -/
+theorem findall_open_prefix_scopes_exact
+    (prog : Prog) (gt : GroundingTable) (outer : OpenConf)
+    (template : Atom) (sub : List Goal) (result : Atom)
+    (rest : List Goal) (binding : Subst) (n : Nat) (inner : Conf)
+    (head : outer.toConf.cur =
+      some (Goal.findall template sub result :: rest, binding))
+    (run : FlatStepsN prog gt n
+      (subConfOf outer.toConf sub binding template) inner) :
+    ∃ target,
+      StepsN prog gt (n + 1) outer target ∧
+      target.frames =
+        .findall
+          { outer := outer.control
+            template := template
+            result := result
+            rest := rest
+            binding := binding } :: outer.frames ∧
+      target.scopes.nextCutScope =
+        outer.scopes.nextCutScope + 1 ∧
+      target.scopes.nextExceptionScope =
+        outer.scopes.nextExceptionScope ∧
+      target.scopes.nextCollectionScope =
+        outer.scopes.nextCollectionScope + 1 := by
+  let target :=
+    OpenConf.ofConfWith inner
+      (.findall
+        { outer := outer.control
+          template := template
+          result := result
+          rest := rest
+          binding := binding } :: outer.frames)
+      outer.scopes.afterFindall
+  refine ⟨target, ?_, rfl, ?_⟩
+  · exact findall_prefix_lifts prog gt outer template sub result rest binding
+      n inner head run
+  · simp [target]
 
 /-- An entry plus any still-open private generator prefix cannot be the
 endpoint of a bracketed terminating macro run lifted under the caller's frame
@@ -1213,16 +1638,18 @@ theorem findall_unpaired_prefix_has_no_macro_collapse
           result := result
           rest := rest
           binding := binding } :: outer.frames)
-      outer.scopes
+      outer.scopes.afterFindall
     StepsN prog gt (n + 1) outer target ∧
-      ∀ (macroCount : Nat) (finish : Conf),
-        MacroStepsN prog gt macroCount outer.toConf finish →
-        OpenConf.ofConf finish outer.frames ≠ target := by
+      ∀ (macroCount : Nat) (finish : Conf)
+          (finishScopes : ScopeHighWaters),
+        MacroStepsN prog gt macroCount
+          outer.toConf outer.scopes finish finishScopes →
+        OpenConf.ofConfWith finish outer.frames finishScopes ≠ target := by
   dsimp only
   constructor
   · exact findall_prefix_lifts prog gt outer template sub result rest binding n
       inner head run
-  · intro macroCount finish macroRun endpoint
+  · intro macroCount finish finishScopes macroRun endpoint
     have frameConflict := congrArg OpenConf.frames endpoint
     simp at frameConflict
 
@@ -1248,7 +1675,7 @@ theorem findall_macro_expands
               result := result
               rest := rest
               binding := binding } :: outer.frames)
-          outer.scopes)
+          outer.scopes.afterFindall)
         { outer := outer.control
           template := template
           result := result
@@ -1262,7 +1689,8 @@ theorem findall_macro_expands
       rest := rest
       binding := binding }
   let suspended :=
-    OpenConf.ofConfWith inner (.findall frame :: outer.frames) outer.scopes
+    OpenConf.ofConfWith inner (.findall frame :: outer.frames)
+      outer.scopes.afterFindall
   have prefixRun : StepsN prog gt (n + 1) outer suspended := by
     simpa [frame, suspended] using
       findall_prefix_lifts prog gt outer template sub result rest binding n
