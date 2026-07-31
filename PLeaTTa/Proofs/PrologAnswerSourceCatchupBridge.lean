@@ -104,6 +104,48 @@ theorem underCutBoundary {session : Session} {count : Nat}
         (.cutBoundaryProgress scope start middle [] session session head)
         inductionHypothesis
 
+/-- Silent progress crosses an exception boundary without selecting a handler.
+The protected goal remains running, so no catcher matching occurs. -/
+theorem underCatchBoundary {session : Session} {count : Nat}
+    {start finish : Search} (handlerScope : ExceptionScopeId)
+    (scope : CutScopeId) (catcher : Term)
+    (handler : PeTTaSpec.PrologCore.Goal)
+    (entryBindings : OpenSubstitution.Substitution)
+    (execution : SilentStepsN session count start finish) :
+    SilentStepsN session count
+      (.catchBoundary handlerScope scope start catcher handler entryBindings)
+      (.catchBoundary handlerScope scope finish catcher handler
+        entryBindings) := by
+  induction execution with
+  | zero search => exact .zero _
+  | succ count start middle finish head tail inductionHypothesis =>
+      exact .succ count _ _ _
+        (.catchProgress handlerScope scope start middle catcher handler
+          entryBindings [] .none session session head)
+        inductionHypothesis
+
+/-- Silent, answer-free progress inside a collector preserves its private
+accumulator and caller continuation literally. -/
+theorem underCollectionBoundary {session : Session} {count : Nat}
+    {start finish : Search} (collectionScope : CollectionScopeId)
+    (callerScope : CutScopeId) (template output : Term)
+    (entryBindings : OpenSubstitution.Substitution)
+    (tail : List PeTTaSpec.PrologCore.Goal) (reversed : List Term)
+    (execution : SilentStepsN session count start finish) :
+    SilentStepsN session count
+      (.collectionBoundary collectionScope callerScope start template output
+        entryBindings tail reversed)
+      (.collectionBoundary collectionScope callerScope finish template output
+        entryBindings tail reversed) := by
+  induction execution with
+  | zero search => exact .zero _
+  | succ count start middle finish head rest inductionHypothesis =>
+      exact .succ count _ _ _
+        (.collectionProgress collectionScope callerScope start middle template
+          output entryBindings tail reversed [] .none session session head
+          (by simp [Trace.AnswerFree]))
+        inductionHypothesis
+
 /-- Silent, answer-free progress in a product head preserves its caller tail;
 the tail is carried but never executed by this lift. -/
 theorem underProduct {session : Session} {count : Nat}
@@ -436,7 +478,7 @@ identity. -/
 inductive ConservativeReadyTarget
     (alpha : List (LogicVar × String))
     (selectedGoals : List PLeaTTa.Goal) (selectedBinding : Subst) :
-    Search -> Prop where
+    List PLeaTTa.Alt -> Search -> Prop where
   | clauses (scope : CutScopeId)
       (original finish : PreparedCursor)
       (resource : RetainedAlternativeSegment)
@@ -445,7 +487,7 @@ inductive ConservativeReadyTarget
       (frontier :
         SelectedReadyFrontier alpha resource selectedGoals selectedBinding
           selectedTail original finish candidates) :
-      ConservativeReadyTarget alpha selectedGoals selectedBinding
+      ConservativeReadyTarget alpha selectedGoals selectedBinding selectedTail
         (.clauses scope finish)
   | taskChoices (support : List (LogicVar × String))
       (scope : CutScopeId) (barrier : Nat)
@@ -456,23 +498,185 @@ inductive ConservativeReadyTarget
         TaskChoiceAlternativeRegionAgrees alpha support scope barrier canonical
           referenceBase current selectedBinding right
           (.br selectedGoals selectedBinding :: selectedTail)) :
-      ConservativeReadyTarget alpha selectedGoals selectedBinding right
+      ConservativeReadyTarget alpha selectedGoals selectedBinding selectedTail
+        right
   | underChoice (scope : CutScopeId) (inside right : Search)
+      {selectedTail : List PLeaTTa.Alt}
       (target : ConservativeReadyTarget alpha selectedGoals selectedBinding
-        inside) :
-      ConservativeReadyTarget alpha selectedGoals selectedBinding
+        selectedTail inside) :
+      ConservativeReadyTarget alpha selectedGoals selectedBinding selectedTail
         (.choice scope inside right)
   | underCutBoundary (scope : CutScopeId) (inside : Search)
+      {selectedTail : List PLeaTTa.Alt}
       (target : ConservativeReadyTarget alpha selectedGoals selectedBinding
-        inside) :
-      ConservativeReadyTarget alpha selectedGoals selectedBinding
+        selectedTail inside) :
+      ConservativeReadyTarget alpha selectedGoals selectedBinding selectedTail
         (.cutBoundary scope inside)
+  | underCatchBoundary (handlerScope : ExceptionScopeId) (scope : CutScopeId)
+      (inside : Search) (catcher : Term)
+      (handler : PeTTaSpec.PrologCore.Goal)
+      (entryBindings : OpenSubstitution.Substitution)
+      {selectedTail : List PLeaTTa.Alt}
+      (target : ConservativeReadyTarget alpha selectedGoals selectedBinding
+        selectedTail inside) :
+      ConservativeReadyTarget alpha selectedGoals selectedBinding selectedTail
+        (.catchBoundary handlerScope scope inside catcher handler
+          entryBindings)
+  | underCollectionBoundary (collectionScope : CollectionScopeId)
+      (callerScope : CutScopeId) (inside : Search) (template output : Term)
+      (entryBindings : OpenSubstitution.Substitution)
+      (tail : List PeTTaSpec.PrologCore.Goal) (reversed : List Term)
+      {selectedTail : List PLeaTTa.Alt}
+      (target : ConservativeReadyTarget alpha selectedGoals selectedBinding
+        selectedTail inside) :
+      ConservativeReadyTarget alpha selectedGoals selectedBinding selectedTail
+        (.collectionBoundary collectionScope callerScope inside template output
+          entryBindings tail reversed)
   | underProduct (scope : CutScopeId) (inside : Search)
       (tail : List PeTTaSpec.PrologCore.Goal)
+      {selectedTail : List PLeaTTa.Alt}
       (target : ConservativeReadyTarget alpha selectedGoals selectedBinding
-        inside) :
-      ConservativeReadyTarget alpha selectedGoals selectedBinding
+        selectedTail inside) :
+      ConservativeReadyTarget alpha selectedGoals selectedBinding selectedTail
         (.product scope inside tail)
+
+/-- A source-ready frontier together with the literal older executable suffix
+which remains behind that frontier's locally owned alternatives.
+
+`fullTail` is exactly the tail returned by the fine machine's eager pull.
+The source target owns only `localTail`; `suffix` records the older bank which
+is still suspended outside that source frontier. -/
+inductive ConservativeReadyPullTarget
+    (alpha : List (LogicVar × String))
+    (selectedGoals : List PLeaTTa.Goal) (selectedBinding : Subst)
+    (fullTail : List PLeaTTa.Alt) (target : Search) : Prop where
+  | mk (localTail suffix : List PLeaTTa.Alt)
+      (tail_eq : fullTail = localTail ++ suffix)
+      (ready :
+        ConservativeReadyTarget alpha selectedGoals selectedBinding localTail
+          target) :
+      ConservativeReadyPullTarget alpha selectedGoals selectedBinding fullTail
+        target
+
+namespace ConservativeReadyPullTarget
+
+/-- A ready frontier with no older executable suffix. -/
+theorem exact
+    {alpha : List (LogicVar × String)}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {tail : List PLeaTTa.Alt} {target : Search}
+    (ready :
+      ConservativeReadyTarget alpha selectedGoals selectedBinding tail target) :
+    ConservativeReadyPullTarget alpha selectedGoals selectedBinding tail
+      target :=
+  ⟨tail, [], by simp, ready⟩
+
+/-- Append a literal older bank without changing the selected source
+occurrence or its locally owned tail. -/
+theorem appendSuffix
+    {alpha : List (LogicVar × String)}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {tail : List PLeaTTa.Alt} {target : Search}
+    (agreement :
+      ConservativeReadyPullTarget alpha selectedGoals selectedBinding tail
+        target)
+    (older : List PLeaTTa.Alt) :
+    ConservativeReadyPullTarget alpha selectedGoals selectedBinding
+      (tail ++ older) target := by
+  cases agreement with
+  | mk localTail suffix tailEq ready =>
+      refine .mk localTail (suffix ++ older) ?_ ready
+      rw [tailEq, List.append_assoc]
+
+/-- Preserve the exact tail decomposition under an inactive choice. -/
+theorem underChoice
+    {alpha : List (LogicVar × String)}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {tail : List PLeaTTa.Alt} {target right : Search}
+    (scope : CutScopeId)
+    (agreement :
+      ConservativeReadyPullTarget alpha selectedGoals selectedBinding tail
+        target) :
+    ConservativeReadyPullTarget alpha selectedGoals selectedBinding tail
+      (.choice scope target right) := by
+  cases agreement with
+  | mk localTail suffix tailEq ready =>
+      exact .mk localTail suffix tailEq
+        (.underChoice scope target right ready)
+
+/-- Preserve the exact tail decomposition across a cut boundary. -/
+theorem underCutBoundary
+    {alpha : List (LogicVar × String)}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {tail : List PLeaTTa.Alt} {target : Search}
+    (scope : CutScopeId)
+    (agreement :
+      ConservativeReadyPullTarget alpha selectedGoals selectedBinding tail
+        target) :
+    ConservativeReadyPullTarget alpha selectedGoals selectedBinding tail
+      (.cutBoundary scope target) := by
+  cases agreement with
+  | mk localTail suffix tailEq ready =>
+      exact .mk localTail suffix tailEq
+        (.underCutBoundary scope target ready)
+
+/-- Preserve the exact tail decomposition across an exception boundary. -/
+theorem underCatchBoundary
+    {alpha : List (LogicVar × String)}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {tail : List PLeaTTa.Alt} {target : Search}
+    (handlerScope : ExceptionScopeId) (scope : CutScopeId)
+    (catcher : Term) (handler : PeTTaSpec.PrologCore.Goal)
+    (entryBindings : OpenSubstitution.Substitution)
+    (agreement :
+      ConservativeReadyPullTarget alpha selectedGoals selectedBinding tail
+        target) :
+    ConservativeReadyPullTarget alpha selectedGoals selectedBinding tail
+      (.catchBoundary handlerScope scope target catcher handler
+        entryBindings) := by
+  cases agreement with
+  | mk localTail suffix tailEq ready =>
+      exact .mk localTail suffix tailEq
+        (.underCatchBoundary handlerScope scope target catcher handler
+          entryBindings ready)
+
+/-- Preserve the exact tail decomposition inside an active collector. -/
+theorem underCollectionBoundary
+    {alpha : List (LogicVar × String)}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {tail : List PLeaTTa.Alt} {target : Search}
+    (collectionScope : CollectionScopeId) (callerScope : CutScopeId)
+    (template output : Term) (entryBindings : OpenSubstitution.Substitution)
+    (callerTail : List PeTTaSpec.PrologCore.Goal) (reversed : List Term)
+    (agreement :
+      ConservativeReadyPullTarget alpha selectedGoals selectedBinding tail
+        target) :
+    ConservativeReadyPullTarget alpha selectedGoals selectedBinding tail
+      (.collectionBoundary collectionScope callerScope target template output
+        entryBindings callerTail reversed) := by
+  cases agreement with
+  | mk localTail suffix tailEq ready =>
+      exact .mk localTail suffix tailEq
+        (.underCollectionBoundary collectionScope callerScope target template
+          output entryBindings callerTail reversed ready)
+
+/-- Preserve the exact tail decomposition in a product head. -/
+theorem underProduct
+    {alpha : List (LogicVar × String)}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {tail : List PLeaTTa.Alt} {target : Search}
+    (scope : CutScopeId) (callerTail : List PeTTaSpec.PrologCore.Goal)
+    (agreement :
+      ConservativeReadyPullTarget alpha selectedGoals selectedBinding tail
+        target) :
+    ConservativeReadyPullTarget alpha selectedGoals selectedBinding tail
+      (.product scope target callerTail) := by
+  cases agreement with
+  | mk localTail suffix tailEq ready =>
+      exact .mk localTail suffix tailEq
+        (.underProduct scope target callerTail ready)
+
+end ConservativeReadyPullTarget
 
 private def RightLandingRealizes
     (session : Session) {alpha : List (LogicVar × String)}
@@ -484,7 +688,7 @@ private def RightLandingRealizes
     (_landing : RightRegionLanding alpha agreement goals binding tail) : Prop :=
   exists count target,
     SilentStepsN session count right target /\
-    ConservativeReadyTarget alpha goals binding target
+    ConservativeReadyPullTarget alpha goals binding tail target
 
 private def RightEmptyRealizes
     (session : Session) {alpha : List (LogicVar × String)}
@@ -509,7 +713,7 @@ private def OriginLandingRealizes
     (_landing : OriginPrefixLanding alpha agreement goals binding tail) : Prop :=
   exists count target,
     SilentStepsN session count next target /\
-    ConservativeReadyTarget alpha goals binding target
+    ConservativeReadyPullTarget alpha goals binding tail target
 
 private def OriginFallsRealizes
     (session : Session) {alpha : List (LogicVar × String)}
@@ -541,7 +745,8 @@ private theorem realizeRightClauses
       ownership head scope session
   exact
     ⟨count, .clauses scope finish, steps,
-      .clauses scope cursor finish resource tail candidates frontier⟩
+      ConservativeReadyPullTarget.exact
+        (.clauses scope cursor finish resource tail candidates frontier)⟩
 
 private theorem realizeRightScheduled
     {alpha : List (LogicVar × String)} (session : Session)
@@ -568,7 +773,7 @@ private theorem realizeRightScheduled
   exact
     ⟨count, .product callerScope target callerTail,
       steps.underProduct callerScope callerTail,
-      .underProduct callerScope target callerTail ready⟩
+      ready.underProduct callerScope callerTail⟩
 
 private theorem realizeRightTaskChoices
     {alpha : List (LogicVar × String)} (session : Session)
@@ -589,8 +794,9 @@ private theorem realizeRightTaskChoices
         runtime right goals tail choices pullExact) := by
   exact
     ⟨0, right, .zero right,
-      .taskChoices support scope barrier canonical referenceBase current right
-        tail choices⟩
+      ConservativeReadyPullTarget.exact
+        (.taskChoices support scope barrier canonical referenceBase current
+          right tail choices)⟩
 
 private theorem realizeRightEmptyClauses
     {alpha : List (LogicVar × String)} (session : Session)
@@ -651,7 +857,7 @@ private theorem realizeOriginChoiceInside
   obtain ⟨count, target, steps, ready⟩ := insideIH
   exact
     ⟨count, .choice scope target right, steps.underChoice scope,
-      .underChoice scope target right ready⟩
+      ready.underChoice scope⟩
 
 private theorem realizeOriginChoiceRegion
     {alpha : List (LogicVar × String)} (session : Session)
@@ -688,7 +894,7 @@ private theorem realizeOriginChoiceRegion
     insideCompletion.choiceToRight scope
   exact
     ⟨insideCount + regionCount, target,
-      enterRight.trans regionSteps, ready⟩
+      enterRight.trans regionSteps, ready.appendSuffix afterAlts⟩
 
 private theorem realizeOriginCut
     {alpha : List (LogicVar × String)} (session : Session)
@@ -712,7 +918,7 @@ private theorem realizeOriginCut
   obtain ⟨count, target, steps, ready⟩ := insideIH
   exact
     ⟨count, .cutBoundary scope target, steps.underCutBoundary scope,
-      .underCutBoundary scope target ready⟩
+      ready.underCutBoundary scope⟩
 
 private theorem realizeOriginTask
     {alpha : List (LogicVar × String)} (session : Session)
@@ -886,7 +1092,7 @@ theorem RightRegionLanding.sourceCatchup
     (session : Session) :
     exists count target,
       SilentStepsN session count right target /\
-      ConservativeReadyTarget alpha goals binding target :=
+      ConservativeReadyPullTarget alpha goals binding tail target :=
   realizeRightLanding session landing
 
 /-- An empty right region genuinely completes; a scheduled product discards
@@ -918,7 +1124,7 @@ theorem OriginPrefixLanding.sourceCatchup
     (session : Session) :
     exists count target,
       SilentStepsN session count next target /\
-      ConservativeReadyTarget alpha goals binding target :=
+      ConservativeReadyPullTarget alpha goals binding tail target :=
   realizeOriginLanding session landing
 
 /-- Complete fall-through emits exactly one completion after a finite silent
@@ -954,7 +1160,7 @@ theorem OriginPrefixLanding.sourceStepsN
     (session : Session) :
     exists count target,
       StepsN count (.running session next) [] (.running session target) /\
-      ConservativeReadyTarget alpha goals binding target := by
+      ConservativeReadyPullTarget alpha goals binding tail target := by
   obtain ⟨count, target, steps, ready⟩ :=
     PLeaTTa.PrologAnswerSourceCatchupBridge.OriginPrefixLanding.sourceCatchup
       landing session
@@ -991,10 +1197,10 @@ def SourcePhase
     (alpha : List (LogicVar × String)) (next : Search)
     (afterAlts : List PLeaTTa.Alt)
     (events : List Observation) (session : Session) : Prop :=
-  (exists count target goals binding,
+  (exists count target goals binding rest,
       events = [] /\
       StepsN count (.running session next) [] (.running session target) /\
-      ConservativeReadyTarget alpha goals binding target) \/
+      ConservativeReadyPullTarget alpha goals binding rest target) \/
     (events = [] /\
       exists count goals binding rest,
         PLeaTTa.pullAux afterAlts = some ((goals, binding), rest) /\
@@ -1037,7 +1243,7 @@ theorem sourcePhase
       obtain ⟨count, target, steps, ready⟩ :=
         PLeaTTa.PrologAnswerSourceCatchupBridge.OriginPrefixLanding.sourceStepsN
           landing session
-      exact .inl ⟨count, target, goals, binding, rfl, steps, ready⟩
+      exact .inl ⟨count, target, goals, binding, rest, rfl, steps, ready⟩
   | baseLive falls goals binding rest basePull =>
       obtain ⟨count, steps⟩ :=
         PLeaTTa.PrologAnswerSourceCatchupBridge.OriginPrefixFallsThrough.sourceStepsN
@@ -1085,8 +1291,9 @@ theorem product_progress_and_completion_are_distinct
 private theorem nested_done_choices_are_not_ready
     {alpha : List (LogicVar × String)}
     {goals : List PLeaTTa.Goal} {binding : Subst}
+    {selectedTail : List PLeaTTa.Alt}
     (innerScope outerScope : CutScopeId) (emptyRight liveRight : Search) :
-    ¬ ConservativeReadyTarget alpha goals binding
+    ¬ ConservativeReadyTarget alpha goals binding selectedTail
         (.choice outerScope (.choice innerScope .done emptyRight) liveRight) := by
   intro ready
   cases ready with
@@ -1106,6 +1313,7 @@ theorem second_local_region_after_empty_source_catchup_is_inhabited
     exists (emptyCursor liveCursor : PreparedCursor)
         (emptyResource liveResource : RetainedAlternativeSegment)
         (goals : List PLeaTTa.Goal) (binding : Subst)
+        (selectedTail : List PLeaTTa.Alt)
         (count : Nat) (target : Search),
       emptyResource.alts = [] /\
       liveResource.alts ≠ [] /\
@@ -1116,7 +1324,7 @@ theorem second_local_region_after_empty_source_catchup_is_inhabited
               (.choice 1 .done (.clauses 1 emptyCursor))
               (.clauses 2 liveCursor)))
           [] (.running session target) /\
-      ConservativeReadyTarget [] goals binding target := by
+      ConservativeReadyPullTarget [] goals binding selectedTail target := by
   obtain
       ⟨emptyCursor, liveCursor, emptyResource, liveResource, origin,
         agreement, emptyHead, liveNonempty, goals, binding, rest, landing,
@@ -1130,13 +1338,15 @@ theorem second_local_region_after_empty_source_catchup_is_inhabited
     intro countZero
     subst count
     cases steps
+    rcases ready with ⟨localTail, suffix, tailEq, localReady⟩
     exact
-      nested_done_choices_are_not_ready 1 2 (.clauses 1 emptyCursor)
-        (.clauses 2 liveCursor) ready
+      nested_done_choices_are_not_ready
+        (selectedTail := localTail) 1 2 (.clauses 1 emptyCursor)
+        (.clauses 2 liveCursor) localReady
   exact
     ⟨emptyCursor, liveCursor, emptyResource, liveResource, goals, binding,
-      count, target, emptyHead, liveNonempty, countPositive, steps.toStepsN,
-      ready⟩
+      rest, count, target, emptyHead, liveNonempty, countPositive,
+      steps.toStepsN, ready⟩
 
 /-- The recursive scheduled case is inhabited with two independently owned
 regions and two predicate barriers.  Its classified result has an exact
@@ -1217,7 +1427,7 @@ theorem three_branch_task_choice_source_catchup_preserves_older_suffix
             ((.br [] [] :: regionTail) ++ base) base,
         OriginPrefixLanding [] agreement [] [] (regionTail ++ base) /\
           SilentStepsN session 1 (.choice 7 .done right) right /\
-          ConservativeReadyTarget [] [] [] right /\
+          ConservativeReadyPullTarget [] [] [] (regionTail ++ base) right /\
           PLeaTTa.pullAux ((.br [] [] :: regionTail) ++ base) =
             some (([], []), regionTail ++ base) := by
   dsimp only
@@ -1301,12 +1511,23 @@ theorem three_branch_task_choice_source_catchup_preserves_older_suffix
             [.truth, .unify (.integer 1) (.integer 1),
               .unify (.integer 1) (.integer 1)] [] []) :=
         completion.choiceToRight 7
-      have ready : ConservativeReadyTarget [] [] []
+      have localReady : ConservativeReadyTarget [] [] []
+          [.br [.eq (.gnd (.int 1)) (.gnd (.int 1))] [],
+            .br [.eq (.gnd (.int 1)) (.gnd (.int 1))] []]
           (Search.disjoin 7
             [.truth, .unify (.integer 1) (.integer 1),
               .unify (.integer 1) (.integer 1)] [] []) :=
         .taskChoices support scope barrier canonical referenceBase current _ _
           choices
+      have ready : ConservativeReadyPullTarget [] [] []
+          ([.br [.eq (.gnd (.int 1)) (.gnd (.int 1))] [],
+              .br [.eq (.gnd (.int 1)) (.gnd (.int 1))] []] ++
+            [.br [.cut] []])
+          (Search.disjoin 7
+            [.truth, .unify (.integer 1) (.integer 1),
+              .unify (.integer 1) (.integer 1)] [] []) :=
+        (ConservativeReadyPullTarget.exact localReady).appendSuffix
+          [.br [.cut] []]
       exact ⟨origin, agreement, landing, steps, ready, rfl⟩
 
 /-- Conservative retention does not imply clause entry.  A supported
