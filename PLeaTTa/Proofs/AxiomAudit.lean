@@ -12,6 +12,7 @@ import PLeaTTa.Proofs.PrologFindallEntryBridge
 import PLeaTTa.Proofs.PrologFindallFrameZipperBridge
 import PLeaTTa.Proofs.PrologFindallExitBridge
 import PLeaTTa.Proofs.PrologFindallExitPayloadBridge
+import PLeaTTa.Proofs.PrologAnswerOriginBridge
 import PLeaTTa.Proofs.PrologFindallAnswerBridge
 import PLeaTTa.Proofs.PrologAlphaFreshFrontierBridge
 import PLeaTTa.Proofs.PrologCallEntryBridge
@@ -1735,7 +1736,17 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologFindallResidualVariantBridge.residual_alias_exact_debt_excludes_valid_state
 #print axioms PLeaTTa.PrologFindallResidualVariantBridge.residual_alias_copies_still_runtime_agree
 #print axioms PLeaTTa.PrologFindallResidualVariantBridge.runtimeTermAgrees_rejects_split_sharing
+#print axioms PLeaTTa.PrologAnswerOriginBridge.AnswerOrigin.toRawStep
+#print axioms PLeaTTa.PrologAnswerOriginBridge.AnswerOrigin.indices_unique
+#print axioms PLeaTTa.PrologAnswerOriginBridge.RawStep.answer_mem_origin
+#print axioms PLeaTTa.PrologAnswerOriginBridge.RawStep.answer_mem_signal_none
+#print axioms PLeaTTa.PrologAnswerOriginBridge.RawStep.commit_answer_impossible
+#print axioms PLeaTTa.PrologAnswerOriginBridge.RawStep.exactAnswer_origin
+#print axioms PLeaTTa.PrologAnswerOriginBridge.ExactAnswerProducer.ofRawStep
+#print axioms PLeaTTa.PrologAnswerOriginBridge.wrapped_answer_origin_inhabited
+#print axioms PLeaTTa.PrologAnswerOriginBridge.inactive_right_answer_origin_rejected
 #print axioms PLeaTTa.PrologFindallAnswerBridge.FindallAnswerReadyTaskAgrees.producer
+#print axioms PLeaTTa.PrologFindallAnswerBridge.FindallAnswerReadyTaskAgrees.admits_readyTask_at
 #print axioms PLeaTTa.PrologFindallAnswerBridge.FindallAnswerReadyTaskAgrees.fineHead
 #print axioms PLeaTTa.PrologFindallAnswerBridge.FindallAnswerReadyTaskAgrees.binding_unique
 #print axioms PLeaTTa.DemandDrivenStep.FlatStepsN.lift
@@ -1819,6 +1830,8 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologFindallExitPayloadBridge.wrong_raw_accumulator_orientation_rejected
 #print axioms PLeaTTa.PrologFindallExitPayloadBridge.ground_empty_exit_payload_inhabited
 #print axioms PLeaTTa.PrologFindallExitPayloadBridge.ground_two_answer_exit_payload_inhabited
+#print axioms PLeaTTa.PrologFindallAnswerBridge.ActiveFindallAnswer.childSession_exact
+#print axioms PLeaTTa.PrologFindallAnswerBridge.ActiveFindallAnswer.has_exactProducer
 #print axioms PLeaTTa.PrologFindallAnswerBridge.ActiveFindallAnswer.sourceStep
 #print axioms PLeaTTa.PrologFindallAnswerBridge.ActiveFindallAnswer.cells_replace
 #print axioms PLeaTTa.PrologFindallAnswerBridge.ActiveFindallAnswer.occurrences_after

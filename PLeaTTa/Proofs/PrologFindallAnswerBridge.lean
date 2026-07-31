@@ -9,6 +9,7 @@ Main exports: ActiveFindallAnswer, ContextualFindallAnswerRelates
 -/
 import PLeaTTa.Proofs.PrologFindallExitPayloadBridge
 import PLeaTTa.Proofs.PrologFindallResidualVariantBridge
+import PLeaTTa.Proofs.PrologAnswerOriginBridge
 
 namespace PLeaTTa.PrologFindallAnswerBridge
 
@@ -35,6 +36,7 @@ open PrologFindallCopyBridge
 open PrologFindallFrameZipperBridge
 open PrologFindallExitPayloadBridge
 open PrologFindallResidualVariantBridge
+open PrologAnswerOriginBridge
 open DemandDrivenStep
 
 /-!
@@ -135,9 +137,9 @@ inductive ActiveFindallAnswer :
       (tail : List PeTTaSpec.PrologCore.Goal)
       (reversed : List Term) (answerBindings : Substitution)
       (child :
-        RawStep before (.cutBoundary cutScope body)
-          [.answer answerBindings] .none childAfter
-          (.running (.cutBoundary cutScope next))) :
+        ExactAnswerProducer before childAfter
+          (.cutBoundary cutScope body) (.cutBoundary cutScope next)
+          answerBindings) :
       ActiveFindallAnswer before
         (.collectionBoundary collectionScope callerScope
           (.cutBoundary cutScope body) template output entryBindings tail
@@ -209,6 +211,54 @@ inductive ActiveFindallAnswer :
 
 namespace ActiveFindallAnswer
 
+/-- The answer-emitting generator step itself cannot change the persistent
+source session.  Earlier generator steps may already have advanced that
+session, and the later collection copy may advance freshness again; this
+equality concerns only the final child answer step. -/
+theorem childSession_exact
+    {before childAfter : Session} {search next : Search}
+    {cell : SourceCollectionCell} {answerBindings : Substitution}
+    (answer :
+      ActiveFindallAnswer before search childAfter next cell answerBindings) :
+    before = childAfter := by
+  induction answer with
+  | here _ _ _ _ _ _ _ _ _ _ _ _ _ child =>
+      exact child.sessionExact
+  | underChoice _ _ inside inductionHypothesis =>
+      exact inductionHypothesis
+  | underCut _ inside inductionHypothesis =>
+      exact inductionHypothesis
+  | underCatch _ _ _ _ _ inside inductionHypothesis =>
+      exact inductionHypothesis
+  | underCollection _ _ _ _ _ _ _ _ inside inductionHypothesis =>
+      exact inductionHypothesis
+  | underProduct _ _ inside inductionHypothesis =>
+      exact inductionHypothesis
+
+/-- Every contextual active answer contains, rather than merely postulates,
+the exact direct generator producer from which it was lifted. -/
+theorem has_exactProducer
+    {before childAfter : Session} {search next : Search}
+    {cell : SourceCollectionCell} {answerBindings : Substitution}
+    (answer :
+      ActiveFindallAnswer before search childAfter next cell answerBindings) :
+    ∃ childSource childNext,
+      ExactAnswerProducer before childAfter childSource childNext
+        answerBindings := by
+  induction answer with
+  | here _ _ _ _ _ body childNext _ _ _ _ _ _ child =>
+      exact ⟨.cutBoundary _ body, .cutBoundary _ childNext, child⟩
+  | underChoice _ _ inside inductionHypothesis =>
+      exact inductionHypothesis
+  | underCut _ inside inductionHypothesis =>
+      exact inductionHypothesis
+  | underCatch _ _ _ _ _ inside inductionHypothesis =>
+      exact inductionHypothesis
+  | underCollection _ _ _ _ _ _ _ _ inside inductionHypothesis =>
+      exact inductionHypothesis
+  | underProduct _ _ inside inductionHypothesis =>
+      exact inductionHypothesis
+
 /-- Every contextual answer is one actual source transition with no public
 observation and no escaping cut signal.  The final source session is the
 answer-time copy successor of the generator child's post-session. -/
@@ -227,7 +277,7 @@ theorem sourceStep
         .collectionAnswer collectionScope callerScope
           (.cutBoundary cutScope body) (.cutBoundary cutScope next)
           template output entryBindings tail reversed answerBindings before
-          childAfter child
+          childAfter child.step
   | underChoice scope right inside inductionHypothesis =>
       exact
         .choiceProgress scope _ right _ [] _ _ inductionHypothesis
@@ -272,7 +322,7 @@ theorem cells_replace
       template output entryBindings tail reversed answerBindings child =>
       have empty :=
         PrologFindallFrameZipperBridge.RawStep.answer_activeCollectionCells_empty
-          child
+          child.step
       refine ⟨[], ?_, ?_⟩
       · simpa [activeCollectionCells] using empty.1
       · simpa [activeCollectionCells, afterAnswer, sourceCollectionCell]
@@ -348,9 +398,12 @@ abbrev CollectionOpenStateRelates
 to the answer-ready fine state at the same ordered-copy frontier.
 
 This relation is deliberately stronger than pairing an arbitrary source
-substitution with an independently asserted executable binding.  The
-`ReadyTaskRelates` packet owns both valuations and the fine current state;
-the empty source goal spine forces the executable spine to be empty as well.
+substitution with an independently asserted executable binding.  At an answer
+leaf both goal spines are exactly empty, so the barrier-independent
+`TaskDataAgrees` relation is the honest payload: nominal source cut scopes and
+executable barrier tags live in different allocation spaces and are related
+by the surrounding control zipper, not by numeric equality.  Persistent
+state, the exact fine head, and both valuations remain in this one packet.
 The template agreement remains pre-substitution data, so the materialized
 runtime value is still derived rather than supplied. -/
 def FindallAnswerReadyTaskAgrees
@@ -358,14 +411,14 @@ def FindallAnswerReadyTaskAgrees
     (state : OpenConf) (answerBindings : Substitution)
     (binding : Subst) : Prop :=
   ∃ alpha support : List (LogicVar × String),
-    ∃ barrier : Nat,
     ∃ canonical : TreeSubstitution,
     ∃ referenceBase : Substitution,
-      ReadyTaskRelates
+      SessionRelatesPersistent
           (CopyDebtFrontier cell.reversed state.control.answers)
-          alpha support barrier canonical referenceBase childSession
-          answerBindings [] state ∧
+          childSession state.persistent ∧
         state.toConf.cur = some ([], binding) ∧
+        TaskDataAgrees alpha support canonical referenceBase answerBindings
+          binding ∧
         AlphaTermAgrees alpha cell.template state.control.qterm ∧
         AlphaTermsSupported alpha support [cell.template]
 
@@ -384,20 +437,38 @@ theorem producer
     FindallMaterializationProducerAgrees answerBindings binding
       cell.template state.control.qterm := by
   rcases agreement with
-    ⟨alpha, support, barrier, canonical, referenceBase, ready, fineHead,
-      template, templateSupported⟩
-  rcases ready with
-    ⟨executableGoals, runtime, _persistent, current, payload⟩
-  cases payload.control
-  change state.control.cur = some ([], binding) at fineHead
-  have runtimeEq : runtime = binding := by
-    have pairEq : ([], runtime) = ([], binding) :=
-      Option.some.inj (current.symm.trans fineHead)
-    exact congrArg Prod.snd pairEq
-  subst runtime
+    ⟨alpha, support, canonical, referenceBase, _persistent, _fineHead,
+      data, template, templateSupported⟩
   exact
-    ⟨alpha, support, canonical, referenceBase, payload.data, template,
+    ⟨alpha, support, canonical, referenceBase, data, template,
       templateSupported⟩
+
+/-- The barrier-free answer packet reconstructs the ordinary ready-task
+relation at any executable barrier.  This is safe precisely because both
+control spines are empty; it must not be read as equating a nominal source
+scope with an executable barrier tag. -/
+theorem admits_readyTask_at
+    {childSession : Session} {cell : SourceCollectionCell}
+    {state : OpenConf} {answerBindings : Substitution} {binding : Subst}
+    (agreement :
+      FindallAnswerReadyTaskAgrees childSession cell state answerBindings
+        binding)
+    (barrier : Nat) :
+    ∃ alpha support : List (LogicVar × String),
+      ∃ canonical : TreeSubstitution,
+      ∃ referenceBase : Substitution,
+        ReadyTaskRelates
+            (CopyDebtFrontier cell.reversed state.control.answers)
+            alpha support barrier canonical referenceBase childSession
+            answerBindings [] state := by
+  rcases agreement with
+    ⟨alpha, support, canonical, referenceBase, persistent, fineHead, data,
+      _template, _templateSupported⟩
+  refine ⟨alpha, support, canonical, referenceBase, ?_⟩
+  exact
+    ⟨[], binding, persistent, fineHead,
+      data.withControl (.nil :
+        NormalizedAlphaGoalsAgree alpha barrier [] [])⟩
 
 /-- The executable empty-goal head is part of the same ready-task packet as
 the source/runtime valuation; callers need not assert it independently. -/
@@ -409,8 +480,8 @@ theorem fineHead
         binding) :
     state.toConf.cur = some ([], binding) := by
   rcases agreement with
-    ⟨_alpha, _support, _barrier, _canonical, _referenceBase, _ready,
-      fineHead, _template, _templateSupported⟩
+    ⟨_alpha, _support, _canonical, _referenceBase, _persistent,
+      fineHead, _data, _template, _templateSupported⟩
   exact fineHead
 
 /-- The ready fine state fixes the runtime answer binding uniquely.  Hence a
@@ -577,6 +648,7 @@ structure ContextualFindallAnswerRelates
     RawStep beforeSession beforeSearch [] .none
       (collectTemplate childAfter cell.template answerBindings).session
       (.running afterSearch)
+  sourceSessionExact : beforeSession = childAfter
   frameHead : before.frames = .findall frame :: remaining
   fineHead : before.toConf.cur = some ([], binding)
   fineStep : DemandDrivenStep.Step prog gt before after
@@ -645,6 +717,7 @@ theorem ActiveFindallAnswer.privateAnswer_correspondence
   exact
     { sourceAnswer := answer
       sourceStep := answer.sourceStep
+      sourceSessionExact := answer.childSession_exact
       frameHead := frameHead
       fineHead := fineHead
       fineStep := fine.1
@@ -774,9 +847,10 @@ theorem nested_answer_only_updates_innermost_cell :
         [(.source "x", .integer 1)] := by
     apply ActiveFindallAnswer.here
     exact
-      .cutBoundaryProgress 2 _ _ [.answer
-        [(.source "x", .integer 1)]] _ _
-        (.taskAnswer 2 [(.source "x", .integer 1)] ({} : Session))
+      ExactAnswerProducer.ofRawStep
+        (.cutBoundaryProgress 2 _ _ [.answer
+          [(.source "x", .integer 1)]] _ _
+          (.taskAnswer 2 [(.source "x", .integer 1)] ({} : Session)))
   have nested :
       ActiveFindallAnswer ({} : Session)
         (.collectionBoundary ⟨1⟩ 0
@@ -870,9 +944,10 @@ theorem ground_direct_answer_correspondence_inhabited
         [(.source "x", .integer 1)] := by
     apply ActiveFindallAnswer.here
     exact
-      .cutBoundaryProgress 1 _ _ [.answer
-        [(.source "x", .integer 1)]] _ _
-        (.taskAnswer 1 [(.source "x", .integer 1)] ({} : Session))
+      ExactAnswerProducer.ofRawStep
+        (.cutBoundaryProgress 1 _ _ [.answer
+          [(.source "x", .integer 1)]] _ _
+          (.taskAnswer 1 [(.source "x", .integer 1)] ({} : Session)))
   have occurrences :
       CollectionOccurrenceAgrees
         (.collectionBoundary ⟨1⟩ 0
@@ -987,45 +1062,24 @@ theorem ground_direct_answer_correspondence_inhabited
                   Tree.instantiateOne, Term.denote, PLeaTTa.subst,
                   PLeaTTa.substN, Metta.Subst.lookup] using
                 (CanonicalRuntimeAgrees.integer (alpha := alpha) 1)
-          have ready :
-              ReadyTaskRelates (CopyDebtFrontier [] []) alpha alpha 0 []
-                [(.source "x", .integer 1)] ({} : Session)
-                [(.source "x", .integer 1)] []
-                { persistent := { world := {}, counter := 0 }
-                  control :=
-                    { cur := some ([], [("x", .gnd (.int 1))])
-                      alts := []
-                      qterm := .var "x"
-                      answers := [] }
-                  frames :=
-                    [.findall
-                      { preCut := 1
-                        preCollection := 1
-                        outer :=
-                          { cur := some ([], [("x", .gnd (.int 1))])
-                            alts := []
-                            qterm := .var "x"
-                            answers := [] }
-                        template := .var "x"
-                        result := .gnd (.int 9)
-                        rest := []
-                        binding := [] }]
-                  scopes := {} } := by
-            refine ⟨[], [("x", .gnd (.int 1))], ?_, rfl, ?_⟩
-            · exact
-                PrologStateBridge.empty_session_relates
-                  (CopyDebtFrontier [] [])
-                  (CollectionCopyFrontier.empty 0 0)
-            · exact
-                { alphaShared := shared
-                  canonicalWellFormed :=
-                    TreeSubstitution.wellFormed_nil
-                  bindingShape := by simp [TreeSubstitution.reify]
-                  control := .nil
-                  valuation := valuation }
+          have persistent :
+              SessionRelatesPersistent (CopyDebtFrontier [] [])
+                ({} : Session) { world := {}, counter := 0 } :=
+            PrologStateBridge.empty_session_relates
+              (CopyDebtFrontier [] [])
+              (CollectionCopyFrontier.empty 0 0)
+          have data :
+              TaskDataAgrees alpha alpha []
+                [(.source "x", .integer 1)]
+                [(.source "x", .integer 1)]
+                [("x", .gnd (.int 1))] :=
+            { alphaShared := shared
+              canonicalWellFormed := TreeSubstitution.wellFormed_nil
+              bindingShape := by simp [TreeSubstitution.reify]
+              valuation := valuation }
           refine
-            ⟨alpha, alpha, 0, [], [(.source "x", .integer 1)], ready,
-              rfl, AlphaTermAgrees.variable (by simp [alpha]), ?_⟩
+            ⟨alpha, alpha, [], [(.source "x", .integer 1)], persistent,
+              rfl, data, AlphaTermAgrees.variable (by simp [alpha]), ?_⟩
           intro term member
           simp only [List.mem_singleton] at member
           subst term
