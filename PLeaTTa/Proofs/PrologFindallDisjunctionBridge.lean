@@ -7,7 +7,8 @@ Purpose: Compose real contextual findall entry with exact literal-disjunction
 Trusted boundary: none
 Main exports: ContextualLiteralFindallEntryRelates,
   contextual_literal_findall_entry_correspondence,
-  contextual_literal_findall_selected_unify_three_steps
+  contextual_literal_findall_selected_unify_three_steps,
+  contextual_literal_findall_selected_failure_three_steps
 -/
 import PLeaTTa.Proofs.PrologActiveControlContextBridge
 import PLeaTTa.Proofs.PrologDisjunctionStepBridge
@@ -284,6 +285,22 @@ def sourceLiteralFindallAfterSelectedUnify
     (selectedUnifySourceSuccessor (openFindall session).cutScope
       remainingBranches [] beforeBindings afterBindings)
 
+/-- Whole source state after a selected literal branch fails and at least one
+residual branch becomes active.  Unlike successful unification, the entry
+binding is retained unchanged; unlike exhaustion, the collection boundary
+remains open around a nonempty residual disjunction. -/
+def sourceLiteralFindallAfterSelectedFailure
+    (context : ActiveControlContext) (session : Session)
+    (callerScope : CutScopeId) (template result : Term)
+    (remainingBranches : List PeTTaSpec.PrologCore.Goal)
+    (rest : List PeTTaSpec.PrologCore.Goal)
+    (bindings : Substitution) : Search :=
+  ActiveControlContext.plug
+    (enteredLiteralFindallContext context session callerScope template result
+      rest bindings)
+    (Search.disjoin (openFindall session).cutScope remainingBranches []
+      bindings)
+
 /-- Selected-unification control remains collection-free at the focus, both
 with and without residual siblings. -/
 @[simp] theorem activeCollectionCells_selectedUnifySourceSuccessor
@@ -558,5 +575,303 @@ theorem contextual_literal_findall_selected_unify_three_steps
       contextualUnify, fineUnify, enteredOccurrences, branchedOccurrences,
       afterOccurrences, payloadAfter, residualPayloads, altsAfter,
       persistentAfter, framesAfter, scopesAfter⟩
+
+/-- The exact reachable prefix for a failed first literal branch inside an
+active `findall/3` generator when a residual branch remains.
+
+Step 1 enters the collector, step 2 exposes/selects the first literal branch,
+and step 3 consumes its failed equality.  The source `choiceComplete` and the
+fine machine's eager `eq_fail → pull` are both one top-level transition.  The
+result retains the collector, activates the next branch at the unchanged
+entry binding, preserves every source cursor contributed by the surrounding
+active context, and returns the exact residual executable activation.
+
+[SPEC translator.pl:112-116; metta.pl:251-256] -/
+theorem contextual_literal_findall_selected_failure_three_steps
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {context : ActiveControlContext} {session : Session}
+    {callerScope : CutScopeId}
+    {referenceTemplate referenceAmbOutput referenceResult referenceValue : Term}
+    {nextReference : PeTTaSpec.PrologCore.Goal}
+    {remainingReferences : List PeTTaSpec.PrologCore.Goal}
+    {referenceRest : List PeTTaSpec.PrologCore.Goal}
+    {referenceBindings : Substitution}
+    {executableTemplate executableAmbOutput executableResult executableValue
+      nextExecutable : Metta.Atom}
+    {remainingExecutables : List (Metta.Atom × List PLeaTTa.Goal)}
+    {executableTail executableRest : List PLeaTTa.Goal}
+    {executableBinding : Metta.Subst} {before : OpenConf}
+    (entry :
+      ContextualLiteralFindallEntryRelates freshFrontier alpha support barrier
+        canonical referenceBase prog gt context session callerScope
+        referenceTemplate referenceAmbOutput referenceResult
+        (.unify referenceValue referenceAmbOutput ::
+          nextReference :: remainingReferences)
+        referenceRest referenceBindings executableTemplate executableAmbOutput
+        executableResult
+        ((executableValue, []) ::
+          (nextExecutable, []) :: remainingExecutables)
+        executableTail executableRest executableBinding before)
+    (valueSupported :
+      AlphaTreeSupported alpha support (Term.denote referenceValue))
+    (outputSupported :
+      AlphaTreeSupported alpha support (Term.denote referenceAmbOutput))
+    (aliasSafe :
+      CurrentUnifyOperandsAliasSafe referenceBindings referenceValue
+        referenceAmbOutput)
+    (clash :
+      ¬ ∃ result,
+        UnifyResolution referenceBindings referenceValue referenceAmbOutput
+          result) :
+    let sourceBefore :=
+      sourceLiteralFindallBefore context callerScope referenceTemplate
+        (.unify referenceValue referenceAmbOutput ::
+          nextReference :: remainingReferences)
+        referenceResult referenceRest referenceBindings
+    let sourceEntered :=
+      sourceLiteralFindallEntered context session callerScope referenceTemplate
+        referenceResult
+        (.unify referenceValue referenceAmbOutput ::
+          nextReference :: remainingReferences)
+        referenceRest referenceBindings
+    let sourceBranched :=
+      sourceLiteralFindallBranched context session callerScope referenceTemplate
+        referenceResult
+        (.unify referenceValue referenceAmbOutput ::
+          nextReference :: remainingReferences)
+        referenceRest referenceBindings
+    let sourceAfter :=
+      sourceLiteralFindallAfterSelectedFailure context session callerScope
+        referenceTemplate referenceResult
+        (nextReference :: remainingReferences) referenceRest referenceBindings
+    let fineEntered :=
+      executableLiteralFindallEntered before executableTemplate
+        ((executableValue, []) ::
+          (nextExecutable, []) :: remainingExecutables)
+        executableAmbOutput executableResult executableTail executableRest
+        executableBinding
+    let fineSelected :=
+      literalAmbPulledSuccessor fineEntered executableAmbOutput executableValue
+        ((nextExecutable, []) :: remainingExecutables) executableTail
+        executableBinding
+    let fineAfter :=
+      literalAmbPulledSuccessor fineEntered executableAmbOutput nextExecutable
+        remainingExecutables executableTail executableBinding
+    PLeaTTa.unifyB executableBinding executableAmbOutput executableValue =
+        none ∧
+      RawStep session sourceBefore [] .none (openFindall session).session
+        (.running sourceEntered) ∧
+      DemandDrivenStep.Step prog gt before fineEntered ∧
+      RawStep (openFindall session).session sourceEntered [] .none
+        (openFindall session).session (.running sourceBranched) ∧
+      DemandDrivenCallStep.Step prog gt (.ready fineEntered)
+        (.ready fineSelected) ∧
+      RawStep (openFindall session).session sourceBranched [] .none
+        (openFindall session).session (.running sourceAfter) ∧
+      DemandDrivenCallStep.Step prog gt (.ready fineSelected)
+        (.ready fineAfter) ∧
+      CollectionOccurrenceAgrees sourceEntered fineEntered.frames ∧
+      CollectionOccurrenceAgrees sourceBranched fineSelected.frames ∧
+      CollectionOccurrenceAgrees sourceAfter fineAfter.frames ∧
+      TaskChoiceActivationAgrees alpha support (openFindall session).cutScope
+        barrier canonical referenceBase referenceBindings executableBinding
+        fineEntered.control.alts
+        (Search.disjoin (openFindall session).cutScope
+          (nextReference :: remainingReferences) [] referenceBindings)
+        fineAfter.control.cur fineAfter.control.alts ∧
+      sourceBranched.liveCursors = sourceAfter.liveCursors ∧
+      (∀ activeScope,
+        sourceBranched.WellScoped activeScope →
+          sourceAfter.WellScoped activeScope) ∧
+      SessionRelatesPersistent freshFrontier (openFindall session).session
+        fineAfter.persistent ∧
+      fineAfter.frames = fineEntered.frames ∧
+      fineAfter.scopes = fineEntered.scopes := by
+  obtain
+    ⟨failed, sourceSchedule, fineSchedule, sourceFailure, fineFailure,
+      nextActivation, persistentAfter, framesAfter, scopesAfter⟩ :=
+    literal_selected_unify_failure_two_step_correspondence entry.ready
+      valueSupported outputSupported aliasSafe clash
+  let enteredContext :=
+    enteredLiteralFindallContext context session callerScope referenceTemplate
+      referenceResult referenceRest referenceBindings
+  have sourceEntry :
+      RawStep session
+        (sourceLiteralFindallBefore context callerScope referenceTemplate
+          (.unify referenceValue referenceAmbOutput ::
+            nextReference :: remainingReferences)
+          referenceResult referenceRest referenceBindings)
+        [] .none (openFindall session).session
+        (.running
+          (sourceLiteralFindallEntered context session callerScope
+            referenceTemplate referenceResult
+            (.unify referenceValue referenceAmbOutput ::
+              nextReference :: remainingReferences)
+            referenceRest referenceBindings)) := by
+    have raw :=
+      (ActiveControlContext.enterFindallResult context session callerScope
+        referenceTemplate
+        (.disjunction
+          (.unify referenceValue referenceAmbOutput ::
+            nextReference :: remainingReferences))
+        referenceResult referenceRest referenceBindings).sourceStep
+    rw [entry.sourceTarget] at raw
+    exact raw
+  have contextualSchedule :
+      RawStep (openFindall session).session
+        (sourceLiteralFindallEntered context session callerScope
+          referenceTemplate referenceResult
+          (.unify referenceValue referenceAmbOutput ::
+            nextReference :: remainingReferences)
+          referenceRest referenceBindings)
+        [] .none (openFindall session).session
+        (.running
+          (sourceLiteralFindallBranched context session callerScope
+            referenceTemplate referenceResult
+            (.unify referenceValue referenceAmbOutput ::
+              nextReference :: remainingReferences)
+            referenceRest referenceBindings)) := by
+    exact ActiveControlContext.liftProgress enteredContext sourceSchedule
+      (by simp [Trace.AnswerFree])
+  have contextualFailure :
+      RawStep (openFindall session).session
+        (sourceLiteralFindallBranched context session callerScope
+          referenceTemplate referenceResult
+          (.unify referenceValue referenceAmbOutput ::
+            nextReference :: remainingReferences)
+          referenceRest referenceBindings)
+        [] .none (openFindall session).session
+        (.running
+          (sourceLiteralFindallAfterSelectedFailure context session callerScope
+            referenceTemplate referenceResult
+            (nextReference :: remainingReferences) referenceRest
+            referenceBindings)) := by
+    exact ActiveControlContext.liftProgress enteredContext sourceFailure
+      (by simp [Trace.AnswerFree])
+  have enteredOccurrences :
+      CollectionOccurrenceAgrees
+        (sourceLiteralFindallEntered context session callerScope
+          referenceTemplate referenceResult
+          (.unify referenceValue referenceAmbOutput ::
+            nextReference :: remainingReferences)
+          referenceRest referenceBindings)
+        (executableLiteralFindallEntered before executableTemplate
+          ((executableValue, []) ::
+            (nextExecutable, []) :: remainingExecutables)
+          executableAmbOutput executableResult executableTail executableRest
+          executableBinding).frames := by
+    have occurrences := entry.control.occurrences
+    rw [entry.sourceTarget] at occurrences
+    exact occurrences
+  have branchedOccurrencesAtEntryFrames :
+      CollectionOccurrenceAgrees
+        (sourceLiteralFindallBranched context session callerScope
+          referenceTemplate referenceResult
+          (.unify referenceValue referenceAmbOutput ::
+            nextReference :: remainingReferences)
+          referenceRest referenceBindings)
+        (executableLiteralFindallEntered before executableTemplate
+          ((executableValue, []) ::
+            (nextExecutable, []) :: remainingExecutables)
+          executableAmbOutput executableResult executableTail executableRest
+          executableBinding).frames := by
+    apply ActiveControlContext.preserve_occurrences enteredContext
+      (focus := sourceLiteralFindallFocus session
+        (.unify referenceValue referenceAmbOutput ::
+          nextReference :: remainingReferences)
+        referenceBindings)
+      (next := Search.disjoin (openFindall session).cutScope
+        (.unify referenceValue referenceAmbOutput ::
+          nextReference :: remainingReferences)
+        [] referenceBindings)
+    · simp
+    · exact enteredOccurrences
+  have branchedOccurrences :
+      CollectionOccurrenceAgrees
+        (sourceLiteralFindallBranched context session callerScope
+          referenceTemplate referenceResult
+          (.unify referenceValue referenceAmbOutput ::
+            nextReference :: remainingReferences)
+          referenceRest referenceBindings)
+        (literalAmbPulledSuccessor
+          (executableLiteralFindallEntered before executableTemplate
+            ((executableValue, []) ::
+              (nextExecutable, []) :: remainingExecutables)
+            executableAmbOutput executableResult executableTail executableRest
+            executableBinding)
+          executableAmbOutput executableValue
+          ((nextExecutable, []) :: remainingExecutables) executableTail
+          executableBinding).frames := by
+    simpa using branchedOccurrencesAtEntryFrames
+  have afterOccurrencesAtEntryFrames :
+      CollectionOccurrenceAgrees
+        (sourceLiteralFindallAfterSelectedFailure context session callerScope
+          referenceTemplate referenceResult
+          (nextReference :: remainingReferences) referenceRest
+          referenceBindings)
+        (executableLiteralFindallEntered before executableTemplate
+          ((executableValue, []) ::
+            (nextExecutable, []) :: remainingExecutables)
+          executableAmbOutput executableResult executableTail executableRest
+          executableBinding).frames := by
+    apply ActiveControlContext.preserve_occurrences enteredContext
+      (focus := Search.disjoin (openFindall session).cutScope
+        (.unify referenceValue referenceAmbOutput ::
+          nextReference :: remainingReferences)
+        [] referenceBindings)
+      (next := Search.disjoin (openFindall session).cutScope
+        (nextReference :: remainingReferences) [] referenceBindings)
+    · simp
+    · exact branchedOccurrencesAtEntryFrames
+  have afterOccurrences :
+      CollectionOccurrenceAgrees
+        (sourceLiteralFindallAfterSelectedFailure context session callerScope
+          referenceTemplate referenceResult
+          (nextReference :: remainingReferences) referenceRest
+          referenceBindings)
+        (literalAmbPulledSuccessor
+          (executableLiteralFindallEntered before executableTemplate
+            ((executableValue, []) ::
+              (nextExecutable, []) :: remainingExecutables)
+            executableAmbOutput executableResult executableTail executableRest
+            executableBinding)
+          executableAmbOutput nextExecutable remainingExecutables
+          executableTail executableBinding).frames := by
+    rw [framesAfter]
+    exact afterOccurrencesAtEntryFrames
+  have sourceResources :
+      (sourceLiteralFindallBranched context session callerScope
+        referenceTemplate referenceResult
+        (.unify referenceValue referenceAmbOutput ::
+          nextReference :: remainingReferences)
+        referenceRest referenceBindings).liveCursors =
+      (sourceLiteralFindallAfterSelectedFailure context session callerScope
+        referenceTemplate referenceResult
+        (nextReference :: remainingReferences) referenceRest
+        referenceBindings).liveCursors := by
+    simp [sourceLiteralFindallBranched,
+      sourceLiteralFindallAfterSelectedFailure,
+      ActiveControlContext.plug_liveCursors]
+  have sourceScoped :
+      ∀ activeScope,
+        (sourceLiteralFindallBranched context session callerScope
+          referenceTemplate referenceResult
+          (.unify referenceValue referenceAmbOutput ::
+            nextReference :: remainingReferences)
+          referenceRest referenceBindings).WellScoped activeScope →
+          (sourceLiteralFindallAfterSelectedFailure context session callerScope
+            referenceTemplate referenceResult
+            (nextReference :: remainingReferences) referenceRest
+            referenceBindings).WellScoped activeScope := by
+    intro activeScope beforeScoped
+    exact contextualFailure.preserves_wellScoped beforeScoped
+  exact
+    ⟨failed, sourceEntry, entry.control.fineStep, contextualSchedule,
+      fineSchedule, contextualFailure, fineFailure, enteredOccurrences,
+      branchedOccurrences, afterOccurrences, nextActivation, sourceResources,
+      sourceScoped, persistentAfter, framesAfter, scopesAfter⟩
 
 end PLeaTTa.PrologFindallDisjunctionBridge

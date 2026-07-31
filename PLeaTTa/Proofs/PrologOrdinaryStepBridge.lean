@@ -617,8 +617,29 @@ theorem CurrentUnifyOperandsAliasSafe.of_booleanAliasSafe
     PrologBooleanAliasSafety.Substitution.BooleanAliasSafe.applyTerm
       currentSafe right rightSafe⟩
 
-/-- Exact payload denotation transports source-syntax alias-safety into the
-canonical binding currency used by MGU variation. -/
+/-- Exact task data transports source-syntax alias-safety into the canonical
+binding currency used by MGU variation.  Control spelling is irrelevant:
+this is the reusable premise for both ordinary and operand-reversed equality
+lowerings. -/
+theorem TaskDataAgrees.sourceUnifyOperandsAliasSafe_of_current
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Metta.Subst}
+    {left right : Term}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (safe : CurrentUnifyOperandsAliasSafe current left right) :
+    SourceUnifyOperandsAliasSafe
+      (canonical ++ Substitution.denote referenceBase) left right := by
+  constructor
+  · rw [← agreement.denoteCurrent,
+      ← Substitution.denote_applyTerm]
+    exact safe.1
+  · rw [← agreement.denoteCurrent,
+      ← Substitution.denote_applyTerm]
+    exact safe.2
+
+/-- Control-bearing specialization retained for ordinary task consumers. -/
 theorem TaskPayloadAgrees.sourceUnifyOperandsAliasSafe_of_current
     {alpha support : List (LogicVar × String)} {barrier : Nat}
     {canonical : TreeSubstitution} {referenceBase current : Substitution}
@@ -631,24 +652,103 @@ theorem TaskPayloadAgrees.sourceUnifyOperandsAliasSafe_of_current
         runtime references executables)
     (safe : CurrentUnifyOperandsAliasSafe current left right) :
     SourceUnifyOperandsAliasSafe
-      (canonical ++ Substitution.denote referenceBase) left right := by
-  constructor
-  · rw [← agreement.denoteCurrent,
-      ← Substitution.denote_applyTerm]
-    exact safe.1
-  · rw [← agreement.denoteCurrent,
-      ← Substitution.denote_applyTerm]
-    exact safe.2
+      (canonical ++ Substitution.denote referenceBase) left right :=
+  agreement.data.sourceUnifyOperandsAliasSafe_of_current safe
 
-/-- Executable primitive-unification success reflects to an actual source
-`UnifyResolution` under the strict operand certificate.
+/-- Executable primitive-unification success reflects through a semantically
+equivalent source equation to an actual source `UnifyResolution`.
 
 The generated runtime MGU first supplies a concrete canonical unifier over
-the representative-applied operands.  Semantic variation of the cumulative
-bases transports existence of that residual unifier to the source-applied
-operands.  Completeness of the independent ordered algorithm then constructs
-the typed source substitution.  No equality of residual association lists
-or chosen alias orientation is assumed. -/
+the representative-applied runtime operands.  Worklist equivalence transports
+that unifier to the source equation before semantic variation of the
+cumulative bases transports it to the source-applied operands.  Completeness
+of the independent ordered algorithm then constructs the typed source
+substitution.  Control spelling and residual association-list orientation are
+both absent from the statement. -/
+theorem TaskDataAgrees.unifyResolution_of_runtime_success_of_equivalent
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Metta.Subst}
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (equivalent :
+      TreeUnificationEquivalent
+        [(Term.denote sourceLeft, Term.denote sourceRight)]
+        [(Term.denote runtimeLeft, Term.denote runtimeRight)])
+    (strict :
+      StrictUnifyOperands alpha
+        (canonical ++ Substitution.denote referenceBase)
+        runtime runtimeLeft runtimeRight executableLeft executableRight)
+    {installed : Metta.Subst}
+    (returned :
+      PLeaTTa.unifyB runtime executableLeft executableRight =
+        some installed) :
+    ∃ result, UnifyResolution current sourceLeft sourceRight result := by
+  rcases strict with
+    ⟨representative, baseVariants, leftReading, rightReading⟩
+  obtain
+    ⟨generated, _generatedExact, runtimeMgu, _installedShape⟩ :=
+    PLeaTTa.unifyB_result_has_generated_mgu
+      runtime executableLeft executableRight installed returned
+  obtain ⟨representativeExtension, representativeOrdered⟩ :=
+    orderedTreeMgu_exists_of_runtime_mgu
+      agreement.alphaShared leftReading rightReading runtimeMgu
+  have representativeHas :
+      ∃ candidate,
+        TreeUnifiesEquations candidate
+          (TreeSubstitution.applyEquations representative
+            [(Term.denote runtimeLeft, Term.denote runtimeRight)]) := by
+    refine ⟨representativeExtension, ?_⟩
+    simpa [TreeSubstitution.applyEquations] using
+      representativeOrdered.isMostGeneral.1
+  have representativeSourceHas :
+      ∃ candidate,
+        TreeUnifiesEquations candidate
+          (TreeSubstitution.applyEquations representative
+            [(Term.denote sourceLeft, Term.denote sourceRight)]) := by
+    rcases representativeHas with ⟨candidate, candidateUnifies⟩
+    refine ⟨candidate, ?_⟩
+    apply
+      (PrologMguDirectSimulation.treeUnifiesEquations_applyEquations_iff
+        candidate representative
+        [(Term.denote sourceLeft, Term.denote sourceRight)]).2
+    have cumulativeRuntime :
+        TreeUnifiesEquations (candidate ++ representative)
+          [(Term.denote runtimeLeft, Term.denote runtimeRight)] :=
+      (PrologMguDirectSimulation.treeUnifiesEquations_applyEquations_iff
+        candidate representative
+        [(Term.denote runtimeLeft, Term.denote runtimeRight)]).1
+          candidateUnifies
+    exact (equivalent (candidate ++ representative)).2 cumulativeRuntime
+  have sourceHas :
+      ∃ candidate,
+        TreeUnifiesEquations candidate
+          (TreeSubstitution.applyEquations
+            (canonical ++ Substitution.denote referenceBase)
+            [(Term.denote sourceLeft, Term.denote sourceRight)]) :=
+    (PrologSequentialMgu.TreeSubstitutionVariants.applied_has_unifier_iff
+      baseVariants [(Term.denote sourceLeft, Term.denote sourceRight)]).2
+        representativeSourceHas
+  obtain ⟨sourceCandidate, sourceUnifies⟩ := sourceHas
+  obtain ⟨sourceExtension, sourceOrdered⟩ :=
+    OrderedTreeMgu.complete sourceCandidate sourceUnifies
+  let extension := TreeSubstitution.reify sourceExtension
+  have computed :
+      ComputesDenotationalMgu
+        [(current.applyTerm sourceLeft, current.applyTerm sourceRight)]
+        extension := by
+    refine ⟨sourceExtension, ?_, rfl⟩
+    simpa only [denoteEquations, List.map_singleton,
+      TreeSubstitution.applyEquations,
+      Substitution.denote_applyTerm, agreement.denoteCurrent] using
+      sourceOrdered
+  exact
+    ⟨extension ++ current,
+      ⟨extension, computed, rfl⟩⟩
+
+/-- Ordinary-control specialization of semantic runtime-success reflection. -/
 theorem TaskPayloadAgrees.unifyResolution_of_runtime_success
     {alpha support : List (LogicVar × String)} {barrier : Nat}
     {canonical : TreeSubstitution} {referenceBase current : Substitution}
@@ -668,53 +768,45 @@ theorem TaskPayloadAgrees.unifyResolution_of_runtime_success
     (returned :
       PLeaTTa.unifyB runtime executableLeft executableRight =
         some installed) :
-    ∃ result, UnifyResolution current left right result := by
-  rcases strict with
-    ⟨representative, baseVariants, leftReading, rightReading⟩
-  obtain
-    ⟨generated, _generatedExact, runtimeMgu, _installedShape⟩ :=
-    PLeaTTa.unifyB_result_has_generated_mgu
-      runtime executableLeft executableRight installed returned
-  obtain ⟨representativeExtension, representativeOrdered⟩ :=
-    orderedTreeMgu_exists_of_runtime_mgu
-      agreement.alphaShared leftReading rightReading runtimeMgu
-  have representativeHas :
-      ∃ candidate,
-        TreeUnifiesEquations candidate
-          (TreeSubstitution.applyEquations representative
-            [(Term.denote left, Term.denote right)]) := by
-    refine ⟨representativeExtension, ?_⟩
-    simpa [TreeSubstitution.applyEquations] using
-      representativeOrdered.isMostGeneral.1
-  have sourceHas :
-      ∃ candidate,
-        TreeUnifiesEquations candidate
-          (TreeSubstitution.applyEquations
-            (canonical ++ Substitution.denote referenceBase)
-            [(Term.denote left, Term.denote right)]) :=
-    (PrologSequentialMgu.TreeSubstitutionVariants.applied_has_unifier_iff
-      baseVariants [(Term.denote left, Term.denote right)]).2
-        representativeHas
-  obtain ⟨sourceCandidate, sourceUnifies⟩ := sourceHas
-  obtain ⟨sourceExtension, sourceOrdered⟩ :=
-    OrderedTreeMgu.complete sourceCandidate sourceUnifies
-  let extension := TreeSubstitution.reify sourceExtension
-  have computed :
-      ComputesDenotationalMgu
-        [(current.applyTerm left, current.applyTerm right)] extension := by
-    refine ⟨sourceExtension, ?_, rfl⟩
-    simpa only [denoteEquations, List.map_singleton,
-      TreeSubstitution.applyEquations,
-      Substitution.denote_applyTerm, agreement.denoteCurrent] using
-      sourceOrdered
-  exact
-    ⟨extension ++ current,
-      ⟨extension, computed, rfl⟩⟩
+    ∃ result, UnifyResolution current left right result :=
+  agreement.data.unifyResolution_of_runtime_success_of_equivalent
+    (by intro binding; rfl) strict returned
 
-/-- A source primitive-equality clash forces the actual executable
-`unifyB` call to fail.  This is the contrapositive use of semantic runtime
-success reflection; it does not inspect or duplicate the executable
-unification algorithm. -/
+/-- A source primitive-equality clash forces an executable call for any
+semantically equivalent equation to fail.  This is the contrapositive use of
+data-level runtime-success reflection; it does not inspect or duplicate the
+executable unification algorithm. -/
+theorem TaskDataAgrees.unifyB_eq_none_of_no_resolution_of_equivalent
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Metta.Subst}
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (equivalent :
+      TreeUnificationEquivalent
+        [(Term.denote sourceLeft, Term.denote sourceRight)]
+        [(Term.denote runtimeLeft, Term.denote runtimeRight)])
+    (strict :
+      StrictUnifyOperands alpha
+        (canonical ++ Substitution.denote referenceBase)
+        runtime runtimeLeft runtimeRight executableLeft executableRight)
+    (clash :
+      ¬ ∃ result,
+        UnifyResolution current sourceLeft sourceRight result) :
+    PLeaTTa.unifyB runtime executableLeft executableRight = none := by
+  cases returned :
+      PLeaTTa.unifyB runtime executableLeft executableRight with
+  | none =>
+      rfl
+  | some installed =>
+      exact False.elim
+        (clash
+          (agreement.unifyResolution_of_runtime_success_of_equivalent
+            equivalent strict returned))
+
+/-- Ordinary-control specialization of semantic failure reflection. -/
 theorem TaskPayloadAgrees.unifyB_eq_none_of_no_resolution
     {alpha support : List (LogicVar × String)} {barrier : Nat}
     {canonical : TreeSubstitution} {referenceBase current : Substitution}
@@ -731,16 +823,9 @@ theorem TaskPayloadAgrees.unifyB_eq_none_of_no_resolution
         (canonical ++ Substitution.denote referenceBase)
         runtime left right executableLeft executableRight)
     (clash : ¬ ∃ result, UnifyResolution current left right result) :
-    PLeaTTa.unifyB runtime executableLeft executableRight = none := by
-  cases returned :
-      PLeaTTa.unifyB runtime executableLeft executableRight with
-  | none =>
-      rfl
-  | some installed =>
-      exact False.elim
-        (clash
-          (agreement.unifyResolution_of_runtime_success
-            strict returned))
+    PLeaTTa.unifyB runtime executableLeft executableRight = none :=
+  agreement.data.unifyB_eq_none_of_no_resolution_of_equivalent
+    (by intro binding; rfl) strict clash
 
 /-- A real source `UnifyResolution` exposes the well-formed ordered canonical
 extension which it prepends to the carried task binding.  The post-binding
@@ -923,7 +1008,7 @@ theorem canonicalRuntimeAgrees_apply_on
           (headInduction supported.1)
           (tailInduction supported.2.1))
 
-/-- Source alias-safety and the ordinary support-indexed payload relation
+/-- Source alias-safety and the support-indexed task-data relation
 construct the strict readings needed for runtime-success reflection.
 
 The cumulative source binding and its hidden runtime representative are
@@ -933,17 +1018,14 @@ either: the residual factor from source to representative could substitute
 variables but could not erase a rigid `True`/`False` node.  The existing
 broad runtime agreement can therefore be narrowed to the functional reading
 without exposing or choosing the representative's MGU orientation. -/
-theorem TaskPayloadAgrees.strictUnifyOperands_of_aliasSafe
-    {alpha support : List (LogicVar × String)} {barrier : Nat}
+theorem TaskDataAgrees.strictUnifyOperands_of_aliasSafe
+    {alpha support : List (LogicVar × String)}
     {canonical : TreeSubstitution} {referenceBase current : Substitution}
     {runtime : Metta.Subst}
     {left right : Term}
-    {references : List PeTTaSpec.PrologCore.Goal}
-    {executables : List PLeaTTa.Goal}
     {executableLeft executableRight : Metta.Atom}
     (agreement :
-      TaskPayloadAgrees alpha support barrier canonical referenceBase current
-        runtime (.unify left right :: references) executables)
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
     (leftAgreement :
       AlphaTermAgrees alpha left executableLeft)
     (rightAgreement :
@@ -1000,7 +1082,62 @@ theorem TaskPayloadAgrees.strictUnifyOperands_of_aliasSafe
         rightBroad rightRepresentativeSafe⟩
 
 /-- Alias-safety stated at the actual carried source substitution constructs
-the strict operand readings without exposing the canonical residual MGU. -/
+strict task-data operand readings without exposing the canonical residual
+MGU. -/
+theorem TaskDataAgrees.strictUnifyOperands_of_currentAliasSafe
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Metta.Subst}
+    {left right : Term}
+    {executableLeft executableRight : Metta.Atom}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (leftAgreement :
+      AlphaTermAgrees alpha left executableLeft)
+    (rightAgreement :
+      AlphaTermAgrees alpha right executableRight)
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote left))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote right))
+    (aliasSafe : CurrentUnifyOperandsAliasSafe current left right) :
+    StrictUnifyOperands alpha
+      (canonical ++ Substitution.denote referenceBase)
+      runtime left right executableLeft executableRight :=
+  agreement.strictUnifyOperands_of_aliasSafe
+    leftAgreement rightAgreement leftSupported rightSupported
+    (agreement.sourceUnifyOperandsAliasSafe_of_current aliasSafe)
+
+/-- Control-bearing specialization retained for ordinary task consumers. -/
+theorem TaskPayloadAgrees.strictUnifyOperands_of_aliasSafe
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution} {referenceBase current : Substitution}
+    {runtime : Metta.Subst}
+    {left right : Term}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    {executableLeft executableRight : Metta.Atom}
+    (agreement :
+      TaskPayloadAgrees alpha support barrier canonical referenceBase current
+        runtime (.unify left right :: references) executables)
+    (leftAgreement :
+      AlphaTermAgrees alpha left executableLeft)
+    (rightAgreement :
+      AlphaTermAgrees alpha right executableRight)
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote left))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote right))
+    (aliasSafe :
+      SourceUnifyOperandsAliasSafe
+        (canonical ++ Substitution.denote referenceBase) left right) :
+    StrictUnifyOperands alpha
+      (canonical ++ Substitution.denote referenceBase)
+      runtime left right executableLeft executableRight :=
+  agreement.data.strictUnifyOperands_of_aliasSafe
+    leftAgreement rightAgreement leftSupported rightSupported aliasSafe
+
+/-- Carried-substitution specialization for ordinary task control. -/
 theorem TaskPayloadAgrees.strictUnifyOperands_of_currentAliasSafe
     {alpha support : List (LogicVar × String)} {barrier : Nat}
     {canonical : TreeSubstitution} {referenceBase current : Substitution}
@@ -1024,9 +1161,8 @@ theorem TaskPayloadAgrees.strictUnifyOperands_of_currentAliasSafe
     StrictUnifyOperands alpha
       (canonical ++ Substitution.denote referenceBase)
       runtime left right executableLeft executableRight :=
-  agreement.strictUnifyOperands_of_aliasSafe
-    leftAgreement rightAgreement leftSupported rightSupported
-    (agreement.sourceUnifyOperandsAliasSafe_of_current aliasSafe)
+  agreement.data.strictUnifyOperands_of_currentAliasSafe
+    leftAgreement rightAgreement leftSupported rightSupported aliasSafe
 
 /-- A source-successful primitive equality forces the actual executable
 top-level unifier to succeed on a semantically equivalent equation.

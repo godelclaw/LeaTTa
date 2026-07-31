@@ -158,6 +158,59 @@ theorem afterUnifySuccessData
         outputAgreement valueAgreement rightSupported leftSupported
         supportIncluded runtimeAvoids resolved
 
+/-- A source clash forces failure of the actual executable branch equality,
+including the empty-literal lowering which reverses its operands.
+
+The ordinary case reuses identity-equation failure reflection.  The
+`symmetricUnify` case constructs strict readings for `right = left`, then
+transports runtime success back through singleton-swap equivalence before
+contradicting the source clash.  No ordered residual substitution or operand
+orientation is identified. -/
+theorem unifyB_eq_none_of_no_resolution
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {left right : Term} {executableLeft executableRight : Metta.Atom}
+    {referenceTail : List PeTTaSpec.PrologCore.Goal}
+    {executableTail : List PLeaTTa.Goal}
+    (agreement :
+      TaskChoicePayloadAgrees alpha support barrier canonical referenceBase
+        current runtime (.unify left right :: referenceTail)
+        (.eq executableLeft executableRight :: executableTail))
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote left))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote right))
+    (aliasSafe : CurrentUnifyOperandsAliasSafe current left right)
+    (clash : ¬ ∃ result, UnifyResolution current left right result) :
+    PLeaTTa.unifyB runtime executableLeft executableRight = none := by
+  cases agreement with
+  | ordinary payload =>
+      cases payload.control with
+      | cons head tail =>
+          cases head with
+          | unify leftAgreement rightAgreement =>
+              have strict :=
+                payload.strictUnifyOperands_of_currentAliasSafe
+                  leftAgreement rightAgreement leftSupported rightSupported
+                  aliasSafe
+              exact payload.unifyB_eq_none_of_no_resolution strict clash
+  | symmetricUnify data valueAgreement outputAgreement tail =>
+      have swappedSafe :
+          CurrentUnifyOperandsAliasSafe current right left :=
+        ⟨aliasSafe.2, aliasSafe.1⟩
+      have strict :=
+        data.strictUnifyOperands_of_currentAliasSafe
+          outputAgreement valueAgreement rightSupported leftSupported
+          swappedSafe
+      exact
+        data.unifyB_eq_none_of_no_resolution_of_equivalent
+          (sourceLeft := left) (sourceRight := right)
+          (runtimeLeft := right) (runtimeRight := left)
+          (PrologSequentialMgu.singleton_swap_unificationEquivalent
+            (Term.denote left) (Term.denote right))
+          strict clash
+
 end TaskChoicePayloadAgrees
 
 /-- Ordered source-task provenance for the ordinary alternatives emitted by

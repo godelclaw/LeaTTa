@@ -251,6 +251,37 @@ def OpenConf.toConf (state : OpenConf) : Conf :=
 @[simp] theorem OpenConf.stepOpen_scopes (state : OpenConf) (next : Conf) :
     (state.stepOpen next).scopes = state.scopes := rfl
 
+/-- The sealed projection plus the two open-only resource components determine
+the complete fine state.
+
+This is the extensionality principle used by correspondence proofs: equality
+of `toConf` recovers both persistent and backtrackable control through their
+proved inverse projections, while frames and typed scope chronology remain
+explicit rather than being erased. -/
+theorem OpenConf.eq_of_toConf_eq_of_frames_eq_of_scopes_eq
+    {left right : OpenConf}
+    (conf : left.toConf = right.toConf)
+    (frames : left.frames = right.frames)
+    (scopes : left.scopes = right.scopes) :
+    left = right := by
+  cases left with
+  | mk leftPersistent leftControl leftFrames leftScopes =>
+      cases right with
+      | mk rightPersistent rightControl rightFrames rightScopes =>
+          have persistent : leftPersistent = rightPersistent := by
+            have projected := congrArg persistentOf conf
+            simpa [OpenConf.toConf] using projected
+          have control : leftControl = rightControl := by
+            have projected := congrArg controlOf conf
+            simpa [OpenConf.toConf] using projected
+          change leftFrames = rightFrames at frames
+          change leftScopes = rightScopes at scopes
+          subst rightPersistent
+          subst rightControl
+          subst rightFrames
+          subst rightScopes
+          rfl
+
 /-- Globally terminal means no active machine work and no suspended caller. -/
 def Terminal (state : OpenConf) : Prop :=
   PLeaTTa.Terminal state.toConf ∧ state.frames = []
