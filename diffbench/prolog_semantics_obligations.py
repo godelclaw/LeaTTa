@@ -60,6 +60,10 @@ PROLOG_FINDALL_CLOSED_BANK_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologFindallClosedBankBridge.lean"
 )
+PROLOG_FINDALL_CLOSED_BANK_UNIFY_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologFindallClosedBankUnifyBridge.lean"
+)
 PROLOG_FINDALL_DISJUNCTION_EXIT_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologFindallDisjunctionExitBridge.lean"
@@ -424,6 +428,8 @@ def check() -> list[str]:
             digest(PROLOG_FINDALL_DISJUNCTION_BRIDGE),
         "prolog_findall_closed_bank_bridge_sha256":
             digest(PROLOG_FINDALL_CLOSED_BANK_BRIDGE),
+        "prolog_findall_closed_bank_unify_bridge_sha256":
+            digest(PROLOG_FINDALL_CLOSED_BANK_UNIFY_BRIDGE),
         "prolog_findall_disjunction_exit_bridge_sha256":
             digest(PROLOG_FINDALL_DISJUNCTION_EXIT_BRIDGE),
         "prolog_findall_exit_bridge_sha256":
