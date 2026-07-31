@@ -701,6 +701,95 @@ theorem endpointsBelow_mono
           Nat.le_trans below.2.1 executableMono,
           inductionHypothesis below.2.2⟩
 
+/-- Every retained payload cell was allocated strictly after the complete
+older payload tail which it encloses.
+
+`endpointsBelow` at the current persistent high-waters is deliberately not
+enough: after an inner call finishes, the newly exposed outer cell must still
+dominate *its own* older tail at the historical source/executable allocation
+seeds of that cell.  This recursive invariant stores exactly that chronology
+at every zipper depth. -/
+def ActivationOrdered
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext} :
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer) →
+      Prop
+  | .nil _ _ => True
+  | .cons _ _ _ _ _ _ resource _ cursor _ _ _ _ _ _ _ outerAgrees =>
+      endpointsBelow outerAgrees cursor.reservationStart resource.counter ∧
+        ActivationOrdered outerAgrees
+
+namespace ActivationOrdered
+
+/-- The head chronology certificate is indexed by the literal tail of the
+supplied zipper.  It cannot be paired with a shape-compatible reconstruction
+of that tail. -/
+theorem head
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {cursor : PreparedCursor}
+    {currentScope nextScope outer : CutScopeId}
+    {context : ActiveProductContext}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources)
+        currentScope
+        ({ callerScope := nextScope
+           predicateScope := currentScope
+           retained := .clauses currentScope cursor
+           callerRest := segment.references } ::
+         context)
+        outer)
+    (ordered : ActivationOrdered agreement) :
+    endpointsBelow
+      (SourceControlResourcePayloadContextAgrees.tail agreement)
+      cursor.reservationStart resource.counter := by
+  cases agreement
+  exact ordered.1
+
+/-- Popping one exact payload cell preserves allocation chronology at every
+remaining depth. -/
+theorem tail
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {frame : ActiveProductFrame} {context : ActiveProductContext}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources) inner
+        (frame :: context) outer)
+    (ordered : ActivationOrdered agreement) :
+    ActivationOrdered
+      (SourceControlResourcePayloadContextAgrees.tail agreement) := by
+  cases agreement
+  exact ordered.2
+
+end ActivationOrdered
+
+/-- Bounding two endpoints by the same current high-water does not order
+those endpoints relative to each other.
+
+This tiny counterexample is the arithmetic core of the nested-exhaustion
+bug: global current-state domination cannot recover the historical
+head-over-tail chronology required after a payload pop. -/
+theorem current_domination_does_not_imply_relative_chronology :
+    ∃ (headEndpoint tailEndpoint currentEndpoint : Nat),
+      headEndpoint ≤ currentEndpoint ∧
+        tailEndpoint ≤ currentEndpoint ∧
+        ¬ tailEndpoint ≤ headEndpoint := by
+  exact ⟨0, 1, 1, by omega⟩
+
 /-- Extend every payload snapshot through one exact later alpha suffix.
 
 The suffix floors dominate every cell's protected upper endpoints, so
@@ -766,6 +855,73 @@ theorem extendAbove_endpointsBelow
         ⟨below.1, below.2.1,
           inductionHypothesis below.2.2⟩
 
+/-- Alpha transport preserves endpoint domination at any independently
+supplied floors, not only at the newer floors used to justify the alpha
+extension itself.  The transported zipper has identical cursor/resource
+indices; only proof annotations change. -/
+theorem extendAbove_endpointsBelow_at
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {extensionReferenceFloor extensionExecutableFloor : Nat}
+    {referenceFloor executableFloor : Nat}
+    (extension :
+      AlphaExtendsAbove smaller larger extensionReferenceFloor
+        extensionExecutableFloor)
+    (agreement :
+      SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer)
+    (extensionBelow :
+      endpointsBelow agreement extensionReferenceFloor
+        extensionExecutableFloor)
+    (below :
+      endpointsBelow agreement referenceFloor executableFloor) :
+    endpointsBelow (extendAbove extension agreement extensionBelow)
+      referenceFloor executableFloor := by
+  induction agreement with
+  | nil =>
+      trivial
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+      inductionHypothesis =>
+      exact
+        ⟨below.1, below.2.1,
+          inductionHypothesis extensionBelow.2.2 below.2.2⟩
+
+/-- Alpha extension changes proof annotations but no cursor/resource
+allocation endpoint, so recursive activation chronology is preserved
+literally at every zipper depth. -/
+theorem ActivationOrdered.extendAbove
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {referenceFloor executableFloor : Nat}
+    (extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor)
+    (agreement :
+      SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer)
+    (below :
+      endpointsBelow agreement referenceFloor executableFloor)
+    (ordered : ActivationOrdered agreement) :
+    ActivationOrdered (extendAbove extension agreement below) := by
+  induction agreement with
+  | nil =>
+      trivial
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+      inductionHypothesis =>
+      exact
+        ⟨extendAbove_endpointsBelow_at extension outerAgrees below.2.2
+            ordered.1,
+          inductionHypothesis below.2.2 ordered.2⟩
+
 /-- The four spines are one-to-one: no payload certificate can be inserted,
 deleted, or shifted independently of its source frame and executable
 resource. -/
@@ -815,6 +971,47 @@ def dropAlignedPrefix
           obtain ⟨nextBarrier, nextInner, suffix⟩ :=
             inductionHypothesis outerAgrees withinTail
           exact ⟨nextBarrier, nextInner, by simpa using suffix⟩
+
+/-- Drop an exact aligned prefix and return the literal suffix together with
+its recursive allocation chronology.
+
+The suffix and proof are constructed in the same recursion.  This avoids a
+second existential scan and avoids proof-indexed casts through the sigma
+returned by the unadorned `dropAlignedPrefix`. -/
+def ActivationOrdered.dropAlignedPrefix
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer)
+    (ordered : ActivationOrdered agreement)
+    (count : Nat) (within : count ≤ segments.length) :
+    Σ nextBarrier, Σ nextInner,
+      { suffix :
+        SourceControlResourcePayloadContextAgrees alpha support qterm
+          nextBarrier (segments.drop count) (resources.drop count) nextInner
+          (context.drop count) outer //
+        ActivationOrdered suffix } := by
+  induction count generalizing currentBarrier segments resources inner
+      context with
+  | zero =>
+      exact ⟨currentBarrier, inner, ⟨agreement, ordered⟩⟩
+  | succ count inductionHypothesis =>
+      cases agreement with
+      | nil currentBarrier scope =>
+          simp at within
+      | cons currentBarrier currentScope nextScope outerScope segment
+          segments resource resources cursor context segmentAgrees
+          resourceRest resourceQuery resourceBarrier resourceOwnership
+          snapshot outerAgrees =>
+          have withinTail : count ≤ segments.length := by
+            simpa using Nat.le_of_succ_le_succ within
+          obtain ⟨nextBarrier, nextInner, ⟨suffix, suffixOrdered⟩⟩ :=
+            inductionHypothesis outerAgrees ordered.2 withinTail
+          exact ⟨nextBarrier, nextInner, ⟨suffix, suffixOrdered⟩⟩
 
 /-- The first cell of a nonempty payload zipper exposes the exact retained
 cursor and its immutable pre-head payload. -/

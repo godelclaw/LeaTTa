@@ -312,6 +312,16 @@ theorem activateSelectedHead
           (SourceControlResourcePayloadContextAgrees.tail payloadContext)
           agreement.outerActivationEndpoints := by
     rfl
+  have outerNextOrdered : ActivationOrdered outerNext := by
+    exact
+      ActivationOrdered.extendAbove extension
+        (SourceControlResourcePayloadContextAgrees.tail payloadContext)
+        agreement.outerActivationEndpoints
+        (ActivationOrdered.tail payloadContext
+          agreement.activationOrdered)
+  have nextActivationOrdered :
+      ActivationOrdered nextPayloadContext := by
+    exact ⟨outerNextAtActivation, outerNextOrdered⟩
 
   have bodyPayloadAtCurrentQuery :
       TaskPayloadAgrees nextAlpha support bodyBarrier
@@ -444,7 +454,7 @@ theorem activateSelectedHead
             independentResult callerReferences))
         (unifySuccessor state (copied.body ++ resource.rest) installed)
         nextPayloadContext :=
-    ⟨targetCore, nextEndpointsCurrent, nextOuterActivationEndpoints⟩
+    ⟨targetCore, nextEndpointsCurrent, nextActivationOrdered⟩
   exact
     ⟨nextAlpha, sourceCanonical, installed, extension, nextPayloadContext,
       nextShared, alphaIncluded, nextOuterPayloadExact, sourceStep, sealedStep,

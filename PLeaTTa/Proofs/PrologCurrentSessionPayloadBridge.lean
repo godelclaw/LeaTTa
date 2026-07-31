@@ -111,16 +111,53 @@ structure SpinedActiveProductPayloadResourceRelatesAt
   endpointsCurrent :
     endpointsBelow payloadContext session.resolver.nextFresh
       state.persistent.counter
-  /-- Every older retained payload predates the active cursor/resource
-  allocation floors.  This is the cyclic chronology invariant needed to
-  extend the outer zipper when a later clause head is selected after
-  backtracking. -/
-  outerActivationEndpoints :
-    endpointsBelow
-      (SourceControlResourcePayloadContextAgrees.tail payloadContext)
-      (finish.advance branch branchTail).reservationStart active.counter
+  /-- Every payload cell recursively dominates its complete older tail at
+  that cell's own allocation seeds.  Unlike a one-level head certificate,
+  this survives arbitrary nested-call exhaustion and payload popping. -/
+  activationOrdered : ActivationOrdered payloadContext
 
 namespace SpinedActiveProductPayloadResourceRelatesAt
+
+/-- Recover the historical one-level API from the recursive chronology
+invariant.  Consumers needing only the active head's older-tail bound do not
+need to know how deeper pops are represented. -/
+theorem outerActivationEndpoints
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {state : OpenConf}
+    {payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context}
+    (agreement :
+      SpinedActiveProductPayloadResourceRelatesAt freshFrontier alpha support
+        canonical referenceBase opened session pending finish branch branchTail
+        altTail bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm active
+        resources callerScope outerScope context baseAlts source state
+        payloadContext) :
+    endpointsBelow
+      (SourceControlResourcePayloadContextAgrees.tail payloadContext)
+      (finish.advance branch branchTail).reservationStart active.counter :=
+  ActivationOrdered.head payloadContext agreement.activationOrdered
 
 /-- Erasing immutable payload evidence recovers the exact current-session
 resource correspondence, without changing any state index. -/
@@ -358,7 +395,7 @@ def reindex
   ⟨agreement.core.reindex persistent advanced,
     endpointsBelow_mono payloadContext agreement.endpointsCurrent
       advanced.fresh (Nat.le_refl _),
-    agreement.outerActivationEndpoints⟩
+    agreement.activationOrdered⟩
 
 /-- The payload-coupled relation genuinely admits a strictly later fresh
 session when the frontier relates that high-water to the unchanged executable
@@ -540,6 +577,7 @@ theorem
     (outerEndpoints :
       endpointsBelow outerPayloads opened.cursor.reservationStart
         startCounter)
+    (outerOrdered : ActivationOrdered outerPayloads)
     (baseAlts : List PLeaTTa.Alt)
     (outerAlts :
       pending.outer.alts = flattenOwnedAlts resources baseAlts) :
@@ -568,12 +606,12 @@ theorem
             installed)
           payloadContext := by
   obtain
-      ⟨active, _snapshot, payloadContext, endpoints,
-        outerActivationEndpoints, resourceStack⟩ :=
+      ⟨active, _snapshot, payloadContext, endpoints, activationOrdered,
+        _outerActivationEndpoints, resourceStack⟩ :=
     _root_.PLeaTTa.PrologNestedRetainedPayloadBridge.SpinedRepresentativeProductActivation.activeResourceStackWithNestedSnapshots
       frontier preHeadPayload payloadSupported openedArguments openedBindings
       queryReferenceBelow queryExecutableLive activation sourceFresh
-      outerPayloads outerEndpoints baseAlts outerAlts
+      outerPayloads outerEndpoints outerOrdered baseAlts outerAlts
   have counterExact :
       (activatedOpenSuccessor pending copied
         (segmentExecutableRest ++ flattenExecutables outer) qterm
@@ -589,8 +627,7 @@ theorem
     rw [counterExact]
     exact endpoints
   refine
-    ⟨active, payloadContext, ?_, endpointsCurrent,
-      outerActivationEndpoints⟩
+    ⟨active, payloadContext, ?_, endpointsCurrent, activationOrdered⟩
   refine ⟨?_, resourceStack, ?_⟩
   · exact
       _root_.PLeaTTa.PrologProductResourceTransitionBridge.SpinedRepresentativeProductActivation.spinedActiveProductRelates

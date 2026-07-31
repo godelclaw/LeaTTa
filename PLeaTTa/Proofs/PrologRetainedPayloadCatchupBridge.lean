@@ -26,6 +26,7 @@ open PrologControlSegmentSpineBridge
 open PrologPrefilterScanBridge
 open PrologProductResourceContextBridge
 open PrologRetainedPayloadSnapshotBridge
+open PrologRetainedPayloadSnapshotBridge.SourceControlResourcePayloadContextAgrees
 open PrologSourceProductContextBridge
 open PrologSupportedCursorAlternativeBridge
 
@@ -58,6 +59,7 @@ structure FirstLivePayloadSuffix
       (partition.first :: partition.survivingResources)
       partition.firstFrame.predicateScope
       (partition.firstFrame :: partition.survivingContext) outer
+  activationOrdered : ActivationOrdered suffix
   snapshot :
     RetainedCallPayloadSnapshot alpha support partition.first
       partition.firstCursor partition.firstSegment
@@ -166,7 +168,9 @@ def OuterResourceCatchupPartition.payloadAlignedSuffix
     (alignment :
       SourceControlResourcePayloadContextAgrees alpha support qterm
         currentBarrier segments resources inner context outer) :
+    ActivationOrdered alignment →
     FirstLivePayloadSuffix (support := support) partition qterm outer := by
+  intro ordered
   let count := partition.crossedResources.length
   have crossedFrameLength :
       partition.crossedFrames.length = count := by
@@ -179,8 +183,8 @@ def OuterResourceCatchupPartition.payloadAlignedSuffix
   have within : count ≤ segments.length := by
     rw [partition.segmentsEq]
     simp [count, crossedSegmentLength]
-  obtain ⟨suffixBarrier, suffixInner, suffix⟩ :=
-    alignment.dropAlignedPrefix count within
+  obtain ⟨suffixBarrier, suffixInner, orderedSuffix⟩ :=
+    ActivationOrdered.dropAlignedPrefix alignment ordered count within
   have segmentsDrop :
       segments.drop count =
         partition.firstSegment :: partition.survivingSegments := by
@@ -214,18 +218,18 @@ def OuterResourceCatchupPartition.payloadAlignedSuffix
       _ = partition.firstFrame :: partition.survivingContext := by
         rw [← crossedFrameLength]
         simp
-  rw [segmentsDrop, resourcesDrop, contextDrop] at suffix
+  rw [segmentsDrop, resourcesDrop, contextDrop] at orderedSuffix
+  let suffix := orderedSuffix.1
   have headShape :=
     PLeaTTa.PrologSpinedSourceActivationBridge.SourceControlContextAgrees.head_shape
       suffix.alignment.control
-  have suffixExact :
-      SourceControlResourcePayloadContextAgrees alpha support qterm
-        suffixBarrier
-        (partition.firstSegment :: partition.survivingSegments)
-        (partition.first :: partition.survivingResources)
-        partition.firstFrame.predicateScope
-        (partition.firstFrame :: partition.survivingContext) outer := by
-    simpa [headShape.1] using suffix
+  have scopeEq :
+      partition.firstFrame.predicateScope = suffixInner :=
+    headShape.1
+  subst suffixInner
+  let suffixExact := orderedSuffix.1
+  have suffixExactOrdered : ActivationOrdered suffixExact :=
+    orderedSuffix.2
   let cell := suffixExact.headCell
   have cursorEq : cell.cursor = partition.firstCursor := by
     have shapeEq :
@@ -239,6 +243,6 @@ def OuterResourceCatchupPartition.payloadAlignedSuffix
         partition.firstCursor partition.firstSegment
         partition.survivingSegments := by
     simpa [cursorEq] using cell.snapshot
-  exact ⟨suffixBarrier, suffixExact, snapshot⟩
+  exact ⟨suffixBarrier, suffixExact, suffixExactOrdered, snapshot⟩
 
 end PLeaTTa.PrologRetainedPayloadCatchupBridge

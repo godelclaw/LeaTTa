@@ -228,6 +228,10 @@ PROLOG_CURRENT_SESSION_POST_FAILURE_ACTIVATION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologCurrentSessionPostFailureActivationBridge.lean"
 )
+PROLOG_CURRENT_SESSION_EXHAUSTED_PAYLOAD_CATCHUP_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologCurrentSessionExhaustedPayloadCatchupBridge.lean"
+)
 PROLOG_CURRENT_SESSION_ASSERTION_FAILURE_TRANSITION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologCurrentSessionAssertionFailureTransitionBridge.lean"
@@ -437,6 +441,10 @@ def check() -> list[str]:
             digest(PROLOG_CURRENT_SESSION_FAILURE_PAYLOAD_TRANSITION_BRIDGE),
         "prolog_current_session_post_failure_activation_bridge_sha256":
             digest(PROLOG_CURRENT_SESSION_POST_FAILURE_ACTIVATION_BRIDGE),
+        "prolog_current_session_exhausted_payload_catchup_bridge_sha256":
+            digest(
+                PROLOG_CURRENT_SESSION_EXHAUSTED_PAYLOAD_CATCHUP_BRIDGE
+            ),
         "prolog_current_session_assertion_failure_transition_bridge_sha256":
             digest(PROLOG_CURRENT_SESSION_ASSERTION_FAILURE_TRANSITION_BRIDGE),
         "prolog_activation_failure_bridge_sha256":

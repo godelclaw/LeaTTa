@@ -453,7 +453,9 @@ theorem SpinedActiveProductResourceRelates.afterUnifyFailureExhausted
     ∃ (count : Nat)
         (skippedBranches : List ClauseBranch)
         (skippedClauses candidates : List PLeaTTa.Clause)
-        (next : PreparedCursor),
+        (next : PreparedCursor)
+        (_pulls :
+          RejectedPullsN count (finish.advance selected selectedTail) next),
       selectedTail = skippedBranches ∧
       candidates = skippedClauses ∧
       skippedBranches.length = count ∧
@@ -833,7 +835,7 @@ theorem SpinedActiveProductResourceRelates.afterUnifyFailureExhausted
       activeBarriers, successorExact, rfl⟩
   exact
     ⟨count, skippedBranches, skippedClauses, candidates, next,
-      selectedTailEq, candidatesEq, branchCount, clauseCount,
+      pulls, selectedTailEq, candidatesEq, branchCount, clauseCount,
       skippedRejected, nextRemainingEmpty, sourceSteps, executableStep, post⟩
 
 /-! ## Catch-up interface fixed before its implementation -/

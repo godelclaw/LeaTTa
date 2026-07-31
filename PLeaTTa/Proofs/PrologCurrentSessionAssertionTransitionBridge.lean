@@ -363,6 +363,6 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.afterAssertion
 
   exact
     ⟨rfl, sourceStep, executableStep, effectErasure,
-      ⟨nextCore, nextEndpoints, agreement.outerActivationEndpoints⟩⟩
+      ⟨nextCore, nextEndpoints, agreement.activationOrdered⟩⟩
 
 end PLeaTTa.PrologCurrentSessionAssertionTransitionBridge

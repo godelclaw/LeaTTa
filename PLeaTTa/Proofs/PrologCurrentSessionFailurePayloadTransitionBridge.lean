@@ -438,6 +438,79 @@ theorem tail_afterRejectedPullsAndPulledHead
   cases payloadContext
   rfl
 
+/-- Rejected pulls and eager head consumption preserve recursive allocation
+chronology.
+
+The transformed head cursor starts no earlier than the original active
+cursor, while `afterPulledHead` preserves the resource allocation seed.
+Every older cell and its recursive chronology are the literal original
+tail. -/
+theorem activationOrdered_afterRejectedPullsAndPulledHead
+    {alpha support : List (LogicVar × String)}
+    {qterm : Atom}
+    {opened : OpenedCall}
+    {finish : PreparedCursor} {selected : ClauseBranch}
+    {selectedTail : List ClauseBranch}
+    {next : PreparedCursor}
+    {nextBranch : ClauseBranch} {nextClause : PLeaTTa.Clause}
+    {nextBranchTail : List ClauseBranch}
+    {nextCopied : PLeaTTa.Clause}
+    {nextAltTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    (payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish selected
+        selectedTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context)
+    {count : Nat}
+    (pulls :
+      RejectedPullsN count (finish.advance selected selectedTail) next)
+    (offset :
+      PulledHeadOffsetAgrees alpha next nextBranch nextClause nextBranchTail
+        nextCopied active nextAltTail)
+    (ordered : ActivationOrdered payloadContext) :
+    ActivationOrdered
+      (afterRejectedPullsAndPulledHead payloadContext pulls offset) := by
+  cases payloadContext with
+  | cons currentBarrier currentScope nextScope finalScope segment segments
+      resource retainedResources before retainedContext segmentAgrees
+      resourceRest resourceQuery resourceBarrier resourceOwnership snapshot
+      outerAgrees =>
+      have beforeWellFormed :
+          (finish.advance selected selectedTail).WellFormed :=
+        RetainedAlternativeSegment.owns_wellFormed resourceOwnership
+      have prefixStartMono :
+          (finish.advance selected selectedTail).reservationStart ≤
+            next.reservationStart :=
+        RetainedCallPayloadSnapshot.RejectedPullsN.reservationStart_le pulls
+          beforeWellFormed
+      have nextBranchMember : nextBranch ∈ next.remaining := by
+        rw [offset.cursorRemaining]
+        simp
+      have nextStartBelowAdvanced :
+          next.reservationStart ≤
+            (next.advance nextBranch nextBranchTail).reservationStart := by
+        simpa [PreparedCursor.advance] using
+          Nat.le_trans
+            (offset.cursorWellFormed.1.start_le_member_first nextBranchMember)
+            (offset.cursorWellFormed.1.member_first_le_next nextBranchMember)
+      have headOrdered :
+          endpointsBelow outerAgrees
+            (next.advance nextBranch nextBranchTail).reservationStart
+            (afterPulledHead active nextAltTail).counter := by
+        simpa [afterPulledHead] using
+          endpointsBelow_mono outerAgrees ordered.1
+            (Nat.le_trans prefixStartMono nextStartBelowAdvanced)
+            (Nat.le_succ _)
+      exact ⟨headOrdered, ordered.2⟩
+
 /-- The offset phase neither drops nor duplicates a payload-bearing retained
 resource. -/
 theorem cellCount_afterRejectedPullsAndPulledHead
@@ -597,6 +670,7 @@ structure SpinedPostFailureFrontierPayloadResourceRelatesAt
   endpointsCurrent :
     endpointsBelow payloadContext session.resolver.nextFresh
       state.persistent.counter
+  activationOrdered : ActivationOrdered payloadContext
   activationChronology :
     SelectedHeadActivationChronology
       (PostFailurePayloadOffsetContext.headSnapshot payloadContext)
@@ -762,12 +836,20 @@ theorem afterUnifyFailureRetained
       ActiveProductPayloadContext.tail_afterRejectedPullsAndPulledHead
         payloadContext pulls post.resourceStack.offset]
     exact oldOuterAtNextBranch
+  have activationOrdered :
+      ActivationOrdered
+        (ActiveProductPayloadContext.afterRejectedPullsAndPulledHead
+          payloadContext pulls post.resourceStack.offset) :=
+    ActiveProductPayloadContext.activationOrdered_afterRejectedPullsAndPulledHead
+      payloadContext pulls post.resourceStack.offset
+      agreement.activationOrdered
   exact
     ⟨count, skippedBranches, skippedClauses, candidates, next, nextBranch,
       nextClause, nextBranchTail, nextClauseTail, nextAltTail, nextCopied,
       pulls, post.resourceStack.offset, selectedTailEq, candidatesEq,
       branchCount, clauseCount, skippedRejected, sourceSteps, executableStep,
       ⟨post, endpointsAfter,
+        activationOrdered,
         ActiveProductPayloadContext.activationChronology_afterRejectedPullsAndPulledHead
           payloadContext pulls post.resourceStack.offset,
         agreement.core.resourceStack.activeFinalCounter,

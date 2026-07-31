@@ -299,6 +299,6 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccess
     ⟨spelling, executableLeft, executableRight, bodyExecutableTail,
       sourceExtension, installed, leftAgreement, rightAgreement,
       executableHead, sourceStep, executableStep,
-      ⟨nextCore, nextEndpoints, agreement.outerActivationEndpoints⟩⟩
+      ⟨nextCore, nextEndpoints, agreement.activationOrdered⟩⟩
 
 end PLeaTTa.PrologCurrentSessionUnifyTransitionBridge

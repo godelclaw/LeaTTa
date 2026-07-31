@@ -12,11 +12,13 @@ Main exports:
   SpinedExhaustedPostFailureOffsetRelates.catchupTerminal
 -/
 import PLeaTTa.Proofs.PrologBodyFailureExhaustedResourceTransitionBridge
+import PLeaTTa.Proofs.PrologRetainedPayloadSnapshotBridge
 
 namespace PLeaTTa.PrologBodyFailureOuterResourceCatchupBridge
 
 open Metta (Atom)
 open PeTTaSpec.PrologCore
+open PeTTaSpec.PrologCore.Canonical
 open PeTTaSpec.PrologCore.GoalSemantics
 open PeTTaSpec.PrologCore.Resolver
 open DemandDrivenStep
@@ -26,12 +28,20 @@ open PrologBodyFailureResourceTransitionBridge
 open PrologCallEntryBridge
 open PrologCallPayloadBridge
 open PrologControlSegmentSpineBridge
+open PrologAlphaFreshFrontierBridge
+open PrologGoalAlpha
+open PrologMguComposition
+open PrologMguTopology
+open PrologMguVariant
+open PrologOrdinaryStepBridge
 open PrologProductResourceContextBridge
 open PrologPrefilterBridge
 open PrologPrefilterScanBridge
 open PrologRecursiveCallPayloadBridge
 open PrologRepresentativeProductActivationBridge
 open PrologRetainedCursorOwnershipBridge
+open PrologRetainedPayloadSnapshotBridge
+open PrologRetainedPayloadSnapshotBridge.SourceControlResourcePayloadContextAgrees
 open PrologSourceProductContextBridge
 open PrologStateBridge
 
@@ -542,6 +552,548 @@ theorem one_rejected_crossed_frame_is_inhabited :
         crossedRejectedCursor crossedRejectedFinish 1 0
         (by rfl) crossedRejectedOwnership (by rfl) crossedRejectedPull
         (by rfl) .nil
+
+private def partitionLiveBranch : ClauseBranch :=
+  preparedBranchOf 0 [.integer 2] [] 0 crossedRejectedReference
+
+private def partitionLiveCursor : PreparedCursor :=
+  { callGeneration := 0
+    predicate := "ranked"
+    arguments := [.integer 2]
+    bindings := []
+    reservationStart := 0
+    remaining := [partitionLiveBranch]
+    reservedUntil := 0 }
+
+private def partitionLiveAlt : PLeaTTa.Alt :=
+  resolutionAlt [] [] (.gnd (.int 2)) [] [] (.sym "query") 2 0
+    crossedRejectedExecutable
+
+private def partitionLiveGoals : List PLeaTTa.Goal :=
+  match partitionLiveAlt with
+  | .br goals _ => goals
+  | .barrier => []
+
+private theorem partitionLiveAlt_shape :
+    partitionLiveAlt = .br partitionLiveGoals [] := by
+  rfl
+
+private def partitionLiveResource : RetainedAlternativeSegment :=
+  { argsv := []
+    args := []
+    res := .gnd (.int 2)
+    rest := []
+    binding := []
+    qterm := .sym "query"
+    barrier := 2
+    counter := 0
+    alts := [partitionLiveAlt]
+    finalCounter := 1 }
+
+private def partitionLiveFrame : ActiveProductFrame :=
+  { callerScope := 3
+    predicateScope := 2
+    retained := .clauses 2 partitionLiveCursor
+    callerRest := [] }
+
+private theorem partitionLiveSupported :
+    SupportedPreparedCandidateAgrees 0 "ranked" [.integer 2] []
+      partitionLiveBranch crossedRejectedExecutable := by
+  refine .intro crossedRejectedReference 0 crossedRejectedExecutable
+    crossedRejectedCandidateAgreement ?_ ?_
+  · intro left right leftMember rightMember
+    simp [crossedRejectedReference, LocalClause.variables, termsVariables,
+      termVariables, goalsVariables] at leftMember
+  · change
+      CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported [] []
+        crossedRejectedCandidateAgreement.body
+    have proofEq :
+        crossedRejectedCandidateAgreement.body =
+          (CompilerAdequacy.GoalsAgree.nil :
+            CompilerAdequacy.GoalsAgree [] []) :=
+      Subsingleton.elim _ _
+    rw [proofEq]
+    exact .nil
+
+private theorem partitionLiveWellFormed :
+    partitionLiveCursor.WellFormed := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact .cons 0 partitionLiveBranch [] 0 (by decide) (by decide) (.nil 0)
+  · intro index member
+    simp [partitionLiveCursor, termsVariables, termVariables,
+      substitutionVariables] at member
+  · intro branch member
+    simp [partitionLiveCursor] at member
+    subst branch
+    rfl
+  · intro branch member
+    simp [partitionLiveCursor] at member
+    subst branch
+    intro source index targetMember
+    simpa [partitionLiveBranch, preparedBranchOf] using
+      crossedRejectedReference.clause.freshCopy_target_range 0 targetMember
+
+private theorem partitionLiveQuery :
+    RepresentativeNormalizedCallAgrees [] partitionLiveCursor []
+      (.gnd (.int 2)) := by
+  apply NormalizedCallAgrees.representative
+  constructor
+  simpa [partitionLiveCursor] using
+    (AlphaTermsAgree.cons
+      (AlphaTermAgrees.integer (alpha := []) 2)
+      AlphaTermsAgree.nil)
+
+private theorem partitionLiveOwnership :
+    partitionLiveResource.Owns [] partitionLiveCursor := by
+  refine ⟨[crossedRejectedExecutable], partitionLiveWellFormed,
+    ?_, rfl, ?_, ?_, ?_⟩
+  · simpa [partitionLiveResource] using partitionLiveQuery
+  · exact .cons partitionLiveSupported .nil
+  · intro clause member
+    simp [crossedRejectedExecutable] at member
+    subst clause
+    rfl
+  · have retained :
+        resolutionClauseRetained [] (.gnd (.int 2))
+          crossedRejectedExecutable = true := by
+      rfl
+    simpa [partitionLiveResource, partitionLiveAlt] using
+      (ResolutionScan.retained crossedRejectedExecutable [] 0 1 []
+        (by simpa using retained) (ResolutionScan.nil 1))
+
+private theorem oneCrossedPartitionWork :
+    CrossedEmptyResourceFramesAgrees []
+      [crossedRejectedResource] [crossedRejectedFrame] 1 := by
+  exact
+    .cons crossedRejectedResource [] crossedRejectedFrame []
+      crossedRejectedCursor crossedRejectedFinish 1 0
+      (by rfl) crossedRejectedOwnership (by rfl) crossedRejectedPull
+      (by rfl) .nil
+
+private theorem twoCrossedPartitionWork :
+    CrossedEmptyResourceFramesAgrees []
+      [crossedRejectedResource, crossedRejectedResource]
+      [crossedRejectedFrame, crossedRejectedFrame] 2 := by
+  exact
+    .cons crossedRejectedResource [crossedRejectedResource]
+      crossedRejectedFrame [crossedRejectedFrame]
+      crossedRejectedCursor crossedRejectedFinish 1 1
+      (by rfl) crossedRejectedOwnership (by rfl) crossedRejectedPull
+      (by rfl) oneCrossedPartitionWork
+
+private def partitionWitnessSegment (barrier : Nat) : ControlSegment :=
+  { barrier := barrier
+    references := []
+    executables := [] }
+
+/-- The first-live catch-up partition is substantively inhabited.
+
+Two outer frames each carry one genuine conservatively rejected source
+occurrence and an empty executable bank.  The third frame owns one real
+retained `resolutionAlt`.  Thus both recursive crossed work and the
+surviving-head fields are simultaneously satisfiable. -/
+theorem two_crossed_then_live_partition_is_inhabited :
+    ∃ partition :
+        OuterResourceCatchupPartition []
+          [partitionWitnessSegment 0, partitionWitnessSegment 1,
+            partitionWitnessSegment 2]
+          [crossedRejectedResource, crossedRejectedResource,
+            partitionLiveResource]
+          [crossedRejectedFrame, crossedRejectedFrame, partitionLiveFrame],
+      partition.crossedResources.length = 2 ∧
+        partition.rejectionSteps = 2 ∧
+        partition.first.alts ≠ [] := by
+  let partition :
+      OuterResourceCatchupPartition []
+        [partitionWitnessSegment 0, partitionWitnessSegment 1,
+          partitionWitnessSegment 2]
+        [crossedRejectedResource, crossedRejectedResource,
+          partitionLiveResource]
+        [crossedRejectedFrame, crossedRejectedFrame, partitionLiveFrame] :=
+    { crossedSegments :=
+        [partitionWitnessSegment 0, partitionWitnessSegment 1]
+      firstSegment := partitionWitnessSegment 2
+      survivingSegments := []
+      crossedResources :=
+        [crossedRejectedResource, crossedRejectedResource]
+      first := partitionLiveResource
+      survivingResources := []
+      crossedFrames := [crossedRejectedFrame, crossedRejectedFrame]
+      firstFrame := partitionLiveFrame
+      survivingContext := []
+      firstCursor := partitionLiveCursor
+      rejectionSteps := 2
+      goals := partitionLiveGoals
+      binding := []
+      tail := []
+      segmentsEq := rfl
+      resourcesEq := rfl
+      contextEq := rfl
+      crossedSegmentDepth := rfl
+      crossedWork := twoCrossedPartitionWork
+      firstRetainedShape := rfl
+      firstOwnership := partitionLiveOwnership
+      firstHead := by
+        simpa [partitionLiveResource] using partitionLiveAlt_shape }
+  exact
+    ⟨partition, rfl, rfl, by simp [partition, partitionLiveResource]⟩
+
+/-- The all-terminal sibling partition is also substantively inhabited.
+
+The same two ranked rejected frames exhaust completely and the arbitrary
+base bank is definitionally terminal. -/
+theorem two_crossed_then_terminal_partition_is_inhabited :
+    ∃ partition :
+        TerminalOuterResourceCatchupPartition []
+          [partitionWitnessSegment 0, partitionWitnessSegment 1]
+          [crossedRejectedResource, crossedRejectedResource]
+          [crossedRejectedFrame, crossedRejectedFrame] [],
+      partition.rejectionSteps = 2 := by
+  let partition :
+      TerminalOuterResourceCatchupPartition []
+        [partitionWitnessSegment 0, partitionWitnessSegment 1]
+        [crossedRejectedResource, crossedRejectedResource]
+        [crossedRejectedFrame, crossedRejectedFrame] [] :=
+    { rejectionSteps := 2
+      segmentDepth := rfl
+      crossedWork := twoCrossedPartitionWork
+      baseTerminal := rfl }
+  exact ⟨partition, rfl⟩
+
+/-! ## Recursive chronology anti-vacuity -/
+
+private def chronologyBranch (seed : Nat) : ClauseBranch :=
+  preparedBranchOf 0 [.integer 2] [] seed crossedRejectedReference
+
+@[simp] private theorem chronologyBranch_firstFresh (seed : Nat) :
+    (chronologyBranch seed).firstFresh = seed := by
+  simp [chronologyBranch, preparedBranchOf, LocalClause.freshCopy,
+    crossedRejectedReference, LocalClause.generatedCeiling,
+    LocalClause.variables, termsVariables, termVariables, goalsVariables,
+    variablesGeneratedCeiling, buildFreshening]
+
+@[simp] private theorem chronologyBranch_nextFresh (seed : Nat) :
+    (chronologyBranch seed).nextFresh = seed := by
+  simp [chronologyBranch, preparedBranchOf, LocalClause.freshCopy,
+    crossedRejectedReference, LocalClause.generatedCeiling,
+    LocalClause.variables, termsVariables, termVariables, goalsVariables,
+    variablesGeneratedCeiling, buildFreshening]
+
+private def chronologyCursor (seed : Nat) : PreparedCursor :=
+  { callGeneration := 0
+    predicate := "ranked"
+    arguments := [.integer 2]
+    bindings := []
+    reservationStart := seed
+    remaining := [chronologyBranch seed]
+    reservedUntil := (chronologyBranch seed).nextFresh }
+
+private def chronologyAlt
+    (barrier counter : Nat) : PLeaTTa.Alt :=
+  resolutionAlt [] [] (.gnd (.int 2)) [] [] (.sym "query") barrier counter
+    crossedRejectedExecutable
+
+private def chronologyResource
+    (barrier counter : Nat) : RetainedAlternativeSegment :=
+  { argsv := []
+    args := []
+    res := .gnd (.int 2)
+    rest := []
+    binding := []
+    qterm := .sym "query"
+    barrier := barrier
+    counter := counter
+    alts := [chronologyAlt barrier counter]
+    finalCounter := counter + 1 }
+
+private def chronologySegment (barrier : Nat) : ControlSegment :=
+  { barrier := barrier
+    references := []
+    executables := [] }
+
+private def chronologyFrame
+    (predicateScope callerScope : CutScopeId) (seed : Nat) :
+    ActiveProductFrame :=
+  { callerScope := callerScope
+    predicateScope := predicateScope
+    retained := .clauses predicateScope (chronologyCursor seed)
+    callerRest := [] }
+
+private theorem chronologySupported (seed : Nat) :
+    SupportedPreparedCandidateAgrees 0 "ranked" [.integer 2] []
+      (chronologyBranch seed) crossedRejectedExecutable := by
+  refine .intro crossedRejectedReference seed crossedRejectedExecutable
+    crossedRejectedCandidateAgreement ?_ ?_
+  · intro left right leftMember rightMember
+    simp [crossedRejectedReference, LocalClause.variables, termsVariables,
+      termVariables, goalsVariables] at leftMember
+  · change
+      CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported [] []
+        crossedRejectedCandidateAgreement.body
+    have proofEq :
+        crossedRejectedCandidateAgreement.body =
+          (CompilerAdequacy.GoalsAgree.nil :
+            CompilerAdequacy.GoalsAgree [] []) :=
+      Subsingleton.elim _ _
+    rw [proofEq]
+    exact .nil
+
+private theorem chronologyWellFormed (seed : Nat) :
+    (chronologyCursor seed).WellFormed := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact
+      .cons seed (chronologyBranch seed) []
+        (chronologyBranch seed).nextFresh
+        (by
+          change
+            seed ≤
+              (crossedRejectedReference.clause.freshCopy seed).firstFresh
+          exact
+            crossedRejectedReference.clause.freshCopy_first_ge_seed seed)
+        (by
+          change
+            (crossedRejectedReference.clause.freshCopy seed).firstFresh ≤
+              (crossedRejectedReference.clause.freshCopy seed).nextFresh
+          rw [LocalClause.freshCopy_next]
+          omega)
+        (.nil (chronologyBranch seed).nextFresh)
+  · intro index member
+    simp [chronologyCursor, termsVariables, termVariables,
+      substitutionVariables] at member
+  · intro branch member
+    simp [chronologyCursor] at member
+    subst branch
+    rfl
+  · intro branch member
+    simp [chronologyCursor] at member
+    subst branch
+    intro source index targetMember
+    simpa [chronologyBranch, preparedBranchOf] using
+      crossedRejectedReference.clause.freshCopy_target_range seed targetMember
+
+private theorem chronologyQuery (seed : Nat) :
+    RepresentativeNormalizedCallAgrees [] (chronologyCursor seed) []
+      (.gnd (.int 2)) := by
+  apply NormalizedCallAgrees.representative
+  constructor
+  simpa [chronologyCursor] using
+    (AlphaTermsAgree.cons
+      (AlphaTermAgrees.integer (alpha := []) 2)
+      AlphaTermsAgree.nil)
+
+private theorem chronologyOwnership
+    (seed barrier counter : Nat) :
+    (chronologyResource barrier counter).Owns []
+      (chronologyCursor seed) := by
+  refine ⟨[crossedRejectedExecutable], chronologyWellFormed seed,
+    ?_, rfl, ?_, ?_, ?_⟩
+  · simpa [chronologyResource] using chronologyQuery seed
+  · exact .cons (chronologySupported seed) .nil
+  · intro clause member
+    simp [crossedRejectedExecutable] at member
+    subst clause
+    rfl
+  · have retained :
+        resolutionClauseRetained [] (.gnd (.int 2))
+          crossedRejectedExecutable = true := by
+      rfl
+    simpa [chronologyResource, chronologyAlt] using
+      (ResolutionScan.retained crossedRejectedExecutable [] counter
+        (counter + 1) [] (by simpa using retained)
+        (ResolutionScan.nil (counter + 1)))
+
+private def emptyRuntimeTopological :
+    PLeaTTa.SubstTopological [] := by
+  refine
+    { order := []
+      nodup := by simp
+      domain := ?_
+      decreases := ?_ }
+  · intro name
+    simp [Metta.Subst.lookup]
+  · intro source value dependency lookup
+    simp [Metta.Subst.lookup] at lookup
+
+private theorem emptyTaskData :
+    TaskDataAgrees [] [] [] [] [] [] := by
+  refine
+    { alphaShared := ?_
+      canonicalWellFormed := TreeSubstitution.wellFormed_nil
+      bindingShape := rfl
+      valuation := ?_ }
+  · constructor <;> intro <;> simp_all
+  · refine
+      ⟨[], TreeSubstitutionVariants.refl [],
+        TreeSubstitutionTopological.nil, ?_, ⟨emptyRuntimeTopological⟩, ?_⟩
+    · intro entry member
+      simp at member
+    · intro identity name member
+      simp at member
+
+private theorem chronologyCallerAgrees (barrier : Nat) :
+    (chronologySegment barrier).Agrees [] := by
+  exact .nil
+
+private theorem chronologyCallControl (barrier : Nat) :
+    NormalizedAlphaGoalsAgree [] barrier
+      [.call "ranked" [.integer 2]]
+      [.call "ranked" [] (.gnd (.int 2))] := by
+  exact
+    .cons
+      (.definedCall AlphaTermsAgree.nil
+        (AlphaTermAgrees.integer (alpha := []) 2))
+      .nil
+
+private def chronologySnapshot
+    (seed resourceBarrier counter callerBarrier : Nat)
+    (outer : List ControlSegment)
+    (outerControl : ControlSpineAgrees [] outer)
+    (outerExecutables : flattenExecutables outer = []) :
+    RetainedCallPayloadSnapshot [] []
+      (chronologyResource resourceBarrier counter)
+      (chronologyCursor seed) (chronologySegment callerBarrier) outer := by
+  refine
+    { snapshotAlpha := []
+      canonical := []
+      referenceBase := []
+      referencePayload := [.integer 2]
+      alphaIncluded := ?_
+      allocationGap := ?_
+      cursorArguments := rfl
+      payloadSupported := ?_
+      queryReferenceBelow := ?_
+      queryExecutableLive := ?_
+      queryExecutableBelow := ?_
+      resourceRest := ?_
+      payload := ?_ }
+  · intro pair member
+    simp at member
+  · constructor <;> intro <;> simp_all
+  · intro term member
+    simp only [List.mem_singleton] at member
+    subst term
+    simp [AlphaTreeSupported, Term.denote,
+      PrologMguOpenAgreement.TreeVariablesSatisfy,
+      PrologMguOpenAgreement.TreesVariablesSatisfy]
+  · intro index member
+    simp at member
+  · intro name member
+    simp at member
+  · simp only [chronologyResource]
+    unfold resolutionOccupiedVars
+    simp [Metta.Atom.vars, specializationGoalsVars,
+      resolutionSeedHighWaterNames]
+  · simp [chronologyResource, chronologySegment, outerExecutables]
+  · exact
+      ⟨emptyTaskData,
+        .cons (chronologyCallControl callerBarrier) outerControl⟩
+
+private def chronologyOrderedZipper :
+    SourceControlResourcePayloadContextAgrees [] [] (.sym "query") 30
+      [chronologySegment 20, chronologySegment 10, chronologySegment 0]
+      [chronologyResource 30 6, chronologyResource 20 4,
+        chronologyResource 10 2]
+      3
+      [chronologyFrame 3 2 6, chronologyFrame 2 1 4,
+        chronologyFrame 1 0 2]
+      0 :=
+  .cons 30 3 2 0 (chronologySegment 20)
+    [chronologySegment 10, chronologySegment 0]
+    (chronologyResource 30 6)
+    [chronologyResource 20 4, chronologyResource 10 2]
+    (chronologyCursor 6)
+    [chronologyFrame 2 1 4, chronologyFrame 1 0 2]
+    (chronologyCallerAgrees 20) (by rfl) (by rfl) (by rfl)
+    (chronologyOwnership 6 30 6)
+    (chronologySnapshot 6 30 6 20
+      [chronologySegment 10, chronologySegment 0]
+      (.cons (chronologyCallerAgrees 10)
+        (.cons (chronologyCallerAgrees 0) .nil))
+      rfl)
+    (.cons 20 2 1 0 (chronologySegment 10)
+      [chronologySegment 0]
+      (chronologyResource 20 4) [chronologyResource 10 2]
+      (chronologyCursor 4) [chronologyFrame 1 0 2]
+      (chronologyCallerAgrees 10) (by rfl) (by rfl) (by rfl)
+      (chronologyOwnership 4 20 4)
+      (chronologySnapshot 4 20 4 10 [chronologySegment 0]
+        (.cons (chronologyCallerAgrees 0) .nil) rfl)
+      (.cons 10 1 0 0 (chronologySegment 0) []
+        (chronologyResource 10 2) [] (chronologyCursor 2) []
+        (chronologyCallerAgrees 0) (by rfl) (by rfl) (by rfl)
+        (chronologyOwnership 2 10 2)
+        (chronologySnapshot 2 10 2 0 [] .nil rfl)
+        (.nil 0 0)))
+
+private def chronologySwappedZipper :
+    SourceControlResourcePayloadContextAgrees [] [] (.sym "query") 30
+      [chronologySegment 20, chronologySegment 10, chronologySegment 0]
+      [chronologyResource 30 6, chronologyResource 20 2,
+        chronologyResource 10 4]
+      3
+      [chronologyFrame 3 2 6, chronologyFrame 2 1 2,
+        chronologyFrame 1 0 4]
+      0 :=
+  .cons 30 3 2 0 (chronologySegment 20)
+    [chronologySegment 10, chronologySegment 0]
+    (chronologyResource 30 6)
+    [chronologyResource 20 2, chronologyResource 10 4]
+    (chronologyCursor 6)
+    [chronologyFrame 2 1 2, chronologyFrame 1 0 4]
+    (chronologyCallerAgrees 20) (by rfl) (by rfl) (by rfl)
+    (chronologyOwnership 6 30 6)
+    (chronologySnapshot 6 30 6 20
+      [chronologySegment 10, chronologySegment 0]
+      (.cons (chronologyCallerAgrees 10)
+        (.cons (chronologyCallerAgrees 0) .nil))
+      rfl)
+    (.cons 20 2 1 0 (chronologySegment 10)
+      [chronologySegment 0]
+      (chronologyResource 20 2) [chronologyResource 10 4]
+      (chronologyCursor 2) [chronologyFrame 1 0 4]
+      (chronologyCallerAgrees 10) (by rfl) (by rfl) (by rfl)
+      (chronologyOwnership 2 20 2)
+      (chronologySnapshot 2 20 2 10 [chronologySegment 0]
+        (.cons (chronologyCallerAgrees 0) .nil) rfl)
+      (.cons 10 1 0 0 (chronologySegment 0) []
+        (chronologyResource 10 4) [] (chronologyCursor 4) []
+        (chronologyCallerAgrees 0) (by rfl) (by rfl) (by rfl)
+        (chronologyOwnership 4 10 4)
+        (chronologySnapshot 4 10 4 0 [] .nil rfl)
+        (.nil 0 0)))
+
+/-- Recursive allocation chronology is inhabited below the first surviving
+cell, not merely at the head.
+
+All three cells are real retained local calls.  The source reservations are
+`6 > 4 > 2` and the executable alternative-bank intervals are
+`[6,7) > [4,5) > [2,3)`, so both recursive `ActivationOrdered` obligations
+carry substantive strict separation. -/
+theorem three_cell_activation_order_is_inhabited :
+    ActivationOrdered chronologyOrderedZipper ∧
+      ActivationOrdered
+        (SourceControlResourcePayloadContextAgrees.tail
+          chronologyOrderedZipper) := by
+  have ordered : ActivationOrdered chronologyOrderedZipper := by
+    simp [chronologyOrderedZipper, ActivationOrdered,
+      SourceControlResourcePayloadContextAgrees.endpointsBelow,
+      chronologyCursor, chronologyResource]
+  exact
+    ⟨ordered,
+      ActivationOrdered.tail chronologyOrderedZipper ordered⟩
+
+/-- Swapping the two older real cells leaves the zipper structurally valid
+but violates chronology at the recursive tail.
+
+The head still dominates both older cells, so a head-only invariant would
+accept this zipper.  `ActivationOrdered` rejects it because the cell at seed
+`2` cannot dominate the surviving cell whose reservation and executable
+bank end above `4`. -/
+theorem adjacent_surviving_cell_swap_breaks_activation_order :
+    ¬ ActivationOrdered chronologySwappedZipper := by
+  simp [chronologySwappedZipper, ActivationOrdered,
+    SourceControlResourcePayloadContextAgrees.endpointsBelow,
+    chronologyCursor, chronologyResource]
 
 /-! ## Typed alignment suffixes -/
 

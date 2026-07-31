@@ -140,6 +140,7 @@ theorem
     (outerEndpoints :
       endpointsBelow outerPayloads opened.cursor.reservationStart
         startCounter)
+    (outerOrdered : ActivationOrdered outerPayloads)
     (baseAlts : List PLeaTTa.Alt)
     (outerAlts :
       pending.outer.alts = flattenOwnedAlts resources baseAlts) :
@@ -169,7 +170,8 @@ theorem
           endpointsBelow payloadContext
               opened.session.resolver.nextFresh
               pending.persistent.counter ∧
-            endpointsBelow
+            ActivationOrdered payloadContext ∧
+              endpointsBelow
                 (SourceControlResourcePayloadContextAgrees.tail payloadContext)
                 (finish.advance branch branchTail).reservationStart
                 active.counter ∧
@@ -199,6 +201,10 @@ theorem
     simpa [outerNext] using
       extendAbove_endpointsBelow activation.alphaExtension outerPayloads
         outerAtSelected
+  have outerNextOrdered : ActivationOrdered outerNext := by
+    exact
+      ActivationOrdered.extendAbove activation.alphaExtension outerPayloads
+        outerAtSelected outerOrdered
   obtain ⟨active, snapshot, _existingContext, activeCounter, stack⟩ :=
     PLeaTTa.PrologRetainedPayloadSnapshotBridge.SpinedRepresentativeProductActivation.activeResourceStackWithSnapshot
       frontier preHeadPayload payloadSupported openedArguments openedBindings
@@ -286,8 +292,11 @@ theorem
     simpa [payloadContextExact,
       SourceControlResourcePayloadContextAgrees.tail] using
       outerNextAtActivation
+  have payloadContextExactOrdered :
+      ActivationOrdered payloadContextExact := by
+    exact ⟨outerNextAtActivation, outerNextOrdered⟩
   exact
     ⟨active, snapshot, payloadContextExact, payloadContextExactBelow,
-      outerActivationEndpoints, stack⟩
+      payloadContextExactOrdered, outerActivationEndpoints, stack⟩
 
 end PLeaTTa.PrologNestedRetainedPayloadBridge

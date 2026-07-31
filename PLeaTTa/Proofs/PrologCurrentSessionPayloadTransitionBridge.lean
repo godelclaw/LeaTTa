@@ -98,6 +98,30 @@ def outerPayload
   | .cons _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ outerAgrees =>
       outerAgrees
 
+/-- The active-product-specific pop is exactly the generic linear zipper
+tail.  Naming the equality avoids dependent abbreviation unfolding at every
+chronology-preservation site. -/
+theorem outerPayload_eq_tail
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {opened : OpenedCall} {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    (payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context) :
+    outerPayload payloadContext =
+      SourceControlResourcePayloadContextAgrees.tail payloadContext := by
+  cases payloadContext
+  rfl
+
 /-- Domination of the complete active zipper entails domination of its exact
 outer tail. -/
 theorem endpointsBelow_outerPayload
@@ -222,6 +246,7 @@ structure SpinedScheduledProductPayloadResourceRelatesAt
   endpointsCurrent :
     endpointsBelow payloadContext session.resolver.nextFresh
       state.persistent.counter
+  activationOrdered : ActivationOrdered payloadContext
 
 /-- Current-session committed state whose payload zipper is exactly the outer
 tail left after the active resource has been consumed. -/
@@ -255,6 +280,7 @@ structure SpinedCommittedProductPayloadResourceRelatesAt
   endpointsCurrent :
     endpointsBelow payloadContext session.resolver.nextFresh
       state.persistent.counter
+  activationOrdered : ActivationOrdered payloadContext
 
 namespace SpinedScheduledProductPayloadResourceRelatesAt
 
@@ -362,7 +388,8 @@ def reindex
   exact
     ⟨nextCore,
       endpointsBelow_mono payloadContext agreement.endpointsCurrent
-        advanced.fresh (Nat.le_refl _)⟩
+        advanced.fresh (Nat.le_refl _),
+      agreement.activationOrdered⟩
 
 /-- A scheduled successor cannot be indexed by a fresh allocator below its
 opener. -/
@@ -500,7 +527,8 @@ def reindex
   exact
     ⟨nextCore,
       endpointsBelow_mono payloadContext agreement.endpointsCurrent
-        advanced.fresh (Nat.le_refl _)⟩
+        advanced.fresh (Nat.le_refl _),
+      agreement.activationOrdered⟩
 
 /-- A committed successor cannot be indexed by a fresh allocator below its
 opener. -/
@@ -595,7 +623,8 @@ theorem afterBodyAnswer
     ⟨sourceStep, executableSteps, scheduled⟩
   exact
     ⟨sourceStep, executableSteps,
-      ⟨scheduled, agreement.endpointsCurrent⟩⟩
+      ⟨scheduled, agreement.endpointsCurrent,
+        agreement.activationOrdered⟩⟩
 
 /-- Clause-local cut consumes the exact head payload cell while preserving the
 literal outer payload tail at the same persistent high-waters. -/
@@ -691,9 +720,14 @@ theorem afterCut
     simpa using
       ActiveProductPayloadContext.endpointsBelow_outerPayload payloadContext
         agreement.endpointsCurrent
+  have outerOrdered :
+      ActivationOrdered
+        (ActiveProductPayloadContext.outerPayload payloadContext) := by
+    rw [ActiveProductPayloadContext.outerPayload_eq_tail payloadContext]
+    exact ActivationOrdered.tail payloadContext agreement.activationOrdered
   exact
     ⟨executableHead, sourceStep, executableStep,
-      ⟨committed, outerEndpoints⟩,
+      ⟨committed, outerEndpoints, outerOrdered⟩,
       ActiveProductPayloadContext.cellCount_outerPayload payloadContext,
       countDrop⟩
 
