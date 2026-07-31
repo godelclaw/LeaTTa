@@ -93,6 +93,13 @@ def Control.answerValues (control : Control) : List Atom :=
 `PWorld` and the global counter is load-bearing: an exit cannot restore either
 from this value. -/
 structure FindallFrame where
+  /-- Fine-lane cut frontier immediately before this frame was pushed.
+  This is executable allocation history, not a copied source identity. -/
+  preCut : Nat
+  /-- Fine-lane collection frontier immediately before this frame was
+  pushed.  It cannot be reconstructed from the current frontier because
+  local calls may advance `preCut` without advancing this bank. -/
+  preCollection : Nat
   outer : Control
   template : Atom
   result : Atom
@@ -254,7 +261,9 @@ frame. -/
 def enterFindall (state : OpenConf) (template : Atom) (sub : List Goal)
     (result : Atom) (rest : List Goal) (binding : Subst) : OpenConf :=
   let frame : FindallFrame :=
-    { outer := state.control
+    { preCut := state.scopes.nextCutScope
+      preCollection := state.scopes.nextCollectionScope
+      outer := state.control
       template := template
       result := result
       rest := rest
@@ -307,10 +316,15 @@ theorem resumeFindall_eq_copied (inner : OpenConf)
           inner.control.answerValues).values := by
   rfl
 
-/-- The suspended frame generated from a plain outer machine state. -/
-def findallFrameOf (outer : Conf) (template result : Atom)
+/-- The suspended frame generated from a plain outer machine state at one
+explicit fine-lane frontier.  Requiring `scopes` prevents macro proofs from
+defaulting or reconstructing the historical occurrence indices. -/
+def findallFrameOf (outer : Conf) (scopes : ScopeHighWaters)
+    (template result : Atom)
     (rest : List Goal) (binding : Subst) : FindallFrame :=
-  { outer := controlOf outer
+  { preCut := scopes.nextCutScope
+    preCollection := scopes.nextCollectionScope
+    outer := controlOf outer
     template := template
     result := result
     rest := rest
@@ -340,7 +354,8 @@ def answerSuccessor (inner : Conf) (binding : Subst) : Conf :=
     enterFindall (OpenConf.ofConfWith outer frames scopes)
         template sub result rest binding =
       OpenConf.ofConfWith (subConfOf outer sub binding template)
-        (.findall (findallFrameOf outer template result rest binding) ::
+        (.findall
+          (findallFrameOf outer scopes template result rest binding) ::
           frames)
         scopes.afterFindall := by
   rfl
@@ -350,23 +365,27 @@ def answerSuccessor (inner : Conf) (binding : Subst) : Conf :=
     (rest : List Goal) (binding : Subst) :
     enterFindall (OpenConf.ofConf outer frames) template sub result rest binding =
       OpenConf.ofConfWith (subConfOf outer sub binding template)
-        (.findall (findallFrameOf outer template result rest binding) ::
+        (.findall
+          (findallFrameOf outer {} template result rest binding) ::
           frames)
         ({} : ScopeHighWaters).afterFindall := by
   rfl
 
 @[simp] theorem resumeFindall_ofConfWith (outer inner : Conf)
-    (frames : List Frame) (scopes : ScopeHighWaters)
+    (frames : List Frame) (entryScopes currentScopes : ScopeHighWaters)
     (template result : Atom)
     (rest : List Goal) (binding : Subst) :
     resumeFindall
         (OpenConf.ofConfWith inner
-          (.findall (findallFrameOf outer template result rest binding) ::
+          (.findall
+            (findallFrameOf outer entryScopes template result rest binding) ::
             frames)
-          scopes)
-        (findallFrameOf outer template result rest binding) frames =
+          currentScopes)
+        (findallFrameOf outer entryScopes template result rest binding)
+        frames =
       OpenConf.ofConfWith
-        (findallSuccessor outer inner result rest binding) frames scopes := by
+        (findallSuccessor outer inner result rest binding) frames
+        currentScopes := by
   cases outer
   cases inner
   rfl
@@ -376,13 +395,14 @@ def answerSuccessor (inner : Conf) (binding : Subst) : Conf :=
     (rest : List Goal) (binding : Subst) :
     resumeFindall
         (OpenConf.ofConf inner
-          (.findall (findallFrameOf outer template result rest binding) ::
+          (.findall
+            (findallFrameOf outer {} template result rest binding) ::
             frames))
-        (findallFrameOf outer template result rest binding) frames =
+        (findallFrameOf outer {} template result rest binding) frames =
       OpenConf.ofConf (findallSuccessor outer inner result rest binding)
         frames := by
   exact resumeFindall_ofConfWith outer inner frames {}
-    template result rest binding
+    {} template result rest binding
 
 @[simp] theorem enterFindall_persistent (state : OpenConf)
     (template : Atom) (sub : List Goal) (result : Atom) (rest : List Goal)
@@ -607,7 +627,8 @@ theorem lift {prog : Prog} {gt : GroundingTable}
   | findall innerCount tailCount outer inner finish outerScopes innerScopes
       finishScopes template sub result rest binding head innerRun done tail
       innerIH tailIH =>
-      let frame := findallFrameOf outer template result rest binding
+      let frame :=
+        findallFrameOf outer outerScopes template result rest binding
       let entered :=
         OpenConf.ofConfWith (subConfOf outer sub binding template)
           (.findall frame :: frames) outerScopes.afterFindall
@@ -631,12 +652,24 @@ theorem lift {prog : Prog} {gt : GroundingTable}
       have exitStep : Step prog gt
           (OpenConf.ofConfWith inner
             (.findall frame :: frames) innerScopes) resumed := by
-        simpa [resumed, frame] using
-          (Step.findallExit
+        have exited :=
+          Step.findallExit
             (OpenConf.ofConfWith inner
               (.findall frame :: frames) innerScopes)
             frame frames rfl
-            (by simpa using done))
+            (by simpa using done) (prog := prog) (gt := gt)
+        rw [show
+          resumeFindall
+              (OpenConf.ofConfWith inner
+                (.findall frame :: frames) innerScopes)
+              frame frames =
+            OpenConf.ofConfWith
+              (findallSuccessor outer inner result rest binding)
+              frames innerScopes by
+            simpa only [frame] using
+              (resumeFindall_ofConfWith outer inner frames outerScopes
+                innerScopes template result rest binding)] at exited
+        simpa [resumed] using exited
       have exitRun : StepsN prog gt 1
           (OpenConf.ofConfWith inner
             (.findall frame :: frames) innerScopes) resumed := by
@@ -870,7 +903,8 @@ inductive MacroPrefixN (prog : Prog) (gt : GroundingTable) :
       (head : outer.cur =
         some (Goal.findall template sub result :: rest, binding))
       (inner : MacroPrefixN prog gt
-        (.findall (findallFrameOf outer template result rest binding) ::
+        (.findall
+          (findallFrameOf outer outerScopes template result rest binding) ::
           baseFrames)
         innerCount (subConfOf outer sub binding template)
         outerScopes.afterFindall target) :
@@ -894,7 +928,9 @@ theorem step_preserves_suffix_of_strict {prog : Prog} {gt : GroundingTable}
       exact ⟨top :: extra, by simpa using framesEq⟩
   | findallEnter template sub result rest binding head =>
       refine ⟨.findall
-        { outer := before.control
+        { preCut := before.scopes.nextCutScope
+          preCollection := before.scopes.nextCollectionScope
+          outer := before.control
           template := template
           result := result
           rest := rest
@@ -919,7 +955,7 @@ theorem frames_suffix {prog : Prog} {gt : GroundingTable}
       innerIH =>
       rcases innerIH with ⟨extra, framesEq⟩
       refine ⟨extra ++ [.findall
-        (findallFrameOf outer template result rest binding)], ?_⟩
+        (findallFrameOf outer outerScopes template result rest binding)], ?_⟩
       rw [framesEq, List.append_assoc]
       rfl
 
@@ -935,7 +971,8 @@ theorem open_frames_cons_suffix {prog : Prog} {gt : GroundingTable}
     (_head : outer.cur =
       some (Goal.findall template sub result :: rest, binding))
     (inner : MacroPrefixN prog gt
-      (.findall (findallFrameOf outer template result rest binding) ::
+      (.findall
+        (findallFrameOf outer outerScopes template result rest binding) ::
         baseFrames)
       innerCount (subConfOf outer sub binding template)
       outerScopes.afterFindall target) :
@@ -943,12 +980,14 @@ theorem open_frames_cons_suffix {prog : Prog} {gt : GroundingTable}
   rcases inner.frames_suffix with ⟨extra, framesEq⟩
   cases extra with
   | nil =>
-      exact ⟨.findall (findallFrameOf outer template result rest binding), [],
+      exact ⟨.findall
+        (findallFrameOf outer outerScopes template result rest binding), [],
         by simpa using framesEq⟩
   | cons top tail =>
       refine ⟨top,
         tail ++ [.findall
-          (findallFrameOf outer template result rest binding)], ?_⟩
+          (findallFrameOf outer outerScopes template result rest binding)],
+        ?_⟩
       rw [framesEq]
       simp only [List.cons_append, List.append_assoc]
       rfl
@@ -980,7 +1019,8 @@ theorem advance {prog : Prog} {gt : GroundingTable}
               startScopes finishScopes
               (run.trans tail)
       | findallEnter template sub result rest binding head =>
-          let frame := findallFrameOf finish template result rest binding
+          let frame :=
+            findallFrameOf finish finishScopes template result rest binding
           let innerStart := subConfOf finish sub binding template
           have inner : MacroPrefixN prog gt (.findall frame :: baseFrames) 0
               innerStart finishScopes.afterFindall
@@ -1017,7 +1057,8 @@ theorem advance {prog : Prog} {gt : GroundingTable}
               (target.stepOpen next).frames =
                 more ++
                   (.findall
-                    (findallFrameOf outer template result rest binding) ::
+                    (findallFrameOf outer outerScopes template result rest
+                      binding) ::
                     baseFrames) :=
             ⟨extra, by simpa using targetFrames⟩
           have advanced := innerIH recursiveStep recursiveSuffix
@@ -1029,7 +1070,9 @@ theorem advance {prog : Prog} {gt : GroundingTable}
           nestedBinding nestedHead =>
           rcases innerParsed.frames_suffix with ⟨extra, targetFrames⟩
           let nestedFrame :=
-            { outer := target.control
+            { preCut := target.scopes.nextCutScope
+              preCollection := target.scopes.nextCollectionScope
+              outer := target.control
               template := nestedTemplate
               result := nestedResult
               rest := nestedRest
@@ -1044,7 +1087,8 @@ theorem advance {prog : Prog} {gt : GroundingTable}
                 nestedRest nestedBinding).frames =
                 more ++
                   (.findall
-                    (findallFrameOf outer template result rest binding) ::
+                    (findallFrameOf outer outerScopes template result rest
+                      binding) ::
                     baseFrames) := by
             refine ⟨.findall nestedFrame :: extra, ?_⟩
             simp [enterFindall, nestedFrame, targetFrames]
@@ -1058,7 +1102,8 @@ theorem advance {prog : Prog} {gt : GroundingTable}
           | closed innerBase innerCount innerStart innerFinish
               innerStartScopes innerFinishScopes innerRun =>
               have frameEq :
-                  findallFrameOf outer template result rest binding =
+                  findallFrameOf outer outerScopes template result rest
+                    binding =
                     exitFrame := by
                 simpa using congrArg List.head? frameHead
               have remainingEq : baseFrames = remaining := by
@@ -1080,6 +1125,21 @@ theorem advance {prog : Prog} {gt : GroundingTable}
                   start startScopes successor innerFinishScopes := by
                 simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
                   combined
+              rw [show
+                resumeFindall
+                    (OpenConf.ofConfWith innerFinish
+                      (.findall
+                        (findallFrameOf outer outerScopes template result
+                          rest binding) :: baseFrames)
+                      innerFinishScopes)
+                    (findallFrameOf outer outerScopes template result rest
+                      binding)
+                    baseFrames =
+                  OpenConf.ofConfWith successor baseFrames innerFinishScopes by
+                simpa only [successor] using
+                  (resumeFindall_ofConfWith outer innerFinish baseFrames
+                    outerScopes innerFinishScopes template result rest
+                    binding)]
               simpa [successor] using
                 MacroPrefixN.closed baseFrames _ start successor
                   startScopes innerFinishScopes combined'
@@ -1091,7 +1151,8 @@ theorem advance {prog : Prog} {gt : GroundingTable}
                   target.frames = top ::
                     (extra ++
                       (.findall
-                        (findallFrameOf outer template result rest binding) ::
+                        (findallFrameOf outer outerScopes template result rest
+                          binding) ::
                         baseFrames)) :=
                 open_frames_cons_suffix nestedBefore nestedHead nestedInner
               have recursiveStep : Step prog gt target
@@ -1559,7 +1620,9 @@ theorem findall_prefix_lifts
     StepsN prog gt (n + 1) outer
       (OpenConf.ofConfWith inner
         (.findall
-          { outer := outer.control
+          { preCut := outer.scopes.nextCutScope
+            preCollection := outer.scopes.nextCollectionScope
+            outer := outer.control
             template := template
             result := result
             rest := rest
@@ -1571,7 +1634,9 @@ theorem findall_prefix_lifts
   · simpa [enterFindall, OpenConf.stepOpen, OpenConf.ofConfWith] using
       run.liftWith
         (.findall
-          { outer := outer.control
+          { preCut := outer.scopes.nextCutScope
+            preCollection := outer.scopes.nextCollectionScope
+            outer := outer.control
             template := template
             result := result
             rest := rest
@@ -1593,7 +1658,9 @@ theorem findall_open_prefix_scopes_exact
       StepsN prog gt (n + 1) outer target ∧
       target.frames =
         .findall
-          { outer := outer.control
+          { preCut := outer.scopes.nextCutScope
+            preCollection := outer.scopes.nextCollectionScope
+            outer := outer.control
             template := template
             result := result
             rest := rest
@@ -1607,7 +1674,9 @@ theorem findall_open_prefix_scopes_exact
   let target :=
     OpenConf.ofConfWith inner
       (.findall
-        { outer := outer.control
+        { preCut := outer.scopes.nextCutScope
+          preCollection := outer.scopes.nextCollectionScope
+          outer := outer.control
           template := template
           result := result
           rest := rest
@@ -1633,7 +1702,9 @@ theorem findall_unpaired_prefix_has_no_macro_collapse
       (subConfOf outer.toConf sub binding template) inner) :
     let target := OpenConf.ofConfWith inner
       (.findall
-        { outer := outer.control
+        { preCut := outer.scopes.nextCutScope
+          preCollection := outer.scopes.nextCollectionScope
+          outer := outer.control
           template := template
           result := result
           rest := rest
@@ -1670,20 +1741,26 @@ theorem findall_macro_expands
       (resumeFindall
         (OpenConf.ofConfWith inner
           (.findall
-            { outer := outer.control
+            { preCut := outer.scopes.nextCutScope
+              preCollection := outer.scopes.nextCollectionScope
+              outer := outer.control
               template := template
               result := result
               rest := rest
               binding := binding } :: outer.frames)
           outer.scopes.afterFindall)
-        { outer := outer.control
+        { preCut := outer.scopes.nextCutScope
+          preCollection := outer.scopes.nextCollectionScope
+          outer := outer.control
           template := template
           result := result
           rest := rest
           binding := binding }
         outer.frames) := by
   let frame : FindallFrame :=
-    { outer := outer.control
+    { preCut := outer.scopes.nextCutScope
+      preCollection := outer.scopes.nextCollectionScope
+      outer := outer.control
       template := template
       result := result
       rest := rest
@@ -1726,12 +1803,16 @@ theorem findall_flat_run_collapses_to_sealed_step
       (resumeFindall
         (OpenConf.ofConf inner
           (.findall
-            { outer := outer.control
+            { preCut := ({} : ScopeHighWaters).nextCutScope
+              preCollection := ({} : ScopeHighWaters).nextCollectionScope
+              outer := outer.control
               template := template
               result := result
               rest := rest
               binding := binding } :: outer.frames))
-        { outer := outer.control
+        { preCut := ({} : ScopeHighWaters).nextCutScope
+          preCollection := ({} : ScopeHighWaters).nextCollectionScope
+          outer := outer.control
           template := template
           result := result
           rest := rest

@@ -21,9 +21,11 @@ open DemandDrivenStep
 
 /-!
 The independent semantics allocates nominally typed cut and collection
-identities at `taskFindall`.  The fine executable lane deliberately keeps its
-`FindallFrame` anonymous, but advances separate cut and collection allocation
-frontiers while pushing exactly one frame.
+identities at `taskFindall`.  The fine executable lane records its own
+pre-entry cut and collection frontiers in `FindallFrame`, advances both
+allocation banks, and pushes exactly one frame.  Those recorded values are
+machine-native occurrence history, never source identities copied into the
+runtime.
 
 This file pairs one occurrence at its entry point.  The relation is indexed
 by the two *pre-entry* frontier values: it never reconstructs an occurrence by
@@ -46,13 +48,15 @@ def sourceFindallTarget (session : Session) (outerScope : CutScopeId)
       (.task (openFindall session).cutScope [generator] bindings))
     template output bindings rest []
 
-/-- The unique anonymous frame installed by one fine `findall` entry.  It
-contains executable continuation payload only; no source scope identity is
-copied into the machine. -/
+/-- The unique frame installed by one fine `findall` entry.  It contains the
+executable continuation and the executable's own pre-entry frontier values;
+no source scope identity is copied into the machine. -/
 def executableFindallFrame (before : OpenConf) (template : Atom)
     (result : Atom) (rest : List PLeaTTa.Goal)
     (binding : Subst) : FindallFrame :=
-  { outer := before.control
+  { preCut := before.scopes.nextCutScope
+    preCollection := before.scopes.nextCollectionScope
+    outer := before.control
     template := template
     result := result
     rest := rest
@@ -61,10 +65,10 @@ def executableFindallFrame (before : OpenConf) (template : Atom)
 /-- Exact control-side correspondence for one `findall/3` entry.
 
 `preCut` and `preCollection` name this occurrence before either allocator
-advances.  Both the nominal source identities and the fine pre-entry
-frontiers equal those indices.  The target relation separately proves the
-three global frontier counts, while `frameHead` records the positional
-occurrence on the executable side. -/
+advances.  Both the nominal source identities and the fine frame's recorded
+pre-entry frontiers equal those indices.  The target relation separately
+proves the three global frontier counts, while `frameHead` records the
+positional occurrence on the executable side. -/
 structure FindallControlEntryRelates
     (freshFrontier : FreshFrontierRelation)
     (prog : Prog) (gt : GroundingTable)
