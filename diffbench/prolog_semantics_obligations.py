@@ -48,6 +48,14 @@ PROLOG_FINDALL_FRAME_ZIPPER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologFindallFrameZipperBridge.lean"
 )
+PROLOG_ACTIVE_CONTROL_CONTEXT_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologActiveControlContextBridge.lean"
+)
+PROLOG_FINDALL_DISJUNCTION_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologFindallDisjunctionBridge.lean"
+)
 PROLOG_FINDALL_EXIT_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologFindallExitBridge.lean"
 )
@@ -394,6 +402,10 @@ def check() -> list[str]:
             digest(PROLOG_FINDALL_ENTRY_BRIDGE),
         "prolog_findall_frame_zipper_bridge_sha256":
             digest(PROLOG_FINDALL_FRAME_ZIPPER_BRIDGE),
+        "prolog_active_control_context_bridge_sha256":
+            digest(PROLOG_ACTIVE_CONTROL_CONTEXT_BRIDGE),
+        "prolog_findall_disjunction_bridge_sha256":
+            digest(PROLOG_FINDALL_DISJUNCTION_BRIDGE),
         "prolog_findall_exit_bridge_sha256":
             digest(PROLOG_FINDALL_EXIT_BRIDGE),
         "prolog_findall_exit_payload_bridge_sha256":
