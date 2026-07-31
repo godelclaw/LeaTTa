@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=20293857f9ac4bc5a5c9ba5d408d93ebcff473702d288e3c06a7566c6fe5eb86
+# compiler_sha256=79f0c578748d90e5d2b7c90d8a6368514965e1392517ed8fec86519ae31d301a
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -40,8 +40,8 @@ APP.quote	T297-299	X	TranslatesExpr.quote	SC	PASS	covered
 APP.Predicate	M275	H	-	N	BOUNDARY	typed-wrapper
 APP.translatePredicate	T271-275	H	-	N	BOUNDARY	ownership-dispatch
 APP.callPredicate	M276	H	-	N	BOUNDARY	ownership-dispatch
-APP.assertaPredicate	M278	H	-	N	BOUNDARY	world-action
-APP.assertzPredicate	M277	H	-	N	BOUNDARY	world-action
+APP.assertaPredicate	M278,T310-324,T335-346	S	TranslatesExpr.assertaPredicate	SH	GAP	source-anchored ordered compiler lowering and owned local leaf effect proved; arbitrary product/resource context composition open
+APP.assertzPredicate	M277,T310-324,T335-346	S	TranslatesExpr.assertzPredicate	SH	GAP	source-anchored ordered compiler lowering and owned local leaf effect proved; arbitrary product/resource context composition open
 APP.retractPredicate	M279-280	H	-	N	BOUNDARY	world-action
 APP.process_metta_string	F12-18	H	-	N	BOUNDARY	runtime-loader-world-action
 APP.unquote_quote	HE64-67	L	-	EQ	FAIL	hardcoded-without-library-and-cut

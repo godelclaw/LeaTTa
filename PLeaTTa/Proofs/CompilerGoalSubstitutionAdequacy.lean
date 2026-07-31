@@ -96,6 +96,22 @@ inductive GoalAgreesSupported (termDomain typeDomain : List LogicVar) :
       (resultSupport : TermAgreesSupported termDomain result) :
       GoalAgreesSupported termDomain typeDomain
         (GoalAgrees.definedCall arguments result)
+  | assertaPredicate {referencePayload referenceResult : Term}
+      {executablePayload executableResult : Atom}
+      {payload : TermAgrees referencePayload executablePayload}
+      {result : TermAgrees referenceResult executableResult}
+      (payloadSupport : TermAgreesSupported termDomain payload)
+      (resultSupport : TermAgreesSupported termDomain result) :
+      GoalAgreesSupported termDomain typeDomain
+        (GoalAgrees.assertaPredicate payload result)
+  | assertzPredicate {referencePayload referenceResult : Term}
+      {executablePayload executableResult : Atom}
+      {payload : TermAgrees referencePayload executablePayload}
+      {result : TermAgrees referenceResult executableResult}
+      (payloadSupport : TermAgreesSupported termDomain payload)
+      (resultSupport : TermAgreesSupported termDomain result) :
+      GoalAgreesSupported termDomain typeDomain
+        (GoalAgrees.assertzPredicate payload result)
   | softCutTruth {referenceCondition referenceElse executableCondition
         executableElse}
       {condition : GoalsAgree referenceCondition executableCondition}
@@ -467,6 +483,14 @@ theorem GoalAgrees.subst_of_supported
   | definedCall argumentsSupport resultSupport =>
       simpa [substCompiledGoal] using GoalAgrees.definedCall
         (TermsAgree.subst_of_supported variableState _ argumentsSupport)
+        (TermAgrees.subst_of_supported variableState _ resultSupport)
+  | assertaPredicate payloadSupport resultSupport =>
+      simpa [substCompiledGoal] using GoalAgrees.assertaPredicate
+        (TermAgrees.subst_of_supported variableState _ payloadSupport)
+        (TermAgrees.subst_of_supported variableState _ resultSupport)
+  | assertzPredicate payloadSupport resultSupport =>
+      simpa [substCompiledGoal] using GoalAgrees.assertzPredicate
+        (TermAgrees.subst_of_supported variableState _ payloadSupport)
         (TermAgrees.subst_of_supported variableState _ resultSupport)
   | softCutTruth conditionSupport otherwiseSupport =>
       simpa [substCompiledGoal, substCompiledGoals] using

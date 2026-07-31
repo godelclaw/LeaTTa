@@ -108,6 +108,12 @@ theorem TranslatesExpr.counter_le
   | literal => omega
   | quote => omega
   | cut => omega
+  | assertaPredicate _ payload =>
+      have bound := TranslatesExpr.counter_le payload
+      omega
+  | assertzPredicate _ payload =>
+      have bound := TranslatesExpr.counter_le payload
+      omega
   | collapse _ body =>
       have bound := TranslatesExpr.counter_le body
       omega
@@ -409,6 +415,42 @@ theorem TranslatesExpr.variablesIn
       exact ⟨Quotes.termVariablesIn_of_sourceVars value
           (sourceSupported.expression_member (by simp)), trivial⟩
   | cut => exact ⟨trivial, by simp [goalsVariablesIn, goalVariablesIn]⟩
+  | @assertaPredicate _ payloadCounter _ payload _ _ payloadTranslation =>
+      have payloadCounterBound :=
+        TranslatesExpr.counter_le payloadTranslation
+      have payloadSupported := TranslatesExpr.variablesIn payloadTranslation
+        (sourceSupported.expression_member (by simp))
+        (generatedSupported.nest (by omega) (by omega))
+      have outputSupported :
+          termVariablesIn domain (.variable (.generated payloadCounter)) :=
+        generatedSupported payloadCounter (by omega) (by omega)
+      have appendedSupported : goalsVariablesIn domain
+          [.call "assertaPredicate"
+            [payload, .variable (.generated payloadCounter)]] := by
+        simp only [goalsVariablesIn, goalVariablesIn, termsVariablesIn,
+          and_true]
+        exact ⟨payloadSupported.1, outputSupported⟩
+      exact ⟨outputSupported,
+        (goalsVariablesIn_append _ _ _).2
+          ⟨payloadSupported.2, appendedSupported⟩⟩
+  | @assertzPredicate _ payloadCounter _ payload _ _ payloadTranslation =>
+      have payloadCounterBound :=
+        TranslatesExpr.counter_le payloadTranslation
+      have payloadSupported := TranslatesExpr.variablesIn payloadTranslation
+        (sourceSupported.expression_member (by simp))
+        (generatedSupported.nest (by omega) (by omega))
+      have outputSupported :
+          termVariablesIn domain (.variable (.generated payloadCounter)) :=
+        generatedSupported payloadCounter (by omega) (by omega)
+      have appendedSupported : goalsVariablesIn domain
+          [.call "assertzPredicate"
+            [payload, .variable (.generated payloadCounter)]] := by
+        simp only [goalsVariablesIn, goalVariablesIn, termsVariablesIn,
+          and_true]
+        exact ⟨payloadSupported.1, outputSupported⟩
+      exact ⟨outputSupported,
+        (goalsVariablesIn_append _ _ _).2
+          ⟨payloadSupported.2, appendedSupported⟩⟩
   | @collapse _ bodyCounter _ _ _ _ body =>
       have bodyCounterBound := TranslatesExpr.counter_le body
       have bodySupported := TranslatesExpr.variablesIn body

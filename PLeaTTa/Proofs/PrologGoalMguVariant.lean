@@ -108,6 +108,14 @@ theorem AlphaGoalAgrees.mono
       exact .definedCall
         (PLeaTTa.PrologMguBridge.AlphaTermsAgree.mono included arguments)
         (PLeaTTa.PrologMguBridge.AlphaTermAgrees.mono included result)
+  | assertaPredicate payload result =>
+      exact .assertaPredicate
+        (PLeaTTa.PrologMguBridge.AlphaTermAgrees.mono included payload)
+        (PLeaTTa.PrologMguBridge.AlphaTermAgrees.mono included result)
+  | assertzPredicate payload result =>
+      exact .assertzPredicate
+        (PLeaTTa.PrologMguBridge.AlphaTermAgrees.mono included payload)
+        (PLeaTTa.PrologMguBridge.AlphaTermAgrees.mono included result)
   | softCutTruth condition otherwise =>
       exact .softCutTruth
         (AlphaGoalsAgree.mono included condition)

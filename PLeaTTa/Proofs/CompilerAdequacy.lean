@@ -655,6 +655,26 @@ inductive GoalAgrees : PeTTaSpec.PrologCore.Goal → PLeaTTa.Goal → Prop where
       (result : TermAgrees referenceResult executableResult) :
       GoalAgrees (.call predicate (referenceArguments ++ [referenceResult]))
         (.call predicate executableArguments executableResult)
+  /-- Locally owned `assertaPredicate/2` is the narrow compiler exception
+  that replaces pinned PeTTa's registered Prolog call by a sealed world
+  action.  The constructor is operation-specific so it cannot license an
+  unrelated call-to-effect lowering. -/
+  | assertaPredicate {referencePayload referenceResult : Term}
+      {executablePayload executableResult : Atom}
+      (payload : TermAgrees referencePayload executablePayload)
+      (result : TermAgrees referenceResult executableResult) :
+      GoalAgrees
+        (.call "assertaPredicate" [referencePayload, referenceResult])
+        (.wact "assertaPredicate" [executablePayload] executableResult)
+  /-- Locally owned `assertzPredicate/2`, with the same exact payload/result
+  ownership as its pinned direct-call counterpart. -/
+  | assertzPredicate {referencePayload referenceResult : Term}
+      {executablePayload executableResult : Atom}
+      (payload : TermAgrees referencePayload executablePayload)
+      (result : TermAgrees referenceResult executableResult) :
+      GoalAgrees
+        (.call "assertzPredicate" [referencePayload, referenceResult])
+        (.wact "assertzPredicate" [executablePayload] executableResult)
   | softCutTruth {referenceCondition referenceElse :
         List PeTTaSpec.PrologCore.Goal}
       {executableCondition executableElse : List PLeaTTa.Goal}
@@ -884,6 +904,46 @@ inductive GoalsAgree : List PeTTaSpec.PrologCore.Goal → List PLeaTTa.Goal →
         (executableBlock ++ executableTail)
 
 end
+
+/-- Source-side decoder for the only two calls that the current certified
+agreement relation may lower to a world action. -/
+@[simp] def assertionOperation? : PeTTaSpec.PrologCore.Goal → Option String
+  | .call "assertaPredicate" [_, _] => some "assertaPredicate"
+  | .call "assertzPredicate" [_, _] => some "assertzPredicate"
+  | _ => none
+
+/-- Every executable world action admitted by `GoalAgrees` is forced by an
+owned source assertion call with the same operation tag.  A future generic
+call-to-effect constructor would make this proof non-exhaustive or false. -/
+theorem GoalAgrees.wact_assertion_operation
+    {reference : PeTTaSpec.PrologCore.Goal}
+    {operation : String} {arguments : List Atom} {result : Atom}
+    (agreement : GoalAgrees reference (.wact operation arguments result)) :
+    assertionOperation? reference = some operation := by
+  cases agreement <;> rfl
+
+/-- In particular, front insertion cannot agree with a differently tagged
+world action. -/
+theorem GoalAgrees.assertaPredicate_operation_eq
+    {referencePayload referenceResult : Term}
+    {executablePayload executableResult : Atom} {operation : String}
+    (agreement : GoalAgrees
+      (.call "assertaPredicate" [referencePayload, referenceResult])
+      (.wact operation [executablePayload] executableResult)) :
+    operation = "assertaPredicate" := by
+  have matched := agreement.wact_assertion_operation
+  simpa [assertionOperation?] using matched.symm
+
+/-- Back insertion has the same operation-tag discrimination. -/
+theorem GoalAgrees.assertzPredicate_operation_eq
+    {referencePayload referenceResult : Term}
+    {executablePayload executableResult : Atom} {operation : String}
+    (agreement : GoalAgrees
+      (.call "assertzPredicate" [referencePayload, referenceResult])
+      (.wact operation [executablePayload] executableResult)) :
+    operation = "assertzPredicate" := by
+  have matched := agreement.wact_assertion_operation
+  simpa [assertionOperation?] using matched.symm
 
 /-- Ordered agreement specialized to compiler-only alias metadata.  Unlike
 `GoalsAgree`, this relation excludes the runtime `.eq` representation: its
@@ -2127,6 +2187,64 @@ theorem compileExprFuel_initial_sound {state : TranslatorState} (env : CEnv)
           simpa [Nat.add_comm] using
             compileExprFuel_cut_adequate extraFuel env counter
               (agreement.notContains notShadowed)⟩
+  | @assertaPredicate _ payloadCounter _ _ _ notShadowed
+      payloadTranslation =>
+      obtain ⟨payloadFuel, payloadPositive, payloadBound, payloadCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement payloadTranslation
+      refine ⟨payloadFuel + 3, by omega, ?_, ?_⟩
+      · simp [Atom.size]
+        omega
+      · intro extraFuel
+        obtain ⟨executablePayload, executableGoals, compiled,
+            payloadAgreement, goalsAgreement⟩ :=
+          payloadCompiles extraFuel
+        let output := Atom.var s!"_q{payloadCounter}"
+        have outputAgreement :
+            TermAgrees (.variable (.generated payloadCounter)) output :=
+          .generatedVariable payloadCounter
+        refine ⟨output,
+          executableGoals ++
+            [PLeaTTa.Goal.wact "assertaPredicate" [executablePayload] output],
+          ?_, outputAgreement, ?_⟩
+        · rw [show (payloadFuel + 3) + extraFuel =
+            (payloadFuel + extraFuel) + 3 by omega]
+          exact compileExprFuel_assertaPredicate_eq
+            (payloadFuel + extraFuel) env counter _ executablePayload
+            executableGoals payloadCounter
+            (agreement.notContains notShadowed) compiled
+        · exact goalsAgreement.append
+            (.cons
+              (.assertaPredicate payloadAgreement outputAgreement)
+              .nil)
+  | @assertzPredicate _ payloadCounter _ _ _ notShadowed
+      payloadTranslation =>
+      obtain ⟨payloadFuel, payloadPositive, payloadBound, payloadCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement payloadTranslation
+      refine ⟨payloadFuel + 3, by omega, ?_, ?_⟩
+      · simp [Atom.size]
+        omega
+      · intro extraFuel
+        obtain ⟨executablePayload, executableGoals, compiled,
+            payloadAgreement, goalsAgreement⟩ :=
+          payloadCompiles extraFuel
+        let output := Atom.var s!"_q{payloadCounter}"
+        have outputAgreement :
+            TermAgrees (.variable (.generated payloadCounter)) output :=
+          .generatedVariable payloadCounter
+        refine ⟨output,
+          executableGoals ++
+            [PLeaTTa.Goal.wact "assertzPredicate" [executablePayload] output],
+          ?_, outputAgreement, ?_⟩
+        · rw [show (payloadFuel + 3) + extraFuel =
+            (payloadFuel + extraFuel) + 3 by omega]
+          exact compileExprFuel_assertzPredicate_eq
+            (payloadFuel + extraFuel) env counter _ executablePayload
+            executableGoals payloadCounter
+            (agreement.notContains notShadowed) compiled
+        · exact goalsAgreement.append
+            (.cons
+              (.assertzPredicate payloadAgreement outputAgreement)
+              .nil)
   | @collapse _ bodyCounter _ _ _ notShadowed body =>
       obtain ⟨bodyFuel, bodyPositive, bodyBound, bodyCompiles⟩ :=
         compileExprFuel_initial_sound env agreement body

@@ -364,6 +364,43 @@ inductive TranslatesExpr : TranslatorState → Nat → Atom → Term → List Go
       (notShadowed : ¬ state.hasRule "cut") :
       TranslatesExpr state counter (.expr [.sym "cut"]) (.atom "true") [.cut]
         counter
+  /-- Pinned PeTTa registers `assertaPredicate/2` as an ordinary function,
+  translates its payload before the generated output, and leaves the actual
+  database effect to that predicate.  PLeaTTa later lowers the same owned
+  call to a sealed world action; that lowering is an adequacy obligation, not
+  part of this independent rule.
+  [SPEC metta.pl:278,322; translator.pl:310-324,335-346] -/
+  | assertaPredicate {state : TranslatorState}
+      {counter payloadCounter : Nat}
+      {source : Atom} {payload : Term} {payloadGoals : List Goal}
+      (notShadowed : ¬ state.hasRule "assertaPredicate")
+      (translated :
+        TranslatesExpr state counter source payload payloadGoals
+          payloadCounter) :
+      TranslatesExpr state counter
+        (.expr [.sym "assertaPredicate", source])
+        (.variable (.generated payloadCounter))
+        (payloadGoals ++
+          [.call "assertaPredicate"
+            [payload, .variable (.generated payloadCounter)]])
+        (payloadCounter + 1)
+  /-- Source-level counterpart of `assertaPredicate`, preserving the
+  registered direct-call spelling and append order exactly.
+  [SPEC metta.pl:277,322; translator.pl:310-324,335-346] -/
+  | assertzPredicate {state : TranslatorState}
+      {counter payloadCounter : Nat}
+      {source : Atom} {payload : Term} {payloadGoals : List Goal}
+      (notShadowed : ¬ state.hasRule "assertzPredicate")
+      (translated :
+        TranslatesExpr state counter source payload payloadGoals
+          payloadCounter) :
+      TranslatesExpr state counter
+        (.expr [.sym "assertzPredicate", source])
+        (.variable (.generated payloadCounter))
+        (payloadGoals ++
+          [.call "assertzPredicate"
+            [payload, .variable (.generated payloadCounter)]])
+        (payloadCounter + 1)
   | collapse {state : TranslatorState} {counter bodyCounter : Nat}
       {source : Atom} {template : Term} {bodyGoals : List Goal}
       (notShadowed : ¬ state.hasRule "collapse")

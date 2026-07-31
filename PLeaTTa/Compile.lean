@@ -2733,6 +2733,58 @@ theorem compileExprFuel_collapse_eq (bodyFuel : Nat) (env : CEnv)
   rfl
 
 set_option maxHeartbeats 2000000 in
+/-- Locally owned `assertaPredicate` compiles its payload, allocates one
+result, and appends exactly one sealed front-insertion world action.  The
+equation is fuel-parametric and therefore reusable by the independent
+translation adequacy proof. -/
+theorem compileExprFuel_assertaPredicate_eq (payloadFuel : Nat) (env : CEnv)
+    (counter : Nat) (source payload : Atom) (goals : List Goal)
+    (nextCounter : Nat)
+    (noHook : env.translatorRules.contains "assertaPredicate" = false)
+    (compiled : compileExprFuel payloadFuel env counter source =
+      .ok (payload, goals, nextCounter)) :
+    compileExprFuel (payloadFuel + 3) env counter
+        (.expr [.sym "assertaPredicate", source]) =
+      .ok (.var s!"_q{nextCounter}",
+        goals ++
+          [Goal.wact "assertaPredicate" [payload]
+            (.var s!"_q{nextCounter}")],
+        nextCounter + 1) := by
+  rw [show payloadFuel + 3 = (payloadFuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
+  rw [show payloadFuel + 2 = (payloadFuel + 1) + 1 by omega]
+  rw [compileAppFuel.eq_2]
+  simp only [noHook, Bool.false_eq_true, ↓reduceIte]
+  rw [compileAppCoreFuel.eq_6, compiled]
+  all_goals try simp only [classifyAppCoreHead]
+  rfl
+
+set_option maxHeartbeats 2000000 in
+/-- Locally owned `assertzPredicate` has the corresponding exact
+back-insertion world-action shape. -/
+theorem compileExprFuel_assertzPredicate_eq (payloadFuel : Nat) (env : CEnv)
+    (counter : Nat) (source payload : Atom) (goals : List Goal)
+    (nextCounter : Nat)
+    (noHook : env.translatorRules.contains "assertzPredicate" = false)
+    (compiled : compileExprFuel payloadFuel env counter source =
+      .ok (payload, goals, nextCounter)) :
+    compileExprFuel (payloadFuel + 3) env counter
+        (.expr [.sym "assertzPredicate", source]) =
+      .ok (.var s!"_q{nextCounter}",
+        goals ++
+          [Goal.wact "assertzPredicate" [payload]
+            (.var s!"_q{nextCounter}")],
+        nextCounter + 1) := by
+  rw [show payloadFuel + 3 = (payloadFuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
+  rw [show payloadFuel + 2 = (payloadFuel + 1) + 1 by omega]
+  rw [compileAppFuel.eq_2]
+  simp only [noHook, Bool.false_eq_true, ↓reduceIte]
+  rw [compileAppCoreFuel.eq_7, compiled]
+  all_goals try simp only [classifyAppCoreHead]
+  rfl
+
+set_option maxHeartbeats 2000000 in
 /-- Executable `once` shape: compile the body, allocate a fresh result, and
 capture the first body answer through `onceg`. Native translation instead
 retains the body term; their observational correspondence is a separate

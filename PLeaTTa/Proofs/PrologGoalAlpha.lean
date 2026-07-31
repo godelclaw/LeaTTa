@@ -108,6 +108,24 @@ inductive AlphaGoalAgrees (alpha : List (LogicVar × String))
       AlphaGoalAgrees alpha barrier
         (.call predicate (referenceArguments ++ [referenceResult]))
         (.call predicate executableArguments executableResult)
+  /-- Runtime-standardized form of the certified local
+  `assertaPredicate/2` lowering. -/
+  | assertaPredicate {referencePayload referenceResult : Term}
+      {executablePayload executableResult : Atom}
+      (payload : AlphaTermAgrees alpha referencePayload executablePayload)
+      (result : AlphaTermAgrees alpha referenceResult executableResult) :
+      AlphaGoalAgrees alpha barrier
+        (.call "assertaPredicate" [referencePayload, referenceResult])
+        (.wact "assertaPredicate" [executablePayload] executableResult)
+  /-- Runtime-standardized form of the certified local
+  `assertzPredicate/2` lowering. -/
+  | assertzPredicate {referencePayload referenceResult : Term}
+      {executablePayload executableResult : Atom}
+      (payload : AlphaTermAgrees alpha referencePayload executablePayload)
+      (result : AlphaTermAgrees alpha referenceResult executableResult) :
+      AlphaGoalAgrees alpha barrier
+        (.call "assertzPredicate" [referencePayload, referenceResult])
+        (.wact "assertzPredicate" [executablePayload] executableResult)
   | softCutTruth {referenceCondition referenceElse :
         List PeTTaSpec.PrologCore.Goal}
       {executableCondition executableElse : List PLeaTTa.Goal}
@@ -619,6 +637,16 @@ theorem GoalAgrees.alpha_freshen_of_supported
       simpa [renameGoalSuffix] using AlphaGoalAgrees.definedCall
         (termsAgree_alpha_freshen termVariableAgreement arguments
           argumentsSupport)
+        (termAgrees_alpha_freshen termVariableAgreement result resultSupport)
+  | @assertaPredicate referencePayload referenceResult executablePayload
+      executableResult payload result payloadSupport resultSupport =>
+      simpa [renameGoalSuffix] using AlphaGoalAgrees.assertaPredicate
+        (termAgrees_alpha_freshen termVariableAgreement payload payloadSupport)
+        (termAgrees_alpha_freshen termVariableAgreement result resultSupport)
+  | @assertzPredicate referencePayload referenceResult executablePayload
+      executableResult payload result payloadSupport resultSupport =>
+      simpa [renameGoalSuffix] using AlphaGoalAgrees.assertzPredicate
+        (termAgrees_alpha_freshen termVariableAgreement payload payloadSupport)
         (termAgrees_alpha_freshen termVariableAgreement result resultSupport)
   | softCutTruth conditionSupport otherwiseSupport =>
       simpa [renameGoalSuffix, renameGoalsSuffix,
