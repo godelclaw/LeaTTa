@@ -164,6 +164,66 @@ def cellCount
   | .cons _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ outerAgrees =>
       cellCount outerAgrees + 1
 
+/-- Alpha transport changes payload certificates, never the linear zipper
+shape or cell count. -/
+theorem cellCount_extendAbove
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {referenceFloor executableFloor : Nat}
+    (extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor)
+    (agreement :
+      SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer)
+    (below : endpointsBelow agreement referenceFloor executableFloor) :
+    cellCount
+        (SourceControlResourcePayloadContextAgrees.extendAbove extension
+          agreement below) =
+      cellCount agreement := by
+  induction agreement with
+  | nil => rfl
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+      inductionHypothesis =>
+      simp only [
+        SourceControlResourcePayloadContextAgrees.extendAbove,
+        cellCount]
+      rw [inductionHypothesis]
+
+/-- An exact predecessor-to-successor alpha handoff preserves the payload
+cell count.  Both zippers are indices of `ExtendsAboveAt`; no independently
+chosen equal-length list can satisfy this theorem. -/
+theorem
+    _root_.PLeaTTa.PrologRetainedPayloadSnapshotBridge.SourceControlResourcePayloadContextAgrees.ExtendsAboveAt.cellCount_eq
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {referenceFloor executableFloor : Nat}
+    {extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor}
+    {before :
+      SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer}
+    {after :
+      SourceControlResourcePayloadContextAgrees larger support qterm
+        currentBarrier segments resources inner context outer}
+    (handoff :
+      SourceControlResourcePayloadContextAgrees.ExtendsAboveAt
+        referenceFloor executableFloor extension before after) :
+    cellCount after = cellCount before := by
+  calc
+    cellCount after =
+        cellCount
+          (SourceControlResourcePayloadContextAgrees.extendAbove extension
+            before handoff.below) :=
+      congrArg cellCount handoff.exact
+    _ = cellCount before :=
+      cellCount_extendAbove extension before handoff.below
+
 /-- Removing the active payload cell decreases the exact zipper by one. -/
 theorem cellCount_outerPayload
     {alpha support : List (LogicVar × String)} {qterm : Atom}

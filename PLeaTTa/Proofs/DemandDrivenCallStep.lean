@@ -186,6 +186,24 @@ inductive StepsN (prog : Prog) (gt : GroundingTable) :
       Step prog gt before middle → StepsN prog gt n middle after →
       StepsN prog gt (n + 1) before after
 
+/-- Exact finite call-lane prefixes compose without erasing the explicit
+install, pull, or equality phases. -/
+theorem StepsN.trans {prog : Prog} {gt : GroundingTable}
+    {left middle right : FineConf} {m n : Nat}
+    (first : StepsN prog gt m left middle)
+    (second : StepsN prog gt n middle right) :
+    StepsN prog gt (m + n) left right := by
+  induction first with
+  | zero state => simpa using second
+  | succ k before stepMiddle after step tail inductionHypothesis =>
+      have combined :=
+        StepsN.succ (k + n) before stepMiddle right step
+          (inductionHypothesis second)
+      have lengthEq : k + n + 1 = k + 1 + n := by
+        rw [Nat.add_assoc, Nat.add_comm n 1, ← Nat.add_assoc]
+      rw [lengthEq] at combined
+      exact combined
+
 /-- The pending variant contains the exact sealed pre-pull configuration:
 same world, advanced counter, exact branch bank, one barrier before the old
 alternatives, and the exact barrier-cache increment. -/

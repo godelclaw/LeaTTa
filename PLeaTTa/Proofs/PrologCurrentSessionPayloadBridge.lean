@@ -588,26 +588,29 @@ theorem
             segmentExecutableRest outer active resources callerScope outerScope
             context,
         SpinedActiveProductPayloadResourceRelatesAt
-          (AlphaFreshFrontier nextAlpha) nextAlpha support
-          (sourceCanonical ++ canonical) referenceBase opened opened.session
-          pending finish branch branchTail altTail bodyBarrier callerBarrier
-          branch.body copied.body segmentReferenceRest segmentExecutableRest
-          outer independentResult
-          (PLeaTTa.trimFor
-            (copied.body ++
-              (segmentExecutableRest ++ flattenExecutables outer))
-            qterm installed)
-          qterm active resources callerScope outerScope context baseAlts
-          (ActiveProductContext.plug context
-            (activatedSourceProduct callerScope opened finish branch branchTail
-              independentResult segmentReferenceRest))
-          (activatedOpenSuccessor pending copied
-            (segmentExecutableRest ++ flattenExecutables outer) qterm
-            installed)
-          payloadContext := by
+            (AlphaFreshFrontier nextAlpha) nextAlpha support
+            (sourceCanonical ++ canonical) referenceBase opened opened.session
+            pending finish branch branchTail altTail bodyBarrier callerBarrier
+            branch.body copied.body segmentReferenceRest segmentExecutableRest
+            outer independentResult
+            (PLeaTTa.trimFor
+              (copied.body ++
+                (segmentExecutableRest ++ flattenExecutables outer))
+              qterm installed)
+            qterm active resources callerScope outerScope context baseAlts
+            (ActiveProductContext.plug context
+              (activatedSourceProduct callerScope opened finish branch branchTail
+                independentResult segmentReferenceRest))
+            (activatedOpenSuccessor pending copied
+              (segmentExecutableRest ++ flattenExecutables outer) qterm
+              installed)
+            payloadContext ∧
+          ExtendsAboveAt branch.firstFresh startCounter
+            activation.alphaExtension outerPayloads
+            (SourceControlResourcePayloadContextAgrees.tail payloadContext) := by
   obtain
       ⟨active, _snapshot, payloadContext, endpoints, activationOrdered,
-        _outerActivationEndpoints, resourceStack⟩ :=
+        outerPayloadExact, _outerActivationEndpoints, resourceStack⟩ :=
     _root_.PLeaTTa.PrologNestedRetainedPayloadBridge.SpinedRepresentativeProductActivation.activeResourceStackWithNestedSnapshots
       frontier preHeadPayload payloadSupported openedArguments openedBindings
       queryReferenceBelow queryExecutableLive activation sourceFresh
@@ -628,7 +631,8 @@ theorem
     rw [counterExact]
     exact endpoints
   refine
-    ⟨active, payloadContext, ?_, endpointsCurrent, activationOrdered⟩
+    ⟨active, payloadContext, ?_, outerPayloadExact⟩
+  refine ⟨?_, endpointsCurrent, activationOrdered⟩
   refine ⟨?_, resourceStack, ?_⟩
   · exact
       _root_.PLeaTTa.PrologProductResourceTransitionBridge.SpinedRepresentativeProductActivation.spinedActiveProductRelates

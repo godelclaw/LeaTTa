@@ -825,6 +825,32 @@ def extendAbove
           (snapshot.allocationGap.extendAbove extension below.1 below.2.1))
         (extendAbove extension outerAgrees below.2.2)
 
+/-- Proof-relevant handoff between two exact payload zippers across one
+ambient-alpha extension.
+
+The predecessor and successor are indices of the proposition.  A caller
+cannot satisfy this relation with a merely shape-compatible payload zipper:
+the successor must be definitionally the canonical `extendAbove` transport of
+the supplied predecessor at the actual allocation floors.  This is the
+load-bearing link used by nested-call chains. -/
+structure ExtendsAboveAt
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (referenceFloor executableFloor : Nat)
+    (extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor)
+    (before :
+      SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer)
+    (after :
+      SourceControlResourcePayloadContextAgrees larger support qterm
+        currentBarrier segments resources inner context outer) : Prop where
+  below : endpointsBelow before referenceFloor executableFloor
+  exact : after = extendAbove extension before below
+
 /-- Alpha transport changes only proof annotations; it preserves the exact
 cursor/resource endpoints and therefore the same domination certificate. -/
 theorem extendAbove_endpointsBelow

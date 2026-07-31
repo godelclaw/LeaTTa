@@ -171,6 +171,10 @@ theorem
               opened.session.resolver.nextFresh
               pending.persistent.counter ∧
             ActivationOrdered payloadContext ∧
+              ExtendsAboveAt branch.firstFresh startCounter
+                activation.alphaExtension outerPayloads
+                (SourceControlResourcePayloadContextAgrees.tail
+                  payloadContext) ∧
               endpointsBelow
                 (SourceControlResourcePayloadContextAgrees.tail payloadContext)
                 (finish.advance branch branchTail).reservationStart
@@ -292,11 +296,20 @@ theorem
     simpa [payloadContextExact,
       SourceControlResourcePayloadContextAgrees.tail] using
       outerNextAtActivation
+  have outerPayloadExact :
+      ExtendsAboveAt branch.firstFresh startCounter
+        activation.alphaExtension outerPayloads
+        (SourceControlResourcePayloadContextAgrees.tail
+          payloadContextExact) := by
+    refine ⟨outerAtSelected, ?_⟩
+    simp [payloadContextExact, outerNext,
+      SourceControlResourcePayloadContextAgrees.tail]
   have payloadContextExactOrdered :
       ActivationOrdered payloadContextExact := by
     exact ⟨outerNextAtActivation, outerNextOrdered⟩
   exact
     ⟨active, snapshot, payloadContextExact, payloadContextExactBelow,
-      payloadContextExactOrdered, outerActivationEndpoints, stack⟩
+      payloadContextExactOrdered, outerPayloadExact, outerActivationEndpoints,
+      stack⟩
 
 end PLeaTTa.PrologNestedRetainedPayloadBridge

@@ -8,7 +8,7 @@ Trusted boundary: none
 Main exports:
   CallEntryBankRelates.pendingOuterAlts_of_activeResourceStack
 -/
-import PLeaTTa.Proofs.PrologCurrentSessionPayloadBridge
+import PLeaTTa.Proofs.PrologCurrentSessionPayloadTransitionBridge
 
 namespace PLeaTTa.PrologNestedCallEntryPayloadBridge
 
@@ -19,6 +19,7 @@ open PeTTaSpec.PrologCore.GoalSemantics
 open PeTTaSpec.PrologCore.OpenSubstitution
 open PeTTaSpec.PrologCore.Resolver
 open DemandDrivenStep
+open PrologActivatedProductStepBridge
 open PrologAlphaFreshFrontierBridge
 open PrologCallStepBridge
 open PrologControlSegmentSpineBridge
@@ -137,6 +138,114 @@ theorem callEntry_rejects_truncated_flattened_tail
   exact olderLive (List.eq_nil_of_length_eq_zero tailLength)
 
 /-! ## One nested activation from the current active invariant -/
+
+/-- A local call at the head of the active clause body opens beneath the
+current predicate frame and every older active frame in one real source step.
+
+The target context is constructed from the active relation's literal retained
+cursor.  No caller supplies a shape-compatible deeper context, so the opened
+cursor cannot displace or reorder an older retained continuation.
+
+[SPEC metta.pl:251-256] -/
+theorem SpinedActiveProductPayloadResourceRelatesAt.sourceCallEntry
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {callerOpened : OpenedCall} {session : Session}
+    {callerPending : DemandDrivenCallStep.PendingCall}
+    {callerFinish : PreparedCursor} {callerBranch : ClauseBranch}
+    {callerBranchTail : List ClauseBranch}
+    {callerAltTail : List PLeaTTa.Alt}
+    {currentBodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {currentActive : RetainedAlternativeSegment}
+    {currentResources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {currentContext : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {currentSource : Search} {state : OpenConf}
+    {predicate : String} {referencePayload : List Term}
+    {nestedReferenceRest : List PeTTaSpec.PrologCore.Goal}
+    {args : List Atom} {res : Atom}
+    {nestedExecutableRest : List PLeaTTa.Goal}
+    {currentPayloadContext :
+      ActiveProductPayloadContext alpha support qterm callerOpened callerFinish
+        callerBranch callerBranchTail currentBodyBarrier callerBarrier
+        callerReferences callerExecutables outer currentActive currentResources
+        callerScope outerScope currentContext}
+    (agreement :
+      SpinedActiveProductPayloadResourceRelatesAt freshFrontier alpha support
+        canonical referenceBase callerOpened session callerPending callerFinish
+        callerBranch callerBranchTail callerAltTail currentBodyBarrier
+        callerBarrier
+        (.call predicate referencePayload :: nestedReferenceRest)
+        (.call predicate args res :: nestedExecutableRest)
+        callerReferences callerExecutables outer current runtime qterm
+        currentActive currentResources callerScope outerScope currentContext
+        baseAlts currentSource state currentPayloadContext)
+    (notThrow : ¬ BuiltinThrowCall predicate referencePayload)
+    (notDatabase :
+      DatabaseActions.recognizeDatabaseAction predicate referencePayload =
+        none) :
+    RawStep session currentSource
+      [.opened (requestFor predicate referencePayload current)] .none
+      (openedFor session predicate referencePayload current).session
+      (.running
+        (ActiveProductContext.plug
+          ({ callerScope := callerScope
+             predicateScope := callerOpened.scope
+             retained :=
+               .clauses callerOpened.scope
+                 (callerFinish.advance callerBranch callerBranchTail)
+             callerRest := callerReferences } ::
+           currentContext)
+          (sourceProductFrontier callerOpened.scope
+            (openedFor session predicate referencePayload current)
+            (openedFor session predicate referencePayload current).cursor
+            nestedReferenceRest))) := by
+  have leaf :
+      RawStep session
+        (.task callerOpened.scope
+          (.call predicate referencePayload :: nestedReferenceRest) current)
+        [.opened (requestFor predicate referencePayload current)] .none
+        (openedFor session predicate referencePayload current).session
+        (.running
+          (sourceProductFrontier callerOpened.scope
+            (openedFor session predicate referencePayload current)
+            (openedFor session predicate referencePayload current).cursor
+            nestedReferenceRest)) := by
+    exact .taskCall callerOpened.scope predicate referencePayload
+      nestedReferenceRest current session notThrow notDatabase
+  let currentFrame : ActiveProductFrame :=
+    { callerScope := callerScope
+      predicateScope := callerOpened.scope
+      retained :=
+        .clauses callerOpened.scope
+          (callerFinish.advance callerBranch callerBranchTail)
+      callerRest := callerReferences }
+  have throughCurrent :
+      RawStep session
+        (currentFrame.wrap
+          (.task callerOpened.scope
+            (.call predicate referencePayload :: nestedReferenceRest) current))
+        [.opened (requestFor predicate referencePayload current)] .none
+        (openedFor session predicate referencePayload current).session
+        (.running
+          (currentFrame.wrap
+            (sourceProductFrontier callerOpened.scope
+              (openedFor session predicate referencePayload current)
+              (openedFor session predicate referencePayload current).cursor
+              nestedReferenceRest))) :=
+    currentFrame.liftProgress leaf (by simp [Trace.AnswerFree])
+  have throughOuter :=
+    ActiveProductContext.liftProgress currentContext throughCurrent
+      (by simp [Trace.AnswerFree])
+  rw [agreement.core.sourceShape]
+  simpa [currentFrame, activeSourceProduct,
+    ActiveProductFrame.wrap, ActiveProductContext.plug] using throughOuter
 
 /-- A call-headed active product supplies the complete outer invariant for
 the next nested representative activation.
@@ -268,53 +377,62 @@ theorem
                    (callerFinish.advance callerBranch callerBranchTail)
                callerRest := callerReferences } :: currentContext),
         SpinedActiveProductPayloadResourceRelatesAt
-          (AlphaFreshFrontier nextAlpha) nextAlpha support
-          (sourceCanonical ++ canonical) referenceBase
-          (openedFor session predicate referencePayload current)
-          (openedFor session predicate referencePayload current).session
-          nestedPending nestedFinish nestedBranch nestedBranchTail
-          nestedAltTail nestedBodyBarrier currentBodyBarrier nestedBranch.body
-          copied.body nestedReferenceRest nestedExecutableRest
-          ({ barrier := callerBarrier
-             references := callerReferences
-             executables := callerExecutables } :: outer)
-          independentResult
-          (PLeaTTa.trimFor
-            (copied.body ++
-              (nestedExecutableRest ++
-                flattenExecutables
-                  ({ barrier := callerBarrier
-                     references := callerReferences
-                     executables := callerExecutables } :: outer)))
-            qterm installed)
-          qterm nestedActive (currentActive :: currentResources)
-          callerOpened.scope outerScope
-          ({ callerScope := callerScope
-             predicateScope := callerOpened.scope
-             retained :=
-               .clauses callerOpened.scope
-                 (callerFinish.advance callerBranch callerBranchTail)
-             callerRest := callerReferences } :: currentContext)
-          baseAlts
-          (ActiveProductContext.plug
+            (AlphaFreshFrontier nextAlpha) nextAlpha support
+            (sourceCanonical ++ canonical) referenceBase
+            (openedFor session predicate referencePayload current)
+            (openedFor session predicate referencePayload current).session
+            nestedPending nestedFinish nestedBranch nestedBranchTail
+            nestedAltTail nestedBodyBarrier currentBodyBarrier nestedBranch.body
+            copied.body nestedReferenceRest nestedExecutableRest
+            ({ barrier := callerBarrier
+               references := callerReferences
+               executables := callerExecutables } :: outer)
+            independentResult
+            (PLeaTTa.trimFor
+              (copied.body ++
+                (nestedExecutableRest ++
+                  flattenExecutables
+                    ({ barrier := callerBarrier
+                       references := callerReferences
+                       executables := callerExecutables } :: outer)))
+              qterm installed)
+            qterm nestedActive (currentActive :: currentResources)
+            callerOpened.scope outerScope
             ({ callerScope := callerScope
                predicateScope := callerOpened.scope
                retained :=
                  .clauses callerOpened.scope
                    (callerFinish.advance callerBranch callerBranchTail)
                callerRest := callerReferences } :: currentContext)
-            (activatedSourceProduct callerOpened.scope
-              (openedFor session predicate referencePayload current)
-              nestedFinish nestedBranch nestedBranchTail independentResult
-              nestedReferenceRest))
-          (activatedOpenSuccessor nestedPending copied
-            (nestedExecutableRest ++
-              flattenExecutables
-                ({ barrier := callerBarrier
-                   references := callerReferences
-                   executables := callerExecutables } :: outer))
-            qterm installed)
-          nestedPayloadContext := by
+            baseAlts
+            (ActiveProductContext.plug
+              ({ callerScope := callerScope
+                 predicateScope := callerOpened.scope
+                 retained :=
+                   .clauses callerOpened.scope
+                     (callerFinish.advance callerBranch callerBranchTail)
+                 callerRest := callerReferences } :: currentContext)
+              (activatedSourceProduct callerOpened.scope
+                (openedFor session predicate referencePayload current)
+                nestedFinish nestedBranch nestedBranchTail independentResult
+                nestedReferenceRest))
+            (activatedOpenSuccessor nestedPending copied
+              (nestedExecutableRest ++
+                flattenExecutables
+                  ({ barrier := callerBarrier
+                     references := callerReferences
+                     executables := callerExecutables } :: outer))
+              qterm installed)
+            nestedPayloadContext ∧
+          ExtendsAboveAt nestedBranch.firstFresh state.persistent.counter
+            activation.alphaExtension currentPayloadContext
+            (SourceControlResourcePayloadContextAgrees.tail
+              nestedPayloadContext) ∧
+          PrologCurrentSessionPayloadTransitionBridge.ActiveProductPayloadContext.cellCount
+              nestedPayloadContext =
+            PrologCurrentSessionPayloadTransitionBridge.ActiveProductPayloadContext.cellCount
+                currentPayloadContext +
+              1 := by
   have preHeadPayload :
       TaskSpinePayloadAgrees alpha support canonical referenceBase current
         runtime
@@ -341,11 +459,35 @@ theorem
         flattenOwnedAlts (currentActive :: currentResources) baseAlts :=
     callEntry_pendingOuterAlts_of_activeResourceStack entry
       currentAgreement.core.resourceStack
-  exact
+  obtain
+      ⟨nestedActive, nestedPayloadContext, nestedAgreement, payloadHandoff⟩ :=
     SpinedRepresentativeProductActivation.spinedProductPayloadResourceRelates
       frontier preHeadPayload payloadSupported (by rfl) (by rfl)
       queryReferenceBelow queryExecutableLive activation entry.sourceFresh
       currentPayloadContext outerEndpoints currentAgreement.activationOrdered
       baseAlts outerAlts
+  refine
+    ⟨nestedActive, nestedPayloadContext, nestedAgreement, payloadHandoff, ?_⟩
+  calc
+    PrologCurrentSessionPayloadTransitionBridge.ActiveProductPayloadContext.cellCount
+        nestedPayloadContext =
+      PrologCurrentSessionPayloadTransitionBridge.ActiveProductPayloadContext.cellCount
+          (PrologCurrentSessionPayloadTransitionBridge.ActiveProductPayloadContext.outerPayload
+            nestedPayloadContext) +
+        1 :=
+      PrologCurrentSessionPayloadTransitionBridge.ActiveProductPayloadContext.cellCount_outerPayload
+        nestedPayloadContext
+    _ =
+      PrologCurrentSessionPayloadTransitionBridge.ActiveProductPayloadContext.cellCount
+          (SourceControlResourcePayloadContextAgrees.tail
+            nestedPayloadContext) +
+        1 := by
+      rw [
+        PrologCurrentSessionPayloadTransitionBridge.ActiveProductPayloadContext.outerPayload_eq_tail]
+    _ =
+      PrologCurrentSessionPayloadTransitionBridge.ActiveProductPayloadContext.cellCount
+          currentPayloadContext +
+        1 := by
+      rw [payloadHandoff.cellCount_eq]
 
 end PLeaTTa.PrologNestedCallEntryPayloadBridge
