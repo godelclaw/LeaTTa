@@ -169,14 +169,18 @@ theorem
           endpointsBelow payloadContext
               opened.session.resolver.nextFresh
               pending.persistent.counter ∧
-            ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
-              callerBarrier pending (finish.advance branch branchTail)
-              (segmentExecutableRest ++ flattenExecutables outer)
-              altTail active outer resources callerScope outerScope context
-              baseAlts
-              (activatedOpenSuccessor pending copied
+            endpointsBelow
+                (SourceControlResourcePayloadContextAgrees.tail payloadContext)
+                (finish.advance branch branchTail).reservationStart
+                active.counter ∧
+              ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
+                callerBarrier pending (finish.advance branch branchTail)
                 (segmentExecutableRest ++ flattenExecutables outer)
-                qterm installed) := by
+                altTail active outer resources callerScope outerScope context
+                baseAlts
+                (activatedOpenSuccessor pending copied
+                  (segmentExecutableRest ++ flattenExecutables outer)
+                  qterm installed) := by
   have branchMember : branch ∈ finish.remaining := by
     rw [frontier.finishRemaining]
     simp
@@ -195,7 +199,7 @@ theorem
     simpa [outerNext] using
       extendAbove_endpointsBelow activation.alphaExtension outerPayloads
         outerAtSelected
-  obtain ⟨active, snapshot, _existingContext, stack⟩ :=
+  obtain ⟨active, snapshot, _existingContext, activeCounter, stack⟩ :=
     PLeaTTa.PrologRetainedPayloadSnapshotBridge.SpinedRepresentativeProductActivation.activeResourceStackWithSnapshot
       frontier preHeadPayload payloadSupported openedArguments openedBindings
       queryReferenceBelow queryExecutableLive activation outerNext baseAlts
@@ -265,7 +269,25 @@ theorem
     simp only [payloadContextExact, endpointsBelow]
     exact
       ⟨headReferenceBelow, headExecutableBelow, outerNextCurrent⟩
+  have outerNextAtActivation :
+      endpointsBelow outerNext
+        (finish.advance branch branchTail).reservationStart active.counter :=
+    endpointsBelow_mono outerNext outerNextAtSelected
+      (by
+        simpa [PreparedCursor.advance] using
+          frontier.finishWellFormed.1.member_first_le_next branchMember)
+      (by
+        rw [activeCounter]
+        exact Nat.le_succ startCounter)
+  have outerActivationEndpoints :
+      endpointsBelow
+        (SourceControlResourcePayloadContextAgrees.tail payloadContextExact)
+        (finish.advance branch branchTail).reservationStart active.counter := by
+    simpa [payloadContextExact,
+      SourceControlResourcePayloadContextAgrees.tail] using
+      outerNextAtActivation
   exact
-    ⟨active, snapshot, payloadContextExact, payloadContextExactBelow, stack⟩
+    ⟨active, snapshot, payloadContextExact, payloadContextExactBelow,
+      outerActivationEndpoints, stack⟩
 
 end PLeaTTa.PrologNestedRetainedPayloadBridge

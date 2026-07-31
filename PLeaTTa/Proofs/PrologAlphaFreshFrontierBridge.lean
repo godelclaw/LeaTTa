@@ -371,4 +371,29 @@ theorem allocation_inside_executable_region_breaks_gap :
   rw [resolutionSeedHighWaterName_append_compact] at collision
   omega
 
+/-- A consumed resource's advanced executable lower bound cannot recover the
+strict pre-pull allocation gap.
+
+The same compact seed-`2` name is below the consumed floor `3`, but lies
+inside the original protected interval `(2,3]`.  This is why retained-head
+reactivation must preserve the old gap as chronology rather than infer it from
+the consumed snapshot. -/
+theorem consumed_gap_does_not_recover_prePull_gap :
+    AlphaAllocationGap
+        [(.source "x", "x" ++ resolutionCompactSuffix 2)]
+        0 0 3 3 ∧
+      ¬ AlphaAllocationGap
+        [(.source "x", "x" ++ resolutionCompactSuffix 2)]
+        0 0 2 3 := by
+  constructor
+  · constructor
+    · intro index member
+      simp at member
+    · intro name member
+      simp only [List.map_cons, List.map_nil, List.mem_singleton] at member
+      subst name
+      rw [resolutionSeedHighWaterName_append_compact]
+      exact Or.inl (Nat.le_refl 3)
+  · exact allocation_inside_executable_region_breaks_gap
+
 end PLeaTTa.PrologAlphaFreshFrontierBridge

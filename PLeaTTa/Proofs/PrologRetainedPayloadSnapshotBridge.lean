@@ -9,10 +9,12 @@ Main exports:
   RetainedCallPayloadSnapshot,
   RetainedCallPayloadSnapshot.mono,
   RetainedCallPayloadSnapshot.transportCursor,
+  RetainedCallPayloadSnapshot.afterRejectedPulls,
   RetainedCallPayloadSnapshot.afterPulledHead,
   RetainedCallPayloadSnapshot.afterRejectedPullsAndPulledHead,
   RetainedCallPayloadSnapshot.sourceBindingShape,
   RetainedCallPayloadSnapshot.currentRepresentative,
+  SourceControlResourcePayloadContextAgrees.endpointsBelow_head,
   SpinedRepresentativeProductActivation.activeResourceStackWithSnapshot
 -/
 import PLeaTTa.Proofs.PrologBodyFailureResourceTransitionBridge
@@ -289,6 +291,32 @@ def afterPulledHead
       using snapshot.payload
 
 /-- Transport one immutable payload cell through a counted rejected prefix
+without consuming the executable alternative at the resulting head.
+
+This is the exact pre-pull logical snapshot needed to retain activation
+chronology across the executable-ahead offset. -/
+def afterRejectedPulls
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {before finish : PreparedCursor}
+    {count : Nat}
+    {caller : ControlSegment}
+    {outer : List ControlSegment}
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support resource before caller
+        outer)
+    (beforeWellFormed : before.WellFormed)
+    (pulls : RejectedPullsN count before finish) :
+    RetainedCallPayloadSnapshot currentAlpha support resource finish caller
+      outer :=
+  transportCursor
+    (RejectedPullsN.preserves_callContext pulls)
+    (RejectedPullsN.reservationStart_le pulls beforeWellFormed)
+    (_root_.PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_reservedUntil
+      pulls)
+    snapshot
+
+/-- Transport one immutable payload cell through a counted rejected prefix
 and the immediately following eager pulled-head offset.
 
 The rejected prefix changes only the frozen cursor suffix and its reservation
@@ -318,13 +346,7 @@ def afterRejectedPullsAndPulledHead
       (_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead
         resource remainingAlts)
       (finish.advance branch branchTail) caller outer := by
-  let atFinish :=
-    transportCursor
-      (RejectedPullsN.preserves_callContext pulls)
-      (RejectedPullsN.reservationStart_le pulls beforeWellFormed)
-      (_root_.PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_reservedUntil
-        pulls)
-      snapshot
+  let atFinish := afterRejectedPulls snapshot beforeWellFormed pulls
   have advancedContext :
       CursorCallContext (finish.advance branch branchTail)
         finish.callGeneration finish.predicate finish.arguments
@@ -513,6 +535,31 @@ inductive SourceControlResourcePayloadContextAgrees
 
 namespace SourceControlResourcePayloadContextAgrees
 
+/-- Remove the unique head cell of a nonempty payload zipper.
+
+The return type retains every outer cursor, resource, control segment, and
+typed scope literally.  This is the generic linear tail operation used by
+active, scheduled, committed, and post-failure payload relations. -/
+def tail
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {frame : ActiveProductFrame} {context : ActiveProductContext}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources) inner
+        (frame :: context) outer) :
+    SourceControlResourcePayloadContextAgrees alpha support qterm
+      segment.barrier segments resources frame.callerScope context outer := by
+  cases agreement with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
+      exact outerAgrees
+
 /-- Erasing only the immutable payload certificates recovers the exact
 already-audited source/control/resource alignment. -/
 def alignment
@@ -586,6 +633,43 @@ def endpointsBelow
       cursor.reservedUntil ≤ referenceFloor ∧
         resource.finalCounter ≤ executableFloor ∧
         endpointsBelow outerAgrees referenceFloor executableFloor
+
+/-- Expose all three domination components of a nonempty payload zipper.
+
+The tail in the result is the exact linear eliminator applied to the supplied
+zipper, so none of the three bounds can be paired with a different payload
+cell. -/
+theorem endpointsBelow_head
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {cursor : PreparedCursor}
+    {currentScope nextScope outer : CutScopeId}
+    {context : ActiveProductContext}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources)
+        currentScope
+        ({ callerScope := nextScope
+           predicateScope := currentScope
+           retained := .clauses currentScope cursor
+           callerRest := segment.references } ::
+         context)
+        outer)
+    {referenceFloor executableFloor : Nat}
+    (below :
+      endpointsBelow agreement referenceFloor executableFloor) :
+    cursor.reservedUntil ≤ referenceFloor ∧
+      resource.finalCounter ≤ executableFloor ∧
+      endpointsBelow (SourceControlResourcePayloadContextAgrees.tail agreement)
+        referenceFloor executableFloor := by
+  cases agreement with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
+      exact below
 
 /-- Advancing either persistent allocator preserves domination of every
 frozen payload cell. -/
@@ -921,14 +1005,15 @@ theorem
                  callerRest := segmentReferenceRest } ::
                context)
               outerScope,
-          ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
-          callerBarrier pending (finish.advance branch branchTail)
-          (segmentExecutableRest ++ flattenExecutables outer)
-          altTail active outer resources callerScope outerScope context
-          baseAlts
-          (activatedOpenSuccessor pending copied
-            (segmentExecutableRest ++ flattenExecutables outer)
-            qterm installed) := by
+          active.counter = startCounter + 1 ∧
+            ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
+              callerBarrier pending (finish.advance branch branchTail)
+              (segmentExecutableRest ++ flattenExecutables outer)
+              altTail active outer resources callerScope outerScope context
+              baseAlts
+              (activatedOpenSuccessor pending copied
+                (segmentExecutableRest ++ flattenExecutables outer)
+                qterm installed) := by
   let advanced := finish.advance branch branchTail
   have advancedRemaining : advanced.remaining = branchTail := by
     simp [advanced, PreparedCursor.advance]
@@ -1077,6 +1162,6 @@ theorem
          context)
         outerScope := by
     simpa [caller] using payloadContext
-  exact ⟨active, snapshot, payloadContextExact, stack⟩
+  exact ⟨active, snapshot, payloadContextExact, rfl, stack⟩
 
 end PLeaTTa.PrologRetainedPayloadSnapshotBridge

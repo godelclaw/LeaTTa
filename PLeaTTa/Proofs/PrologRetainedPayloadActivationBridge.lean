@@ -8,6 +8,8 @@ Purpose: Reactivate one retained local-clause payload from the actual current
 Trusted boundary: none
 Main exports:
   ConfBelowResolutionCounter.resolutionOccupied_of_selectedEquality,
+  SelectedHeadActivationChronology,
+  SelectedHeadActivationChronology.restoreSnapshot,
   RetainedCallPayloadSnapshot.activateSelectedHead
 -/
 import PLeaTTa.Proofs.PrologRetainedPayloadCatchupBridge
@@ -28,6 +30,7 @@ open PrologControlSegmentSpineBridge
 open PrologMguBridge
 open PrologMguComposition
 open PrologOrdinaryStepBridge
+open PrologPrefilterScanBridge
 open PrologProductResourceContextBridge
 open PrologRepresentativeActivationBridge
 open PrologRepresentativeTaskActivationBridge
@@ -102,6 +105,164 @@ theorem ConfBelowResolutionCounter.resolutionOccupied_of_selectedEquality
   · simp [resolutionLiveVars, current, query]
 
 /-! ## Entry-free selected-head activation -/
+
+/-- The two independent chronology facts intentionally weakened when a
+retained head is pulled eagerly.
+
+The dependent `snapshot` is already indexed by the consumed executable
+resource and the one-head-advanced source cursor.  Its immutable payload is
+still exact, but its source/query lower bounds and executable allocation-gap
+floor have advanced.  Reactivating the selected head needs the corresponding
+pre-pull bounds.  The old source query bound follows from the retained gap,
+alpha inclusion, and the consumed snapshot's advanced bound.  Keeping the
+independent bounds in one token is strictly weaker than
+retaining a historical machine state: no world, database, frame, alternative
+bank, or live allocator occurs here. -/
+structure SelectedHeadActivationChronology
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {finish : PreparedCursor}
+    {branch : ClauseBranch} {branchTail : List ClauseBranch}
+    {remainingAlts : List PLeaTTa.Alt}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support
+        (afterPulledHead resource remainingAlts)
+        (finish.advance branch branchTail) caller outer) : Prop where
+  allocationGap :
+    AlphaAllocationGap currentAlpha finish.reservationStart
+      finish.reservedUntil resource.counter resource.finalCounter
+  queryExecutableBelow :
+    resolutionSeedHighWaterNames
+        (resolutionOccupiedVars
+          (resource.args.map (PLeaTTa.subst resource.binding))
+          resource.res resource.rest resource.binding resource.qterm) ≤
+      resource.counter
+
+namespace SelectedHeadActivationChronology
+
+/-- Consume one exact retained head while keeping the stronger chronology
+needed to activate that same head.
+
+The returned token and consumed snapshot are definitionally produced from
+one pre-pull snapshot; no independent existential can pair bounds from one
+payload with logical data from another. -/
+def ofBeforePull
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {finish : PreparedCursor}
+    {branch : ClauseBranch} {clause : PLeaTTa.Clause}
+    {branchTail : List ClauseBranch} {copied : PLeaTTa.Clause}
+    {remainingAlts : List PLeaTTa.Alt}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support resource finish caller
+        outer)
+    (offset :
+      PulledHeadOffsetAgrees currentAlpha finish branch clause branchTail
+        copied resource remainingAlts) :
+    SelectedHeadActivationChronology
+      (RetainedCallPayloadSnapshot.afterPulledHead remainingAlts
+        (RetainedCallPayloadSnapshot.transportCursor
+          ((CursorCallContext.refl finish).advance branch branchTail)
+          (RetainedCallPayloadSnapshot.advance_reservationStart_le
+            offset.cursorWellFormed offset.cursorRemaining)
+          rfl snapshot)) :=
+  { allocationGap := snapshot.allocationGap
+    queryExecutableBelow := snapshot.queryExecutableBelow }
+
+/-- Counted conservative rejections followed by one eager retained-head pull
+produce the exact consumed snapshot and its activation chronology together. -/
+def ofRejectedPullsAndBeforePull
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {before finish : PreparedCursor}
+    {count : Nat}
+    {branch : ClauseBranch} {clause : PLeaTTa.Clause}
+    {branchTail : List ClauseBranch} {copied : PLeaTTa.Clause}
+    {remainingAlts : List PLeaTTa.Alt}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support resource before caller
+        outer)
+    (beforeWellFormed : before.WellFormed)
+    (pulls : RejectedPullsN count before finish)
+    (offset :
+      PulledHeadOffsetAgrees currentAlpha finish branch clause branchTail
+        copied resource remainingAlts) :
+    SelectedHeadActivationChronology
+      (RetainedCallPayloadSnapshot.afterRejectedPullsAndPulledHead snapshot
+        beforeWellFormed pulls offset) := by
+  exact
+    ofBeforePull
+      (RetainedCallPayloadSnapshot.afterRejectedPulls snapshot beforeWellFormed
+        pulls)
+      offset
+
+/-- Recover the immutable logical snapshot immediately before the eager head
+pull.
+
+This construction is sound only because `chronology` supplies the exact
+strong bounds which the consumed snapshot deliberately no longer contains.
+All payload fields are inherited from `snapshot`; operational state is absent
+from both the premise and conclusion. -/
+def restoreSnapshot
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {finish : PreparedCursor}
+    {branch : ClauseBranch} {clause : PLeaTTa.Clause}
+    {branchTail : List ClauseBranch} {copied : PLeaTTa.Clause}
+    {remainingAlts : List PLeaTTa.Alt}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support
+        (afterPulledHead resource remainingAlts)
+        (finish.advance branch branchTail) caller outer)
+    (chronology : SelectedHeadActivationChronology snapshot)
+    (offset :
+      PulledHeadOffsetAgrees currentAlpha finish branch clause branchTail
+        copied resource remainingAlts) :
+    RetainedCallPayloadSnapshot currentAlpha support resource finish caller
+      outer := by
+  refine
+    { snapshotAlpha := snapshot.snapshotAlpha
+      canonical := snapshot.canonical
+      referenceBase := snapshot.referenceBase
+      referencePayload := snapshot.referencePayload
+      alphaIncluded := snapshot.alphaIncluded
+      allocationGap := chronology.allocationGap
+      cursorArguments := ?_
+      payloadSupported := snapshot.payloadSupported
+      queryReferenceBelow := ?_
+      queryExecutableLive := ?_
+      queryExecutableBelow := chronology.queryExecutableBelow
+      resourceRest := ?_
+      payload := ?_ }
+  · simpa [PreparedCursor.advance] using snapshot.cursorArguments
+  · intro index member
+    rcases List.mem_map.mp member with
+      ⟨pair, pairMember, pairIdentity⟩
+    have currentMember :
+        .generated index ∈ currentAlpha.map Prod.fst := by
+      exact List.mem_map.mpr
+        ⟨pair, snapshot.alphaIncluded pair pairMember, pairIdentity⟩
+    rcases chronology.allocationGap.1 index currentMember with below | above
+    · exact below
+    · have advancedBelow := snapshot.queryReferenceBelow index member
+      have branchMember : branch ∈ finish.remaining := by
+        rw [offset.cursorRemaining]
+        simp
+      have advancedStartLe :
+          (finish.advance branch branchTail).reservationStart ≤
+            finish.reservedUntil := by
+        simpa [PreparedCursor.advance] using
+          offset.cursorWellFormed.1.member_next_le_final branchMember
+      omega
+  · simpa [afterPulledHead] using snapshot.queryExecutableLive
+  · simpa [afterPulledHead] using snapshot.resourceRest
+  · simpa [PreparedCursor.advance, afterPulledHead] using snapshot.payload
+
+end SelectedHeadActivationChronology
 
 /-- Activate the retained head using only its frozen payload and the actual
 current source/executable states.
@@ -389,5 +550,47 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
   · exact unifySuccessor_persistent state _ installed
   · rfl
   · rfl
+
+/-! ## Anti-vacuity: the two chronology fields are independent -/
+
+/-- An allocation gap constrains only names represented in the alpha graph;
+it does not bound every runtime name currently occupied by the selected
+resource.
+
+Here the graph's historical compact seed `1` lies below executable floor `2`,
+so the allocation gap holds.  The actual result atom contains compact seed
+`2`, whose high-water is `3`, so the independent occupied-runtime bound at
+floor `2` fails. -/
+theorem allocationGap_does_not_bound_occupiedRuntime :
+    AlphaAllocationGap
+        [(.source "x", "x" ++ resolutionCompactSuffix 1)]
+        0 0 2 3 ∧
+      ¬ resolutionSeedHighWaterNames
+          (resolutionOccupiedVars []
+            (.var ("x" ++ resolutionCompactSuffix 2))
+            [] [] (.sym "query")) ≤
+        2 := by
+  constructor
+  · constructor
+    · intro index member
+      simp at member
+    · intro name member
+      simp only [List.map_cons, List.map_nil, List.mem_singleton] at member
+      subst name
+      rw [resolutionSeedHighWaterName_append_compact]
+      exact Or.inl (Nat.le_refl 2)
+  · intro bounded
+    have occupied :
+        "x" ++ resolutionCompactSuffix 2 ∈
+          resolutionOccupiedVars []
+            (.var ("x" ++ resolutionCompactSuffix 2))
+            [] [] (.sym "query") := by
+      unfold resolutionOccupiedVars
+      simp [PLeaTTa.specializationGoalsVars, Metta.Atom.vars]
+    have nameBound :=
+      (PersistentSubst.resolutionSeedHighWaterNames_le_iff _ 2).mp bounded
+        ("x" ++ resolutionCompactSuffix 2) occupied
+    rw [resolutionSeedHighWaterName_append_compact] at nameBound
+    omega
 
 end PLeaTTa.PrologRetainedPayloadActivationBridge

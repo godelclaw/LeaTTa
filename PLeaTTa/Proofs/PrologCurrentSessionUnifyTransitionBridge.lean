@@ -298,6 +298,7 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccess
   exact
     ⟨spelling, executableLeft, executableRight, bodyExecutableTail,
       sourceExtension, installed, leftAgreement, rightAgreement,
-      executableHead, sourceStep, executableStep, ⟨nextCore, nextEndpoints⟩⟩
+      executableHead, sourceStep, executableStep,
+      ⟨nextCore, nextEndpoints, agreement.outerActivationEndpoints⟩⟩
 
 end PLeaTTa.PrologCurrentSessionUnifyTransitionBridge

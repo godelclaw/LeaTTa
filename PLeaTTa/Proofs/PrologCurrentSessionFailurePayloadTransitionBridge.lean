@@ -13,6 +13,7 @@ Main exports:
 -/
 import PLeaTTa.Proofs.PrologCurrentSessionPayloadTransitionBridge
 import PLeaTTa.Proofs.PrologBodyFailureResourceTransitionBridge
+import PLeaTTa.Proofs.PrologRetainedPayloadActivationBridge
 
 namespace PLeaTTa.PrologCurrentSessionFailurePayloadTransitionBridge
 
@@ -40,6 +41,7 @@ open PrologRecursiveCallPayloadBridge
 open PrologRepresentativeCallFrontierBridge
 open PrologRepresentativeProductActivationBridge
 open PrologRetainedCursorOwnershipBridge
+open PrologRetainedPayloadActivationBridge
 open PrologRetainedPayloadSnapshotBridge
 open PrologRetainedPayloadSnapshotBridge.SourceControlResourcePayloadContextAgrees
 open PrologSourceProductContextBridge
@@ -93,6 +95,49 @@ abbrev PostFailurePayloadOffsetContext
        callerRest := callerReferences } ::
      context)
     outerScope
+
+namespace PostFailurePayloadOffsetContext
+
+/-- Extract the offset zipper's literal consumed head snapshot.
+
+Unlike the generic `headCell`, this specialized eliminator fixes the cursor
+to the one-head advance in its return type.  Subsequent activation therefore
+cannot existentially choose a merely shape-compatible cursor. -/
+def headSnapshot
+    {alpha support : List (LogicVar × String)}
+    {qterm : Atom}
+    {opened : OpenedCall}
+    {cursor : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch}
+    {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {remainingAlts : List PLeaTTa.Alt}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    (payloadContext :
+      PostFailurePayloadOffsetContext alpha support qterm opened cursor branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer resource remainingAlts resources callerScope
+        outerScope context) :
+    RetainedCallPayloadSnapshot alpha support
+      (afterPulledHead resource remainingAlts)
+      (cursor.advance branch branchTail)
+      { barrier := callerBarrier
+        references := callerReferences
+        executables := callerExecutables }
+      outer := by
+  cases payloadContext with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource retainedResources retainedCursor retainedContext segmentAgrees
+      resourceRest resourceQuery resourceBarrier resourceOwnership snapshot
+      outerAgrees =>
+      exact snapshot
+
+end PostFailurePayloadOffsetContext
 
 namespace PulledHeadOffsetAgrees
 
@@ -200,6 +245,55 @@ def afterRejectedPullsAndPulledHead
           (by simpa [afterPulledHead] using resourceBarrier)
           offset.tailOwnership nextSnapshot outerAgrees
 
+/-- Failure catch-up retains the exact stronger chronology needed to
+reactivate the eagerly pulled head.
+
+The result is indexed by the transformed zipper's literal head snapshot.
+Thus no proof token from another cursor, resource, or payload can be paired
+with this post-failure state. -/
+def activationChronology_afterRejectedPullsAndPulledHead
+    {alpha support : List (LogicVar × String)}
+    {qterm : Atom}
+    {opened : OpenedCall}
+    {finish : PreparedCursor} {selected : ClauseBranch}
+    {selectedTail : List ClauseBranch}
+    {next : PreparedCursor}
+    {nextBranch : ClauseBranch} {nextClause : PLeaTTa.Clause}
+    {nextBranchTail : List ClauseBranch}
+    {nextCopied : PLeaTTa.Clause}
+    {nextAltTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    (payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish selected
+        selectedTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context)
+    {count : Nat}
+    (pulls :
+      RejectedPullsN count (finish.advance selected selectedTail) next)
+    (offset :
+      PulledHeadOffsetAgrees alpha next nextBranch nextClause nextBranchTail
+        nextCopied active nextAltTail) :
+    SelectedHeadActivationChronology
+      (PostFailurePayloadOffsetContext.headSnapshot
+        (afterRejectedPullsAndPulledHead payloadContext pulls offset)) := by
+  cases payloadContext with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource retainedResources before retainedContext segmentAgrees
+      resourceRest resourceQuery resourceBarrier resourceOwnership snapshot
+      outerAgrees =>
+      exact
+        SelectedHeadActivationChronology.ofRejectedPullsAndBeforePull snapshot
+          (RetainedAlternativeSegment.owns_wellFormed resourceOwnership)
+          pulls offset
+
 /-- The transformed head and every unchanged outer payload cell remain below
 the same persistent allocator endpoints.
 
@@ -302,6 +396,45 @@ theorem outerPayload_afterRejectedPullsAndPulledHead
     ActiveProductPayloadContext.outerPayload
         (afterRejectedPullsAndPulledHead payloadContext pulls offset) =
       ActiveProductPayloadContext.outerPayload payloadContext := by
+  cases payloadContext
+  rfl
+
+/-- Failure catch-up changes only the active payload cell.  The generic
+linear tail eliminator therefore returns the identical outer zipper before
+and after the one-head offset is installed. -/
+theorem tail_afterRejectedPullsAndPulledHead
+    {alpha support : List (LogicVar × String)}
+    {qterm : Atom}
+    {opened : OpenedCall}
+    {finish : PreparedCursor} {selected : ClauseBranch}
+    {selectedTail : List ClauseBranch}
+    {next : PreparedCursor}
+    {nextBranch : ClauseBranch} {nextClause : PLeaTTa.Clause}
+    {nextBranchTail : List ClauseBranch}
+    {nextCopied : PLeaTTa.Clause}
+    {nextAltTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    (payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish selected
+        selectedTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context)
+    {count : Nat}
+    (pulls :
+      RejectedPullsN count (finish.advance selected selectedTail) next)
+    (offset :
+      PulledHeadOffsetAgrees alpha next nextBranch nextClause nextBranchTail
+        nextCopied active nextAltTail) :
+    SourceControlResourcePayloadContextAgrees.tail
+        (afterRejectedPullsAndPulledHead payloadContext pulls offset) =
+      SourceControlResourcePayloadContextAgrees.tail payloadContext := by
   cases payloadContext
   rfl
 
@@ -464,6 +597,20 @@ structure SpinedPostFailureFrontierPayloadResourceRelatesAt
   endpointsCurrent :
     endpointsBelow payloadContext session.resolver.nextFresh
       state.persistent.counter
+  activationChronology :
+    SelectedHeadActivationChronology
+      (PostFailurePayloadOffsetContext.headSnapshot payloadContext)
+  /-- The retained bank was allocated against the pending call's exact
+  executable high-water.  Failure and eager head consumption do not change
+  that upper endpoint. -/
+  resourceFinalCounter :
+    resource.finalCounter = pending.persistent.counter
+  /-- Every older payload predates the exact source/executable allocation
+  seeds of the retained head waiting to be reactivated. -/
+  outerActivationEndpoints :
+    endpointsBelow
+      (SourceControlResourcePayloadContextAgrees.tail payloadContext)
+      branch.firstFresh resource.counter
 
 namespace SpinedActiveProductPayloadResourceRelatesAt
 
@@ -580,12 +727,51 @@ theorem afterUnifyFailureRetained
         session.resolver.nextFresh
         (unifyFailureSuccessor state).persistent.counter := by
     simpa [unifyFailureSuccessor_persistent] using endpointsBefore
+  have beforeWellFormed :
+      (finish.advance selected selectedTail).WellFormed :=
+    RetainedAlternativeSegment.owns_wellFormed
+      agreement.core.resourceStack.activeOwnership
+  have prefixStartMono :
+      (finish.advance selected selectedTail).reservationStart ≤
+        next.reservationStart :=
+    RetainedCallPayloadSnapshot.RejectedPullsN.reservationStart_le pulls
+      beforeWellFormed
+  have nextBranchMember : nextBranch ∈ next.remaining := by
+    rw [post.resourceStack.offset.cursorRemaining]
+    simp
+  have nextStartBelowBranch :
+      next.reservationStart ≤ nextBranch.firstFresh :=
+    post.resourceStack.offset.cursorWellFormed.1.start_le_member_first
+      nextBranchMember
+  have oldOuterAtNextBranch :
+      endpointsBelow
+        (SourceControlResourcePayloadContextAgrees.tail payloadContext)
+        nextBranch.firstFresh active.counter :=
+    endpointsBelow_mono
+      (SourceControlResourcePayloadContextAgrees.tail payloadContext)
+      agreement.outerActivationEndpoints
+      (Nat.le_trans prefixStartMono nextStartBelowBranch)
+      (Nat.le_refl _)
+  have outerActivationEndpoints :
+      endpointsBelow
+        (SourceControlResourcePayloadContextAgrees.tail
+          (ActiveProductPayloadContext.afterRejectedPullsAndPulledHead
+            payloadContext pulls post.resourceStack.offset))
+        nextBranch.firstFresh active.counter := by
+    rw [
+      ActiveProductPayloadContext.tail_afterRejectedPullsAndPulledHead
+        payloadContext pulls post.resourceStack.offset]
+    exact oldOuterAtNextBranch
   exact
     ⟨count, skippedBranches, skippedClauses, candidates, next, nextBranch,
       nextClause, nextBranchTail, nextClauseTail, nextAltTail, nextCopied,
       pulls, post.resourceStack.offset, selectedTailEq, candidatesEq,
       branchCount, clauseCount, skippedRejected, sourceSteps, executableStep,
-      ⟨post, endpointsAfter⟩⟩
+      ⟨post, endpointsAfter,
+        ActiveProductPayloadContext.activationChronology_afterRejectedPullsAndPulledHead
+          payloadContext pulls post.resourceStack.offset,
+        agreement.core.resourceStack.activeFinalCounter,
+        outerActivationEndpoints⟩⟩
 
 end SpinedActiveProductPayloadResourceRelatesAt
 

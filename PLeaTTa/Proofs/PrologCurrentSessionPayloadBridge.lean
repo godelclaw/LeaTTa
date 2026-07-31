@@ -111,6 +111,14 @@ structure SpinedActiveProductPayloadResourceRelatesAt
   endpointsCurrent :
     endpointsBelow payloadContext session.resolver.nextFresh
       state.persistent.counter
+  /-- Every older retained payload predates the active cursor/resource
+  allocation floors.  This is the cyclic chronology invariant needed to
+  extend the outer zipper when a later clause head is selected after
+  backtracking. -/
+  outerActivationEndpoints :
+    endpointsBelow
+      (SourceControlResourcePayloadContextAgrees.tail payloadContext)
+      (finish.advance branch branchTail).reservationStart active.counter
 
 namespace SpinedActiveProductPayloadResourceRelatesAt
 
@@ -349,7 +357,8 @@ def reindex
       state payloadContext :=
   ⟨agreement.core.reindex persistent advanced,
     endpointsBelow_mono payloadContext agreement.endpointsCurrent
-      advanced.fresh (Nat.le_refl _)⟩
+      advanced.fresh (Nat.le_refl _),
+    agreement.outerActivationEndpoints⟩
 
 /-- The payload-coupled relation genuinely admits a strictly later fresh
 session when the frontier relates that high-water to the unchanged executable
@@ -558,7 +567,9 @@ theorem
             (segmentExecutableRest ++ flattenExecutables outer) qterm
             installed)
           payloadContext := by
-  obtain ⟨active, _snapshot, payloadContext, endpoints, resourceStack⟩ :=
+  obtain
+      ⟨active, _snapshot, payloadContext, endpoints,
+        outerActivationEndpoints, resourceStack⟩ :=
     _root_.PLeaTTa.PrologNestedRetainedPayloadBridge.SpinedRepresentativeProductActivation.activeResourceStackWithNestedSnapshots
       frontier preHeadPayload payloadSupported openedArguments openedBindings
       queryReferenceBelow queryExecutableLive activation sourceFresh
@@ -577,7 +588,9 @@ theorem
           installed).persistent.counter := by
     rw [counterExact]
     exact endpoints
-  refine ⟨active, payloadContext, ?_, endpointsCurrent⟩
+  refine
+    ⟨active, payloadContext, ?_, endpointsCurrent,
+      outerActivationEndpoints⟩
   refine ⟨?_, resourceStack, ?_⟩
   · exact
       _root_.PLeaTTa.PrologProductResourceTransitionBridge.SpinedRepresentativeProductActivation.spinedActiveProductRelates
