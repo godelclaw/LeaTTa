@@ -8,6 +8,7 @@ import PLeaTTa.Proofs.DemandDrivenCallStep
 import PLeaTTa.Proofs.PrologStateBridge
 import PLeaTTa.Proofs.PrologFindallEntryBridge
 import PLeaTTa.Proofs.PrologFindallFrameZipperBridge
+import PLeaTTa.Proofs.PrologFindallExitBridge
 import PLeaTTa.Proofs.PrologAlphaFreshFrontierBridge
 import PLeaTTa.Proofs.PrologCallEntryBridge
 import PLeaTTa.Proofs.PrologCallStepBridge
@@ -1758,6 +1759,18 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologFindallFrameZipperBridge.two_collection_occurrences_inhabited
 #print axioms PLeaTTa.PrologFindallFrameZipperBridge.swapped_distinct_collection_frames_rejected
 #print axioms PLeaTTa.PrologFindallFrameZipperBridge.duplicated_collection_frame_rejected
+#print axioms PLeaTTa.PrologFindallExitBridge.completed_target_has_no_active_collections
+#print axioms PLeaTTa.PrologFindallExitBridge.completed_step_has_no_active_collections
+#print axioms PLeaTTa.PrologFindallExitBridge.ActiveFindallExit.sourceStep
+#print axioms PLeaTTa.PrologFindallExitBridge.ActiveFindallExit.cells_pop
+#print axioms PLeaTTa.PrologFindallExitBridge.ActiveFindallExit.occurrences_after
+#print axioms PLeaTTa.PrologFindallExitBridge.ActiveFindallExit.findallExit_occurrence_pop
+#print axioms PLeaTTa.PrologFindallExitBridge.ContextualFindallExitRelates.frames_length_exact
+#print axioms PLeaTTa.PrologFindallExitBridge.ContextualFindallExitRelates.collection_frontier_not_rolled_back
+#print axioms PLeaTTa.PrologFindallExitBridge.ContextualFindallExitRelates.world_preserved
+#print axioms PLeaTTa.PrologFindallExitBridge.ContextualFindallExitRelates.counter_after_copy
+#print axioms PLeaTTa.PrologFindallExitBridge.ActiveFindallExit.wrong_head_frame_rejected
+#print axioms PLeaTTa.PrologFindallExitBridge.direct_empty_generator_exit_inhabited
 #print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_reference
 #print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_executable
 #print axioms PLeaTTa.PrologStateBridge.buildFreshening_apply_member
