@@ -6,7 +6,8 @@ Purpose: Faithful state-side bridge between the independent local-Prolog
   semantics and the fine-grained executable lane.
 Trusted boundary: none
 Main exports: LocalClauseAgrees, DatabaseRelatesWorld,
-  SessionRelatesPersistent, SessionHighWatersExtend, RuntimeAlpha,
+  SessionRelatesPersistent, SessionRelatesOpenConf,
+  SessionHighWatersExtend, RuntimeAlpha,
   LocalClauseHeadAlphaAgrees, FreshenedClauseAlphaAgrees
 -/
 import PLeaTTa.Proofs.CompilerAdequacy
@@ -39,7 +40,10 @@ representations:
   per accepted clause.  Their numeric high-waters are therefore different
   currencies and must not be equated.
 * cut, exception, and collection identities are typed nominal control
-  resources in `Search`; they have no field in executable `Conf`.
+  resources in `Search`; they have no field in sealed `Conf`.  The fine
+  `OpenConf` lane now carries separate open-only allocation frontiers, which
+  remain distinct from both the executable fresh counter and positional
+  barrier depths.
 
 This file first relates the exact current clause projection.  The fresh-name
 frontier remains an explicit relation parameter: the later search-state
@@ -356,9 +360,9 @@ abbrev FreshFrontierRelation := Nat → Nat → Prop
 /-- Persistent-state agreement, parameterized by the honest fresh-frontier
 relation supplied by the full search-state bridge.
 
-The three typed control allocators do not appear here.  They are ghost
-identities erased by the executable projection; the preservation theorems
-below prove that allocating them cannot alter this relation. -/
+The three typed control allocators do not appear at this sealed-persistent
+layer.  `SessionRelatesOpenConf` below accounts for their explicit open-layer
+frontiers without pretending that `Persistent.counter` represents them. -/
 structure SessionRelatesPersistent
     (freshFrontier : FreshFrontierRelation)
     (session : Session) (persistent : Persistent) : Prop where
@@ -367,17 +371,149 @@ structure SessionRelatesPersistent
   fresh :
     freshFrontier session.resolver.nextFresh persistent.counter
 
+/-- Per-delimiter relations between independent and fine-executable
+allocation frontiers.  Keeping the three relations in distinct fields makes
+reuse across cut, exception, and collection lanes unrepresentable.
+
+This record relates allocation chronology only.  Active nominal source scopes
+remain paired occurrence-for-occurrence with anonymous executable marker
+positions by the control/resource zipper; no equality with barrier depth is
+asserted here. -/
+structure ControlFrontierRelations where
+  cut : Nat → Nat → Prop
+  exception : Nat → Nat → Prop
+  collection : Nat → Nat → Prop
+
+/-- The current cut lane is exact because both sides allocate one chronology
+ticket at each executable-derived local-call entry.  Exception and collection
+are deliberately unconstrained until their fine entry lanes are connected. -/
+def CutExactControlFrontiers : ControlFrontierRelations :=
+  { cut := Eq
+    exception := fun _ _ => True
+    collection := fun _ _ => True }
+
+/-- Full open-state persistent agreement.  Sealed world/fresh state and all
+three typed open-only frontiers are present in one relation; which numeric
+correspondence is justified remains an explicit parameter.
+
+In particular, using `CutExactControlFrontiers` proves only the cut frontier.
+It cannot be cited as exception or collection adequacy because those fields
+are visibly `True` in that instantiation. -/
+structure SessionRelatesOpenConf
+    (freshFrontier : FreshFrontierRelation)
+    (controlFrontiers : ControlFrontierRelations)
+    (session : Session) (state : OpenConf) : Prop where
+  persistent :
+    SessionRelatesPersistent freshFrontier session state.persistent
+  cut :
+    controlFrontiers.cut session.nextCutScope
+      state.scopes.nextCutScope
+  exception :
+    controlFrontiers.exception session.nextExceptionScope
+      state.scopes.nextExceptionScope
+  collection :
+    controlFrontiers.collection session.nextCollectionScope
+      state.scopes.nextCollectionScope
+
+namespace SessionRelatesOpenConf
+
+/-- Ordinary sealed advancement cannot alter any open-only frontier.  The
+caller supplies only the changed world/fresh agreement; control chronology is
+carried by `OpenConf.stepOpen` definitionally. -/
+theorem stepOpen
+    {freshFrontier : FreshFrontierRelation}
+    {controlFrontiers : ControlFrontierRelations}
+    {session : Session} {state : OpenConf} {next : PLeaTTa.Conf}
+    (agreement :
+      SessionRelatesOpenConf freshFrontier controlFrontiers session state)
+    (persistent :
+      SessionRelatesPersistent freshFrontier session
+        (state.stepOpen next).persistent) :
+    SessionRelatesOpenConf freshFrontier controlFrontiers session
+      (state.stepOpen next) :=
+  ⟨persistent, agreement.cut, agreement.exception, agreement.collection⟩
+
+/-- A source-only cut allocation cannot be laundered through an unchanged
+fine state under the exact-cut instantiation. -/
+theorem cutExact_rejects_source_advance
+    {freshFrontier : FreshFrontierRelation}
+    {session : Session} {state : OpenConf}
+    (agreement :
+      SessionRelatesOpenConf freshFrontier CutExactControlFrontiers
+        session state) :
+    ¬ SessionRelatesOpenConf freshFrontier CutExactControlFrontiers
+      { session with nextCutScope := session.nextCutScope + 1 } state := by
+  intro advanced
+  have beforeCut := agreement.cut
+  have afterCut := advanced.cut
+  change session.nextCutScope = state.scopes.nextCutScope at beforeCut
+  change session.nextCutScope + 1 = state.scopes.nextCutScope at afterCut
+  omega
+
+/-- Advancing the sealed machine's general-purpose counter still cannot
+justify a source cut-scope allocation.  Scope chronology is carried by the
+separate open field, so treating `Persistent.counter` as a control allocator
+is rejected even when that counter visibly changes. -/
+theorem cutExact_rejects_counter_only_advance
+    {freshFrontier : FreshFrontierRelation}
+    {session : Session} {state : OpenConf}
+    (agreement :
+      SessionRelatesOpenConf freshFrontier CutExactControlFrontiers
+        session state) :
+    ¬ SessionRelatesOpenConf freshFrontier CutExactControlFrontiers
+      { session with nextCutScope := session.nextCutScope + 1 }
+      (state.stepOpen
+        { state.toConf with counter := state.persistent.counter + 1 }) := by
+  intro advanced
+  have beforeCut := agreement.cut
+  have afterCut := advanced.cut
+  change session.nextCutScope = state.scopes.nextCutScope at beforeCut
+  change
+    session.nextCutScope + 1 =
+      (state.stepOpen
+        { state.toConf with
+          counter := state.persistent.counter + 1 }).scopes.nextCutScope
+      at afterCut
+  rw [DemandDrivenStep.OpenConf.stepOpen_scopes] at afterCut
+  omega
+
+/-- Relating one independently opened local call to a fine state whose
+frontier is the executable `afterLocalCall` successor preserves exact-cut
+agreement.  The executable update is an explicit premise about the target;
+it is never computed from the source session. -/
+theorem cutExact_afterLocalCall
+    {freshFrontier : FreshFrontierRelation}
+    {session : Session} {state target : OpenConf}
+    {request : CallRequest}
+    (agreement :
+      SessionRelatesOpenConf freshFrontier CutExactControlFrontiers
+        session state)
+    (persistent :
+      SessionRelatesPersistent freshFrontier
+        (openLocalCall session request).session target.persistent)
+    (scopes : target.scopes = state.scopes.afterLocalCall) :
+    SessionRelatesOpenConf freshFrontier CutExactControlFrontiers
+      (openLocalCall session request).session target := by
+  refine ⟨persistent, ?_, True.intro, True.intro⟩
+  change
+    (openLocalCall session request).session.nextCutScope =
+      target.scopes.nextCutScope
+  rw [openLocalCall_nextCutScope, scopes,
+    DemandDrivenStep.ScopeHighWaters.afterLocalCall_cut]
+  exact congrArg Nat.succ agreement.cut
+
+end SessionRelatesOpenConf
+
 /-- Source-side chronology between a historical activation session and the
 current non-backtrackable session.
 
 `SessionRelatesPersistent` projects the current database and fresh frontier
-into executable `Persistent`.  It deliberately erases the three typed control
-allocators.  This separate certificate retains all four source high-waters
-without pretending that the executable counter represents cut, exception, or
-collection identities.  It does not claim database reachability: that is
-carried by the current `SessionRelatesPersistent` database relation and,
-once dynamic body effects are connected, a separate logical-update
-generation theorem. -/
+into executable `Persistent`; `SessionRelatesOpenConf` relates typed control
+frontiers.  This separate historical certificate still records monotone
+chronology between two source sessions.  It does not claim database
+reachability: that is carried by the current persistent relation and, once
+dynamic body effects are connected, a separate logical-update generation
+theorem. -/
 structure SessionHighWatersExtend (before after : Session) : Prop where
   fresh :
     before.resolver.nextFresh ≤ after.resolver.nextFresh

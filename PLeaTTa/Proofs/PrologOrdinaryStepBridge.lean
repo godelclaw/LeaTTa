@@ -1517,14 +1517,13 @@ and the alternative/barrier stacks are pruned by the sealed machine's shared
 `cutToTracked`; persistent world and fresh allocation are untouched. -/
 def cutSuccessor (state : OpenConf) (barrier : Nat)
     (rest : List PLeaTTa.Goal) (runtime : Metta.Subst) : OpenConf :=
-  OpenConf.ofConf
+  state.stepOpen
     { state.toConf with
       cur := some (rest, runtime)
       alts := (cutToTracked barrier state.toConf.barriers
         state.toConf.alts).1
       barriers := (cutToTracked barrier state.toConf.barriers
         state.toConf.alts).2 }
-    state.frames
 
 @[simp] theorem cutSuccessor_persistent
     (state : OpenConf) (barrier : Nat)
@@ -1532,7 +1531,7 @@ def cutSuccessor (state : OpenConf) (barrier : Nat)
     (cutSuccessor state barrier rest runtime).persistent =
       state.persistent := by
   cases state with
-  | mk persistent control frames =>
+  | mk persistent control frames scopes =>
       cases persistent
       cases control
       rfl
@@ -1628,11 +1627,10 @@ sealed machine installs the returned MGU, trims it on the exact continuation,
 and leaves persistent world/allocation and suspended frames untouched. -/
 def unifySuccessor (state : OpenConf) (rest : List PLeaTTa.Goal)
     (installed : Metta.Subst) : OpenConf :=
-  OpenConf.ofConf
+  state.stepOpen
     { state.toConf with
       cur := some
         (rest, PLeaTTa.trimFor rest state.toConf.qterm installed) }
-    state.frames
 
 @[simp] theorem unifySuccessor_persistent
     (state : OpenConf) (rest : List PLeaTTa.Goal)
@@ -1640,7 +1638,7 @@ def unifySuccessor (state : OpenConf) (rest : List PLeaTTa.Goal)
     (unifySuccessor state rest installed).persistent =
       state.persistent := by
   cases state with
-  | mk persistent control frames =>
+  | mk persistent control frames scopes =>
       cases persistent
       cases control
       rfl
@@ -1819,9 +1817,7 @@ theorem unify_step_correspondence
 machine immediately pulls the next retained alternative; this is deliberately
 not identified with the independent leaf's branch-completion terminal. -/
 def unifyFailureSuccessor (state : OpenConf) : OpenConf :=
-  OpenConf.ofConf
-    (PLeaTTa.pull { state.toConf with cur := none })
-    state.frames
+  state.stepOpen (PLeaTTa.pull { state.toConf with cur := none })
 
 /-- Pulling after primitive-unification failure changes only backtrackable
 control.  The dynamic world and global high-water remain current. -/
@@ -1851,7 +1847,7 @@ control.  The dynamic world and global high-water remain current. -/
   unfold persistentOf
   rw [world, counter]
   cases state with
-  | mk persistent control frames =>
+  | mk persistent control frames scopes =>
       cases persistent
       rfl
 

@@ -948,7 +948,8 @@ theorem
       ?_, activation.barrierTag, rfl⟩
   · refine
       ⟨?_, rfl, ?_, activation.spinePayload⟩
-    · unfold activatedOpenSuccessor OpenConf.ofConf persistentOf
+    · unfold activatedOpenSuccessor OpenConf.stepOpen OpenConf.ofConfWith
+        persistentOf
       rw [activation.worldPreserved, activation.counterPreserved]
       exact activation.persistentAgreement
     · rcases activation.retainedCursorOwnership with

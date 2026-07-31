@@ -303,8 +303,8 @@ theorem RepresentativeProductActivation.activatedPersistent_eq
     (activatedOpenSuccessor pending copied executableRest qterm
       installed).persistent =
       pending.persistent := by
-  unfold activatedOpenSuccessor DemandDrivenStep.OpenConf.ofConf
-    DemandDrivenStep.persistentOf
+  unfold activatedOpenSuccessor DemandDrivenStep.OpenConf.stepOpen
+    DemandDrivenStep.OpenConf.ofConfWith DemandDrivenStep.persistentOf
   rw [activation.worldPreserved, activation.counterPreserved]
 
 /-- The persistent state relation established at activation is a relation to

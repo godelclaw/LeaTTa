@@ -149,7 +149,7 @@ theorem unifyFailureSuccessor_toConf_of_alts_branch
     (unifyFailureSuccessor state).toConf =
       { state.toConf with cur := some (goals, runtime), alts := rest } := by
   unfold unifyFailureSuccessor
-  rw [OpenConf.ofConf_toConf]
+  rw [OpenConf.stepOpen_toConf]
   apply PLeaTTa.pull_of_alts_branch
   change state.control.alts = .br goals runtime :: rest
   exact alts

@@ -111,7 +111,7 @@ def assertionSuccessor (operation : AssertionOperation)
     (state : OpenConf) (executableResult : Atom)
     (executableTail : List PLeaTTa.Goal) (runtime : Subst)
     (functor : String) (executableClause : PLeaTTa.Clause) : OpenConf :=
-  OpenConf.ofConf
+  state.stepOpen
     { state.toConf with
       cur := some
         (PLeaTTa.Goal.eq executableResult trueA :: executableTail, runtime)
@@ -119,7 +119,6 @@ def assertionSuccessor (operation : AssertionOperation)
         PLeaTTa.installPredicateClause state.persistent.world operation.front
           functor executableClause
       counter := state.persistent.counter + 1 }
-    state.frames
 
 /-- Both supported assertion operations advance the logical-update generation
 exactly once. -/

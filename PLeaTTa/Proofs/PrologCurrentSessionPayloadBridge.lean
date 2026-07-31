@@ -617,7 +617,8 @@ theorem
         (segmentExecutableRest ++ flattenExecutables outer) qterm
         installed).persistent.counter =
         pending.persistent.counter := by
-    unfold activatedOpenSuccessor OpenConf.ofConf persistentOf
+    unfold activatedOpenSuccessor OpenConf.stepOpen OpenConf.ofConfWith
+      persistentOf
     exact activation.counterPreserved
   have endpointsCurrent :
       endpointsBelow payloadContext opened.session.resolver.nextFresh

@@ -54,9 +54,8 @@ def activatedOpenSuccessor
     (pending : DemandDrivenCallStep.PendingCall)
     (copied : PLeaTTa.Clause) (rest : List PLeaTTa.Goal)
     (qterm : Atom) (installed : Subst) : DemandDrivenStep.OpenConf :=
-  DemandDrivenStep.OpenConf.ofConf
+  pending.pulled.stepOpen
     (activatedExecutableSuccessor pending copied rest qterm installed)
-    pending.frames
 
 @[simp] theorem activatedOpenSuccessor_toConf
     (pending : DemandDrivenCallStep.PendingCall)
@@ -72,6 +71,14 @@ def activatedOpenSuccessor
     (qterm : Atom) (installed : Subst) :
     (activatedOpenSuccessor pending copied rest qterm installed).frames =
       pending.frames :=
+  rfl
+
+@[simp] theorem activatedOpenSuccessor_scopes
+    (pending : DemandDrivenCallStep.PendingCall)
+    (copied : PLeaTTa.Clause) (rest : List PLeaTTa.Goal)
+    (qterm : Atom) (installed : Subst) :
+    (activatedOpenSuccessor pending copied rest qterm installed).scopes =
+      pending.scopes :=
   rfl
 
 @[simp] theorem activatedExecutableSuccessor_cur

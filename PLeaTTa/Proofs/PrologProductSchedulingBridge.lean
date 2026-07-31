@@ -191,7 +191,8 @@ theorem
       ⟨copied.body, executableRest,
         PLeaTTa.trimFor (copied.body ++ executableRest) qterm installed,
         ?_, rfl, activation.segmentedPayload⟩
-    unfold activatedOpenSuccessor OpenConf.ofConf persistentOf
+    unfold activatedOpenSuccessor OpenConf.stepOpen OpenConf.ofConfWith
+      persistentOf
     rw [activation.worldPreserved, activation.counterPreserved]
     exact activation.persistentAgreement
   · change

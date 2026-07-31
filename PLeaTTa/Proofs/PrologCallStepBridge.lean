@@ -49,6 +49,7 @@ structure CallEntryBankRelates
     (qterm : Metta.Atom) (barrier startCounter : Nat) : Prop where
   outer : pending.outer = before.control
   frames : pending.frames = before.frames
+  scopes : pending.scopes = before.scopes.afterLocalCall
   world : pending.persistent.world = before.persistent.world
   callHead :
     before.toConf.cur =
@@ -90,6 +91,63 @@ theorem CallEntryBankRelates.qterm_unique
     first = second :=
   one.queryTerm.trans two.queryTerm.symm
 
+/-- The exact executable-derived cut frontier composes with the full
+open-state relation at both pending phases.  Fresh/database agreement after
+the call opening remains an explicit premise because the two standardizers
+use different numeric currencies; no false counter equality is introduced. -/
+theorem CallEntryBankRelates.sessionRelatesInstalledAndPulled
+    {freshFrontier : FreshFrontierRelation}
+    {session : Session} {before : OpenConf} {pending : PendingCall}
+    {predicate : String} {referenceArguments : List Term}
+    {referenceBindings :
+      PeTTaSpec.PrologCore.OpenSubstitution.Substitution}
+    {argsv args : List Metta.Atom} {res : Metta.Atom}
+    {rest : List PLeaTTa.Goal} {binding : Metta.Subst}
+    {qterm : Metta.Atom} {barrier startCounter : Nat}
+    (entry :
+      CallEntryBankRelates
+        (openedFor session predicate referenceArguments referenceBindings)
+        before pending argsv args res rest binding qterm barrier startCounter)
+    (beforeAgreement :
+      SessionRelatesOpenConf freshFrontier CutExactControlFrontiers
+        session before)
+    (persistent :
+      SessionRelatesPersistent freshFrontier
+        (openedFor session predicate referenceArguments
+          referenceBindings).session
+        pending.persistent) :
+    SessionRelatesOpenConf freshFrontier CutExactControlFrontiers
+        (openedFor session predicate referenceArguments
+          referenceBindings).session
+        pending.installed ∧
+      SessionRelatesOpenConf freshFrontier CutExactControlFrontiers
+        (openedFor session predicate referenceArguments
+          referenceBindings).session
+        pending.pulled := by
+  have installedPersistent :
+      SessionRelatesPersistent freshFrontier
+        (openedFor session predicate referenceArguments
+          referenceBindings).session
+        pending.installed.persistent := by
+    simpa [PendingCall.installed] using persistent
+  have installed :
+      SessionRelatesOpenConf freshFrontier CutExactControlFrontiers
+        (openedFor session predicate referenceArguments
+          referenceBindings).session
+        pending.installed := by
+    apply SessionRelatesOpenConf.cutExact_afterLocalCall
+      beforeAgreement installedPersistent
+    simpa [openedFor] using entry.scopes
+  refine ⟨installed, ?_⟩
+  have pulledPersistent :
+      SessionRelatesPersistent freshFrontier
+        (openedFor session predicate referenceArguments
+          referenceBindings).session
+        pending.pulled.persistent := by
+    simpa using persistent
+  simpa [PendingCall.pulled] using
+    installed.stepOpen pulledPersistent
+
 /-- The concrete independent opener and the concrete executable pending
 package satisfy the post-entry relation.  Rewriting by the actual
 `resolveAlts` equation preserves the complete source-ordered bank, including
@@ -124,6 +182,7 @@ theorem openedFor_pendingCallOf_relates
       state.control.qterm (barrierDepth state.toConf + 1)
       state.toConf.counter := by
   constructor
+  · rfl
   · rfl
   · rfl
   · rfl

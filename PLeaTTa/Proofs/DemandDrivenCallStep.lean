@@ -48,6 +48,7 @@ structure PendingCall where
   persistent : Persistent
   outer : Control
   frames : List Frame
+  scopes : ScopeHighWaters
   branches : List Alt
 deriving Repr
 
@@ -60,12 +61,13 @@ def PendingCall.installed (pending : PendingCall) : OpenConf :=
         cur := none
         alts := pending.branches ++ Alt.barrier :: pending.outer.alts
         barriers := pushBarrierCache pending.outer.barriers }
-    frames := pending.frames }
+    frames := pending.frames
+    scopes := pending.scopes }
 
 /-- Pull the first retained branch, or skip the barrier when the scan produced
 no branch.  This is the same `pull` function used by the sealed machine. -/
 def PendingCall.pulled (pending : PendingCall) : OpenConf :=
-  OpenConf.ofConf (pull pending.installed.toConf) pending.frames
+  pending.installed.stepOpen (pull pending.installed.toConf)
 
 /-- A fine executable state has exactly one active-control phase.  The
 transient call phase is a variant rather than an optional field, so unrelated
@@ -103,6 +105,7 @@ def pendingCallOf (state : OpenConf) (branches : List Alt)
         counter := counter }
     outer := state.control
     frames := state.frames
+    scopes := state.scopes.afterLocalCall
     branches := branches }
 
 @[simp] theorem pendingCallOf_world (state : OpenConf)
@@ -117,6 +120,32 @@ def pendingCallOf (state : OpenConf) (branches : List Alt)
 @[simp] theorem pendingCallOf_frames (state : OpenConf)
     (branches : List Alt) (counter : Nat) :
     (pendingCallOf state branches counter).frames = state.frames := rfl
+
+@[simp] theorem pendingCallOf_scopes (state : OpenConf)
+    (branches : List Alt) (counter : Nat) :
+    (pendingCallOf state branches counter).scopes =
+      state.scopes.afterLocalCall := rfl
+
+@[simp] theorem PendingCall.pulled_scopes (pending : PendingCall) :
+    pending.pulled.scopes = pending.scopes := rfl
+
+@[simp] theorem PendingCall.installed_scopes (pending : PendingCall) :
+    pending.installed.scopes = pending.scopes := rfl
+
+@[simp] theorem pull_world (conf : Conf) :
+    (pull conf).world = conf.world := by
+  unfold pull
+  generalize pullAuxTracked conf.barriers conf.alts = result
+  rcases result with ⟨result, cache⟩
+  cases result <;> rfl
+
+@[simp] theorem PendingCall.pulled_persistent (pending : PendingCall) :
+    pending.pulled.persistent = pending.persistent := by
+  cases pending with
+  | mk persistent outer frames scopes branches =>
+      cases persistent
+      simp [PendingCall.pulled, PendingCall.installed, OpenConf.stepOpen,
+        OpenConf.ofConfWith, OpenConf.toConf, Control.toConf, persistentOf]
 
 /-- One call-fine transition.  Existing nested-findall steps lift only when a
 local resolve head is absent, structurally excluding the old atomic

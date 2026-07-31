@@ -1656,6 +1656,10 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.StepStar.preserves_barrierCacheCoherent
 #print axioms PLeaTTa.Raises.preserves_barrierCacheCoherent
 #print axioms PLeaTTa.DemandDrivenStep.control_toConf
+#print axioms PLeaTTa.DemandDrivenStep.ScopeHighWaters.afterLocalCall_ne
+#print axioms PLeaTTa.DemandDrivenStep.OpenConf.stepOpen_toConf
+#print axioms PLeaTTa.DemandDrivenStep.OpenConf.stepOpen_frames
+#print axioms PLeaTTa.DemandDrivenStep.OpenConf.stepOpen_scopes
 #print axioms PLeaTTa.DemandDrivenStep.enterFindall_ofConf
 #print axioms PLeaTTa.DemandDrivenStep.resumeFindall_ofConf
 #print axioms PLeaTTa.DemandDrivenStep.enterFindall_transfers_alts
@@ -1718,6 +1722,10 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologStateBridge.retractId_snapshot_separation
 #print axioms PLeaTTa.PrologStateBridge.openCatch_preserves_persistent_relation
 #print axioms PLeaTTa.PrologStateBridge.openFindall_preserves_persistent_relation
+#print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.stepOpen
+#print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.cutExact_rejects_source_advance
+#print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.cutExact_rejects_counter_only_advance
+#print axioms PLeaTTa.PrologStateBridge.SessionRelatesOpenConf.cutExact_afterLocalCall
 #print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_reference
 #print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_executable
 #print axioms PLeaTTa.PrologStateBridge.buildFreshening_apply_member
@@ -1771,6 +1779,8 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologCallEntryBridge.DatabaseRelatesWorld.prepareCall_resolveAlts
 #print axioms PLeaTTa.DemandDrivenCallStep.pendingCallOf_installed_toConf
 #print axioms PLeaTTa.DemandDrivenCallStep.pendingCallOf_pulled_toConf
+#print axioms PLeaTTa.DemandDrivenCallStep.pendingCallOf_scopes
+#print axioms PLeaTTa.DemandDrivenCallStep.PendingCall.pulled_persistent
 #print axioms PLeaTTa.DemandDrivenCallStep.callEnter_counter_exact
 #print axioms PLeaTTa.DemandDrivenCallStep.callEnter_length_exact
 #print axioms PLeaTTa.DemandDrivenCallStep.localResolveHead_forces_callEnter
@@ -1782,6 +1792,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.DemandDrivenCallStep.local_call_exact_two_steps
 #print axioms PLeaTTa.PrologCallStepBridge.openedFor_pendingCallOf_relates
 #print axioms PLeaTTa.PrologCallStepBridge.CallEntryBankRelates.qterm_unique
+#print axioms PLeaTTa.PrologCallStepBridge.CallEntryBankRelates.sessionRelatesInstalledAndPulled
 #print axioms PLeaTTa.PrologCallStepBridge.taskCall_callEnter_bank_correspondence
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.NormalizedAlphaGoalsAgree.append
 #print axioms PLeaTTa.PrologOrdinaryStepBridge.NormalizedAlphaGoalsAgree.ofAlphaGoalsAgree

@@ -107,16 +107,78 @@ inductive Frame where
   | findall (frame : FindallFrame)
 deriving Repr
 
+/-- Open-layer-only allocation chronology for the three typed control
+delimiters.  These are not the sealed machine's positional barrier depths and
+are deliberately kept separate from both `Persistent.counter` and `Conf`.
+
+The fields are present before every delimiter lane is connected so that
+future catch/collection refinements cannot silently reuse the cut frontier.
+Only a transition justified by executable syntax may advance a field. -/
+structure ScopeHighWaters where
+  nextCutScope : Nat := 1
+  nextExceptionScope : Nat := 1
+  nextCollectionScope : Nat := 1
+deriving Repr, DecidableEq
+
+namespace ScopeHighWaters
+
+/-- One executable local-predicate entry allocates one cut delimiter and
+cannot alter either of the other typed frontiers. -/
+def afterLocalCall (scopes : ScopeHighWaters) : ScopeHighWaters :=
+  { scopes with nextCutScope := scopes.nextCutScope + 1 }
+
+@[simp] theorem afterLocalCall_cut (scopes : ScopeHighWaters) :
+    scopes.afterLocalCall.nextCutScope = scopes.nextCutScope + 1 := rfl
+
+@[simp] theorem afterLocalCall_exception (scopes : ScopeHighWaters) :
+    scopes.afterLocalCall.nextExceptionScope =
+      scopes.nextExceptionScope := rfl
+
+@[simp] theorem afterLocalCall_collection (scopes : ScopeHighWaters) :
+    scopes.afterLocalCall.nextCollectionScope =
+      scopes.nextCollectionScope := rfl
+
+/-- The cut allocation is a real open-state change, not a cosmetic wrapper
+around the sealed configuration. -/
+theorem afterLocalCall_ne (scopes : ScopeHighWaters) :
+    scopes.afterLocalCall ≠ scopes := by
+  intro same
+  have cutSame := congrArg ScopeHighWaters.nextCutScope same
+  simp only [afterLocalCall_cut] at cutSame
+  omega
+
+end ScopeHighWaters
+
 /-- Fine-grained executable state.  `frames` owns suspended continuations;
-`control` owns the only active continuation. -/
+`control` owns the only active continuation.  `scopes` is open-layer-only
+non-backtrackable chronology, parallel to `frames`: sealed projection erases
+it, and no frame can restore it. -/
 structure OpenConf where
   persistent : Persistent
   control : Control
   frames : List Frame := []
+  scopes : ScopeHighWaters := {}
 deriving Repr
 
 def OpenConf.ofConf (conf : Conf) (frames : List Frame := []) : OpenConf :=
-  { persistent := persistentOf conf, control := controlOf conf, frames := frames }
+  { persistent := persistentOf conf
+    control := controlOf conf
+    frames := frames }
+
+/-- Reconstitute sealed data at an explicitly supplied open-layer frontier.
+Unlike `ofConf`, this constructor never invents a non-initial chronology. -/
+def OpenConf.ofConfWith (conf : Conf) (frames : List Frame)
+    (scopes : ScopeHighWaters) : OpenConf :=
+  { persistent := persistentOf conf
+    control := controlOf conf
+    frames := frames
+    scopes := scopes }
+
+/-- Advance sealed data while structurally carrying every open-only resource.
+Transition code uses this constructor instead of `ofConf`, so an ordinary
+sealed step cannot reset frames or scope chronology accidentally. -/
+def OpenConf.stepOpen (state : OpenConf) (next : Conf) : OpenConf :=
+  OpenConf.ofConfWith next state.frames state.scopes
 
 def OpenConf.toConf (state : OpenConf) : Conf :=
   state.control.toConf state.persistent
@@ -127,6 +189,32 @@ def OpenConf.toConf (state : OpenConf) : Conf :=
 
 @[simp] theorem OpenConf.ofConf_frames (conf : Conf) (frames : List Frame) :
     (OpenConf.ofConf conf frames).frames = frames := rfl
+
+@[simp] theorem OpenConf.ofConf_scopes (conf : Conf) (frames : List Frame) :
+    (OpenConf.ofConf conf frames).scopes = {} := rfl
+
+@[simp] theorem OpenConf.ofConfWith_toConf (conf : Conf)
+    (frames : List Frame) (scopes : ScopeHighWaters) :
+    (OpenConf.ofConfWith conf frames scopes).toConf = conf := by
+  exact control_toConf conf
+
+@[simp] theorem OpenConf.ofConfWith_frames (conf : Conf)
+    (frames : List Frame) (scopes : ScopeHighWaters) :
+    (OpenConf.ofConfWith conf frames scopes).frames = frames := rfl
+
+@[simp] theorem OpenConf.ofConfWith_scopes (conf : Conf)
+    (frames : List Frame) (scopes : ScopeHighWaters) :
+    (OpenConf.ofConfWith conf frames scopes).scopes = scopes := rfl
+
+@[simp] theorem OpenConf.stepOpen_toConf (state : OpenConf) (next : Conf) :
+    (state.stepOpen next).toConf = next := by
+  exact control_toConf next
+
+@[simp] theorem OpenConf.stepOpen_frames (state : OpenConf) (next : Conf) :
+    (state.stepOpen next).frames = state.frames := rfl
+
+@[simp] theorem OpenConf.stepOpen_scopes (state : OpenConf) (next : Conf) :
+    (state.stepOpen next).scopes = state.scopes := rfl
 
 /-- Globally terminal means no active machine work and no suspended caller. -/
 def Terminal (state : OpenConf) : Prop :=
@@ -143,8 +231,8 @@ def enterFindall (state : OpenConf) (template : Atom) (sub : List Goal)
       result := result
       rest := rest
       binding := binding }
-  OpenConf.ofConf (subConfOf state.toConf sub binding template)
-    (.findall frame :: state.frames)
+  { state.stepOpen (subConfOf state.toConf sub binding template) with
+    frames := .findall frame :: state.frames }
 
 /-- Rejoin a terminal generator.  Only the bag and suspended control are
 restored; the persistent world and high-water come exclusively from `inner`. -/
@@ -158,11 +246,13 @@ def resumeFindall (inner : OpenConf) (frame : FindallFrame)
         cur := some
           (Goal.eq frame.result (chainOf copied.values) ::
             frame.rest, frame.binding) }
-    frames := remaining }
+    frames := remaining
+    scopes := inner.scopes }
 
 /-- Rejoin from an already-certified copied bag.  This is the local fine
 copy lane's exit; unlike `resumeFindall`, it performs no copying itself. -/
-def resumeFindallCopied (persistent : Persistent) (frame : FindallFrame)
+def resumeFindallCopied (persistent : Persistent)
+    (scopes : ScopeHighWaters) (frame : FindallFrame)
     (remaining : List Frame) (copiedValues : List Atom) : OpenConf :=
   { persistent := persistent
     control :=
@@ -170,7 +260,8 @@ def resumeFindallCopied (persistent : Persistent) (frame : FindallFrame)
         cur := some
           (Goal.eq frame.result (chainOf copiedValues) ::
             frame.rest, frame.binding) }
-    frames := remaining }
+    frames := remaining
+    scopes := scopes }
 
 /-- The atomic collector is exactly rejoining the certified batch result. -/
 theorem resumeFindall_eq_copied (inner : OpenConf)
@@ -181,6 +272,7 @@ theorem resumeFindall_eq_copied (inner : OpenConf)
           counter :=
             (copyFindallBag inner.persistent.counter
               inner.control.answerValues).counter }
+        inner.scopes
         frame remaining
         (copyFindallBag inner.persistent.counter
           inner.control.answerValues).values := by
@@ -241,7 +333,7 @@ def answerSuccessor (inner : Conf) (binding : Subst) : Conf :=
     (enterFindall state template sub result rest binding).persistent =
       state.persistent := by
   cases state with
-  | mk persistent control frames =>
+  | mk persistent control frames scopes =>
       cases persistent
       rfl
 
@@ -266,8 +358,8 @@ def ownedAlts (state : OpenConf) : List Alt :=
     (binding : Subst) :
     ownedAlts (enterFindall state template sub result rest binding) =
       ownedAlts state := by
-  simp [ownedAlts, enterFindall, OpenConf.ofConf, controlOf, subConfOf,
-    Frame.suspendedAlts]
+  simp [ownedAlts, enterFindall, controlOf, subConfOf,
+    OpenConf.stepOpen, OpenConf.ofConfWith, Frame.suspendedAlts]
 
 @[simp] theorem resumeFindall_transfers_alts
     (inner : OpenConf) (frame : FindallFrame) (remaining : List Frame)
@@ -290,7 +382,7 @@ inductive Step (prog : Prog) (gt : GroundingTable) :
   | ordinary (state : OpenConf) (next : Conf)
       (notFindall : ¬ findallRunHead state.toConf)
       (step : PLeaTTa.Step prog gt state.toConf next) :
-      Step prog gt state (OpenConf.ofConf next state.frames)
+      Step prog gt state (state.stepOpen next)
   | findallEnter (state : OpenConf) (template : Atom) (sub : List Goal)
       (result : Atom) (rest : List Goal) (binding : Subst)
       (head : state.toConf.cur =
@@ -557,8 +649,9 @@ theorem advance {prog : Prog} {gt : GroundingTable}
       | ordinary next notFindall machineStep =>
           let tail : MacroStepsN prog gt 1 finish next :=
             .ordinary 0 finish next next notFindall machineStep (.zero next)
-          simpa using MacroPrefixN.closed baseFrames (n + 1) start next
-            (run.trans tail)
+          simpa [OpenConf.stepOpen, OpenConf.ofConfWith, OpenConf.ofConf] using
+            MacroPrefixN.closed baseFrames (n + 1) start next
+              (run.trans tail)
       | findallEnter template sub result rest binding head =>
           let frame := findallFrameOf finish template result rest binding
           let innerStart := subConfOf finish sub binding template
@@ -585,10 +678,10 @@ theorem advance {prog : Prog} {gt : GroundingTable}
       | ordinary next notFindall machineStep =>
           rcases innerParsed.frames_suffix with ⟨extra, targetFrames⟩
           have recursiveStep : Step prog gt target
-              (OpenConf.ofConf next target.frames) :=
+              (target.stepOpen next) :=
             .ordinary target next notFindall machineStep
           have recursiveSuffix : ∃ more,
-              (OpenConf.ofConf next target.frames).frames =
+              (target.stepOpen next).frames =
                 more ++
                   (.findall
                     (findallFrameOf outer template result rest binding) ::
@@ -1043,8 +1136,29 @@ theorem FlatStepsN.lift {prog : Prog} {gt : GroundingTable}
   | succ n before middle after notFindall machineStep tail
       inductionHypothesis =>
       apply StepsN.succ n _ (OpenConf.ofConf middle frames) _
-      · exact .ordinary _ middle (by simpa using notFindall)
-          (by simpa using machineStep)
+      · simpa [OpenConf.stepOpen, OpenConf.ofConfWith, OpenConf.ofConf] using
+          (Step.ordinary (OpenConf.ofConf before frames) middle
+            (by simpa using notFindall) (by simpa using machineStep))
+      · exact inductionHypothesis
+
+/-- The same exact lift under an arbitrary already-established open-layer
+scope frontier.  Ordinary private steps preserve that frontier
+definitionally. -/
+theorem FlatStepsN.liftWith {prog : Prog} {gt : GroundingTable}
+    {n : Nat} {before after : Conf} (frames : List Frame)
+    (scopes : ScopeHighWaters)
+    (steps : FlatStepsN prog gt n before after) :
+    StepsN prog gt n (OpenConf.ofConfWith before frames scopes)
+      (OpenConf.ofConfWith after frames scopes) := by
+  induction steps with
+  | zero state => exact .zero _
+  | succ n before middle after notFindall machineStep tail
+      inductionHypothesis =>
+      apply StepsN.succ n _
+        (OpenConf.ofConfWith middle frames scopes) _
+      · simpa [OpenConf.stepOpen] using
+          (Step.ordinary (OpenConf.ofConfWith before frames scopes) middle
+            (by simpa using notFindall) (by simpa using machineStep))
       · exact inductionHypothesis
 
 /-- A prefix of `n` generator steps becomes exactly `n+1` open-machine steps:
@@ -1058,24 +1172,26 @@ theorem findall_prefix_lifts
     (run : FlatStepsN prog gt n
       (subConfOf outer.toConf sub binding template) inner) :
     StepsN prog gt (n + 1) outer
-      (OpenConf.ofConf inner
-        (.findall
-          { outer := outer.control
-            template := template
-            result := result
-            rest := rest
-            binding := binding } :: outer.frames)) := by
-  apply StepsN.succ n outer
-    (enterFindall outer template sub result rest binding) _
-  · exact .findallEnter outer template sub result rest binding head
-  · simpa [enterFindall] using
-      run.lift
+      (OpenConf.ofConfWith inner
         (.findall
           { outer := outer.control
             template := template
             result := result
             rest := rest
             binding := binding } :: outer.frames)
+        outer.scopes) := by
+  apply StepsN.succ n outer
+    (enterFindall outer template sub result rest binding) _
+  · exact .findallEnter outer template sub result rest binding head
+  · simpa [enterFindall, OpenConf.stepOpen, OpenConf.ofConfWith] using
+      run.liftWith
+        (.findall
+          { outer := outer.control
+            template := template
+            result := result
+            rest := rest
+            binding := binding } :: outer.frames)
+        outer.scopes
 
 /-- An entry plus any still-open private generator prefix cannot be the
 endpoint of a bracketed terminating macro run lifted under the caller's frame
@@ -1090,13 +1206,14 @@ theorem findall_unpaired_prefix_has_no_macro_collapse
       some (Goal.findall template sub result :: rest, binding))
     (run : FlatStepsN prog gt n
       (subConfOf outer.toConf sub binding template) inner) :
-    let target := OpenConf.ofConf inner
+    let target := OpenConf.ofConfWith inner
       (.findall
         { outer := outer.control
           template := template
           result := result
           rest := rest
           binding := binding } :: outer.frames)
+      outer.scopes
     StepsN prog gt (n + 1) outer target ∧
       ∀ (macroCount : Nat) (finish : Conf),
         MacroStepsN prog gt macroCount outer.toConf finish →
@@ -1124,13 +1241,14 @@ theorem findall_macro_expands
     (done : PLeaTTa.Terminal inner) :
     StepsN prog gt (n + 2) outer
       (resumeFindall
-        (OpenConf.ofConf inner
+        (OpenConf.ofConfWith inner
           (.findall
             { outer := outer.control
               template := template
               result := result
               rest := rest
-              binding := binding } :: outer.frames))
+              binding := binding } :: outer.frames)
+          outer.scopes)
         { outer := outer.control
           template := template
           result := result
@@ -1143,7 +1261,8 @@ theorem findall_macro_expands
       result := result
       rest := rest
       binding := binding }
-  let suspended := OpenConf.ofConf inner (.findall frame :: outer.frames)
+  let suspended :=
+    OpenConf.ofConfWith inner (.findall frame :: outer.frames) outer.scopes
   have prefixRun : StepsN prog gt (n + 1) outer suspended := by
     simpa [frame, suspended] using
       findall_prefix_lifts prog gt outer template sub result rest binding n
@@ -1298,6 +1417,7 @@ during residual-bag copying.  The active generator and its top frame have
 been consumed; `bag.counter` is the sole fresh high-water in this phase. -/
 structure FindallCopyPhase where
   world : PWorld
+  scopes : ScopeHighWaters
   frame : FindallFrame
   remainingFrames : List Frame
   bag : FindallCopy.BagCopyState
@@ -1307,6 +1427,7 @@ deriving Repr
 def beginFindallCopy (inner : OpenConf) (frame : FindallFrame)
     (remaining : List Frame) : FindallCopyPhase :=
   { world := inner.persistent.world
+    scopes := inner.scopes
     frame := frame
     remainingFrames := remaining
     bag :=
@@ -1318,6 +1439,7 @@ values by reversing the phase's private accumulator exactly once. -/
 def finishFindallCopy (phase : FindallCopyPhase) : OpenConf :=
   resumeFindallCopied
     { world := phase.world, counter := phase.bag.counter }
+    phase.scopes
     phase.frame phase.remainingFrames phase.bag.copiedRev.reverse
 
 /-- Additive state space: established open-machine states are retained
@@ -1338,7 +1460,7 @@ inductive CopyStep (prog : Prog) (gt : GroundingTable) :
       (notFindall : ¬ findallRunHead state.toConf)
       (step : PLeaTTa.Step prog gt state.toConf next) :
       CopyStep prog gt (.open state)
-        (.open (OpenConf.ofConf next state.frames))
+        (.open (state.stepOpen next))
   | findallEnter (state : OpenConf) (template : Atom) (sub : List Goal)
       (result : Atom) (rest : List Goal) (binding : Subst)
       (head : state.toConf.cur =
@@ -1390,17 +1512,19 @@ context.  Every bag microstep remains exactly one open-machine microstep. -/
 theorem BagCopyStepsN_lift
     {prog : Prog} {gt : GroundingTable}
     {n : Nat} {before after : FindallCopy.BagCopyState}
-    (world : PWorld) (frame : FindallFrame)
+    (world : PWorld) (scopes : ScopeHighWaters) (frame : FindallFrame)
     (remaining : List Frame)
     (steps : FindallCopy.BagCopyStepsN n before after) :
     CopyStepsN prog gt n
       (.copying
         { world := world
+          scopes := scopes
           frame := frame
           remainingFrames := remaining
           bag := before })
       (.copying
         { world := world
+          scopes := scopes
           frame := frame
           remainingFrames := remaining
           bag := after }) := by
@@ -1418,10 +1542,11 @@ theorem CopyStep.copyNext_preserves_context
     {phase nextPhase : FindallCopyPhase}
     (step : CopyStep prog gt (.copying phase) (.copying nextPhase)) :
     nextPhase.world = phase.world ∧
+      nextPhase.scopes = phase.scopes ∧
       nextPhase.frame = phase.frame ∧
       nextPhase.remainingFrames = phase.remainingFrames := by
   cases step
-  exact ⟨rfl, rfl, rfl⟩
+  exact ⟨rfl, rfl, rfl, rfl⟩
 
 /-- The fresh high-water cannot move backwards during a local copy step. -/
 theorem CopyStep.copyNext_counter_mono
@@ -1461,6 +1586,7 @@ def completedFindallCopyPhase (inner : OpenConf) (frame : FindallFrame)
   let copied :=
     copyFindallBag inner.persistent.counter inner.control.answerValues
   { world := inner.persistent.world
+    scopes := inner.scopes
     frame := frame
     remainingFrames := remaining
     bag :=
@@ -1478,7 +1604,7 @@ theorem findallCopyPhase_exact
       (.copying (beginFindallCopy inner frame remaining))
       (.copying (completedFindallCopyPhase inner frame remaining)) := by
   simpa [beginFindallCopy, completedFindallCopyPhase] using
-    BagCopyStepsN_lift inner.persistent.world frame remaining
+    BagCopyStepsN_lift inner.persistent.world inner.scopes frame remaining
       (FindallCopy.BagCopyStepsN.run_initial
         inner.persistent.counter inner.control.answerValues)
 
