@@ -1653,6 +1653,47 @@ def unifySuccessor (state : OpenConf) (rest : List PLeaTTa.Goal)
         (rest, PLeaTTa.trimFor rest state.control.qterm installed) := by
   rfl
 
+@[simp] theorem unifySuccessor_alts
+    (state : OpenConf) (rest : List PLeaTTa.Goal)
+    (installed : Metta.Subst) :
+    (unifySuccessor state rest installed).control.alts =
+      state.control.alts := by
+  rfl
+
+@[simp] theorem unifySuccessor_qterm
+    (state : OpenConf) (rest : List PLeaTTa.Goal)
+    (installed : Metta.Subst) :
+    (unifySuccessor state rest installed).control.qterm =
+      state.control.qterm := by
+  rfl
+
+@[simp] theorem unifySuccessor_answers
+    (state : OpenConf) (rest : List PLeaTTa.Goal)
+    (installed : Metta.Subst) :
+    (unifySuccessor state rest installed).control.answers =
+      state.control.answers := by
+  rfl
+
+@[simp] theorem unifySuccessor_answerKeys
+    (state : OpenConf) (rest : List PLeaTTa.Goal)
+    (installed : Metta.Subst) :
+    (unifySuccessor state rest installed).control.answerKeys =
+      state.control.answerKeys := by
+  rfl
+
+@[simp] theorem unifySuccessor_barriers
+    (state : OpenConf) (rest : List PLeaTTa.Goal)
+    (installed : Metta.Subst) :
+    (unifySuccessor state rest installed).control.barriers =
+      state.control.barriers := by
+  rfl
+
+@[simp] theorem unifySuccessor_frames
+    (state : OpenConf) (rest : List PLeaTTa.Goal)
+    (installed : Metta.Subst) :
+    (unifySuccessor state rest installed).frames = state.frames := by
+  rfl
+
 /-- Either sealed equality spelling takes exactly one transition in the
 findall/call-fine lane.  The spelling is retained through head inversion, but
 both cases execute the same proved `unifyB` result and exact successor. -/

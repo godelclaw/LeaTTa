@@ -156,6 +156,99 @@ def weak
       resources callerScope outerScope context baseAlts source state :=
   agreement.core
 
+/-- Any singleton-cut older caller retained by the payload-coupled
+current-session relation keeps its own executable barrier tag.
+
+The active body and immediate caller already occupy the first two spine
+regions.  Thus `segment ∈ outer` ranges over arbitrarily deep surrounding
+callers; the theorem rules out silently retagging any of them while lifting a
+local step through the complete control/resource/payload context. -/
+theorem outerCutBarrier_eq
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {state : OpenConf}
+    {payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context}
+    (agreement :
+      SpinedActiveProductPayloadResourceRelatesAt freshFrontier alpha support
+        canonical referenceBase opened session pending finish branch branchTail
+        altTail bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm active
+        resources callerScope outerScope context baseAlts source state
+        payloadContext)
+    {segment : ControlSegment} {actualBarrier : Nat}
+    (present : segment ∈ outer)
+    (sourceCut : segment.references = [.cut])
+    (executableCut : segment.executables = [.cutAt actualBarrier]) :
+    segment.barrier = actualBarrier := by
+  exact
+    agreement.core.control.ready.2.2.2.control.member_cutBarrier_eq
+      (by simp [present]) sourceCut executableCut
+
+/-- A differently tagged singleton-cut outer segment cannot inhabit the full
+current-session payload/resource relation.  This is the arbitrary-depth
+contradiction form of `outerCutBarrier_eq`. -/
+theorem rejectsOuterCutRetag
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {state : OpenConf}
+    {payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context}
+    (agreement :
+      SpinedActiveProductPayloadResourceRelatesAt freshFrontier alpha support
+        canonical referenceBase opened session pending finish branch branchTail
+        altTail bodyBarrier callerBarrier bodyReferences bodyExecutables
+        callerReferences callerExecutables outer current runtime qterm active
+        resources callerScope outerScope context baseAlts source state
+        payloadContext)
+    {segment : ControlSegment} {actualBarrier : Nat}
+    (present : segment ∈ outer)
+    (sourceCut : segment.references = [.cut])
+    (executableCut : segment.executables = [.cutAt actualBarrier])
+    (different : segment.barrier ≠ actualBarrier) : False :=
+  different
+    (agreement.outerCutBarrier_eq present sourceCut executableCut)
+
 /-- The payload-bearing zipper erases to the same outer
 source/control/resource alignment used by the core resource stack. -/
 def payloadAlignment
