@@ -138,23 +138,12 @@ def snapshotAfterPulledHead
       (afterPulledHead partition.first remainingAlts)
       (finish.advance branch branchTail)
       partition.firstSegment partition.survivingSegments := by
-  let atFinish := suffix.snapshotAtFinish pulls
-  have advancedContext :
-      CursorCallContext (finish.advance branch branchTail)
-        finish.callGeneration finish.predicate finish.arguments
-        finish.bindings :=
-    (CursorCallContext.refl finish).advance branch branchTail
-  have atAdvanced :
-      RetainedCallPayloadSnapshot alpha support partition.first
-        (finish.advance branch branchTail)
-        partition.firstSegment partition.survivingSegments :=
-    RetainedCallPayloadSnapshot.transportCursor advancedContext
-      (RetainedCallPayloadSnapshot.advance_reservationStart_le
-        offset.cursorWellFormed offset.cursorRemaining)
-      rfl
-      atFinish
   exact
-    RetainedCallPayloadSnapshot.afterPulledHead remainingAlts atAdvanced
+    RetainedCallPayloadSnapshot.afterRejectedPullsAndPulledHead
+      suffix.snapshot
+      (_root_.PLeaTTa.PrologRetainedPayloadCatchupBridge.OuterResourceCatchupPartition.firstCursorWellFormed
+        partition)
+      pulls offset
 
 end FirstLivePayloadSuffix
 

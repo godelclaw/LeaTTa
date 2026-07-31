@@ -10,6 +10,7 @@ Main exports:
   RetainedCallPayloadSnapshot.mono,
   RetainedCallPayloadSnapshot.transportCursor,
   RetainedCallPayloadSnapshot.afterPulledHead,
+  RetainedCallPayloadSnapshot.afterRejectedPullsAndPulledHead,
   RetainedCallPayloadSnapshot.sourceBindingShape,
   RetainedCallPayloadSnapshot.currentRepresentative,
   SpinedRepresentativeProductActivation.activeResourceStackWithSnapshot
@@ -286,6 +287,55 @@ def afterPulledHead
   · simpa
       [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
       using snapshot.payload
+
+/-- Transport one immutable payload cell through a counted rejected prefix
+and the immediately following eager pulled-head offset.
+
+The rejected prefix changes only the frozen cursor suffix and its reservation
+start.  Pulling the retained head then advances that cursor exactly once and
+consumes exactly one executable alternative.  The payload support,
+cumulative substitutions, caller segment, and every older segment stay
+literal. -/
+def afterRejectedPullsAndPulledHead
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {before finish : PreparedCursor}
+    {count : Nat}
+    {branch : ClauseBranch} {clause : PLeaTTa.Clause}
+    {branchTail : List ClauseBranch} {copied : PLeaTTa.Clause}
+    {remainingAlts : List PLeaTTa.Alt}
+    {caller : ControlSegment}
+    {outer : List ControlSegment}
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support resource before caller
+        outer)
+    (beforeWellFormed : before.WellFormed)
+    (pulls : RejectedPullsN count before finish)
+    (offset :
+      PulledHeadOffsetAgrees currentAlpha finish branch clause branchTail
+        copied resource remainingAlts) :
+    RetainedCallPayloadSnapshot currentAlpha support
+      (_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead
+        resource remainingAlts)
+      (finish.advance branch branchTail) caller outer := by
+  let atFinish :=
+    transportCursor
+      (RejectedPullsN.preserves_callContext pulls)
+      (RejectedPullsN.reservationStart_le pulls beforeWellFormed)
+      (_root_.PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_reservedUntil
+        pulls)
+      snapshot
+  have advancedContext :
+      CursorCallContext (finish.advance branch branchTail)
+        finish.callGeneration finish.predicate finish.arguments
+        finish.bindings :=
+    (CursorCallContext.refl finish).advance branch branchTail
+  let atAdvanced :=
+    transportCursor advancedContext
+      (advance_reservationStart_le offset.cursorWellFormed
+        offset.cursorRemaining)
+      rfl atFinish
+  exact afterPulledHead remainingAlts atAdvanced
 
 /-- The semantic binding restored on backtracking is exactly the cumulative
 source substitution certified at resource creation. -/
