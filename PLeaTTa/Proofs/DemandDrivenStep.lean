@@ -347,6 +347,83 @@ def answerSuccessor (inner : Conf) (binding : Subst) : Conf :=
       simp only [List.map_cons]
       rw [inner.answerKeys_sound] }
 
+/-- Exact open-state successor of one private generator answer.  `stepOpen`
+is load-bearing: it carries the live frame stack and all typed scope
+high-waters instead of reconstructing either from the sealed configuration. -/
+def privateAnswerTarget (state : OpenConf) (binding : Subst) : OpenConf :=
+  state.stepOpen (answerSuccessor state.toConf binding)
+
+/-- Pulling the next alternative cannot alter the non-backtrackable world or
+fresh high-water. -/
+@[simp] theorem privateAnswer_pull_persistent (conf : Conf) :
+    persistentOf (pull conf) = persistentOf conf := by
+  unfold pull persistentOf
+  generalize pullAuxTracked conf.barriers conf.alts = result
+  rcases result with ⟨next, cache⟩
+  cases next <;> rfl
+
+/-- World state is outside the backtrackable alternative bank. -/
+@[simp] theorem privateAnswer_pull_world (conf : Conf) :
+    (pull conf).world = conf.world := by
+  unfold pull
+  generalize pullAuxTracked conf.barriers conf.alts = result
+  rcases result with ⟨next, cache⟩
+  cases next <;> rfl
+
+/-- The general-purpose fresh counter is likewise outside the alternative
+bank. -/
+@[simp] theorem privateAnswer_pull_counter (conf : Conf) :
+    (pull conf).counter = conf.counter := by
+  unfold pull
+  generalize pullAuxTracked conf.barriers conf.alts = result
+  rcases result with ⟨next, cache⟩
+  cases next <;> rfl
+
+/-- Pulling changes control position only; the observable query term remains
+the one installed when the private generator was entered. -/
+@[simp] theorem privateAnswer_pull_qterm (conf : Conf) :
+    (pull conf).qterm = conf.qterm := by
+  unfold pull
+  generalize pullAuxTracked conf.barriers conf.alts = result
+  rcases result with ⟨next, cache⟩
+  cases next <;> rfl
+
+/-- Pulling cannot rewrite the reverse-discovery answer accumulator. -/
+@[simp] theorem privateAnswer_pull_answers (conf : Conf) :
+    (pull conf).answers = conf.answers := by
+  unfold pull
+  generalize pullAuxTracked conf.barriers conf.alts = result
+  rcases result with ⟨next, cache⟩
+  cases next <;> rfl
+
+@[simp] theorem privateAnswerTarget_frames
+    (state : OpenConf) (binding : Subst) :
+    (privateAnswerTarget state binding).frames = state.frames := rfl
+
+@[simp] theorem privateAnswerTarget_scopes
+    (state : OpenConf) (binding : Subst) :
+    (privateAnswerTarget state binding).scopes = state.scopes := rfl
+
+@[simp] theorem privateAnswerTarget_persistent
+    (state : OpenConf) (binding : Subst) :
+    (privateAnswerTarget state binding).persistent = state.persistent := by
+  simp [privateAnswerTarget, OpenConf.stepOpen, OpenConf.ofConfWith,
+    answerSuccessor, OpenConf.toConf, Control.toConf, persistentOf]
+
+@[simp] theorem privateAnswerTarget_qterm
+    (state : OpenConf) (binding : Subst) :
+    (privateAnswerTarget state binding).control.qterm =
+      state.control.qterm := by
+  simp [privateAnswerTarget, OpenConf.stepOpen, OpenConf.ofConfWith,
+    answerSuccessor, OpenConf.toConf, Control.toConf, controlOf]
+
+@[simp] theorem privateAnswerTarget_answers
+    (state : OpenConf) (binding : Subst) :
+    (privateAnswerTarget state binding).control.answers =
+      subst binding state.control.qterm :: state.control.answers := by
+  simp [privateAnswerTarget, OpenConf.stepOpen, OpenConf.ofConfWith,
+    answerSuccessor, OpenConf.toConf, Control.toConf, controlOf]
+
 @[simp] theorem enterFindall_ofConfWith (outer : Conf) (frames : List Frame)
     (scopes : ScopeHighWaters)
     (template : Atom) (sub : List Goal) (result : Atom)
@@ -1875,6 +1952,40 @@ def publicAnswers (state : OpenConf) : List Atom :=
 /-- A private generator answer is suppressed from the public accumulator but
 is still exactly one fine transition.  Thus infinitely many private answers
 cannot collapse to a zero-step empty observation list. -/
+theorem answer_is_one_private_step
+    (prog : Prog) (gt : GroundingTable) (state : OpenConf)
+    (frame : FindallFrame) (remaining : List Frame) (binding : Subst)
+    (frameHead : state.frames = .findall frame :: remaining)
+    (head : state.toConf.cur = some ([], binding)) :
+    Step prog gt state (privateAnswerTarget state binding) ∧
+      (privateAnswerTarget state binding).frames = state.frames ∧
+      (privateAnswerTarget state binding).scopes = state.scopes ∧
+      (privateAnswerTarget state binding).persistent = state.persistent ∧
+      (privateAnswerTarget state binding).control.qterm =
+        state.control.qterm ∧
+      (privateAnswerTarget state binding).control.answers =
+        subst binding state.control.qterm :: state.control.answers ∧
+      publicAnswers (privateAnswerTarget state binding) =
+        publicAnswers state := by
+  have notFindall : ¬ findallRunHead state.toConf := by
+    intro findallHead
+    rcases findallHead with
+      ⟨template, sub, result, rest, otherBinding, conflict⟩
+    rw [head] at conflict
+    cases conflict
+  have fineStep :
+      Step prog gt state (privateAnswerTarget state binding) := by
+    simpa [privateAnswerTarget] using
+      (Step.ordinary state (answerSuccessor state.toConf binding)
+        notFindall
+        (PLeaTTa.Step.answer state.toConf binding head))
+  refine ⟨fineStep, by simp, by simp, by simp, by simp, by simp, ?_⟩
+  simp [publicAnswers, publicControl, privateAnswerTarget, OpenConf.stepOpen,
+    OpenConf.ofConfWith, frameHead]
+
+/-- Constructor-shaped specialization retained for the existing flat-run
+proofs.  Unlike `answer_is_one_private_step`, this older surface starts from
+the initial open-layer scope frontiers. -/
 theorem nested_answer_is_one_private_step
     (prog : Prog) (gt : GroundingTable) (inner : Conf)
     (frame : FindallFrame) (remaining : List Frame) (binding : Subst)

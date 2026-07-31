@@ -10,6 +10,7 @@ import PLeaTTa.Proofs.PrologFindallEntryBridge
 import PLeaTTa.Proofs.PrologFindallFrameZipperBridge
 import PLeaTTa.Proofs.PrologFindallExitBridge
 import PLeaTTa.Proofs.PrologFindallExitPayloadBridge
+import PLeaTTa.Proofs.PrologFindallAnswerBridge
 import PLeaTTa.Proofs.PrologAlphaFreshFrontierBridge
 import PLeaTTa.Proofs.PrologCallEntryBridge
 import PLeaTTa.Proofs.PrologCallStepBridge
@@ -1720,6 +1721,10 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.DemandDrivenStep.findall_macro_expands
 #print axioms PLeaTTa.DemandDrivenStep.findall_flat_run_collapses_to_sealed_step
 #print axioms PLeaTTa.DemandDrivenStep.findall_step_forces_entry
+#print axioms PLeaTTa.DemandDrivenStep.privateAnswerTarget_persistent
+#print axioms PLeaTTa.DemandDrivenStep.privateAnswerTarget_qterm
+#print axioms PLeaTTa.DemandDrivenStep.privateAnswerTarget_answers
+#print axioms PLeaTTa.DemandDrivenStep.answer_is_one_private_step
 #print axioms PLeaTTa.DemandDrivenStep.nested_answer_is_one_private_step
 #print axioms PLeaTTa.DemandDrivenStep.findall_exit_keeps_inner_world_and_highWater
 #print axioms PLeaTTa.DemandDrivenStep.findallCopyPhase_exact
@@ -1785,6 +1790,19 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologFindallExitPayloadBridge.wrong_raw_accumulator_orientation_rejected
 #print axioms PLeaTTa.PrologFindallExitPayloadBridge.ground_empty_exit_payload_inhabited
 #print axioms PLeaTTa.PrologFindallExitPayloadBridge.ground_two_answer_exit_payload_inhabited
+#print axioms PLeaTTa.PrologFindallAnswerBridge.ActiveFindallAnswer.sourceStep
+#print axioms PLeaTTa.PrologFindallAnswerBridge.ActiveFindallAnswer.cells_replace
+#print axioms PLeaTTa.PrologFindallAnswerBridge.ActiveFindallAnswer.occurrences_after
+#print axioms PLeaTTa.PrologFindallAnswerBridge.FindallAnswerPayloadAgrees.afterOpenState
+#print axioms PLeaTTa.PrologFindallAnswerBridge.FindallAnswerPayloadAgrees.afterFramePayload
+#print axioms PLeaTTa.PrologFindallAnswerBridge.FindallAnswerPayloadAgrees.afterExitPayload
+#print axioms PLeaTTa.PrologFindallAnswerBridge.FindallAnswerPayloadAgrees.afterQueryTemplate
+#print axioms PLeaTTa.PrologFindallAnswerBridge.ActiveFindallAnswer.privateAnswer_correspondence
+#print axioms PLeaTTa.PrologFindallAnswerBridge.mismatched_query_template_rejected
+#print axioms PLeaTTa.PrologFindallAnswerBridge.wrong_raw_append_rejected
+#print axioms PLeaTTa.PrologFindallAnswerBridge.stale_pre_session_copy_rejected
+#print axioms PLeaTTa.PrologFindallAnswerBridge.nested_answer_only_updates_innermost_cell
+#print axioms PLeaTTa.PrologFindallAnswerBridge.ground_direct_answer_correspondence_inhabited
 #print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_reference
 #print axioms PLeaTTa.PrologStateBridge.RuntimeAlpha.graph_executable
 #print axioms PLeaTTa.PrologStateBridge.buildFreshening_apply_member
