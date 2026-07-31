@@ -300,6 +300,23 @@ theorem repeated_variable_false_positive_agrees :
       Metta.Subst.occurs,
       Metta.Subst.apply, Metta.Subst.lookup]
 
+/-- Public existential form of the concrete retained-head false positive.
+
+The fixture definitions remain private; downstream adequacy layers consume
+only the semantic fact that conservative retention can coexist with complete
+source-head rejection. -/
+theorem exists_retained_head_false_positive :
+    exists (branch : ClauseBranch) (args : List Metta.Atom)
+        (result : Metta.Atom) (rest : List PLeaTTa.Goal)
+        (binding : Subst) (qterm : Metta.Atom)
+        (seed barrier : Nat) (clause : PLeaTTa.Clause),
+      RetainedHeadFailureAgrees branch args result rest binding qterm
+        seed barrier clause := by
+  exact
+    ⟨repeatedReferenceBranch, [.sym "left", .sym "right"], .sym "ok", [],
+      [], .var "query", 0, 1, repeatedExecutableClause,
+      repeated_variable_false_positive_agrees⟩
+
 /-- Exact paired-step discriminator.  The retained repeated-variable
 occurrence cannot be skipped by reflexivity or a zero-step quotient: each
 machine consumes it through its own real rejection constructor, and neither
