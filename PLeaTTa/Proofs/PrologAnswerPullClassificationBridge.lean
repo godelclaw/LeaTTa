@@ -79,6 +79,23 @@ mutual
         RightRegionLanding alpha
           (.scheduled callerScope callerTail origin resources nonempty history)
           goals binding tail
+    | taskChoices (support : List (LogicVar × String))
+        (scope : CutScopeId) (barrier : Nat)
+        (canonical : Canonical.TreeSubstitution)
+        (referenceBase current : OpenSubstitution.Substitution)
+        (runtime : Subst) (right : Search)
+        (goals : List PLeaTTa.Goal) (tail : List PLeaTTa.Alt)
+        (choices :
+          TaskChoiceAlternativeRegionAgrees alpha support scope barrier
+            canonical referenceBase current runtime right
+            (.br goals runtime :: tail))
+        (pullExact :
+          PLeaTTa.pullAux (.br goals runtime :: tail) =
+            some ((goals, runtime), tail)) :
+        RightRegionLanding alpha
+          (.taskChoices support scope barrier canonical referenceBase current
+            runtime right goals tail choices)
+          goals runtime tail
 
   /-- One literal source right region contains no executable branch. -/
   inductive RightRegionEmpty
@@ -350,6 +367,7 @@ theorem pullAux_exact
   cases landing with
   | clauses _ _ _ _ _ _ _ _ pullExact => exact pullExact
   | scheduled _ _ _ _ _ _ _ _ _ _ pullExact => exact pullExact
+  | taskChoices _ _ _ _ _ _ _ _ _ _ _ pullExact => exact pullExact
 
 end RightRegionLanding
 
@@ -477,6 +495,13 @@ theorem classifyPrefix
           (.scheduled callerScope callerTail historyOrigin resources nonempty
             history falls (by
               simpa [PLeaTTa.pullAux] using falls.pullAux_eq)))
+    (by
+      intro support scope barrier canonical referenceBase current runtime right
+        goals tail choices
+      exact .inl
+        ⟨goals, runtime, tail,
+          .taskChoices support scope barrier canonical referenceBase current
+            runtime right goals tail choices rfl⟩)
     (fun leafScope bindings resources alts =>
       .inr (.task leafScope bindings resources alts rfl))
     (by

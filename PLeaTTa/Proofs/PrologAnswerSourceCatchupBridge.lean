@@ -447,6 +447,16 @@ inductive ConservativeReadyTarget
           selectedTail original finish candidates) :
       ConservativeReadyTarget alpha selectedGoals selectedBinding
         (.clauses scope finish)
+  | taskChoices (support : List (LogicVar × String))
+      (scope : CutScopeId) (barrier : Nat)
+      (canonical : Canonical.TreeSubstitution)
+      (referenceBase current : OpenSubstitution.Substitution)
+      (right : Search) (selectedTail : List PLeaTTa.Alt)
+      (choices :
+        TaskChoiceAlternativeRegionAgrees alpha support scope barrier canonical
+          referenceBase current selectedBinding right
+          (.br selectedGoals selectedBinding :: selectedTail)) :
+      ConservativeReadyTarget alpha selectedGoals selectedBinding right
   | underChoice (scope : CutScopeId) (inside right : Search)
       (target : ConservativeReadyTarget alpha selectedGoals selectedBinding
         inside) :
@@ -559,6 +569,28 @@ private theorem realizeRightScheduled
     ⟨count, .product callerScope target callerTail,
       steps.underProduct callerScope callerTail,
       .underProduct callerScope target callerTail ready⟩
+
+private theorem realizeRightTaskChoices
+    {alpha : List (LogicVar × String)} (session : Session)
+    (support : List (LogicVar × String))
+    (scope : CutScopeId) (barrier : Nat)
+    (canonical : Canonical.TreeSubstitution)
+    (referenceBase current : OpenSubstitution.Substitution)
+    (runtime : Subst) (right : Search)
+    (goals : List PLeaTTa.Goal) (tail : List PLeaTTa.Alt)
+    (choices :
+      TaskChoiceAlternativeRegionAgrees alpha support scope barrier canonical
+        referenceBase current runtime right (.br goals runtime :: tail))
+    (pullExact :
+      PLeaTTa.pullAux (.br goals runtime :: tail) =
+        some ((goals, runtime), tail)) :
+    RightLandingRealizes session
+      (.taskChoices support scope barrier canonical referenceBase current
+        runtime right goals tail choices pullExact) := by
+  exact
+    ⟨0, right, .zero right,
+      .taskChoices support scope barrier canonical referenceBase current right
+        tail choices⟩
 
 private theorem realizeRightEmptyClauses
     {alpha : List (LogicVar × String)} (session : Session)
@@ -760,6 +792,7 @@ private theorem realizeRightLanding
       OriginLandingRealizes session landing)
     (motive_4 := fun _ falls => OriginFallsRealizes session falls)
     (realizeRightClauses session) (realizeRightScheduled session)
+    (realizeRightTaskChoices session)
     (realizeRightEmptyClauses session) (realizeRightEmptyScheduled session)
     (realizeOriginChoiceInside session) (realizeOriginChoiceRegion session)
     (realizeOriginCut session) (realizeOriginTask session)
@@ -780,6 +813,7 @@ private theorem realizeRightEmpty
       OriginLandingRealizes session landing)
     (motive_4 := fun _ falls => OriginFallsRealizes session falls)
     (realizeRightClauses session) (realizeRightScheduled session)
+    (realizeRightTaskChoices session)
     (realizeRightEmptyClauses session) (realizeRightEmptyScheduled session)
     (realizeOriginChoiceInside session) (realizeOriginChoiceRegion session)
     (realizeOriginCut session) (realizeOriginTask session)
@@ -807,6 +841,7 @@ private theorem realizeOriginLanding
       OriginLandingRealizes session landing)
     (motive_4 := fun _ falls => OriginFallsRealizes session falls)
     (realizeRightClauses session) (realizeRightScheduled session)
+    (realizeRightTaskChoices session)
     (realizeRightEmptyClauses session) (realizeRightEmptyScheduled session)
     (realizeOriginChoiceInside session) (realizeOriginChoiceRegion session)
     (realizeOriginCut session) (realizeOriginTask session)
@@ -832,6 +867,7 @@ private theorem realizeOriginFalls
       OriginLandingRealizes session landing)
     (motive_4 := fun _ falls => OriginFallsRealizes session falls)
     (realizeRightClauses session) (realizeRightScheduled session)
+    (realizeRightTaskChoices session)
     (realizeRightEmptyClauses session) (realizeRightEmptyScheduled session)
     (realizeOriginChoiceInside session) (realizeOriginChoiceRegion session)
     (realizeOriginCut session) (realizeOriginTask session)
@@ -1054,9 +1090,13 @@ private theorem nested_done_choices_are_not_ready
         (.choice outerScope (.choice innerScope .done emptyRight) liveRight) := by
   intro ready
   cases ready with
+  | taskChoices _ _ _ _ _ _ _ _ choices => cases choices
   | underChoice _ _ _ innerReady =>
       cases innerReady with
-      | underChoice _ _ _ doneReady => cases doneReady
+      | taskChoices _ _ _ _ _ _ _ _ choices => cases choices
+      | underChoice _ _ _ doneReady =>
+          cases doneReady with
+          | taskChoices _ _ _ _ _ _ _ _ choices => cases choices
 
 /-- A genuine empty owned region is crossed before a second live owned
 region is reached.  The positive source-step count rules out a reflexive or
@@ -1151,6 +1191,123 @@ theorem base_live_and_terminal_source_phases_are_distinct
       PLeaTTa.PrologAnswerSourceCatchupBridge.OriginPullOutcome.sourcePhase
         terminalOutcome session,
       rfl, completion.toStepsN⟩
+
+/-- A source `disjoin` region that was previously opaque to the resource
+zipper now composes through one actual answer successor.  The source consumes
+the completed answer leaf in exactly one silent `choiceComplete` step and is
+then already focused at the selected task-choice tree.  The executable pull
+retains both duplicate local alternatives followed by the literal older base
+branch, in that order. -/
+theorem three_branch_task_choice_source_catchup_preserves_older_suffix
+    (session : Session) :
+    let referenceBranches : List PeTTaSpec.PrologCore.Goal :=
+      [.truth, .unify (.integer 1) (.integer 1),
+        .unify (.integer 1) (.integer 1)]
+    let equality : PLeaTTa.Goal :=
+      .eq (.gnd (.int 1)) (.gnd (.int 1))
+    let right : Search := Search.disjoin 7 referenceBranches [] []
+    let regionTail : List PLeaTTa.Alt :=
+      [.br [equality] [], .br [equality] []]
+    let base : List PLeaTTa.Alt := [.br [.cut] []]
+    exists origin :
+        AnswerOrigin 7 ([] : OpenSubstitution.Substitution)
+          (.choice 7 (.task 7 [] []) right) (.choice 7 .done right),
+      exists agreement :
+          AnswerOriginResourceAgrees [] origin [] []
+            ((.br [] [] :: regionTail) ++ base) base,
+        OriginPrefixLanding [] agreement [] [] (regionTail ++ base) /\
+          SilentStepsN session 1 (.choice 7 .done right) right /\
+          ConservativeReadyTarget [] [] [] right /\
+          PLeaTTa.pullAux ((.br [] [] :: regionTail) ++ base) =
+            some (([], []), regionTail ++ base) := by
+  dsimp only
+  obtain ⟨region, _length, _markers⟩ :=
+    PLeaTTa.PrologAnswerResourceBridge.AnswerOriginResourceAgrees.three_branch_task_choice_region_is_inhabited
+  cases region with
+  | taskChoices support scope barrier canonical referenceBase current runtime
+      right goals tail choices =>
+      let leafOrigin :
+          AnswerOrigin 7 ([] : OpenSubstitution.Substitution)
+            (.task 7 [] []) .done := .task
+      let origin :
+          AnswerOrigin 7 ([] : OpenSubstitution.Substitution)
+            (.choice 7 (.task 7 [] [])
+              (Search.disjoin 7
+                [.truth, .unify (.integer 1) (.integer 1),
+                  .unify (.integer 1) (.integer 1)] [] []))
+            (.choice 7 .done
+              (Search.disjoin 7
+                [.truth, .unify (.integer 1) (.integer 1),
+                  .unify (.integer 1) (.integer 1)] [] [])) :=
+        .choice 7 _ leafOrigin
+      let regionAgreement :
+          RightAlternativeRegionAgrees []
+            (Search.disjoin 7
+              [.truth, .unify (.integer 1) (.integer 1),
+                .unify (.integer 1) (.integer 1)] [] []) []
+            [.br [] [],
+              .br [.eq (.gnd (.int 1)) (.gnd (.int 1))] [],
+              .br [.eq (.gnd (.int 1)) (.gnd (.int 1))] []] :=
+        .taskChoices support scope barrier canonical referenceBase current [] _ [] _
+          choices
+      let leafAgreement :
+          AnswerOriginResourceAgrees [] leafOrigin [] []
+            ((.br [] [] ::
+              [.br [.eq (.gnd (.int 1)) (.gnd (.int 1))] [],
+                .br [.eq (.gnd (.int 1)) (.gnd (.int 1))] []]) ++
+              [.br [.cut] []])
+            ((.br [] [] ::
+              [.br [.eq (.gnd (.int 1)) (.gnd (.int 1))] [],
+                .br [.eq (.gnd (.int 1)) (.gnd (.int 1))] []]) ++
+              [.br [.cut] []]) :=
+        .task 7 [] [] _
+      let agreement :
+          AnswerOriginResourceAgrees [] origin [] []
+            ((.br [] [] ::
+              [.br [.eq (.gnd (.int 1)) (.gnd (.int 1))] [],
+                .br [.eq (.gnd (.int 1)) (.gnd (.int 1))] []]) ++
+              [.br [.cut] []])
+            [.br [.cut] []] :=
+        by
+          apply AnswerOriginResourceAgrees.choice
+            (regionResources := [])
+            (regionAlts :=
+              [.br [] [],
+                .br [.eq (.gnd (.int 1)) (.gnd (.int 1))] [],
+                .br [.eq (.gnd (.int 1)) (.gnd (.int 1))] []])
+          · exact leafAgreement
+          · exact regionAgreement
+      have leafFalls : OriginPrefixFallsThrough [] leafAgreement :=
+        .task 7 [] [] _ rfl
+      have regionLive : RightRegionLanding [] regionAgreement [] []
+          [.br [.eq (.gnd (.int 1)) (.gnd (.int 1))] [],
+            .br [.eq (.gnd (.int 1)) (.gnd (.int 1))] []] :=
+        .taskChoices support scope barrier canonical referenceBase current [] _ [] _
+          choices rfl
+      have landing : OriginPrefixLanding [] agreement [] []
+          ( [.br [.eq (.gnd (.int 1)) (.gnd (.int 1))] [],
+              .br [.eq (.gnd (.int 1)) (.gnd (.int 1))] []] ++
+            [.br [.cut] []]) :=
+        .choiceRegion 7 _ leafOrigin leafAgreement regionAgreement [] [] _
+          leafFalls regionLive rfl
+      have completion : CompletesN session 1 .done :=
+        .now .done (.done session)
+      have steps : SilentStepsN session 1
+          (.choice 7 .done
+            (Search.disjoin 7
+              [.truth, .unify (.integer 1) (.integer 1),
+                .unify (.integer 1) (.integer 1)] [] []))
+          (Search.disjoin 7
+            [.truth, .unify (.integer 1) (.integer 1),
+              .unify (.integer 1) (.integer 1)] [] []) :=
+        completion.choiceToRight 7
+      have ready : ConservativeReadyTarget [] [] []
+          (Search.disjoin 7
+            [.truth, .unify (.integer 1) (.integer 1),
+              .unify (.integer 1) (.integer 1)] [] []) :=
+        .taskChoices support scope barrier canonical referenceBase current _ _
+          choices
+      exact ⟨origin, agreement, landing, steps, ready, rfl⟩
 
 /-- Conservative retention does not imply clause entry.  A supported
 two-input occurrence exists whose per-slot prefilter retains it but whose

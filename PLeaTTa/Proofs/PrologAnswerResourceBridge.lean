@@ -9,16 +9,24 @@ Main exports: RightAlternativeRegionAgrees,
   AnswerOriginResourceAgrees
 -/
 import PLeaTTa.Proofs.PrologAnswerOriginBridge
+import PLeaTTa.Proofs.PrologOrdinaryStepBridge
 import PLeaTTa.Proofs.PrologProductResourceContextBridge
 
 namespace PLeaTTa.PrologAnswerResourceBridge
 
 open PeTTaSpec.PrologCore
+open PeTTaSpec.PrologCore.Canonical
 open PeTTaSpec.PrologCore.GoalSemantics
 open PeTTaSpec.PrologCore.OpenSubstitution
 open PrologAnswerOriginBridge
 open PrologControlSegmentSpineBridge
+open PrologGoalAlpha
+open PrologMguComposition
+open PrologMguTopology
+open PrologMguVariant
+open PrologOrdinaryStepBridge
 open PrologProductResourceContextBridge
+open PrologStateBridge
 open PrologSourceProductContextBridge
 
 /-!
@@ -45,6 +53,314 @@ Catch has deliberately no constructor.  The current fine executable has no
 typed catch frame, so crossing a source catch boundary is fail-closed rather
 than being paired with an invented executable resource.
 -/
+
+/-- Control for one executable amb alternative.
+
+Most alternatives retain ordinary normalized task agreement.  The sole
+additional shape is the pinned empty-branch equation: the independent source
+stores `value = output`, while `ambBranchGoals` schedules `output = value`.
+The constructor records only that exact reversal and keeps the shared task
+data separate.  It does not identify the two ordered MGU association lists;
+their semantic variation is proved by the data-level successor theorem. -/
+inductive TaskChoicePayloadAgrees
+    (alpha support : List (LogicVar × String)) (barrier : Nat)
+    (canonical : TreeSubstitution)
+    (referenceBase current : Substitution) (runtime : Metta.Subst) :
+    List PeTTaSpec.PrologCore.Goal -> List PLeaTTa.Goal -> Prop where
+  | ordinary
+      {references : List PeTTaSpec.PrologCore.Goal}
+      {executables : List PLeaTTa.Goal}
+      (payload :
+        TaskPayloadAgrees alpha support barrier canonical referenceBase current
+          runtime references executables) :
+      TaskChoicePayloadAgrees alpha support barrier canonical referenceBase
+        current runtime references executables
+  | symmetricUnify
+      {referenceValue referenceOutput : Term}
+      {executableValue executableOutput : Metta.Atom}
+      {referenceTail : List PeTTaSpec.PrologCore.Goal}
+      {executableTail : List PLeaTTa.Goal}
+      (data :
+        TaskDataAgrees alpha support canonical referenceBase current runtime)
+      (value : AlphaTermAgrees alpha referenceValue executableValue)
+      (output : AlphaTermAgrees alpha referenceOutput executableOutput)
+      (tail :
+        NormalizedAlphaGoalsAgree alpha barrier referenceTail executableTail) :
+      TaskChoicePayloadAgrees alpha support barrier canonical referenceBase
+        current runtime
+        (.unify referenceValue referenceOutput :: referenceTail)
+        (.eq executableOutput executableValue :: executableTail)
+
+namespace TaskChoicePayloadAgrees
+
+/-- Both task-choice control spellings carry the same control-independent
+substitution and valuation certificate. -/
+theorem data
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (agreement :
+      TaskChoicePayloadAgrees alpha support barrier canonical referenceBase
+        current runtime references executables) :
+    TaskDataAgrees alpha support canonical referenceBase current runtime := by
+  cases agreement with
+  | ordinary payload => exact payload.data
+  | symmetricUnify data => exact data
+
+/-- One ready task-choice equality preserves the actual source successor
+even when the empty-amb lowering reverses its executable operands.
+
+The ordinary case reuses strict normalized control.  The symmetric case
+feeds the singleton-swap worklist equivalence to the certified data-level MGU
+algorithm; the installed runtime binding is therefore a cumulative variant
+of the source result rather than being asserted equal to its ordered list. -/
+theorem afterUnifySuccessData
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution}
+    {referenceBase current result : Substitution} {runtime : Metta.Subst}
+    {left right : Term} {executableLeft executableRight : Metta.Atom}
+    {referenceTail : List PeTTaSpec.PrologCore.Goal}
+    {executableTail : List PLeaTTa.Goal}
+    (agreement :
+      TaskChoicePayloadAgrees alpha support barrier canonical referenceBase
+        current runtime (.unify left right :: referenceTail)
+        (.eq executableLeft executableRight :: executableTail))
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote left))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote right))
+    (supportIncluded : ∀ pair, pair ∈ support → pair ∈ alpha)
+    (runtimeAvoids : AlphaRuntimeNamesAvoid support runtime)
+    (resolved : UnifyResolution current left right result) :
+    ∃ sourceExtension : TreeSubstitution,
+      ∃ installed : Metta.Subst,
+        PLeaTTa.unifyB runtime executableLeft executableRight =
+          some installed ∧
+        TaskDataAgrees alpha support (sourceExtension ++ canonical)
+          referenceBase result installed := by
+  cases agreement with
+  | ordinary payload =>
+      cases payload.control with
+      | cons head tail =>
+          cases head with
+          | unify leftAgreement rightAgreement =>
+              exact payload.afterUnifySuccessData
+                leftAgreement rightAgreement leftSupported rightSupported
+                supportIncluded runtimeAvoids resolved
+  | symmetricUnify data valueAgreement outputAgreement tail =>
+      exact data.afterUnifySuccessData_of_equivalent
+        (sourceLeft := left) (sourceRight := right)
+        (runtimeLeft := right) (runtimeRight := left)
+        (PrologSequentialMgu.singleton_swap_unificationEquivalent
+          (Term.denote left) (Term.denote right))
+        outputAgreement valueAgreement rightSupported leftSupported
+        supportIncluded runtimeAvoids resolved
+
+end TaskChoicePayloadAgrees
+
+/-- Ordered source-task provenance for the ordinary alternatives emitted by
+one executable `amb` step.
+
+The relation is deliberately indexed by the source scope and binding, the
+executable barrier and binding, and one common canonical valuation.  Hence a
+consumer cannot pair branches from different activations merely because their
+goal lists happen to agree.  `last` and `more` mirror `Search.disjoin`
+exactly: every source leaf is a nonempty task, every executable leaf is one
+ordinary `Alt.br`, and branch order and multiplicity are structural indices.
+
+No retained cursor occurs here.  These alternatives are source tasks created
+by a disjunction, not unopened clause occurrences.  In particular, the type
+cannot carry an answer, effect, cut marker, or cursor resource supplied by an
+oracle. -/
+inductive TaskChoiceAlternativeRegionAgrees
+    (alpha support : List (LogicVar × String))
+    (scope : CutScopeId) (barrier : Nat)
+    (canonical : TreeSubstitution)
+    (referenceBase current : Substitution) (runtime : Metta.Subst) :
+    Search -> List PLeaTTa.Alt -> Prop where
+  | last (referenceHead : PeTTaSpec.PrologCore.Goal)
+      (referenceTail : List PeTTaSpec.PrologCore.Goal)
+      (executableGoals : List PLeaTTa.Goal)
+      (payload :
+        TaskChoicePayloadAgrees alpha support barrier canonical referenceBase current
+          runtime (referenceHead :: referenceTail) executableGoals) :
+      TaskChoiceAlternativeRegionAgrees alpha support scope barrier canonical
+        referenceBase current runtime
+        (.task scope (referenceHead :: referenceTail) current)
+        [.br executableGoals runtime]
+  | more (referenceHead : PeTTaSpec.PrologCore.Goal)
+      (referenceTail : List PeTTaSpec.PrologCore.Goal)
+      (executableGoals : List PLeaTTa.Goal)
+      (right : Search) (tailAlts : List PLeaTTa.Alt)
+      (payload :
+        TaskChoicePayloadAgrees alpha support barrier canonical referenceBase current
+          runtime (referenceHead :: referenceTail) executableGoals)
+      (tail :
+        TaskChoiceAlternativeRegionAgrees alpha support scope barrier canonical
+          referenceBase current runtime right tailAlts) :
+      TaskChoiceAlternativeRegionAgrees alpha support scope barrier canonical
+        referenceBase current runtime
+        (.choice scope (.task scope (referenceHead :: referenceTail) current)
+          right)
+        (.br executableGoals runtime :: tailAlts)
+
+/-- Ordered branch payloads before their concrete source-choice tree is
+formed.  Every branch shares the same source continuation, source/runtime
+bindings, canonical valuation, and executable barrier.  This is the exact
+list-shaped interface consumed by an executable `amb` compiler equation. -/
+inductive OrderedTaskChoicePayloadsAgree
+    (alpha support : List (LogicVar × String))
+    (barrier : Nat) (canonical : TreeSubstitution)
+    (referenceBase current : Substitution) (runtime : Metta.Subst)
+    (referenceTail : List PeTTaSpec.PrologCore.Goal) :
+    List PeTTaSpec.PrologCore.Goal -> List (List PLeaTTa.Goal) -> Prop where
+  | nil :
+      OrderedTaskChoicePayloadsAgree alpha support barrier canonical
+        referenceBase current runtime referenceTail [] []
+  | cons (referenceHead : PeTTaSpec.PrologCore.Goal)
+      (executableGoals : List PLeaTTa.Goal)
+      {referenceHeads : List PeTTaSpec.PrologCore.Goal}
+      {executableBranches : List (List PLeaTTa.Goal)}
+      (payload :
+        TaskChoicePayloadAgrees alpha support barrier canonical referenceBase current
+          runtime (referenceHead :: referenceTail) executableGoals)
+      (tail :
+        OrderedTaskChoicePayloadsAgree alpha support barrier canonical
+          referenceBase current runtime referenceTail referenceHeads
+          executableBranches) :
+      OrderedTaskChoicePayloadsAgree alpha support barrier canonical
+        referenceBase current runtime referenceTail
+        (referenceHead :: referenceHeads)
+        (executableGoals :: executableBranches)
+
+namespace AlphaLiteralAmbBranchesAgree
+
+/-- Literal amb branch agreement elaborates to the exact ordered executable
+alternative payloads consumed by `Step.amb`.
+
+Every source branch shares `referenceTail`; every executable branch shares
+`executableTail`; and `ambBranchGoals_empty` contributes exactly the reversed
+`output = value` equality recorded by `TaskChoicePayloadAgrees.symmetricUnify`.
+List induction preserves branch order and duplicate multiplicity. -/
+theorem toOrderedTaskChoicePayloads
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {referenceOutput : Term} {executableOutput : Metta.Atom}
+    {referenceBranches : List PeTTaSpec.PrologCore.Goal}
+    {executableBranches : List (Metta.Atom × List PLeaTTa.Goal)}
+    (branches :
+      AlphaLiteralAmbBranchesAgree alpha referenceOutput executableOutput
+        referenceBranches executableBranches)
+    (data :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (referenceTail : List PeTTaSpec.PrologCore.Goal)
+    (executableTail : List PLeaTTa.Goal)
+    (tailControl :
+      NormalizedAlphaGoalsAgree alpha barrier referenceTail executableTail) :
+    OrderedTaskChoicePayloadsAgree alpha support barrier canonical
+      referenceBase current runtime referenceTail referenceBranches
+      (executableBranches.map fun branch =>
+        PLeaTTa.ambBranchGoals executableOutput branch ++ executableTail) := by
+  induction branches with
+  | nil output =>
+      exact .nil
+  | @cons referenceValue executableValue referenceBranches
+      executableBranches value output tail inductionHypothesis =>
+      simpa using
+        OrderedTaskChoicePayloadsAgree.cons
+          (.unify referenceValue referenceOutput)
+          (PLeaTTa.ambBranchGoals executableOutput (executableValue, []) ++
+            executableTail)
+          (by simpa using
+            (TaskChoicePayloadAgrees.symmetricUnify data value output
+              tailControl))
+          inductionHypothesis
+
+end AlphaLiteralAmbBranchesAgree
+
+namespace OrderedTaskChoicePayloadsAgree
+
+/-- Nonempty ordered branch payloads elaborate into the literal
+`Search.disjoin` tree and same-order executable alternative list. -/
+theorem toTaskChoiceAlternativeRegion
+    {alpha support : List (LogicVar × String)}
+    {scope : CutScopeId} {barrier : Nat}
+    {canonical : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {referenceTail : List PeTTaSpec.PrologCore.Goal}
+    {referenceHeads : List PeTTaSpec.PrologCore.Goal}
+    {executableBranches : List (List PLeaTTa.Goal)}
+    (agreement :
+      OrderedTaskChoicePayloadsAgree alpha support barrier canonical
+        referenceBase current runtime referenceTail referenceHeads
+        executableBranches)
+    (nonempty : referenceHeads ≠ []) :
+    TaskChoiceAlternativeRegionAgrees alpha support scope barrier canonical
+      referenceBase current runtime
+      (Search.disjoin scope referenceHeads referenceTail current)
+      (executableBranches.map (fun goals => PLeaTTa.Alt.br goals runtime)) := by
+  induction agreement with
+  | nil => contradiction
+  | @cons referenceHead executableGoals referenceHeads executableBranches
+      payload tail inductionHypothesis =>
+      cases referenceHeads with
+      | nil =>
+          cases tail
+          simpa [Search.disjoin] using
+            (TaskChoiceAlternativeRegionAgrees.last referenceHead referenceTail
+              executableGoals payload)
+      | cons nextReference remaining =>
+          simpa [Search.disjoin] using
+            (TaskChoiceAlternativeRegionAgrees.more referenceHead referenceTail
+              executableGoals
+              (Search.disjoin scope (nextReference :: remaining) referenceTail
+                current)
+              (executableBranches.map
+                (fun goals => PLeaTTa.Alt.br goals runtime))
+              payload (inductionHypothesis (by simp)))
+
+end OrderedTaskChoicePayloadsAgree
+
+namespace TaskChoiceAlternativeRegionAgrees
+
+/-- Every task-choice region begins with a literal ordinary branch.  The
+head and tail are recovered from indexed provenance rather than by inspecting
+an untyped alternative list. -/
+theorem alts_head_exact
+    {alpha support : List (LogicVar × String)}
+    {scope : CutScopeId} {barrier : Nat}
+    {canonical : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {source : Search} {alts : List PLeaTTa.Alt}
+    (agreement :
+      TaskChoiceAlternativeRegionAgrees alpha support scope barrier canonical
+        referenceBase current runtime source alts) :
+    ∃ goals : List PLeaTTa.Goal, ∃ tail : List PLeaTTa.Alt,
+      alts = .br goals runtime :: tail := by
+  cases agreement with
+  | last _ _ goals _ => exact ⟨goals, [], rfl⟩
+  | more _ _ goals _ tail _ _ => exact ⟨goals, tail, rfl⟩
+
+/-- Task-choice banks contain ordinary branches only; source disjunctions do
+not mint anonymous predicate-cut markers. -/
+theorem barrierCount_zero
+    {alpha support : List (LogicVar × String)}
+    {scope : CutScopeId} {barrier : Nat}
+    {canonical : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {source : Search} {alts : List PLeaTTa.Alt}
+    (agreement :
+      TaskChoiceAlternativeRegionAgrees alpha support scope barrier canonical
+        referenceBase current runtime source alts) :
+    PLeaTTa.barrierCount alts = 0 := by
+  induction agreement with
+  | last => simp
+  | more _ _ _ _ _ _ _ inductionHypothesis => simp [inductionHypothesis]
+
+end TaskChoiceAlternativeRegionAgrees
 
 mutual
 
@@ -80,6 +396,18 @@ mutual
         RightAlternativeRegionAgrees alpha
           (.product callerScope next callerTail) resources
           (flattenOwnedAlts resources [])
+    | taskChoices (support : List (LogicVar × String))
+        (scope : CutScopeId) (barrier : Nat)
+        (canonical : TreeSubstitution)
+        (referenceBase current : Substitution) (runtime : Metta.Subst)
+        (right : Search) (goals : List PLeaTTa.Goal)
+        (tail : List PLeaTTa.Alt)
+        (choices :
+          TaskChoiceAlternativeRegionAgrees alpha support scope barrier
+            canonical referenceBase current runtime right
+            (.br goals runtime :: tail)) :
+        RightAlternativeRegionAgrees alpha right []
+          (.br goals runtime :: tail)
 
   /-- Lockstep consumption of retained source resources and executable
   alternatives along one particular `AnswerOrigin` proof.
@@ -132,6 +460,40 @@ mutual
 
 end
 
+namespace OrderedTaskChoicePayloadsAgree
+
+/-- The same ordered payload evidence packages directly as a resource-zipper
+right region.  It owns no cursor resource and its executable bank is the
+literal same-order branch map. -/
+theorem toRightAlternativeRegion
+    {alpha support : List (LogicVar × String)}
+    {scope : CutScopeId} {barrier : Nat}
+    {canonical : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {referenceTail : List PeTTaSpec.PrologCore.Goal}
+    {referenceHeads : List PeTTaSpec.PrologCore.Goal}
+    {executableBranches : List (List PLeaTTa.Goal)}
+    (agreement :
+      OrderedTaskChoicePayloadsAgree alpha support barrier canonical
+        referenceBase current runtime referenceTail referenceHeads
+        executableBranches)
+    (nonempty : referenceHeads ≠ []) :
+    RightAlternativeRegionAgrees alpha
+      (Search.disjoin scope referenceHeads referenceTail current) []
+      (executableBranches.map (fun goals => PLeaTTa.Alt.br goals runtime)) := by
+  cases agreement with
+  | nil => contradiction
+  | @cons referenceHead executableGoals referenceHeads executableBranches
+      payload tail =>
+      exact
+        .taskChoices support scope barrier canonical referenceBase current
+          runtime _ executableGoals
+          (executableBranches.map (fun goals => PLeaTTa.Alt.br goals runtime))
+          ((OrderedTaskChoicePayloadsAgree.cons referenceHead executableGoals
+              payload tail).toTaskChoiceAlternativeRegion (by simp))
+
+end OrderedTaskChoicePayloadsAgree
+
 namespace RightAlternativeRegionAgrees
 
 /-- A clause region exposes the exact retained scan result and the ownership
@@ -165,6 +527,7 @@ theorem clauses_shape
   cases agreement with
   | clauses _ _ resource ownership =>
       exact ⟨resource, rfl, rfl, ownership⟩
+  | taskChoices => contradiction
 
 /-- A scheduled product exposes its literal nonempty flattened resource slice
 and an exact answer origin indexed by its inner successor.
@@ -191,17 +554,22 @@ theorem scheduled_exact
   cases agreement with
   | scheduled callerScope callerTail origin resources nonempty history =>
       exact ⟨rfl, nonempty, _, _, _, origin, history⟩
+  | taskChoices => contradiction
 
-/-- No inactive source choice can be paired with an empty resource slice. -/
-theorem resources_ne_nil
+/-- A region with no retained cursor resources still owns a genuine ordinary
+alternative.  Thus task choices cannot be laundered into a resource-free,
+branch-free phantom region. -/
+theorem segment_ne_nil_of_resources_nil
     {alpha : List (LogicVar × String)}
     {right : Search} {resources : List RetainedAlternativeSegment}
     {segment : List PLeaTTa.Alt}
-    (agreement : RightAlternativeRegionAgrees alpha right resources segment) :
-    resources ≠ [] := by
+    (agreement : RightAlternativeRegionAgrees alpha right resources segment)
+    (resourcesEmpty : resources = []) :
+    segment ≠ [] := by
   cases agreement with
-  | clauses => simp
-  | scheduled _ _ _ _ nonempty _ => exact nonempty
+  | clauses => simp at resourcesEmpty
+  | scheduled _ _ _ _ nonempty _ => exact (nonempty resourcesEmpty).elim
+  | taskChoices => simp
 
 end RightAlternativeRegionAgrees
 
@@ -344,6 +712,9 @@ mutual
           simpa only [List.append_nil] using resourcesEq
         rw [exactResources]
         exact consumedFree
+    | taskChoices =>
+        intro candidate member
+        simp at member
 
   /-- The resources removed by an answer-origin zipper form a marker-free
   ordered prefix.  This is the resource analogue of `resources_suffix`, with
@@ -498,6 +869,7 @@ private theorem endpoints_suffix
       (∃ consumed, beforeResources = consumed ++ afterResources) ∧
         ∃ consumed, beforeAlts = consumed ++ afterAlts)
     (fun _ _ _ _ => True.intro)
+    (by intros; trivial)
     (by intros; trivial)
     (fun _ _ _ _ => ⟨⟨[], rfl⟩, ⟨[], rfl⟩⟩)
     (by
@@ -1242,6 +1614,109 @@ theorem swapped_resource_order_rejected
     exact resourcesEq.1
   subst ownedResource
   exact outerNotInner owned
+
+private def taskChoiceEmptyRuntimeTopological :
+    PLeaTTa.SubstTopological [] := by
+  refine
+    { order := []
+      nodup := by simp
+      domain := ?_
+      decreases := ?_ }
+  · intro name
+    simp [Metta.Subst.lookup]
+  · intro source value dependency lookup
+    simp [Metta.Subst.lookup] at lookup
+
+private theorem taskChoiceEmptyData :
+    TaskDataAgrees [] [] [] [] [] [] := by
+  refine
+    { alphaShared := ?_
+      canonicalWellFormed := TreeSubstitution.wellFormed_nil
+      bindingShape := rfl
+      valuation := ?_ }
+  · constructor <;> intro <;> simp_all
+  · refine
+      ⟨[], TreeSubstitutionVariants.refl [],
+        TreeSubstitutionTopological.nil, ?_,
+        ⟨taskChoiceEmptyRuntimeTopological⟩, ?_⟩
+    · intro entry member
+      simp at member
+    · intro identity name member
+      simp at member
+
+private theorem taskChoiceTruthPayload (barrier : Nat) :
+    TaskPayloadAgrees [] [] barrier [] [] [] [] [.truth] [] :=
+  taskChoiceEmptyData.withControl (.truth .nil)
+
+private theorem taskChoiceUnifyOnePayload (barrier : Nat) :
+    TaskPayloadAgrees [] [] barrier [] [] [] []
+      [.unify (.integer 1) (.integer 1)]
+      [.eq (.gnd (.int 1)) (.gnd (.int 1))] := by
+  apply taskChoiceEmptyData.withControl
+  exact
+    .cons
+      (.unify (AlphaTermAgrees.integer (alpha := []) 1)
+        (AlphaTermAgrees.integer (alpha := []) 1))
+      .nil
+
+private theorem threeTaskChoicePayloads :
+    OrderedTaskChoicePayloadsAgree [] [] 0 [] [] [] [] []
+      [.truth, .unify (.integer 1) (.integer 1),
+        .unify (.integer 1) (.integer 1)]
+      [[], [.eq (.gnd (.int 1)) (.gnd (.int 1))],
+        [.eq (.gnd (.int 1)) (.gnd (.int 1))]] :=
+  .cons .truth [] (.ordinary (taskChoiceTruthPayload 0))
+    (.cons (.unify (.integer 1) (.integer 1))
+      [.eq (.gnd (.int 1)) (.gnd (.int 1))]
+      (.ordinary (taskChoiceUnifyOnePayload 0))
+      (.cons (.unify (.integer 1) (.integer 1))
+        [.eq (.gnd (.int 1)) (.gnd (.int 1))]
+        (.ordinary (taskChoiceUnifyOnePayload 0)) .nil))
+
+/-- A three-way source disjunction owns exactly three same-order ordinary
+alternatives and no cursor resource or cut marker.  The last two branches are
+duplicates, so the witness pins multiplicity rather than merely set content. -/
+theorem three_branch_task_choice_region_is_inhabited :
+    let referenceBranches : List PeTTaSpec.PrologCore.Goal :=
+      [.truth, .unify (.integer 1) (.integer 1),
+        .unify (.integer 1) (.integer 1)]
+    let equality : PLeaTTa.Goal :=
+      .eq (.gnd (.int 1)) (.gnd (.int 1))
+    let executableAlts : List PLeaTTa.Alt :=
+      [.br [] [], .br [equality] [], .br [equality] []]
+    (exists _region :
+        RightAlternativeRegionAgrees []
+          (Search.disjoin 7 referenceBranches [] []) [] executableAlts,
+      executableAlts.length = 3 /\
+        PLeaTTa.barrierCount executableAlts = 0) := by
+  dsimp only
+  have region := threeTaskChoicePayloads.toRightAlternativeRegion
+    (scope := 7) (by simp)
+  exact ⟨by simpa using region, by simp, by simp⟩
+
+/-- Swapping the first two executable alternatives while retaining the same
+source choice tree is rejected.  This is an observation-level order guard,
+not an inequality between internal proof objects. -/
+theorem swapped_task_choice_order_rejected :
+    let referenceBranches : List PeTTaSpec.PrologCore.Goal :=
+      [.truth, .unify (.integer 1) (.integer 1),
+        .unify (.integer 1) (.integer 1)]
+    let equality : PLeaTTa.Goal :=
+      .eq (.gnd (.int 1)) (.gnd (.int 1))
+    ¬ RightAlternativeRegionAgrees []
+      (Search.disjoin 7 referenceBranches [] []) []
+      [.br [equality] [], .br [] [], .br [equality] []] := by
+  dsimp only
+  intro agreement
+  cases agreement with
+  | taskChoices _ _ _ _ _ _ _ _ _ _ choices =>
+      cases choices with
+      | more _ _ _ _ _ payload _ =>
+          cases payload with
+          | ordinary ordinary =>
+              cases ordinary.control with
+              | truth tail => cases tail
+              | cons head tail => cases head
 
 /-- Catch crossings are unrepresentable until the fine executable owns a
 typed catch frame. -/

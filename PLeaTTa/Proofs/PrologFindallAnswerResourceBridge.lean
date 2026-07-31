@@ -79,6 +79,7 @@ theorem append_alts
         (beforeAlts ++ suffix) (afterAlts ++ suffix))
     (fun _ _ _ _ => True.intro)
     (by intros; trivial)
+    (by intros; trivial)
     (fun leafScope bindings resources alts =>
       .task leafScope bindings resources (alts ++ suffix))
     (by

@@ -8,7 +8,8 @@ Trusted boundary: none
 Main exports:
   TreeIsRelativeMgu,
   TreeIsMgu.relativeCompose,
-  sequential_mgu_composites_are_variants
+  sequential_mgu_composites_are_variants,
+  sequential_mgu_composites_are_variants_of_equivalent
 -/
 import PLeaTTa.Proofs.PrologMguVariant
 
@@ -17,6 +18,7 @@ namespace PLeaTTa.PrologSequentialMgu
 open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.Canonical
 open PrologMguOpenAgreement
+open PrologMguDirectSimulation
 open PrologMguTopology
 open PrologMguVariant
 
@@ -49,6 +51,22 @@ def TreeIsRelativeMgu
 
 namespace TreeIsRelativeMgu
 
+/-- Semantic equivalence of equation worklists transports a relative MGU
+without changing its carried base or association-list spelling.  This is
+stronger than satisfiability preservation: the same descendant cone remains
+principal because every candidate solves one worklist exactly when it solves
+the other. -/
+theorem of_equivalent
+    {result base : TreeSubstitution}
+    {first second : List TreeEquation}
+    (equivalent : TreeUnificationEquivalent first second)
+    (relative : TreeIsRelativeMgu result base first) :
+    TreeIsRelativeMgu result base second := by
+  refine ⟨relative.1, (equivalent result).1 relative.2.1, ?_⟩
+  intro candidate candidateFactors candidateUnifies
+  exact relative.2.2 candidate candidateFactors
+    ((equivalent candidate).2 candidateUnifies)
+
 /-- Relative principal solutions over variant bases are themselves variants.
 The proof uses only mutual factorization of the bases: no hidden common
 equation list or preferred residual orientation is required. -/
@@ -66,6 +84,22 @@ theorem variants_of_base_variants
   · exact first.2.2 secondResult
       (TreeFactorsThrough.trans second.1 bases.2)
       second.2.1
+
+/-- Relative principal solutions over variant bases and semantically
+equivalent worklists are variants.  No operand order, equation-list spelling,
+or residual alias orientation is selected by the theorem. -/
+theorem variants_of_base_variants_of_equivalent
+    {firstResult firstBase secondResult secondBase : TreeSubstitution}
+    {firstEquations secondEquations : List TreeEquation}
+    (bases : TreeSubstitutionVariants firstBase secondBase)
+    (equivalent :
+      TreeUnificationEquivalent firstEquations secondEquations)
+    (first :
+      TreeIsRelativeMgu firstResult firstBase firstEquations)
+    (second :
+      TreeIsRelativeMgu secondResult secondBase secondEquations) :
+    TreeSubstitutionVariants firstResult secondResult :=
+  variants_of_base_variants bases (first.of_equivalent equivalent) second
 
 end TreeIsRelativeMgu
 
@@ -238,6 +272,92 @@ theorem sequential_mgu_composites_are_variants
     (TreeIsMgu.relativeCompose firstMgu)
     (TreeIsMgu.relativeCompose secondMgu)
 
+/-- Sequential residual MGUs also preserve semantic equivalence of the two
+raw equation worklists.  This is the orientation-insensitive generalization
+needed when one compiler lowering emits `x = y` while the independent source
+stores the symmetric equation `y = x`: the resulting ordered association
+lists may differ, but their cumulative solution cones coincide. -/
+theorem sequential_mgu_composites_are_variants_of_equivalent
+    {firstBase secondBase firstExtension secondExtension : TreeSubstitution}
+    {firstEquations secondEquations : List TreeEquation}
+    (bases : TreeSubstitutionVariants firstBase secondBase)
+    (equivalent :
+      TreeUnificationEquivalent firstEquations secondEquations)
+    (firstMgu :
+      TreeIsMgu firstExtension
+        (TreeSubstitution.applyEquations firstBase firstEquations))
+    (secondMgu :
+      TreeIsMgu secondExtension
+        (TreeSubstitution.applyEquations secondBase secondEquations)) :
+    TreeSubstitutionVariants
+      (firstExtension ++ firstBase)
+      (secondExtension ++ secondBase) :=
+  TreeIsRelativeMgu.variants_of_base_variants_of_equivalent bases equivalent
+    (TreeIsMgu.relativeCompose firstMgu)
+    (TreeIsMgu.relativeCompose secondMgu)
+
+/-- Reversing the two operands of one equation preserves exactly the set of
+finite-tree unifiers.  This theorem says nothing about which oriented
+association list the deterministic ordered algorithm chooses. -/
+theorem singleton_swap_unificationEquivalent (left right : Tree) :
+    TreeUnificationEquivalent [(left, right)] [(right, left)] := by
+  intro binding
+  constructor
+  · intro unifies equation member
+    simp only [List.mem_singleton] at member
+    subst equation
+    exact (unifies (left, right) (by simp)).symm
+  · intro unifies equation member
+    simp only [List.mem_singleton] at member
+    subst equation
+    exact (unifies (right, left) (by simp)).symm
+
+/-! ### Anti-vacuity boundary for equation equivalence -/
+
+private def sharingWitnessX : LogicVar := .source "$sharing_x"
+private def sharingWitnessY : LogicVar := .source "$sharing_y"
+private def sharingWitnessA : Tree := .node (.atom "$sharing_a") []
+private def sharingWitnessB : Tree := .node (.atom "$sharing_b") []
+private def sharingWitnessPair (left right : Tree) : Tree :=
+  .node (.compound "$sharing_pair") [left, right]
+
+/-- Semantic equation equivalence does not erase variable sharing.
+
+The split equation permits `X ↦ a, Y ↦ b`; the shared equation repeats `X`
+and therefore cannot equal the rigid pair `(a,b)` when `a ≠ b`.  Hence the
+equivalence-aware MGU transport admits operand reversal but rejects a
+relation that independently renames two occurrences of the same variable. -/
+theorem sharing_split_is_not_unificationEquivalent :
+    ¬ TreeUnificationEquivalent
+      [(sharingWitnessPair (.variable sharingWitnessX)
+          (.variable sharingWitnessX),
+        sharingWitnessPair sharingWitnessA sharingWitnessB)]
+      [(sharingWitnessPair (.variable sharingWitnessX)
+          (.variable sharingWitnessY),
+        sharingWitnessPair sharingWitnessA sharingWitnessB)] := by
+  intro equivalent
+  let binding : TreeSubstitution :=
+    [(sharingWitnessX, sharingWitnessA),
+      (sharingWitnessY, sharingWitnessB)]
+  have split : TreeUnifiesEquations binding
+      [(sharingWitnessPair (.variable sharingWitnessX)
+          (.variable sharingWitnessY),
+        sharingWitnessPair sharingWitnessA sharingWitnessB)] := by
+    intro equation member
+    simp only [List.mem_singleton] at member
+    subst equation
+    simp [binding, sharingWitnessPair, sharingWitnessX, sharingWitnessY,
+      sharingWitnessA, sharingWitnessB, TreeSubstitution.apply,
+      Tree.instantiateOne, Trees.instantiateOne]
+  have shared := (equivalent binding).2 split
+  have contradiction := shared
+    (sharingWitnessPair (.variable sharingWitnessX)
+        (.variable sharingWitnessX),
+      sharingWitnessPair sharingWitnessA sharingWitnessB) (by simp)
+  simp [binding, sharingWitnessPair, sharingWitnessX, sharingWitnessY,
+    sharingWitnessA, sharingWitnessB, TreeSubstitution.apply,
+    Tree.instantiateOne, Trees.instantiateOne] at contradiction
+
 /-- An ordered extension whose input equations avoid an older topological
 base may be prepended without creating a cycle.  This is the topological
 counterpart of relative MGU composition: the ordered solver cannot invent a
@@ -273,6 +393,67 @@ private def sequentialSecondExtension : TreeSubstitution :=
   [(sequentialX, sequentialValue)]
 private def sequentialEquation : List TreeEquation :=
   [(.variable sequentialX, sequentialValue)]
+
+/-- The ordered solver genuinely chooses opposite raw aliases for the two
+orientations of a variable-variable equation.  The results are unequal yet
+the equivalence-aware sequential theorem recognizes them as variants. -/
+theorem swapped_singleton_ordered_mgus_need_not_be_equal :
+    let forward : TreeSubstitution :=
+      [(sequentialX, .variable sequentialY)]
+    let reverse : TreeSubstitution :=
+      [(sequentialY, .variable sequentialX)]
+    OrderedTreeMgu
+        [(.variable sequentialX, .variable sequentialY)] forward ∧
+      OrderedTreeMgu
+        [(.variable sequentialY, .variable sequentialX)] reverse ∧
+      TreeSubstitutionVariants forward reverse ∧
+      forward ≠ reverse := by
+  dsimp only
+  have forward :
+      OrderedTreeMgu
+        [(.variable sequentialX, .variable sequentialY)]
+        [(sequentialX, .variable sequentialY)] := by
+    exact .cons (.variable sequentialX) (.variable sequentialY) []
+      [(sequentialX, .variable sequentialY)] []
+      (.bindLeft sequentialX (.variable sequentialY) (by
+        simp [sequentialX, sequentialY]) (by
+        simp [Tree.occurs, sequentialX, sequentialY])) .nil
+  have reverse :
+      OrderedTreeMgu
+        [(.variable sequentialY, .variable sequentialX)]
+        [(sequentialY, .variable sequentialX)] := by
+    exact .cons (.variable sequentialY) (.variable sequentialX) []
+      [(sequentialY, .variable sequentialX)] []
+      (.bindLeft sequentialY (.variable sequentialX) (by
+        simp [sequentialX, sequentialY]) (by
+        simp [Tree.occurs, sequentialX, sequentialY])) .nil
+  have variants :
+      TreeSubstitutionVariants
+        [(sequentialX, .variable sequentialY)]
+        [(sequentialY, .variable sequentialX)] := by
+    have cumulative :=
+      sequential_mgu_composites_are_variants_of_equivalent
+        (firstBase := []) (secondBase := [])
+        (firstExtension := [(sequentialX, .variable sequentialY)])
+        (secondExtension := [(sequentialY, .variable sequentialX)])
+        (firstEquations :=
+          [(.variable sequentialX, .variable sequentialY)])
+        (secondEquations :=
+          [(.variable sequentialY, .variable sequentialX)])
+        (TreeSubstitutionVariants.refl [])
+        (singleton_swap_unificationEquivalent
+          (.variable sequentialX) (.variable sequentialY))
+        (by simpa [TreeSubstitution.applyEquations,
+            TreeSubstitution.apply, Tree.instantiateOne,
+            Trees.instantiateOne] using
+          forward.isMostGeneral)
+        (by simpa [TreeSubstitution.applyEquations,
+            TreeSubstitution.apply, Tree.instantiateOne,
+            Trees.instantiateOne] using
+          reverse.isMostGeneral)
+    simpa using cumulative
+  exact ⟨forward, reverse, variants, by
+    simp [sequentialX, sequentialY]⟩
 
 /-- Opposite aliases followed by the same grounding equation produce
 unequal composite association lists which are nevertheless sequential

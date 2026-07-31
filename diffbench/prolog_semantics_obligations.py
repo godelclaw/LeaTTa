@@ -155,6 +155,9 @@ PROLOG_ACTIVATION_UNIFIER_BRIDGE = (
 PROLOG_ORDINARY_STEP_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologOrdinaryStepBridge.lean"
 )
+PROLOG_DISJUNCTION_STEP_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologDisjunctionStepBridge.lean"
+)
 PROLOG_DATABASE_ACTION_STEP_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologDatabaseActionStepBridge.lean"
@@ -450,6 +453,8 @@ def check() -> list[str]:
             digest(PROLOG_ACTIVATION_UNIFIER_BRIDGE),
         "prolog_ordinary_step_bridge_sha256":
             digest(PROLOG_ORDINARY_STEP_BRIDGE),
+        "prolog_disjunction_step_bridge_sha256":
+            digest(PROLOG_DISJUNCTION_STEP_BRIDGE),
         "prolog_database_action_step_bridge_sha256":
             digest(PROLOG_DATABASE_ACTION_STEP_BRIDGE),
         "prolog_segmented_product_step_bridge_sha256":
