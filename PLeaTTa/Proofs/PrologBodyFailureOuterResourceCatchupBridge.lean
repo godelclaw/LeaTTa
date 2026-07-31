@@ -9,7 +9,8 @@ Main exports:
   CrossedEmptyResourceFramesAgrees.sourceCatchupToFrame,
   CrossedEmptyResourceFramesAgrees.sourceCatchupTerminal,
   SpinedExhaustedPostFailureOffsetRelates.catchupFirstLive,
-  SpinedExhaustedPostFailureOffsetRelates.catchupTerminal
+  SpinedExhaustedPostFailureOffsetRelates.catchupTerminal,
+  SpinedExhaustedPostFailureOffsetRelates.catchupClassified
 -/
 import PLeaTTa.Proofs.PrologBodyFailureExhaustedResourceTransitionBridge
 import PLeaTTa.Proofs.PrologRetainedPayloadSnapshotBridge
@@ -1747,5 +1748,120 @@ theorem SpinedExhaustedPostFailureOffsetRelates.catchupTerminal
     ⟨sourceSteps,
       ⟨agreement.persistent, agreement.queryTerm, agreement.frames,
         agreement.outerAlignment, executableExact, coreTerminal⟩⟩
+
+/-! ## Automatic three-way catch-up -/
+
+/-- Exhaustive result after classifying the local resource spine and the
+arbitrary older executable base.
+
+The base-live constructor intentionally carries no source transition.  That
+older bank is outside the locally owned resource zipper, so its source
+correspondence remains an explicit boundary rather than being inferred from
+an executable answer. -/
+inductive ExhaustedPostFailureCatchupResult
+    (freshFrontier : FreshFrontierRelation)
+    (alpha : List (LogicVar × String))
+    (opened : OpenedCall)
+    (pending : DemandDrivenCallStep.PendingCall)
+    (qterm : Atom) (callerBarrier : Nat)
+    (callerScope outerScope : CutScopeId)
+    (segments : List ControlSegment)
+    (resources : List RetainedAlternativeSegment)
+    (context : ActiveProductContext)
+    (baseAlts : List PLeaTTa.Alt)
+    (predecessor : OpenConf)
+    (source : Search) (successor : OpenConf) : Prop where
+  | firstLive
+      (partition :
+        OuterResourceCatchupPartition alpha segments resources context)
+      (suffixBarrier : Nat)
+      (sourceSteps :
+        StepsN
+          (partition.rejectionSteps +
+            partition.crossedFrames.length + 1)
+          (.running opened.session source)
+          []
+          (.running opened.session
+            (firstLiveSourceFrontier partition)))
+      (relation :
+        SpinedFirstLiveOuterResourceFrontierRelates freshFrontier alpha opened
+          pending qterm outerScope suffixBarrier segments resources context
+          baseAlts predecessor partition (firstLiveSourceFrontier partition)
+          successor) :
+      ExhaustedPostFailureCatchupResult freshFrontier alpha opened pending
+        qterm callerBarrier callerScope outerScope segments resources context
+        baseAlts predecessor source successor
+  | baseLive
+      (partition :
+        BaseLiveOuterResourceCatchupPartition alpha segments resources context
+          baseAlts) :
+      ExhaustedPostFailureCatchupResult freshFrontier alpha opened pending
+        qterm callerBarrier callerScope outerScope segments resources context
+        baseAlts predecessor source successor
+  | terminal
+      (partition :
+        TerminalOuterResourceCatchupPartition alpha segments resources context
+          baseAlts)
+      (sourceSteps :
+        StepsN
+          (partition.rejectionSteps + context.length + 1)
+          (.running opened.session source)
+          [.completed]
+          (.terminal opened.session .completed))
+      (relation :
+        SpinedTerminalOuterResourceCatchupRelates freshFrontier alpha opened
+          pending qterm callerBarrier callerScope outerScope segments resources
+          context baseAlts predecessor partition successor) :
+      ExhaustedPostFailureCatchupResult freshFrontier alpha opened pending
+        qterm callerBarrier callerScope outerScope segments resources context
+        baseAlts predecessor source successor
+
+/-- Automatically classify and execute every locally owned catch-up case.
+
+No caller supplies a hand-built partition.  The local-live and terminal
+branches immediately consume the generated partition through the existing
+exact source/executable catch-up proofs; a live arbitrary base is returned as
+the explicit uncomposed boundary. -/
+theorem SpinedExhaustedPostFailureOffsetRelates.catchupClassified
+    {freshFrontier : FreshFrontierRelation}
+    {alpha : List (LogicVar × String)}
+    {opened : OpenedCall}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {segments : List ControlSegment}
+    {qterm : Atom}
+    {cursor : PreparedCursor}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {predecessor : OpenConf}
+    {source : Search} {successor : OpenConf}
+    (agreement :
+      SpinedExhaustedPostFailureOffsetRelates freshFrontier alpha opened
+        pending bodyBarrier callerBarrier callerReferences callerExecutables
+        segments qterm cursor active resources callerScope outerScope context
+        baseAlts predecessor source successor) :
+    ExhaustedPostFailureCatchupResult freshFrontier alpha opened pending qterm
+      callerBarrier callerScope outerScope segments resources context baseAlts
+      predecessor source successor := by
+  cases
+      PLeaTTa.PrologBodyFailureExhaustedResourceTransitionBridge.SourceControlResourceContextAgrees.classifyCatchup
+        agreement.outerAlignment baseAlts with
+  | firstLive partition =>
+      obtain ⟨suffixBarrier, sourceSteps, relation⟩ :=
+        PLeaTTa.PrologBodyFailureOuterResourceCatchupBridge.SpinedExhaustedPostFailureOffsetRelates.catchupFirstLive
+          agreement partition
+      exact .firstLive partition suffixBarrier sourceSteps relation
+  | baseLive partition =>
+      exact .baseLive partition
+  | terminal partition =>
+      obtain ⟨sourceSteps, relation⟩ :=
+        PLeaTTa.PrologBodyFailureOuterResourceCatchupBridge.SpinedExhaustedPostFailureOffsetRelates.catchupTerminal
+          agreement partition
+      exact .terminal partition sourceSteps relation
 
 end PLeaTTa.PrologBodyFailureOuterResourceCatchupBridge

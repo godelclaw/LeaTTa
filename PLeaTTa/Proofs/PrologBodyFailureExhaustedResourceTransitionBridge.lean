@@ -8,7 +8,9 @@ Trusted boundary: none
 Main exports:
   pullAux_flattenOwnedAlts_first_nonempty,
   flattenOwnedAlts_first_nonempty_barrierCount,
-  ExhaustedCursorOffsetAgrees
+  ExhaustedCursorOffsetAgrees,
+  RetainedAlternativeSegment.exhaustionWitness,
+  SourceControlResourceContextAgrees.classifyCatchup
 -/
 import PLeaTTa.Proofs.PrologBodyFailureResourceTransitionBridge
 
@@ -971,5 +973,327 @@ structure TerminalOuterResourceCatchupPartition
   crossedWork :
     CrossedEmptyResourceFramesAgrees alpha resources context rejectionSteps
   baseTerminal : PLeaTTa.pullAux base = none
+
+/-! ## Constructive catch-up partition -/
+
+/-- Exact source work needed to exhaust one owned local resource whose
+executable alternative bank is empty.
+
+This is an eliminator for the original `ResolutionScan` stored by `Owns`.
+It does not run the prefilter again.  The count and terminal cursor come from
+the literal maximal rejected-prefix decomposition of that scan. -/
+inductive ExhaustedOwnedResource
+    (alpha : List (LogicVar × String))
+    (resource : RetainedAlternativeSegment)
+    (cursor : PreparedCursor) : Prop where
+  | intro (count : Nat) (finish : PreparedCursor)
+      (pulls : RejectedPullsN count cursor finish)
+      (finishEmpty : finish.remaining = [])
+      (remainingLength : cursor.remaining.length = count)
+      (counterExact : resource.finalCounter = resource.counter) :
+      ExhaustedOwnedResource alpha resource cursor
+
+/-- Empty executable ownership constructively exposes the exact rejected
+source path to an empty cursor.
+
+The proof consumes the `ResolutionScan` embedded in `ownership`; no Boolean
+scan or candidate-selection function is recomputed. -/
+theorem RetainedAlternativeSegment.exhaustionWitness
+    {alpha : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {cursor : PreparedCursor}
+    (ownership : resource.Owns alpha cursor)
+    (empty : resource.alts = []) :
+    ExhaustedOwnedResource alpha resource cursor := by
+  rcases ownership with
+    ⟨candidates, wellFormed, query, substitutedArgs, supportedCandidates,
+      candidateArities, candidateScan⟩
+  obtain
+    ⟨count, skippedBranches, skippedClauses, finish,
+      readyBranches, readyClauses, branchesEq, clausesEq,
+      branchCount, clauseCount, pulls, finishRemaining, finishContext,
+      ready⟩ :=
+    PLeaTTa.PrologRepresentativeCallFrontierBridge.ResolutionScan.decomposeRepresentativeRejectedPrefix
+      candidateScan supportedCandidates query wellFormed
+      (.refl cursor) (.refl cursor) rfl
+      (fun _branch member => member) candidateArities
+  have readyShape :
+      readyBranches = [] ∧ readyClauses = [] ∧
+        resource.finalCounter = resource.counter :=
+    representativeSupportedReady_exhausted_shape_of_alts_empty ready empty
+  have cursorRemaining :
+      cursor.remaining = skippedBranches := by
+    calc
+      cursor.remaining = skippedBranches ++ readyBranches := branchesEq
+      _ = skippedBranches := by rw [readyShape.1, List.append_nil]
+  have finishEmpty : finish.remaining = [] := by
+    rw [finishRemaining, readyShape.1]
+  have remainingLength : cursor.remaining.length = count := by
+    rw [cursorRemaining, branchCount]
+  exact
+    ⟨count, finish, pulls, finishEmpty, remainingLength, readyShape.2.2⟩
+
+/-- Every aligned local resource is exhausted, with the exact source work
+needed to cross its corresponding frame.
+
+This deliberately says nothing about the arbitrary older executable base.
+A live base is not a terminal state. -/
+structure AllLocalResourcesExhausted
+    (alpha : List (LogicVar × String))
+    (segments : List ControlSegment)
+    (resources : List RetainedAlternativeSegment)
+    (context : ActiveProductContext) where
+  rejectionSteps : Nat
+  segmentDepth : segments.length = resources.length
+  crossedWork :
+    CrossedEmptyResourceFramesAgrees alpha resources context rejectionSteps
+
+/-- Local classification before inspecting the arbitrary older executable
+base. -/
+inductive LocalResourceCatchupOutcome
+    (alpha : List (LogicVar × String))
+    (segments : List ControlSegment)
+    (resources : List RetainedAlternativeSegment)
+    (context : ActiveProductContext) : Prop where
+  | firstLive
+      (partition :
+        OuterResourceCatchupPartition alpha segments resources context)
+  | allEmpty
+      (partition :
+        AllLocalResourcesExhausted alpha segments resources context)
+
+/-- All aligned local resources are empty, but the arbitrary older base
+still produces a branch.  This is intentionally distinct from both the
+local first-live and terminal partitions. -/
+structure BaseLiveOuterResourceCatchupPartition
+    (alpha : List (LogicVar × String))
+    (segments : List ControlSegment)
+    (resources : List RetainedAlternativeSegment)
+    (context : ActiveProductContext)
+    (base : List PLeaTTa.Alt) where
+  allLocal :
+    AllLocalResourcesExhausted alpha segments resources context
+  goals : List PLeaTTa.Goal
+  binding : Subst
+  tail : List PLeaTTa.Alt
+  baseLive :
+    PLeaTTa.pullAux base = some ((goals, binding), tail)
+
+/-- Exhaustive constructive outcome of eager catch-up across the aligned
+local resources and the arbitrary older executable base. -/
+inductive OuterResourceCatchupOutcome
+    (alpha : List (LogicVar × String))
+    (segments : List ControlSegment)
+    (resources : List RetainedAlternativeSegment)
+    (context : ActiveProductContext)
+    (base : List PLeaTTa.Alt) : Prop where
+  | firstLive
+      (partition :
+        OuterResourceCatchupPartition alpha segments resources context)
+  | baseLive
+      (partition :
+        BaseLiveOuterResourceCatchupPartition alpha segments resources context
+          base)
+  | terminal
+      (partition :
+        TerminalOuterResourceCatchupPartition alpha segments resources context
+          base)
+
+/-- Inspect the exact owned local-resource spine and either expose its first
+live bank or construct the exact ranked work proving that every local bank is
+empty.
+
+The recursion follows `SourceControlResourceContextAgrees`, so source frames,
+control segments, and executable resources cannot be inserted, dropped, or
+reordered by the classifier. -/
+theorem SourceControlResourceContextAgrees.classifyLocal
+    {alpha : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (alignment :
+      SourceControlResourceContextAgrees alpha qterm currentBarrier segments
+        resources inner context outer) :
+    LocalResourceCatchupOutcome alpha segments resources context := by
+  induction alignment with
+  | nil currentBarrier scope =>
+      exact .allEmpty
+        { rejectionSteps := 0
+          segmentDepth := rfl
+          crossedWork := .nil }
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership outerAgrees
+      inductionHypothesis =>
+      cases altsEq : resource.alts with
+      | nil =>
+          obtain
+            ⟨exhaustedCount, exhaustedFinish, exhaustedPulls,
+              exhaustedFinishEmpty, exhaustedRemainingLength,
+              exhaustedCounterExact⟩ :=
+            RetainedAlternativeSegment.exhaustionWitness resourceOwnership
+              altsEq
+          cases inductionHypothesis with
+          | firstLive partition =>
+              exact .firstLive
+                { crossedSegments :=
+                    segment :: partition.crossedSegments
+                  firstSegment := partition.firstSegment
+                  survivingSegments := partition.survivingSegments
+                  crossedResources :=
+                    resource :: partition.crossedResources
+                  first := partition.first
+                  survivingResources := partition.survivingResources
+                  crossedFrames :=
+                    { callerScope := nextScope
+                      predicateScope := currentScope
+                      retained := .clauses currentScope cursor
+                      callerRest := segment.references } ::
+                      partition.crossedFrames
+                  firstFrame := partition.firstFrame
+                  survivingContext := partition.survivingContext
+                  firstCursor := partition.firstCursor
+                  rejectionSteps :=
+                    exhaustedCount + partition.rejectionSteps
+                  goals := partition.goals
+                  binding := partition.binding
+                  tail := partition.tail
+                  segmentsEq := by
+                    simp [partition.segmentsEq]
+                  resourcesEq := by
+                    simp [partition.resourcesEq]
+                  contextEq := by
+                    simp [partition.contextEq]
+                  crossedSegmentDepth := by
+                    simp [partition.crossedSegmentDepth]
+                  crossedWork :=
+                    .cons resource partition.crossedResources
+                      { callerScope := nextScope
+                        predicateScope := currentScope
+                        retained := .clauses currentScope cursor
+                        callerRest := segment.references }
+                      partition.crossedFrames cursor exhaustedFinish
+                      exhaustedCount partition.rejectionSteps rfl
+                      resourceOwnership altsEq exhaustedPulls
+                      exhaustedFinishEmpty partition.crossedWork
+                  firstRetainedShape := partition.firstRetainedShape
+                  firstOwnership := partition.firstOwnership
+                  firstHead := partition.firstHead }
+          | allEmpty partition =>
+              exact .allEmpty
+                { rejectionSteps :=
+                    exhaustedCount + partition.rejectionSteps
+                  segmentDepth := by
+                    simp [partition.segmentDepth]
+                  crossedWork :=
+                    .cons resource resources
+                      { callerScope := nextScope
+                        predicateScope := currentScope
+                        retained := .clauses currentScope cursor
+                        callerRest := segment.references }
+                      context cursor exhaustedFinish exhaustedCount
+                      partition.rejectionSteps rfl resourceOwnership altsEq
+                      exhaustedPulls exhaustedFinishEmpty
+                      partition.crossedWork }
+      | cons head tail =>
+          cases head with
+          | barrier =>
+              have markerFree := resourceOwnership.barrierCount_zero
+              rw [altsEq] at markerFree
+              simp at markerFree
+          | br goals binding =>
+              exact .firstLive
+                { crossedSegments := []
+                  firstSegment := segment
+                  survivingSegments := segments
+                  crossedResources := []
+                  first := resource
+                  survivingResources := resources
+                  crossedFrames := []
+                  firstFrame :=
+                    { callerScope := nextScope
+                      predicateScope := currentScope
+                      retained := .clauses currentScope cursor
+                      callerRest := segment.references }
+                  survivingContext := context
+                  firstCursor := cursor
+                  rejectionSteps := 0
+                  goals := goals
+                  binding := binding
+                  tail := tail
+                  segmentsEq := rfl
+                  resourcesEq := rfl
+                  contextEq := rfl
+                  crossedSegmentDepth := rfl
+                  crossedWork := .nil
+                  firstRetainedShape := rfl
+                  firstOwnership := resourceOwnership
+                  firstHead := altsEq }
+
+/-- Construct the honest three-way catch-up partition automatically.
+
+Terminality is introduced only after all local resources have been proved
+empty *and* the real arbitrary-base `pullAux` has returned `none`. -/
+theorem SourceControlResourceContextAgrees.classifyCatchup
+    {alpha : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (alignment :
+      SourceControlResourceContextAgrees alpha qterm currentBarrier segments
+        resources inner context outer)
+    (base : List PLeaTTa.Alt) :
+    OuterResourceCatchupOutcome alpha segments resources context base := by
+  cases
+      PLeaTTa.PrologBodyFailureExhaustedResourceTransitionBridge.SourceControlResourceContextAgrees.classifyLocal
+        alignment with
+  | firstLive partition =>
+      exact .firstLive partition
+  | allEmpty partition =>
+      cases basePull : PLeaTTa.pullAux base with
+      | none =>
+          exact .terminal
+            { rejectionSteps := partition.rejectionSteps
+              segmentDepth := partition.segmentDepth
+              crossedWork := partition.crossedWork
+              baseTerminal := basePull }
+      | some result =>
+          rcases result with ⟨⟨goals, binding⟩, tail⟩
+          exact .baseLive
+            { allLocal := partition
+              goals := goals
+              binding := binding
+              tail := tail
+              baseLive := basePull }
+
+/-- A live arbitrary base is a substantive third outcome even when there are
+no local resources. -/
+theorem empty_local_live_base_partition_is_inhabited :
+    ∃ partition :
+        BaseLiveOuterResourceCatchupPartition [] [] [] []
+          [.br [] []],
+      partition.goals = [] ∧ partition.tail = [] := by
+  let allLocal : AllLocalResourcesExhausted [] [] [] [] :=
+    { rejectionSteps := 0
+      segmentDepth := rfl
+      crossedWork := .nil }
+  let partition :
+      BaseLiveOuterResourceCatchupPartition [] [] [] [] [.br [] []] :=
+    { allLocal := allLocal
+      goals := []
+      binding := []
+      tail := []
+      baseLive := rfl }
+  exact ⟨partition, rfl, rfl⟩
+
+/-- The same live base cannot be laundered into the terminal partition. -/
+theorem empty_local_live_base_is_not_terminal :
+    ¬ Nonempty
+      (TerminalOuterResourceCatchupPartition [] [] [] [] [.br [] []]) := by
+  rintro ⟨partition⟩
+  have terminal := partition.baseTerminal
+  simp [PLeaTTa.pullAux] at terminal
 
 end PLeaTTa.PrologBodyFailureExhaustedResourceTransitionBridge

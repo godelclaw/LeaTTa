@@ -11,7 +11,8 @@ Main exports:
   SpinedExhaustedPayloadResourceRelatesAt,
   SpinedActiveProductPayloadResourceRelatesAt.afterUnifyFailureExhausted,
   SpinedExhaustedPayloadResourceRelatesAt.catchupFirstLive,
-  SpinedExhaustedPayloadResourceRelatesAt.catchupTerminal
+  SpinedExhaustedPayloadResourceRelatesAt.catchupTerminal,
+  SpinedExhaustedPayloadResourceRelatesAt.catchupClassified
 -/
 import PLeaTTa.Proofs.PrologCurrentSessionFailurePayloadTransitionBridge
 import PLeaTTa.Proofs.PrologRetainedPayloadCatchupBridge
@@ -763,6 +764,144 @@ theorem catchupTerminal
     exact sourceSteps
   exact
     ⟨sourceStepsExact, ⟨terminal, consumedCellCount⟩⟩
+
+/-! ## Automatic payload-preserving catch-up -/
+
+/-- Exhaustive payload-aware result after automatically classifying every
+locally owned outer resource and the arbitrary older base.
+
+The live-base constructor is intentionally only a boundary certificate:
+there is no payload suffix or source transition for an executable bank which
+is outside the local resource zipper. -/
+inductive ExhaustedPayloadCatchupResult
+    (freshFrontier : FreshFrontierRelation)
+    (alpha support : List (LogicVar × String))
+    (opened : OpenedCall)
+    (pending : DemandDrivenCallStep.PendingCall)
+    (qterm : Atom) (cursor : PreparedCursor)
+    (bodyBarrier callerBarrier : Nat)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (active : RetainedAlternativeSegment)
+    (callerScope outerScope : CutScopeId)
+    (segments : List ControlSegment)
+    (resources : List RetainedAlternativeSegment)
+    (context : ActiveProductContext)
+    (baseAlts : List PLeaTTa.Alt)
+    (predecessor : OpenConf)
+    (source : Search) (successor : OpenConf)
+    (payloadContext :
+      ExhaustedProductPayloadContext alpha support qterm opened cursor
+        bodyBarrier callerBarrier callerReferences callerExecutables segments
+        active resources callerScope outerScope context) : Prop where
+  | firstLive
+      (partition :
+        OuterResourceCatchupPartition alpha segments resources context)
+      (payloadSuffix :
+        FirstLivePayloadSuffix (support := support) partition qterm outerScope)
+      (sourceSteps :
+        StepsN
+          (partition.rejectionSteps +
+            partition.crossedFrames.length + 1)
+          (.running opened.session source)
+          []
+          (.running opened.session
+            (firstLiveSourceFrontier partition)))
+      (relation :
+        SpinedFirstLivePayloadResourceFrontierRelates freshFrontier alpha
+          support opened pending qterm cursor bodyBarrier callerBarrier
+          callerReferences callerExecutables active callerScope outerScope
+          segments resources context baseAlts predecessor partition
+          (firstLiveSourceFrontier partition) successor payloadContext
+          payloadSuffix) :
+      ExhaustedPayloadCatchupResult freshFrontier alpha support opened pending
+        qterm cursor bodyBarrier callerBarrier callerReferences
+        callerExecutables active callerScope outerScope segments resources
+        context baseAlts predecessor source successor payloadContext
+  | baseLive
+      (partition :
+        BaseLiveOuterResourceCatchupPartition alpha segments resources context
+          baseAlts) :
+      ExhaustedPayloadCatchupResult freshFrontier alpha support opened pending
+        qterm cursor bodyBarrier callerBarrier callerReferences
+        callerExecutables active callerScope outerScope segments resources
+        context baseAlts predecessor source successor payloadContext
+  | terminal
+      (partition :
+        TerminalOuterResourceCatchupPartition alpha segments resources context
+          baseAlts)
+      (sourceSteps :
+        StepsN
+          (partition.rejectionSteps +
+            PrologCurrentSessionPayloadTransitionBridge.ActiveProductPayloadContext.cellCount
+              payloadContext)
+          (.running opened.session source)
+          [.completed]
+          (.terminal opened.session .completed))
+      (relation :
+        SpinedTerminalOuterPayloadCatchupRelates freshFrontier alpha support
+          opened pending qterm cursor bodyBarrier callerBarrier
+          callerReferences callerExecutables active callerScope outerScope
+          segments resources context baseAlts predecessor partition successor
+          payloadContext) :
+      ExhaustedPayloadCatchupResult freshFrontier alpha support opened pending
+        qterm cursor bodyBarrier callerBarrier callerReferences
+        callerExecutables active callerScope outerScope segments resources
+        context baseAlts predecessor source successor payloadContext
+
+/-- Automatically classify and execute all locally certified payload
+catch-up cases.
+
+The generated first-live and terminal partitions are consumed immediately by
+the exact payload theorems.  A live arbitrary base remains the explicit third
+boundary outcome. -/
+theorem catchupClassified
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {opened : OpenedCall}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {segments : List ControlSegment}
+    {qterm : Atom}
+    {cursor : PreparedCursor}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {predecessor : OpenConf}
+    {source : Search} {successor : OpenConf}
+    {payloadContext :
+      ExhaustedProductPayloadContext alpha support qterm opened cursor
+        bodyBarrier callerBarrier callerReferences callerExecutables segments
+        active resources callerScope outerScope context}
+    (agreement :
+      SpinedExhaustedPayloadResourceRelatesAt freshFrontier alpha support
+        opened pending bodyBarrier callerBarrier callerReferences
+        callerExecutables segments qterm cursor active resources callerScope
+        outerScope context baseAlts predecessor source successor
+        payloadContext) :
+    ExhaustedPayloadCatchupResult freshFrontier alpha support opened pending
+      qterm cursor bodyBarrier callerBarrier callerReferences callerExecutables
+      active callerScope outerScope segments resources context baseAlts
+      predecessor source successor payloadContext := by
+  cases
+      PLeaTTa.PrologBodyFailureExhaustedResourceTransitionBridge.SourceControlResourceContextAgrees.classifyCatchup
+        agreement.core.outerAlignment baseAlts with
+  | firstLive partition =>
+      obtain ⟨payloadSuffix, sourceSteps, relation⟩ :=
+        PLeaTTa.PrologCurrentSessionExhaustedPayloadCatchupBridge.SpinedExhaustedPayloadResourceRelatesAt.catchupFirstLive
+          agreement partition
+      exact .firstLive partition payloadSuffix sourceSteps relation
+  | baseLive partition =>
+      exact .baseLive partition
+  | terminal partition =>
+      obtain ⟨sourceSteps, relation⟩ :=
+        PLeaTTa.PrologCurrentSessionExhaustedPayloadCatchupBridge.SpinedExhaustedPayloadResourceRelatesAt.catchupTerminal
+          agreement partition
+      exact .terminal partition sourceSteps relation
 
 end SpinedExhaustedPayloadResourceRelatesAt
 
