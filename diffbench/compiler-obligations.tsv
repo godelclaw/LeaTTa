@@ -40,8 +40,8 @@ APP.quote	T297-299	X	TranslatesExpr.quote	SC	PASS	covered
 APP.Predicate	M275	H	-	N	BOUNDARY	typed-wrapper
 APP.translatePredicate	T271-275	H	-	N	BOUNDARY	ownership-dispatch
 APP.callPredicate	M276	H	-	N	BOUNDARY	ownership-dispatch
-APP.assertaPredicate	M278,T310-324,T335-346	S	TranslatesExpr.assertaPredicate	SH	GAP	source-anchored ordered compiler lowering and owned local leaf effect proved; arbitrary product/resource context composition open
-APP.assertzPredicate	M277,T310-324,T335-346	S	TranslatesExpr.assertzPredicate	SH	GAP	source-anchored ordered compiler lowering and owned local leaf effect proved; arbitrary product/resource context composition open
+APP.assertaPredicate	M278,T310-324,T335-346	S	TranslatesExpr.assertaPredicate	SH	GAP	source-anchored ordered compiler lowering and the owned local effect through an arbitrary active product/resource/payload context are proved under the existing context relation and a producer-supplied executable world-action head; directly constructing that contextual premise from TranslatesExpr remains open
+APP.assertzPredicate	M277,T310-324,T335-346	S	TranslatesExpr.assertzPredicate	SH	GAP	source-anchored ordered compiler lowering and the owned local effect through an arbitrary active product/resource/payload context are proved under the existing context relation and a producer-supplied executable world-action head; directly constructing that contextual premise from TranslatesExpr remains open
 APP.retractPredicate	M279-280	H	-	N	BOUNDARY	world-action
 APP.process_metta_string	F12-18	H	-	N	BOUNDARY	runtime-loader-world-action
 APP.unquote_quote	HE64-67	L	-	EQ	FAIL	hardcoded-without-library-and-cut

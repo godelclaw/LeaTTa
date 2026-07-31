@@ -21,6 +21,7 @@ open PeTTaSpec.PrologCore.GoalSemantics
 open PeTTaSpec.PrologCore.OpenSubstitution
 open PrologStateBridge
 open PrologOrdinaryStepBridge
+open PrologGoalAlpha
 open DemandDrivenStep
 
 /-!
@@ -162,6 +163,56 @@ def assertionSuccessor (operation : AssertionOperation)
       runtime functor executableClause).frames = state.frames := by
   rfl
 
+@[simp] theorem assertionSuccessor_alts
+    (operation : AssertionOperation) (state : OpenConf)
+    (executableResult : Atom) (executableTail : List PLeaTTa.Goal)
+    (runtime : Subst) (functor : String)
+    (executableClause : PLeaTTa.Clause) :
+    (assertionSuccessor operation state executableResult executableTail
+      runtime functor executableClause).control.alts =
+        state.control.alts := by
+  rfl
+
+@[simp] theorem assertionSuccessor_qterm
+    (operation : AssertionOperation) (state : OpenConf)
+    (executableResult : Atom) (executableTail : List PLeaTTa.Goal)
+    (runtime : Subst) (functor : String)
+    (executableClause : PLeaTTa.Clause) :
+    (assertionSuccessor operation state executableResult executableTail
+      runtime functor executableClause).control.qterm =
+        state.control.qterm := by
+  rfl
+
+@[simp] theorem assertionSuccessor_answers
+    (operation : AssertionOperation) (state : OpenConf)
+    (executableResult : Atom) (executableTail : List PLeaTTa.Goal)
+    (runtime : Subst) (functor : String)
+    (executableClause : PLeaTTa.Clause) :
+    (assertionSuccessor operation state executableResult executableTail
+      runtime functor executableClause).control.answers =
+        state.control.answers := by
+  rfl
+
+@[simp] theorem assertionSuccessor_answerKeys
+    (operation : AssertionOperation) (state : OpenConf)
+    (executableResult : Atom) (executableTail : List PLeaTTa.Goal)
+    (runtime : Subst) (functor : String)
+    (executableClause : PLeaTTa.Clause) :
+    (assertionSuccessor operation state executableResult executableTail
+      runtime functor executableClause).control.answerKeys =
+        state.control.answerKeys := by
+  rfl
+
+@[simp] theorem assertionSuccessor_barriers
+    (operation : AssertionOperation) (state : OpenConf)
+    (executableResult : Atom) (executableTail : List PLeaTTa.Goal)
+    (runtime : Subst) (functor : String)
+    (executableClause : PLeaTTa.Clause) :
+    (assertionSuccessor operation state executableResult executableTail
+      runtime functor executableClause).control.barriers =
+        state.control.barriers := by
+  rfl
+
 /-- A nontrivial existing head distinguishes front insertion from the
 deliberately wrong back-insertion successor. -/
 theorem asserta_successor_rejects_back_edge
@@ -276,6 +327,271 @@ theorem assertionSuccessor_rejects_unchanged_counter
   rw [assertionSuccessor_counter]
   omega
 
+/-! ## Reusable head-level assertion transition -/
+
+/-- Execute one exact owned assertion head with an arbitrary ordered
+executable continuation.
+
+This theorem deliberately mentions no source control payload: it is the
+reusable sealed-machine half needed both by the one-region leaf theorem and
+by the arbitrary product/resource-context lift.  The actual decoder fixes the
+installed clause, while `operation` fixes front versus back insertion. -/
+theorem assertionExecutableStep
+    {prog : PLeaTTa.Prog} {gt : GroundingTable}
+    {operation : AssertionOperation}
+    {state : OpenConf} {executablePayload executableResult : Atom}
+    {executableTail : List PLeaTTa.Goal} {runtime : Subst}
+    {functor : String} {executableClause : PLeaTTa.Clause}
+    (currentControl :
+      state.control.cur =
+        some
+          (PLeaTTa.Goal.wact operation.predicate [executablePayload]
+              executableResult ::
+            executableTail, runtime))
+    (executableDecoded :
+      PLeaTTa.predicateClause? gt (subst runtime executablePayload) =
+        some (functor, executableClause)) :
+    DemandDrivenCallStep.Step prog gt (.ready state)
+      (.ready
+        (assertionSuccessor operation state executableResult executableTail
+          runtime functor executableClause)) := by
+  have sealedHead :
+      state.toConf.cur =
+        some
+          (PLeaTTa.Goal.wact operation.predicate [executablePayload]
+              executableResult ::
+            executableTail, runtime) := by
+    simpa [OpenConf.toConf, Control.toConf] using currentControl
+  have notFindall : ¬ findallRunHead state.toConf := by
+    simp [findallRunHead, sealedHead]
+  have notLocalCall :
+      ¬ DemandDrivenCallStep.LocalResolveHead state := by
+    simp [DemandDrivenCallStep.LocalResolveHead, sealedHead]
+  have counterExact :
+      max state.toConf.counter (state.persistent.counter + 1) =
+        state.persistent.counter + 1 := by
+    change max state.persistent.counter (state.persistent.counter + 1) =
+      state.persistent.counter + 1
+    omega
+  apply DemandDrivenCallStep.Step.ordinary state
+    (assertionSuccessor operation state executableResult executableTail
+      runtime functor executableClause) notLocalCall
+  apply DemandDrivenStep.Step.ordinary state
+    (assertionSuccessor operation state executableResult executableTail
+      runtime functor executableClause).toConf notFindall
+  cases operation with
+  | asserta =>
+      have dispatch :=
+        PLeaTTa.wactDispatch_assertaPredicate state.persistent.world gt
+          state.persistent.counter (subst runtime executablePayload)
+          functor executableClause executableDecoded
+      simpa [assertionSuccessor, AssertionOperation.predicate,
+        AssertionOperation.front, counterExact] using
+        (PLeaTTa.Step.wact_ok (prog := prog) state.toConf "assertaPredicate"
+          [executablePayload] executableResult trueA executableTail runtime
+          (PLeaTTa.installPredicateClause state.persistent.world true
+            functor executableClause)
+          (state.persistent.counter + 1) sealedHead dispatch)
+  | assertz =>
+      have dispatch :=
+        PLeaTTa.wactDispatch_assertzPredicate state.persistent.world gt
+          state.persistent.counter (subst runtime executablePayload)
+          functor executableClause executableDecoded
+      simpa [assertionSuccessor, AssertionOperation.predicate,
+        AssertionOperation.front, counterExact] using
+        (PLeaTTa.Step.wact_ok (prog := prog) state.toConf "assertzPredicate"
+          [executablePayload] executableResult trueA executableTail runtime
+          (PLeaTTa.installPredicateClause state.persistent.world false
+            functor executableClause)
+          (state.persistent.counter + 1) sealedHead dispatch)
+
+/-- Re-establish the persistent database/fresh relation after the exact owned
+assertion transition.
+
+The explicit post-frontier premise is load-bearing: the executable world
+action advances its global counter, while the independent database mutation
+does not allocate a logical variable. -/
+theorem assertionPersistentAfter
+    {freshFrontier : FreshFrontierRelation}
+    {operation : AssertionOperation}
+    {session : Session} {state : OpenConf}
+    {referenceClause : Resolver.LocalClause}
+    {executableResult : Atom} {executableTail : List PLeaTTa.Goal}
+    {runtime : Subst} {functor : String}
+    {executableClause : PLeaTTa.Clause}
+    (persistent :
+      SessionRelatesPersistent freshFrontier session state.persistent)
+    (clause :
+      LocalClauseAgrees referenceClause (functor, executableClause))
+    (noDescendants :
+      state.persistent.world.specializationDescendants functor = [])
+    (freshAfter :
+      freshFrontier session.resolver.nextFresh
+        (state.persistent.counter + 1)) :
+    SessionRelatesPersistent freshFrontier
+      (session.withDatabase
+        (operation.update session.resolver.database referenceClause))
+      (assertionSuccessor operation state executableResult executableTail
+        runtime functor executableClause).persistent := by
+  constructor
+  · cases operation with
+    | asserta =>
+        apply persistent.database.asserta_of_projection clause
+        · simpa [AssertionOperation.front] using
+            PLeaTTa.installPredicateClause_progClauses_of_no_descendants
+              state.persistent.world true functor executableClause
+              noDescendants
+        · exact
+            PLeaTTa.installPredicateClause_coherent_of_no_descendants
+              state.persistent.world true functor executableClause
+              persistent.database.clauseIndex noDescendants
+    | assertz =>
+        apply persistent.database.assertz_of_projection clause
+        · simpa [AssertionOperation.front] using
+            PLeaTTa.installPredicateClause_progClauses_of_no_descendants
+              state.persistent.world false functor executableClause
+              noDescendants
+        · exact
+            PLeaTTa.installPredicateClause_coherent_of_no_descendants
+              state.persistent.world false functor executableClause
+              persistent.database.clauseIndex noDescendants
+  · simpa [Session.withDatabase, AssertionOperation.update] using freshAfter
+
+/-- One exact independent assertion transition with an arbitrary ordered
+source continuation. -/
+theorem assertionSourceStep
+    {operation : AssertionOperation}
+    {session : Session} {scope : CutScopeId}
+    {current : Substitution} {payload result : Term}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {referenceClause : Resolver.LocalClause}
+    (sourceDecoded :
+      decodePredicateClause (current.applyTerm payload) =
+        some referenceClause) :
+    RawStep session
+      (.task scope
+        (.call operation.predicate [payload, result] :: references) current)
+      [.effect
+        (operation.effect session.resolver.database referenceClause)]
+      .none
+      (session.withDatabase
+        (operation.update session.resolver.database referenceClause))
+      (.running
+        (.task scope
+          (.unify result (.atom "true") :: references) current)) := by
+  cases operation with
+  | asserta =>
+      exact
+        RawStep.taskAsserta scope payload result references current session
+          referenceClause (predicate := "assertaPredicate")
+          (arguments := [payload, result]) rfl sourceDecoded
+  | assertz =>
+      exact
+        RawStep.taskAssertz scope payload result references current session
+          referenceClause (predicate := "assertzPredicate")
+          (arguments := [payload, result]) rfl sourceDecoded
+
+/-- Every alpha-related executable world action comes from one of the two
+owned source assertion constructors, with the exact payload and result
+relations.  The theorem is driven by the executable constructor first, so it
+does not need to solve the generic call argument decomposition. -/
+theorem alphaWactOwned
+    {alpha : List (LogicVar × String)} {barrier : Nat}
+    {reference : PeTTaSpec.PrologCore.Goal}
+    {operation : String} {executablePayload executableResult : Atom}
+    (agreement :
+      AlphaGoalAgrees alpha barrier reference
+        (.wact operation [executablePayload] executableResult)) :
+    ∃ referencePayload referenceResult,
+      ((operation = "assertaPredicate" ∧
+          reference =
+            .call "assertaPredicate" [referencePayload, referenceResult]) ∨
+        (operation = "assertzPredicate" ∧
+          reference =
+            .call "assertzPredicate" [referencePayload, referenceResult])) ∧
+      AlphaTermAgrees alpha referencePayload executablePayload ∧
+      AlphaTermAgrees alpha referenceResult executableResult := by
+  cases agreement with
+  | assertaPredicate payload result =>
+      exact ⟨_, _, Or.inl ⟨rfl, rfl⟩, payload, result⟩
+  | assertzPredicate payload result =>
+      exact ⟨_, _, Or.inr ⟨rfl, rfl⟩, payload, result⟩
+
+/-- Invert one producer-supplied executable assertion head without permitting
+operation laundering.
+
+`AlphaGoalAgrees.definedCall` deliberately also admits the same source syntax
+as an ordinary executable call, so source shape alone cannot force a `wact`.
+Once the actual compiler-produced executable head is supplied, however, its
+operation, payload, result, and ordered tail are all forced by the existing
+alpha-goal relation. -/
+theorem AssertionOperation.normalizedWactHead
+    {alpha : List (LogicVar × String)} {barrier : Nat}
+    {payload result : Term}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    {executableOperation : String}
+    {executablePayload executableResult : Atom}
+    {executableTail : List PLeaTTa.Goal}
+    (operation : AssertionOperation)
+    (agreement :
+      NormalizedAlphaGoalsAgree alpha barrier
+        (.call operation.predicate [payload, result] :: references)
+        executables)
+    (executableShape :
+      executables =
+        PLeaTTa.Goal.wact executableOperation [executablePayload]
+            executableResult ::
+          executableTail) :
+    executableOperation = operation.predicate ∧
+        AlphaTermAgrees alpha payload executablePayload ∧
+        AlphaTermAgrees alpha result executableResult ∧
+        NormalizedAlphaGoalsAgree alpha barrier references executableTail := by
+  subst executables
+  cases operation with
+  | asserta =>
+      cases agreement with
+      | cons head tail =>
+          obtain
+            ⟨referencePayload, referenceResult, operationShape,
+              payloadAgreement, resultAgreement⟩ :=
+            alphaWactOwned head
+          rcases operationShape with
+            ⟨operationEq, sourceEq⟩ | ⟨operationEq, _sourceEq⟩
+          · subst executableOperation
+            cases sourceEq
+            exact ⟨rfl, payloadAgreement, resultAgreement, tail⟩
+          · have impossible :
+                ("assertaPredicate" : String) = "assertzPredicate" :=
+              congrArg
+                (fun goal =>
+                  match goal with
+                  | .call predicate _ => predicate
+                  | _ => "")
+                _sourceEq
+            simp at impossible
+  | assertz =>
+      cases agreement with
+      | cons head tail =>
+          obtain
+            ⟨referencePayload, referenceResult, operationShape,
+              payloadAgreement, resultAgreement⟩ :=
+            alphaWactOwned head
+          rcases operationShape with
+            ⟨operationEq, _sourceEq⟩ | ⟨operationEq, sourceEq⟩
+          · have impossible :
+                ("assertzPredicate" : String) = "assertaPredicate" :=
+              congrArg
+                (fun goal =>
+                  match goal with
+                  | .call predicate _ => predicate
+                  | _ => "")
+                _sourceEq
+            simp at impossible
+          · subst executableOperation
+            cases sourceEq
+            exact ⟨rfl, payloadAgreement, resultAgreement, tail⟩
+
 /-- Complete ready-state contract for one supported assertion.
 
 The source and executable decoders are both real functions.  Their outputs
@@ -347,64 +663,9 @@ private theorem executableStep
       (.ready
         (assertionSuccessor operation state agreement.executableResult
           agreement.executableTail agreement.runtime agreement.functor
-          agreement.executableClause)) := by
-  have sealedHead :
-      state.toConf.cur =
-        some
-          (PLeaTTa.Goal.wact operation.predicate
-              [agreement.executablePayload] agreement.executableResult ::
-            agreement.executableTail, agreement.runtime) := by
-    simpa [OpenConf.toConf, Control.toConf] using agreement.currentControl
-  have notFindall : ¬ findallRunHead state.toConf := by
-    simp [findallRunHead, sealedHead]
-  have notLocalCall :
-      ¬ DemandDrivenCallStep.LocalResolveHead state := by
-    simp [DemandDrivenCallStep.LocalResolveHead, sealedHead]
-  have counterExact :
-      max state.toConf.counter (state.persistent.counter + 1) =
-        state.persistent.counter + 1 := by
-    change max state.persistent.counter (state.persistent.counter + 1) =
-      state.persistent.counter + 1
-    omega
-  apply DemandDrivenCallStep.Step.ordinary state
-    (assertionSuccessor operation state agreement.executableResult
-      agreement.executableTail agreement.runtime agreement.functor
-      agreement.executableClause) notLocalCall
-  apply DemandDrivenStep.Step.ordinary state
-    (assertionSuccessor operation state agreement.executableResult
-      agreement.executableTail agreement.runtime agreement.functor
-      agreement.executableClause).toConf notFindall
-  cases operation with
-  | asserta =>
-      have dispatch :=
-        PLeaTTa.wactDispatch_assertaPredicate state.persistent.world gt
-          state.persistent.counter (subst agreement.runtime
-            agreement.executablePayload)
-          agreement.functor agreement.executableClause
-          agreement.executableDecoded
-      simpa [assertionSuccessor, AssertionOperation.predicate,
-        AssertionOperation.front, counterExact] using
-        (PLeaTTa.Step.wact_ok (prog := prog) state.toConf "assertaPredicate"
-          [agreement.executablePayload] agreement.executableResult trueA
-          agreement.executableTail agreement.runtime
-          (PLeaTTa.installPredicateClause state.persistent.world true
-            agreement.functor agreement.executableClause)
-          (state.persistent.counter + 1) sealedHead dispatch)
-  | assertz =>
-      have dispatch :=
-        PLeaTTa.wactDispatch_assertzPredicate state.persistent.world gt
-          state.persistent.counter (subst agreement.runtime
-            agreement.executablePayload)
-          agreement.functor agreement.executableClause
-          agreement.executableDecoded
-      simpa [assertionSuccessor, AssertionOperation.predicate,
-        AssertionOperation.front, counterExact] using
-        (PLeaTTa.Step.wact_ok (prog := prog) state.toConf "assertzPredicate"
-          [agreement.executablePayload] agreement.executableResult trueA
-          agreement.executableTail agreement.runtime
-          (PLeaTTa.installPredicateClause state.persistent.world false
-            agreement.functor agreement.executableClause)
-          (state.persistent.counter + 1) sealedHead dispatch)
+          agreement.executableClause)) :=
+  assertionExecutableStep agreement.currentControl
+    agreement.executableDecoded
 
 private theorem persistentAfter
     {gt : GroundingTable}
@@ -425,37 +686,9 @@ private theorem persistentAfter
         (operation.update session.resolver.database referenceClause))
       (assertionSuccessor operation state agreement.executableResult
         agreement.executableTail agreement.runtime agreement.functor
-        agreement.executableClause).persistent := by
-  constructor
-  · cases operation with
-    | asserta =>
-        apply agreement.persistent.database.asserta_of_projection
-          agreement.clause
-        · simpa [AssertionOperation.front] using
-            PLeaTTa.installPredicateClause_progClauses_of_no_descendants
-              state.persistent.world true agreement.functor
-              agreement.executableClause agreement.noDescendants
-        · exact
-            PLeaTTa.installPredicateClause_coherent_of_no_descendants
-              state.persistent.world true agreement.functor
-              agreement.executableClause
-              agreement.persistent.database.clauseIndex
-              agreement.noDescendants
-    | assertz =>
-        apply agreement.persistent.database.assertz_of_projection
-          agreement.clause
-        · simpa [AssertionOperation.front] using
-            PLeaTTa.installPredicateClause_progClauses_of_no_descendants
-              state.persistent.world false agreement.functor
-              agreement.executableClause agreement.noDescendants
-        · exact
-            PLeaTTa.installPredicateClause_coherent_of_no_descendants
-              state.persistent.world false agreement.functor
-              agreement.executableClause
-              agreement.persistent.database.clauseIndex
-              agreement.noDescendants
-  · simpa [Session.withDatabase, AssertionOperation.update] using
-      agreement.freshAfter
+        agreement.executableClause).persistent :=
+  assertionPersistentAfter agreement.persistent agreement.clause
+    agreement.noDescendants agreement.freshAfter
 
 private theorem sourceStep
     {gt : GroundingTable}
@@ -481,18 +714,8 @@ private theorem sourceStep
         (operation.update session.resolver.database referenceClause))
       (.running
         (.task scope
-          (.unify result (.atom "true") :: references) current)) := by
-  cases operation with
-  | asserta =>
-      exact
-        RawStep.taskAsserta scope payload result references current session
-          referenceClause (predicate := "assertaPredicate")
-          (arguments := [payload, result]) rfl agreement.sourceDecoded
-  | assertz =>
-      exact
-        RawStep.taskAssertz scope payload result references current session
-          referenceClause (predicate := "assertzPredicate")
-          (arguments := [payload, result]) rfl agreement.sourceDecoded
+          (.unify result (.atom "true") :: references) current)) :=
+  assertionSourceStep agreement.sourceDecoded
 
 /-- One supported assertion takes one real transition in each semantics.
 

@@ -405,6 +405,13 @@ theorem trans {first middle last : Session}
     Nat.le_trans left.exception right.exception,
     Nat.le_trans left.collection right.collection⟩
 
+/-- Replacing only the persistent database preserves all four allocator
+high-waters exactly. -/
+theorem withDatabase (session : Session) (database : Database) :
+    SessionHighWatersExtend session (session.withDatabase database) := by
+  exact
+    ⟨Nat.le_refl _, Nat.le_refl _, Nat.le_refl _, Nat.le_refl _⟩
+
 /-- Every real independent local-search step advances all four source
 high-waters monotonically. -/
 theorem of_rawStep {before after : Session} {search : Search}
