@@ -538,6 +538,16 @@ def Frame.suspendedAlts : Frame → List Alt
 def ownedAlts (state : OpenConf) : List Alt :=
   state.control.alts ++ state.frames.flatMap Frame.suspendedAlts
 
+/-- Entering `findall/3` transfers the caller bank into the frame and starts
+the runnable private generator with no alternatives.  In particular the
+collection-owned cut frontier is not represented by an `Alt.barrier`; such
+markers are allocated only by predicate-call activation. -/
+@[simp] theorem enterFindall_active_alts_empty (state : OpenConf)
+    (template : Atom) (sub : List Goal) (result : Atom) (rest : List Goal)
+    (binding : Subst) :
+    (enterFindall state template sub result rest binding).control.alts = [] := by
+  rfl
+
 @[simp] theorem enterFindall_transfers_alts (state : OpenConf)
     (template : Atom) (sub : List Goal) (result : Atom) (rest : List Goal)
     (binding : Subst) :

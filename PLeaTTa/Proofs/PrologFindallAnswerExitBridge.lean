@@ -66,8 +66,8 @@ inductive ActiveFindallTerminalAnswerResourceAgrees
       {beforeResources afterResources : List RetainedAlternativeSegment}
       {beforeAlts afterAlts : List PLeaTTa.Alt}
       (answerChild :
-        ExactAnswerProducerResourceAgrees alpha before childAfter
-          (.cutBoundary cutScope body) (.cutBoundary cutScope next)
+        ExactFindallBodyAnswerProducerResourceAgrees alpha before childAfter
+          body next
           answerBindings beforeResources afterResources beforeAlts afterAlts)
       (exitChild :
         RawStep
@@ -276,10 +276,13 @@ theorem pull_eq_base
   | here before childAfter finalSession callerScope cutScope collectionScope
       body next template output entryBindings tail reversed answerBindings
       answerChild exitChild =>
-      rcases answerChild.originAgreement with ⟨_, _, agreement⟩
-      exact
-        (PrologAnswerPullClassificationBridge.AnswerOriginResourceAgrees.fallsThrough_of_next_completed
-          agreement exitChild).pullAux_eq
+      rcases answerChild.bodyProducer.originAgreement with
+        ⟨_, _, agreement⟩
+      cases exitChild with
+      | cutBoundaryComplete _ _ _ _ child =>
+          exact
+            (PrologAnswerPullClassificationBridge.AnswerOriginResourceAgrees.fallsThrough_of_next_completed
+              agreement child).pullAux_eq
   | underChoice _ _ _ ih => exact ih
   | underCut _ _ ih => exact ih
   | underCatch _ _ _ _ _ _ ih => exact ih
@@ -606,9 +609,9 @@ theorem terminalExit
 end ContextualFindallAnswerRelates
 
 /-- A direct one-answer generator inhabits the joint source certificate with
-the real anonymous generator barrier as its complete executable bank.  The
-following completion runs at the post-copy session and shares the literal
-`.cutBoundary 1 .done` successor with the answer origin. -/
+the real marker-free private generator bank.  The following completion runs at
+the post-copy session and shares the literal `.cutBoundary 1 .done` successor
+with the answer origin. -/
 theorem ground_one_answer_source_pair_inhabited :
     let sourceBindings : Substitution := [(.source "x", .integer 1)]
     let session : Session := {}
@@ -628,22 +631,19 @@ theorem ground_one_answer_source_pair_inhabited :
         [.unify (.integer 9) (.list [copied.prepared.copied] none)] []
     ActiveFindallTerminalAnswerResourceAgrees [] session beforeSearch session
       answeredSearch copied.session rejoinedSearch cell sourceBindings [] []
-      [.barrier] [] := by
+      [] [] := by
   dsimp
   let origin :
       PrologAnswerOriginBridge.AnswerOrigin 1
         [(.source "x", .integer 1)]
-        (.cutBoundary 1
-          (.task 1 [] [(.source "x", .integer 1)]))
-        (.cutBoundary 1 .done) :=
-    .cutBoundary 1 (.task)
+        (.task 1 [] [(.source "x", .integer 1)]) .done :=
+    .task
   have resources :
-      AnswerOriginResourceAgrees [] origin [] [] [.barrier] [] := by
-    exact .cutBoundary 1 (.task)
-      (.task 1 [(.source "x", .integer 1)] [] [.barrier])
+      AnswerOriginResourceAgrees [] origin [] [] [] [] := by
+    exact .task 1 [(.source "x", .integer 1)] [] []
   have producer :=
-    ExactAnswerProducerResourceAgrees.ofOrigin ({} : Session) origin
-      resources
+    ExactFindallBodyAnswerProducerResourceAgrees.ofOrigin ({} : Session)
+      origin resources
   have exit :
       RawStep
         (collectTemplate ({} : Session) (.variable (.source "x"))
@@ -686,7 +686,7 @@ theorem ground_one_answer_under_cut_source_pair_inhabited :
     ActiveFindallTerminalAnswerResourceAgrees [] session
       (.cutBoundary 7 beforeSearch) session (.cutBoundary 7 answeredSearch)
       copied.session (.cutBoundary 7 rejoinedSearch) cell sourceBindings [] []
-      [.barrier] [] := by
+      [] [] := by
   dsimp
   exact .underCut 7 (by simpa using ground_one_answer_source_pair_inhabited)
 
@@ -752,7 +752,7 @@ theorem ground_one_answer_terminal_exit_inhabited
         control := outerControl
         frames := [.findall frame]
         scopes := {} }
-    let before := replaceAlternativeBank baseBefore [.barrier]
+    let before := baseBefore
     ContextualTerminalFindallAnswerExitRelates [] prog gt session session
       copied.session beforeSearch answeredSearch rejoinedSearch cell
       sourceBindings before (privateAnswerTarget before fineBinding)
@@ -763,9 +763,7 @@ theorem ground_one_answer_terminal_exit_inhabited
   dsimp only at base
   have source := ground_one_answer_source_pair_inhabited
   dsimp only at source
-  have payload :=
-    PLeaTTa.PrologFindallAnswerExitBridge.FindallAnswerPayloadAgrees.replaceAlternativeBank
-      base.payloadBefore [.barrier]
+  have payload := base.payloadBefore
   have occurrences :
       CollectionOccurrenceAgrees
         (.collectionBoundary ⟨1⟩ 0
@@ -786,7 +784,7 @@ theorem ground_one_answer_terminal_exit_inhabited
             binding := [] }] := by
     simp [CollectionOccurrenceAgrees, activeCollectionCells,
       SourceCollectionCell.AgreesFrame, sourceCollectionCell]
-  simpa [replaceAlternativeBank] using
+  simpa using
     (ContextualFindallAnswerRelates.terminalExit (prog := prog) (gt := gt)
       source rfl rfl occurrences payload)
 

@@ -37,12 +37,16 @@ The four resource/alternative endpoints belong to the generator's active
 bank.  Every outer wrapper below reuses those endpoint variables literally:
 its inactive choice, product tail, handler, or enclosing collector lives in
 the suspended outer findall frame and therefore owns no part of this bank.
-In particular, `AnswerOrigin.cutBoundary` consumes a generator-internal
-marker, whereas `underCut` below consumes nothing because it crosses an outer
-wrapper.  The same boundary explains the apparent catch asymmetry:
-generator-internal catch fails closed in `AnswerOriginResourceAgrees`, while
-`underCatch` is an outer wrapper above the collector's `subConfOf` state, whose
-alternative bank starts at `[]`.
+
+The cut boundary installed by `findall/3` is deliberately *not* part of the
+resource zipper.  `subConfOf` starts the private generator with `alts := []`;
+only a locally entered predicate call contributes an anonymous executable
+marker.  The direct certificate therefore indexes resource ownership on the
+collection body and derives the surrounding cut step separately.  This keeps
+the typed collection cut from consuming a nonexistent predicate marker.  The
+same boundary explains the apparent catch asymmetry: generator-internal catch
+fails closed in `AnswerOriginResourceAgrees`, while `underCatch` is an outer
+wrapper above the collector's `subConfOf` state.
 
 The terminal zipper endpoint is *not* the executable answer successor's
 alternative bank.  `PLeaTTa.answerSuccessor` records the answer and immediately
@@ -55,9 +59,8 @@ machine pull equation, but deliberately makes no `postAlts = afterAlts` claim.
 namespace AnswerOriginResourceAgrees
 
 /-- An older executable-bank suffix may be threaded through an exact origin
-zipper without changing any resource ownership or consumption order.  This is
-the compositional operation used when an outer generator cut contributes its
-marker below an already-certified nested origin. -/
+zipper without changing any resource ownership or consumption order.  This
+generic operation is not used for the marker-free collection cut. -/
 theorem append_alts
     {alpha : List (LogicVar × String)}
     {leafScope : CutScopeId} {bindings : Substitution}
@@ -100,8 +103,65 @@ theorem append_alts
 
 end AnswerOriginResourceAgrees
 
+/-- Exact resource provenance for the answer-producing body of one active
+`findall/3` collector.
+
+The body origin owns precisely the generator's executable alternative bank.
+The collection-owned cut boundary is absent from this structure because the
+fine `subConfOf` entry does not allocate an `Alt.barrier` for it. -/
+structure ExactFindallBodyAnswerProducerResourceAgrees
+    (alpha : List (LogicVar × String))
+    (before after : Session) (body next : Search)
+    (bindings : Substitution)
+    (beforeResources afterResources : List RetainedAlternativeSegment)
+    (beforeAlts afterAlts : List PLeaTTa.Alt) : Prop where
+  bodyProducer :
+    ExactAnswerProducerResourceAgrees alpha before after body next bindings
+      beforeResources afterResources beforeAlts afterAlts
+
+namespace ExactFindallBodyAnswerProducerResourceAgrees
+
+/-- Wrap source control through the collection cut without consuming or
+creating an executable alternative marker. -/
+theorem cutWrappedProducer
+    {alpha : List (LogicVar × String)}
+    {before after : Session} {body next : Search}
+    {bindings : Substitution}
+    {beforeResources afterResources : List RetainedAlternativeSegment}
+    {beforeAlts afterAlts : List PLeaTTa.Alt}
+    (child :
+      ExactFindallBodyAnswerProducerResourceAgrees alpha before after body next
+        bindings beforeResources afterResources beforeAlts afterAlts)
+    (cutScope : CutScopeId) :
+    ExactAnswerProducer before after (.cutBoundary cutScope body)
+      (.cutBoundary cutScope next) bindings := by
+  exact
+    ExactAnswerProducer.ofRawStep
+      (.cutBoundaryProgress cutScope body next [.answer bindings] before after
+        child.bodyProducer.producer.step)
+
+/-- Any exact body origin and its resource zipper construct the marker-free
+findall-body certificate directly. -/
+theorem ofOrigin
+    {alpha : List (LogicVar × String)}
+    {leafScope : CutScopeId} {bindings : Substitution}
+    {body next : Search}
+    {beforeResources afterResources : List RetainedAlternativeSegment}
+    {beforeAlts afterAlts : List PLeaTTa.Alt}
+    (session : Session)
+    (origin : AnswerOrigin leafScope bindings body next)
+    (agreement :
+      AnswerOriginResourceAgrees alpha origin beforeResources afterResources
+        beforeAlts afterAlts) :
+    ExactFindallBodyAnswerProducerResourceAgrees alpha session session body next
+      bindings beforeResources afterResources beforeAlts afterAlts := by
+  exact
+    ⟨ExactAnswerProducerResourceAgrees.ofOrigin session origin agreement⟩
+
+end ExactFindallBodyAnswerProducerResourceAgrees
+
 /-- One active source `findall/3` answer whose exact direct child producer
-also carries the origin-indexed resource and alternative zipper.
+also carries the body-origin-indexed resource and alternative zipper.
 
 All transparent outer constructors keep the four endpoints definitionally
 unchanged.  This makes accidental outer-resource consumption unrepresentable
@@ -123,8 +183,8 @@ inductive ActiveFindallAnswerResourceAgrees
       {beforeResources afterResources : List RetainedAlternativeSegment}
       {beforeAlts afterAlts : List PLeaTTa.Alt}
       (child :
-        ExactAnswerProducerResourceAgrees alpha before childAfter
-          (.cutBoundary cutScope body) (.cutBoundary cutScope next)
+        ExactFindallBodyAnswerProducerResourceAgrees alpha before childAfter
+          body next
           answerBindings beforeResources afterResources beforeAlts afterAlts) :
       ActiveFindallAnswerResourceAgrees alpha before
         (.collectionBoundary collectionScope callerScope
@@ -233,7 +293,7 @@ theorem weak
       template output entryBindings tail reversed answerBindings child =>
       exact .here before childAfter callerScope cutScope collectionScope body
         next template output entryBindings tail reversed answerBindings
-        child.producer
+        (child.cutWrappedProducer cutScope)
   | underChoice scope right inside inductionHypothesis =>
       exact .underChoice scope right inductionHypothesis
   | underCut scope inside inductionHypothesis =>
@@ -267,7 +327,7 @@ theorem has_exactProducerResource
         afterAlts := by
   induction answer with
   | here _ _ _ _ _ body childNext _ _ _ _ _ _ child =>
-      exact ⟨.cutBoundary _ body, .cutBoundary _ childNext, child⟩
+      exact ⟨body, childNext, child.bodyProducer⟩
   | underChoice _ _ _ inductionHypothesis => exact inductionHypothesis
   | underCut _ _ inductionHypothesis => exact inductionHypothesis
   | underCatch _ _ _ _ _ _ inductionHypothesis => exact inductionHypothesis
@@ -549,11 +609,35 @@ theorem private_answer_pull_is_not_terminal_suffix :
   · intro impossible
     cases impossible
 
+/-- A direct generator task answer is resource-certified on the exact empty
+bank produced by `enterFindall`; no synthetic collection marker is needed. -/
+theorem marker_free_body_answer_is_inhabited :
+    ExactFindallBodyAnswerProducerResourceAgrees
+      ([] : List (LogicVar × String)) ({} : Session) ({} : Session)
+      (.task 1 [] []) .done [] [] [] [] [] := by
+  exact
+    ExactFindallBodyAnswerProducerResourceAgrees.ofOrigin ({} : Session)
+      (AnswerOrigin.task (leafScope := 1) (bindings := []))
+      (.task 1 [] [] [])
+
+/-- The former model, in which the collection cut consumed an executable
+marker, cannot describe the real empty generator bank.  Its inner task would
+have to preserve `[]` as `[Alt.barrier]`. -/
+theorem cut_wrapped_resource_origin_rejects_empty_generator_bank :
+    let origin : AnswerOrigin 1 ([] : Substitution)
+        (.cutBoundary 1 (.task 1 [] [])) (.cutBoundary 1 .done) :=
+      .cutBoundary 1 (.task)
+    ¬ AnswerOriginResourceAgrees ([] : List (LogicVar × String)) origin
+        [] [] [] [] := by
+  dsimp only
+  intro agreement
+  cases agreement with
+  | cutBoundary _ _ inside => cases inside
+
 /-- A real direct collector answer carries the previously certified
-inner-active-under-outer-scheduled two-resource path.  Appending the
-generator marker and wrapping the origin in the generator cut yields three
-markers in the literal pre-bank: two historical predicate regions plus the
-active collector generator boundary. -/
+inner-active-under-outer-scheduled two-resource path.  Its literal pre-bank
+has exactly the two historical predicate markers; the active collector cut is
+marker-free, matching the executable `subConfOf` entry. -/
 theorem two_resource_direct_answer_is_inhabited :
     exists innerCursor outerCursor :
         PeTTaSpec.PrologCore.Resolver.PreparedCursor,
@@ -583,10 +667,9 @@ theorem two_resource_direct_answer_is_inhabited :
             (.integer 0) (.integer 9) [] []
             [(collectTemplate ({} : Session) (.integer 0) []).prepared.copied])
           cell [] [innerResource, outerResource] []
-          ((innerResource.alts ++
-              (PLeaTTa.Alt.barrier ::
-                (outerResource.alts ++ [PLeaTTa.Alt.barrier]))) ++
-            [PLeaTTa.Alt.barrier])
+          (innerResource.alts ++
+            (PLeaTTa.Alt.barrier ::
+              (outerResource.alts ++ [PLeaTTa.Alt.barrier])))
           [] := by
   obtain
       ⟨innerCursor, outerCursor, innerResource, outerResource, nested⟩ :=
@@ -609,30 +692,10 @@ theorem two_resource_direct_answer_is_inhabited :
       (.cutBoundary 1
         (.choice 1 (.clauses 1 innerCursor)
           (AnswerOrigin.task (leafScope := 1) (bindings := []))))
-  have nestedWithGeneratorMarker :
-      AnswerOriginResourceAgrees [] origin
-        [innerResource, outerResource] []
-        ((innerResource.alts ++
-            (PLeaTTa.Alt.barrier ::
-              (outerResource.alts ++ [PLeaTTa.Alt.barrier]))) ++
-          [PLeaTTa.Alt.barrier])
-        [PLeaTTa.Alt.barrier] := by
-    simpa [origin, outerRight] using
-      (AnswerOriginResourceAgrees.append_alts nested
-        [PLeaTTa.Alt.barrier])
-  have rooted :
-      AnswerOriginResourceAgrees [] (.cutBoundary 9 origin)
-        [innerResource, outerResource] []
-        ((innerResource.alts ++
-            (PLeaTTa.Alt.barrier ::
-              (outerResource.alts ++ [PLeaTTa.Alt.barrier]))) ++
-          [PLeaTTa.Alt.barrier])
-        [] := by
-    exact .cutBoundary 9 origin nestedWithGeneratorMarker
   apply ActiveFindallAnswerResourceAgrees.here
   exact
-    ExactAnswerProducerResourceAgrees.ofOrigin ({} : Session)
-      (.cutBoundary 9 origin) rooted
+    ExactFindallBodyAnswerProducerResourceAgrees.ofOrigin ({} : Session)
+      origin (by simpa [origin, outerRight] using nested)
 
 /-- The same two-resource direct answer survives two different outer wrapper
 kinds with literally identical endpoints.  This exercises endpoint-neutral
@@ -676,10 +739,9 @@ theorem two_resource_answer_survives_outer_choice_and_product :
   let cell : SourceCollectionCell :=
     sourceCollectionCell 9 ⟨20⟩ 0 (.integer 0) (.integer 9) [] [] []
   let beforeAlts : List PLeaTTa.Alt :=
-    (innerResource.alts ++
-        (PLeaTTa.Alt.barrier ::
-          (outerResource.alts ++ [PLeaTTa.Alt.barrier]))) ++
-      [PLeaTTa.Alt.barrier]
+    innerResource.alts ++
+      (PLeaTTa.Alt.barrier ::
+        (outerResource.alts ++ [PLeaTTa.Alt.barrier]))
   have directTyped :
       ActiveFindallAnswerResourceAgrees [] ({} : Session) beforeSearch
         ({} : Session) afterSearch cell [] [innerResource, outerResource] []

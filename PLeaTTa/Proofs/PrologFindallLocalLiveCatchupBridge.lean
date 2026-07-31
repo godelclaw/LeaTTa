@@ -70,7 +70,7 @@ inductive ActiveFindallLocalLiveAnswerResourceAgrees
       {selectedTail : List PLeaTTa.Alt}
       (origin :
         AnswerOrigin leafScope answerBindings
-          (.cutBoundary cutScope body) (.cutBoundary cutScope next))
+          body next)
       (agreement :
         AnswerOriginResourceAgrees alpha origin beforeResources afterResources
           beforeAlts afterAlts)
@@ -205,7 +205,8 @@ theorem toAnswer
       entryBindings tail reversed answerBindings origin agreement landing =>
       exact .here session session callerScope cutScope collectionScope body next
         template output entryBindings tail reversed answerBindings
-        (ExactAnswerProducerResourceAgrees.ofOrigin session origin agreement)
+        (ExactFindallBodyAnswerProducerResourceAgrees.ofOrigin session origin
+          agreement)
   | underChoice scope right _ ih => exact .underChoice scope right ih
   | underCut scope _ ih => exact .underCut scope ih
   | underCatch handlerScope scope catcher handler entryBindings _ ih =>
@@ -271,12 +272,15 @@ theorem sourceCatchup
           landing copied.session
       exact
         ⟨count,
-          .collectionBoundary collectionScope callerScope target template output
-            entryBindings tail (copied.prepared.copied :: reversed),
-          steps.underCollectionBoundary collectionScope callerScope template
-            output entryBindings tail (copied.prepared.copied :: reversed),
-          ready.underCollectionBoundary collectionScope callerScope template
-            output entryBindings tail (copied.prepared.copied :: reversed)⟩
+          .collectionBoundary collectionScope callerScope
+            (.cutBoundary cutScope target) template output entryBindings tail
+            (copied.prepared.copied :: reversed),
+          (steps.underCutBoundary cutScope).underCollectionBoundary
+            collectionScope callerScope template output entryBindings tail
+            (copied.prepared.copied :: reversed),
+          (ready.underCutBoundary cutScope).underCollectionBoundary
+            collectionScope callerScope template output entryBindings tail
+            (copied.prepared.copied :: reversed)⟩
   | underChoice scope right inside ih =>
       obtain ⟨count, target, steps, ready⟩ := ih
       exact
@@ -570,7 +574,7 @@ theorem nested_wrapped_local_live_source_run_is_inhabited :
       exists _source :
           ActiveFindallLocalLiveAnswerResourceAgrees [] session beforeSearch
             session answeredSearch cell [] [emptyResource, liveResource] []
-            ((emptyResource.alts ++ liveResource.alts) ++ [.barrier]) []
+            (emptyResource.alts ++ liveResource.alts) []
             selectedGoals selectedBinding selectedTail,
         emptyResource.alts = [] ∧
         liveResource.alts ≠ [] ∧
@@ -604,10 +608,10 @@ theorem nested_wrapped_local_live_source_run_is_inhabited :
   have leafAgreement :
       AnswerOriginResourceAgrees [] leaf [emptyResource, liveResource]
         [emptyResource, liveResource]
-        ((emptyResource.alts ++ liveResource.alts) ++ [.barrier])
-        ((emptyResource.alts ++ liveResource.alts) ++ [.barrier]) :=
+        (emptyResource.alts ++ liveResource.alts)
+        (emptyResource.alts ++ liveResource.alts) :=
     .task 1 [] [emptyResource, liveResource]
-      ((emptyResource.alts ++ liveResource.alts) ++ [.barrier])
+      (emptyResource.alts ++ liveResource.alts)
   have emptyRegion :
       RightAlternativeRegionAgrees [] (.clauses 1 emptyCursor)
         [emptyResource] emptyResource.alts :=
@@ -615,8 +619,8 @@ theorem nested_wrapped_local_live_source_run_is_inhabited :
   have innerAgreement :
       AnswerOriginResourceAgrees [] innerOrigin [emptyResource, liveResource]
         [liveResource]
-        ((emptyResource.alts ++ liveResource.alts) ++ [.barrier])
-        (liveResource.alts ++ [.barrier]) := by
+        (emptyResource.alts ++ liveResource.alts)
+        liveResource.alts := by
     apply AnswerOriginResourceAgrees.choice 1 (.clauses 1 emptyCursor) leaf
       (regionResources := [emptyResource])
       (regionAlts := emptyResource.alts)
@@ -628,35 +632,19 @@ theorem nested_wrapped_local_live_source_run_is_inhabited :
     .clauses 2 liveCursor liveResource liveOwnership
   have originAgreement :
       AnswerOriginResourceAgrees [] origin [emptyResource, liveResource] []
-        ((emptyResource.alts ++ liveResource.alts) ++ [.barrier])
-        [.barrier] := by
+        (emptyResource.alts ++ liveResource.alts) [] := by
     apply AnswerOriginResourceAgrees.choice 2 (.clauses 2 liveCursor)
       innerOrigin (regionResources := [liveResource])
       (regionAlts := liveResource.alts)
     · simpa only [List.append_nil] using innerAgreement
     · exact liveRegion
-  let cutOrigin :
-      AnswerOrigin 1 ([] : Substitution)
-        (.cutBoundary 3
-          (.choice 2
-            (.choice 1 (.task 1 [] []) (.clauses 1 emptyCursor))
-            (.clauses 2 liveCursor)))
-        (.cutBoundary 3
-          (.choice 2 (.choice 1 .done (.clauses 1 emptyCursor))
-            (.clauses 2 liveCursor))) :=
-    .cutBoundary 3 origin
-  have cutAgreement :
-      AnswerOriginResourceAgrees [] cutOrigin
-        [emptyResource, liveResource] []
-        ((emptyResource.alts ++ liveResource.alts) ++ [.barrier]) [] :=
-    .cutBoundary 3 origin originAgreement
   have selected :
       PLeaTTa.pullAux
-          ((emptyResource.alts ++ liveResource.alts) ++ [.barrier]) =
-        some ((goals, binding), localTail ++ [.barrier]) := by
+          (emptyResource.alts ++ liveResource.alts) =
+        some ((goals, binding), localTail) := by
     rw [emptyHead, liveHead]
     simp [PLeaTTa.pullAux]
-  rcases AnswerOriginResourceAgrees.classifyPrefix cutAgreement with
+  rcases AnswerOriginResourceAgrees.classifyPrefix originAgreement with
       ⟨selectedGoals, selectedBinding, selectedTail, landing⟩ | falls
   · let direct :
         ActiveFindallLocalLiveAnswerResourceAgrees [] ({} : Session)
@@ -675,10 +663,10 @@ theorem nested_wrapped_local_live_source_run_is_inhabited :
             [(collectTemplate ({} : Session) (.integer 7) []).prepared.copied])
           (sourceCollectionCell 3 ⟨1⟩ 0 (.integer 7) (.integer 9) [] [] [])
           [] [emptyResource, liveResource] []
-          ((emptyResource.alts ++ liveResource.alts) ++ [.barrier]) []
+          (emptyResource.alts ++ liveResource.alts) []
           selectedGoals selectedBinding selectedTail :=
       .here ({} : Session) 0 3 ⟨1⟩ _ _ (.integer 7) (.integer 9) [] []
-        [] [] cutOrigin cutAgreement landing
+        [] [] origin originAgreement landing
     let source :=
       ActiveFindallLocalLiveAnswerResourceAgrees.underCut 9 direct
     obtain ⟨count, target, steps, ready⟩ := source.sourceCatchup
