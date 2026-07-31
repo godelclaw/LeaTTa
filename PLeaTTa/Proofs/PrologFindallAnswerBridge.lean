@@ -8,11 +8,13 @@ Trusted boundary: none
 Main exports: ActiveFindallAnswer, ContextualFindallAnswerRelates
 -/
 import PLeaTTa.Proofs.PrologFindallExitPayloadBridge
+import PLeaTTa.Proofs.PrologFindallResidualVariantBridge
 
 namespace PLeaTTa.PrologFindallAnswerBridge
 
 open Metta (Atom GroundingTable Subst)
 open PeTTaSpec.PrologCore
+open PeTTaSpec.PrologCore.Canonical
 open PeTTaSpec.PrologCore.Copy
 open PeTTaSpec.PrologCore.GoalSemantics
 open PeTTaSpec.PrologCore.OpenSubstitution
@@ -20,10 +22,19 @@ open PeTTaSpec.PrologCore.Resolver
 open CompilerAdequacy
 open CompilerSubstitutionAdequacy
 open OpenBindingAgreement
+open PrologMguBridge
+open PrologMguComposition
+open PrologMguOpenAgreement
+open PrologMguTopology
+open PrologMguVariant
+open PrologOrdinaryStepBridge
+open PrologPrefilterBridge
+open PrologRecursiveCallPayloadBridge
 open PrologStateBridge
 open PrologFindallCopyBridge
 open PrologFindallFrameZipperBridge
 open PrologFindallExitPayloadBridge
+open PrologFindallResidualVariantBridge
 open DemandDrivenStep
 
 /-!
@@ -333,6 +344,95 @@ abbrev CollectionOpenStateRelates
     (CopyDebtFrontier referenceCopiedRev executableRawRev)
     ExactControlFrontiers session state
 
+/-- The exact empty source task that produces one generator answer is related
+to the answer-ready fine state at the same ordered-copy frontier.
+
+This relation is deliberately stronger than pairing an arbitrary source
+substitution with an independently asserted executable binding.  The
+`ReadyTaskRelates` packet owns both valuations and the fine current state;
+the empty source goal spine forces the executable spine to be empty as well.
+The template agreement remains pre-substitution data, so the materialized
+runtime value is still derived rather than supplied. -/
+def FindallAnswerReadyTaskAgrees
+    (childSession : Session) (cell : SourceCollectionCell)
+    (state : OpenConf) (answerBindings : Substitution)
+    (binding : Subst) : Prop :=
+  ∃ alpha support : List (LogicVar × String),
+    ∃ barrier : Nat,
+    ∃ canonical : TreeSubstitution,
+    ∃ referenceBase : Substitution,
+      ReadyTaskRelates
+          (CopyDebtFrontier cell.reversed state.control.answers)
+          alpha support barrier canonical referenceBase childSession
+          answerBindings [] state ∧
+        state.toConf.cur = some ([], binding) ∧
+        AlphaTermAgrees alpha cell.template state.control.qterm ∧
+        AlphaTermsSupported alpha support [cell.template]
+
+namespace FindallAnswerReadyTaskAgrees
+
+/-- Forgetting the empty control spine yields exactly the upstream producer
+data required to derive the materialized answer.  In particular the runtime
+binding is recovered from the same fine state as the ready-task packet; it is
+not a second free valuation. -/
+theorem producer
+    {childSession : Session} {cell : SourceCollectionCell}
+    {state : OpenConf} {answerBindings : Substitution} {binding : Subst}
+    (agreement :
+      FindallAnswerReadyTaskAgrees childSession cell state answerBindings
+        binding) :
+    FindallMaterializationProducerAgrees answerBindings binding
+      cell.template state.control.qterm := by
+  rcases agreement with
+    ⟨alpha, support, barrier, canonical, referenceBase, ready, fineHead,
+      template, templateSupported⟩
+  rcases ready with
+    ⟨executableGoals, runtime, _persistent, current, payload⟩
+  cases payload.control
+  change state.control.cur = some ([], binding) at fineHead
+  have runtimeEq : runtime = binding := by
+    have pairEq : ([], runtime) = ([], binding) :=
+      Option.some.inj (current.symm.trans fineHead)
+    exact congrArg Prod.snd pairEq
+  subst runtime
+  exact
+    ⟨alpha, support, canonical, referenceBase, payload.data, template,
+      templateSupported⟩
+
+/-- The executable empty-goal head is part of the same ready-task packet as
+the source/runtime valuation; callers need not assert it independently. -/
+theorem fineHead
+    {childSession : Session} {cell : SourceCollectionCell}
+    {state : OpenConf} {answerBindings : Substitution} {binding : Subst}
+    (agreement :
+      FindallAnswerReadyTaskAgrees childSession cell state answerBindings
+        binding) :
+    state.toConf.cur = some ([], binding) := by
+  rcases agreement with
+    ⟨_alpha, _support, _barrier, _canonical, _referenceBase, _ready,
+      fineHead, _template, _templateSupported⟩
+  exact fineHead
+
+/-- The ready fine state fixes the runtime answer binding uniquely.  Hence a
+caller cannot pair one source child answer with two independently chosen
+runtime valuations while reusing the same state certificate. -/
+theorem binding_unique
+    {childSession : Session} {cell : SourceCollectionCell}
+    {state : OpenConf} {answerBindings : Substitution}
+    {leftBinding rightBinding : Subst}
+    (left :
+      FindallAnswerReadyTaskAgrees childSession cell state answerBindings
+        leftBinding)
+    (right :
+      FindallAnswerReadyTaskAgrees childSession cell state answerBindings
+        rightBinding) :
+    leftBinding = rightBinding := by
+  have pairEq : ([], leftBinding) = ([], rightBinding) :=
+    Option.some.inj (left.fineHead.symm.trans right.fineHead)
+  exact congrArg Prod.snd pairEq
+
+end FindallAnswerReadyTaskAgrees
+
 /-- Payload premises at the phase seam between the completed source child
 answer and the answer-ready fine state.
 
@@ -349,9 +449,8 @@ structure FindallAnswerPayloadAgrees
   state :
     CollectionOpenStateRelates cell.reversed before.control.answers
       childAfter before
-  materialized :
-    TermAgrees (answerBindings.applyTerm cell.template)
-      (PLeaTTa.subst binding before.control.qterm)
+  answerReady :
+    FindallAnswerReadyTaskAgrees childAfter cell before answerBindings binding
   encoding :
     EncodingInjectiveOn
       (copyVariables (answerBindings.applyTerm cell.template))
@@ -387,7 +486,9 @@ theorem afterOpenState
     apply CollectionSessionRelates.collect agreement.state.persistent
       cell.template answerBindings
       (PLeaTTa.subst binding before.control.qterm)
-    · exact agreement.materialized
+    · exact
+        PLeaTTa.PrologFindallResidualVariantBridge.FindallMaterializationProducerAgrees.runtimeTermAgrees
+          agreement.answerReady.producer
     · exact agreement.encoding
     · simp
     · simp
@@ -522,7 +623,6 @@ theorem ActiveFindallAnswer.privateAnswer_correspondence
     {before : OpenConf} {frame : FindallFrame}
     {remaining : List Frame} {binding : Subst}
     (frameHead : before.frames = .findall frame :: remaining)
-    (fineHead : before.toConf.cur = some ([], binding))
     (beforeOccurrences :
       CollectionOccurrenceAgrees beforeSearch before.frames)
     (payload :
@@ -531,6 +631,8 @@ theorem ActiveFindallAnswer.privateAnswer_correspondence
     ContextualFindallAnswerRelates prog gt
       beforeSession beforeSearch childAfter afterSearch cell answerBindings
       before (privateAnswerTarget before binding) frame remaining binding := by
+  have fineHead : before.toConf.cur = some ([], binding) :=
+    payload.answerReady.fineHead
   have fine :=
     answer_is_one_private_step prog gt before frame remaining binding
       frameHead fineHead
@@ -847,11 +949,88 @@ theorem ground_direct_answer_correspondence_inhabited
             cut := rfl
             exception := rfl
             collection := rfl }
-        materialized := by
-          simpa [sourceCollectionCell, Substitution.applyTerm,
-            Term.instantiateOne, PLeaTTa.subst, PLeaTTa.substN,
-            Metta.Subst.lookup] using
-            (TermAgrees.integer 1)
+        answerReady := by
+          let alpha : List (LogicVar × String) :=
+            [(.source "x", "x")]
+          have shared : SharedRuntimeAlpha alpha := by
+            constructor
+            · intro identity left right leftMember rightMember
+              simp only [alpha, List.mem_singleton] at leftMember rightMember
+              cases leftMember
+              cases rightMember
+              rfl
+            · intro left right name leftMember rightMember
+              simp only [alpha, List.mem_singleton] at leftMember rightMember
+              cases leftMember
+              cases rightMember
+              rfl
+          have valuation :
+              AlphaCumulativeResidualVariantAgreesOn alpha alpha []
+                [(.source "x", .integer 1)]
+                [("x", .gnd (.int 1))] := by
+            refine
+              ⟨[], TreeSubstitutionVariants.refl _,
+                TreeSubstitutionTopological.nil, ?_, ?_, ?_⟩
+            · intro entry member
+              simp at member
+            · exact
+                ⟨PLeaTTa.SubstTopological.cons_of_fresh []
+                  PLeaTTa.emptySubstTopological "x" (.gnd (.int 1))
+                  (by simp [Metta.Subst.lookup])
+                  (by simp [Metta.Atom.vars])
+                  (by simp [PLeaTTa.AtomAvoids,
+                    Metta.Subst.lookup])⟩
+            · intro identity name member
+              simp only [alpha, List.mem_singleton] at member
+              cases member
+              simpa [Substitution.denote, TreeSubstitution.apply,
+                  Tree.instantiateOne, Term.denote, PLeaTTa.subst,
+                  PLeaTTa.substN, Metta.Subst.lookup] using
+                (CanonicalRuntimeAgrees.integer (alpha := alpha) 1)
+          have ready :
+              ReadyTaskRelates (CopyDebtFrontier [] []) alpha alpha 0 []
+                [(.source "x", .integer 1)] ({} : Session)
+                [(.source "x", .integer 1)] []
+                { persistent := { world := {}, counter := 0 }
+                  control :=
+                    { cur := some ([], [("x", .gnd (.int 1))])
+                      alts := []
+                      qterm := .var "x"
+                      answers := [] }
+                  frames :=
+                    [.findall
+                      { preCut := 1
+                        preCollection := 1
+                        outer :=
+                          { cur := some ([], [("x", .gnd (.int 1))])
+                            alts := []
+                            qterm := .var "x"
+                            answers := [] }
+                        template := .var "x"
+                        result := .gnd (.int 9)
+                        rest := []
+                        binding := [] }]
+                  scopes := {} } := by
+            refine ⟨[], [("x", .gnd (.int 1))], ?_, rfl, ?_⟩
+            · exact
+                PrologStateBridge.empty_session_relates
+                  (CopyDebtFrontier [] [])
+                  (CollectionCopyFrontier.empty 0 0)
+            · exact
+                { alphaShared := shared
+                  canonicalWellFormed :=
+                    TreeSubstitution.wellFormed_nil
+                  bindingShape := by simp [TreeSubstitution.reify]
+                  control := .nil
+                  valuation := valuation }
+          refine
+            ⟨alpha, alpha, 0, [], [(.source "x", .integer 1)], ready,
+              rfl, AlphaTermAgrees.variable (by simp [alpha]), ?_⟩
+          intro term member
+          simp only [List.mem_singleton] at member
+          subst term
+          simp [AlphaTreeSupported, TreeVariablesSatisfy, Term.denote,
+            alpha, sourceCollectionCell]
         encoding := by
           intro left right leftMember rightMember same
           simp [sourceCollectionCell, copyVariables, termVariables,
@@ -860,6 +1039,6 @@ theorem ground_direct_answer_correspondence_inhabited
           simp [PLeaTTa.subst, PLeaTTa.substN, Metta.Subst.lookup,
             Metta.Atom.vars, resolutionSeedHighWaterNames] }
   exact
-    sourceAnswer.privateAnswer_correspondence rfl rfl occurrences payload
+    sourceAnswer.privateAnswer_correspondence rfl occurrences payload
 
 end PLeaTTa.PrologFindallAnswerBridge

@@ -33,6 +33,10 @@ FINDALL_COPY = ROOT / "PLeaTTa" / "Proofs" / "FindallCopy.lean"
 PROLOG_FINDALL_COPY_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologFindallCopyBridge.lean"
 )
+PROLOG_FINDALL_RESIDUAL_VARIANT_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologFindallResidualVariantBridge.lean"
+)
 DEMAND_DRIVEN_CALL_STEP = (
     ROOT / "PLeaTTa" / "Proofs" / "DemandDrivenCallStep.lean"
 )
@@ -108,6 +112,9 @@ PROLOG_MGU_DIRECT_SIMULATION = (
 )
 PROLOG_MGU_VARIANT = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologMguVariant.lean"
+)
+PROLOG_MGU_VARIANT_RENAMING = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologMguVariantRenaming.lean"
 )
 PROLOG_GOAL_MGU_VARIANT = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologGoalMguVariant.lean"
@@ -358,6 +365,8 @@ def check() -> list[str]:
         "findall_copy_sha256": digest(FINDALL_COPY),
         "prolog_findall_copy_bridge_sha256":
             digest(PROLOG_FINDALL_COPY_BRIDGE),
+        "prolog_findall_residual_variant_bridge_sha256":
+            digest(PROLOG_FINDALL_RESIDUAL_VARIANT_BRIDGE),
         "demand_driven_call_step_sha256": digest(DEMAND_DRIVEN_CALL_STEP),
         "prolog_state_bridge_sha256": digest(PROLOG_STATE_BRIDGE),
         "prolog_findall_entry_bridge_sha256":
@@ -397,6 +406,8 @@ def check() -> list[str]:
         "prolog_mgu_direct_simulation_sha256":
             digest(PROLOG_MGU_DIRECT_SIMULATION),
         "prolog_mgu_variant_sha256": digest(PROLOG_MGU_VARIANT),
+        "prolog_mgu_variant_renaming_sha256":
+            digest(PROLOG_MGU_VARIANT_RENAMING),
         "prolog_goal_mgu_variant_sha256":
             digest(PROLOG_GOAL_MGU_VARIANT),
         "prolog_mgu_composition_sha256":

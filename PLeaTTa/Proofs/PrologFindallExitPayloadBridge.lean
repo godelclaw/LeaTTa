@@ -417,8 +417,13 @@ theorem ground_two_answer_exit_payload_inhabited :
         ({ world := {}, counter := 0 } : Persistent) := by
     apply initial.collect (.variable (.source "x"))
       [(.source "x", .integer 1)] (.gnd (.int 1))
-    · simpa [Substitution.applyTerm, Term.instantiateOne] using
-        (TermAgrees.integer 1)
+    · apply runtimeTermAgrees_of_termAgrees
+      · simpa [Substitution.applyTerm, Term.instantiateOne] using
+          (TermAgrees.integer 1)
+      · intro left right leftMember
+        simp [PeTTaSpec.PrologCore.Copy.copyVariables,
+          PeTTaSpec.PrologCore.Resolver.termVariables,
+          Substitution.applyTerm, Term.instantiateOne] at leftMember
     · intro left right leftMember
       simp [PeTTaSpec.PrologCore.Copy.copyVariables,
         PeTTaSpec.PrologCore.Resolver.termVariables,
@@ -444,8 +449,13 @@ theorem ground_two_answer_exit_payload_inhabited :
         ({ world := {}, counter := 0 } : Persistent) := by
     apply first.collect (.variable (.source "x"))
       [(.source "x", .integer 2)] (.gnd (.int 2))
-    · simpa [Substitution.applyTerm, Term.instantiateOne] using
-        (TermAgrees.integer 2)
+    · apply runtimeTermAgrees_of_termAgrees
+      · simpa [Substitution.applyTerm, Term.instantiateOne] using
+          (TermAgrees.integer 2)
+      · intro left right leftMember
+        simp [PeTTaSpec.PrologCore.Copy.copyVariables,
+          PeTTaSpec.PrologCore.Resolver.termVariables,
+          Substitution.applyTerm, Term.instantiateOne] at leftMember
     · intro left right leftMember
       simp [PeTTaSpec.PrologCore.Copy.copyVariables,
         PeTTaSpec.PrologCore.Resolver.termVariables,
