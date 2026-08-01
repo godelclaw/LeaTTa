@@ -598,6 +598,7 @@ theorem
         skippedClauses ++ (clause :: clauseTail) ∧
       skippedBranches.length = count ∧
       skippedClauses.length = count ∧
+      RejectedPullsN count opened.cursor finish ∧
       StepsN count
         (.running opened.session (.clauses opened.scope opened.cursor)) []
         (.running opened.session (.clauses opened.scope finish)) ∧
@@ -729,8 +730,8 @@ theorem
   refine
     ⟨count, skippedBranches, skippedClauses, finish, branch, clause,
       branchTail, clauseTail, altTail, copied, ?_, ?_, branchCount,
-      clauseCount, pulls.stepsN opened.scope opened.session, .callPull pending,
-      ?_⟩
+      clauseCount, pulls, pulls.stepsN opened.scope opened.session,
+      .callPull pending, ?_⟩
   · calc
       opened.cursor.remaining =
           skippedBranches ++ readyBranches := branchesEq

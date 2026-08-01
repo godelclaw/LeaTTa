@@ -1177,7 +1177,14 @@ theorem
       have extensionAbove :
           AlphaExtendsAbove ambientAlpha alpha
             (reference.clause.freshCopy freshSeed).firstFresh seed := by
-        refine ⟨clauseAlpha, rfl, ?_, ?_⟩
+        refine ⟨clauseAlpha, rfl, ?_, ?_, ?_⟩
+        · intro identity name pairMember
+          have targetMember : identity ∈ clauseAlpha.map Prod.fst :=
+            List.mem_map.mpr ⟨(identity, name), pairMember, rfl⟩
+          rw [clauseAgreement.graph_reference] at targetMember
+          obtain ⟨index, targetShape, _targetLower⟩ :=
+            referenceFreshTargets_generated_lower targetMember
+          exact ⟨index, targetShape⟩
         · intro index targetMember
           rw [clauseAgreement.graph_reference] at targetMember
           obtain ⟨targetIndex, targetShape, targetLower⟩ :=
