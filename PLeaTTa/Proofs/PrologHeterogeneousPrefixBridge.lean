@@ -381,6 +381,20 @@ def openConf : ProductPhaseState → OpenConf
   | .scheduled state => state.carrier.index.openConf
   | .committed state => state.carrier.index.openConf
 
+/-- Literal executable alternative suffix below every locally owned resource
+region.  Keeping this projection in the phase vocabulary lets rooted closure
+flow through the same proof-relevant transition path as the source and fine
+states. -/
+def baseAlts : ProductPhaseState → List PLeaTTa.Alt
+  | .active state => state.carrier.index.baseAlts
+  | .scheduled state => state.carrier.index.baseAlts
+  | .committed state => state.carrier.index.baseAlts
+
+/-- A locally rooted phase has no unowned executable alternative below its
+complete resource zipper. -/
+def RootClosed (state : ProductPhaseState) : Prop :=
+  state.baseAlts = []
+
 def alpha : ProductPhaseState → List (LogicVar × String)
   | .active state => state.carrier.index.alpha
   | .scheduled state => state.carrier.index.alpha
@@ -799,6 +813,15 @@ def afterBodyAnswer
     (executableEmpty : state.carrier.index.bodyExecutables = []) :
     (afterBodyAnswer prog gt state referenceEmpty executableEmpty).carrier.index.outer =
       state.carrier.index.outer := rfl
+
+/-- Completing the selected body preserves the rooted executable suffix. -/
+@[simp] theorem afterBodyAnswer_baseAlts
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    (referenceEmpty : state.carrier.index.bodyReferences = [])
+    (executableEmpty : state.carrier.index.bodyExecutables = []) :
+    (afterBodyAnswer prog gt state referenceEmpty executableEmpty).carrier.index.baseAlts =
+      state.carrier.index.baseAlts := rfl
 
 /-- Source focus after a clause-local cut consumes the selected product. -/
 def cutSource (state : RepresentativeActivePayloadState)
@@ -2128,6 +2151,38 @@ theorem payloadEvolution
                 bodyRest bodyExecutableTail referenceHead executableHead
                 coherent).carrier.cellIdentities := rfl
 
+/-- Every closed transition preserves the literal base alternative suffix.
+Recursive-call push uses the producer's explicit preservation field; no
+consumer is allowed to infer closure from an unrelated final bank. -/
+theorem baseAlts_eq
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {kind : TransitionKind} {before after : ProductPhaseState}
+    (transition : CertifiedTransition prog gt kind before after) :
+    after.baseAlts = before.baseAlts := by
+  cases transition with
+  | administrative before steps => rfl
+  | @unify before after left right result bodyRest bodyExecutableTail
+      sourceExtension executableExtension generated installed facts =>
+      simpa [ProductPhaseState.baseAlts,
+        RepresentativeActivePayloadState.unifyIndex] using
+        congrArg ActivePayloadIndex.baseAlts facts.afterIndexExact
+  | localCall facts =>
+      simpa [ProductPhaseState.baseAlts] using facts.baseAltsPreserved
+  | bodyAnswer before referenceEmpty executableEmpty => rfl
+  | cut before bodyRest bodyExecutableTail referenceHead executableHead
+      coherent => rfl
+
+/-- Root closure is a subject-reduction property of one certified phase
+transition. -/
+theorem preserves_rootClosed
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {kind : TransitionKind} {before after : ProductPhaseState}
+    (transition : CertifiedTransition prog gt kind before after)
+    (closed : before.RootClosed) : after.RootClosed := by
+  unfold ProductPhaseState.RootClosed at closed ⊢
+  rw [transition.baseAlts_eq]
+  exact closed
+
 end CertifiedTransition
 
 /-! ## Exact heterogeneous prefixes -/
@@ -2321,6 +2376,28 @@ theorem payloadEvolution
   | nil state => rfl
   | @cons kind kinds before middle after head tail ih =>
       exact ⟨middle.cellIdentities, head.payloadEvolution, ih⟩
+
+/-- An arbitrary exact heterogeneous prefix preserves the literal unowned
+alternative suffix. -/
+theorem baseAlts_eq
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {kinds : List TransitionKind} {before after : ProductPhaseState}
+    (run : CertifiedPrefix prog gt kinds before after) :
+    after.baseAlts = before.baseAlts := by
+  induction run with
+  | nil state => rfl
+  | cons head tail ih => exact ih.trans head.baseAlts_eq
+
+/-- Root closure survives every transition in the same proof-relevant prefix
+used for exact source/fine execution. -/
+theorem preserves_rootClosed
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {kinds : List TransitionKind} {before after : ProductPhaseState}
+    (run : CertifiedPrefix prog gt kinds before after)
+    (closed : before.RootClosed) : after.RootClosed := by
+  unfold ProductPhaseState.RootClosed at closed ⊢
+  rw [run.baseAlts_eq]
+  exact closed
 
 /-- Concatenate two prefixes only when they share the same literal middle
 state. -/

@@ -1058,7 +1058,10 @@ to the exact representative-indexed predecessor state.  The following local
 call therefore consumes that same representative rather than a freshly chosen
 variant.  Exact costs (five source steps versus four fine steps), the sole
 opened-call observation, representative preservation across equality, and the
-one-cell local-call push are all exposed simultaneously. -/
+one-cell local-call push are all exposed simultaneously.  The same concrete
+prefix also consumes schedule-level root-closure preservation, so that
+abstraction is exercised by a reached endpoint rather than only audited in
+isolation. -/
 theorem truth_then_ground_reflexive_unify_then_q_call_exact_literal_states
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
     let request :=
@@ -1075,13 +1078,15 @@ theorem truth_then_ground_reflexive_unify_then_q_call_exact_literal_states
             after.fineState ∧
           preUnify.representative = middle.representative ∧
           preUnify.cellIdentities = middle.cellIdentities ∧
-          ∃ cell, after.cellIdentities = cell :: middle.cellIdentities := by
+          (∃ cell, after.cellIdentities = cell :: middle.cellIdentities) ∧
+          after.RootClosed := by
   dsimp only
   obtain
     ⟨middleCarrier, head, rawReady, qPredicate, qPayload, _qReferenceRest,
       _qArguments, _qResult, _qExecutableRest, middleAlpha, _middleSupport,
       middleCurrent, middleRuntime, _middleQterm, _middleCallerReferences,
-      _middleOuter, _middleDatabase, _middleNextFresh, _middleWorld,
+      _middleOuter, middleBaseAlts, _middleDatabase, _middleNextFresh,
+      _middleWorld,
       _rootSourceSteps, _rootFineSteps, representativeWitness, only,
       openedSingleton⟩ :=
     PLeaTTa.PrologNestedCallReadyRegression.qReadyAfterP
@@ -1162,7 +1167,7 @@ theorem truth_then_ground_reflexive_unify_then_q_call_exact_literal_states
       (.cons unified (.cons nested (.nil (.active afterState))))
   refine
     ⟨.active beforeState, .active preUnifyState, .active middleState,
-      .active afterState, run, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      .active afterState, run, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · rfl
   · rfl
   · simpa [run, request, TransitionSchedule.sourceCost,
@@ -1176,5 +1181,9 @@ theorem truth_then_ground_reflexive_unify_then_q_call_exact_literal_states
       unifyFacts.payloadCellsExact.symm
   · simpa [TransitionKind.PayloadEvolution,
       ProductPhaseState.cellIdentities] using nested.payloadEvolution
+  · apply run.preserves_rootClosed
+    simpa [ProductPhaseState.RootClosed, ProductPhaseState.baseAlts,
+      beforeState, beforeTruth, preUnifyState, beforeReflexiveUnify,
+      beforeUnify, ActivePayloadState.ofAgreement] using middleBaseAlts
 
 end PLeaTTa.PrologHeterogeneousPrefixRegression

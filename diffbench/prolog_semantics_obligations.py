@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -13,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "diffbench" / "prolog-semantics-obligations.tsv"
+AXIOM_AUDIT = ROOT / "PLeaTTa" / "Proofs" / "AxiomAudit.lean"
 TRACE_SEMANTICS = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologTraceSemantics.lean"
 TERM_ALGEBRA = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologTermAlgebra.lean"
 PROLOG_FLOAT = ROOT / "PLeaTTa" / "PrologFloat.lean"
@@ -342,6 +344,10 @@ PROLOG_SCHEDULED_PAYLOAD_RESUME_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologScheduledPayloadResumeRegression.lean"
 )
+PROLOG_ROOT_CLOSED_ANSWER_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologRootClosedAnswerBridge.lean"
+)
 PROLOG_CURRENT_SESSION_ASSERTION_TRANSITION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologCurrentSessionAssertionTransitionBridge.lean"
@@ -438,9 +444,24 @@ REQUIRED_PREFIXES = {
     "COMPOSE.", "PETTACLAW.",
 }
 
+# The legacy reference column also contains descriptive vocabulary and
+# wildcard families, so it cannot yet be interpreted uniformly as Lean
+# declaration names.  New rows opt into exact checking here until that legacy
+# metadata is normalized.  A listed row must be PASS and every semicolon-
+# separated reference must be an actual `#print axioms` target.
+STRICT_AXIOM_AUDIT_ROWS = {"BISIM.root_closed_answer_pull"}
+
 
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def axiom_audit_targets() -> set[str]:
+    return set(re.findall(
+        r"^#print axioms\s+([^\s]+)",
+        AXIOM_AUDIT.read_text(encoding="utf-8"),
+        flags=re.MULTILINE,
+    ))
 
 
 def load_ledger() -> tuple[dict[str, str], list[dict[str, str]]]:
@@ -649,6 +670,8 @@ def check() -> list[str]:
             digest(PROLOG_SCHEDULED_PAYLOAD_RESUME_BRIDGE),
         "prolog_scheduled_payload_resume_regression_sha256":
             digest(PROLOG_SCHEDULED_PAYLOAD_RESUME_REGRESSION),
+        "prolog_root_closed_answer_bridge_sha256":
+            digest(PROLOG_ROOT_CLOSED_ANSWER_BRIDGE),
         "prolog_current_session_assertion_transition_bridge_sha256":
             digest(PROLOG_CURRENT_SESSION_ASSERTION_TRANSITION_BRIDGE),
         "prolog_current_session_unify_transition_bridge_sha256":
@@ -694,6 +717,18 @@ def check() -> list[str]:
         "prolog_activation_macro_sha256": digest(PROLOG_ACTIVATION_MACRO),
         "prolog_activation_bridge_sha256": digest(PROLOG_ACTIVATION_BRIDGE),
     }
+    expected_hash_keys = {
+        key for key in expected_metadata if key.endswith("_sha256")
+    }
+    ledger_hash_keys = {
+        key for key in metadata if key.endswith("_sha256")
+    }
+    untracked_hash_keys = sorted(ledger_hash_keys - expected_hash_keys)
+    if untracked_hash_keys:
+        errors.append(
+            "ledger hash metadata has no audited path: "
+            + ", ".join(untracked_hash_keys)
+        )
     for key, expected in expected_metadata.items():
         actual = metadata.get(key)
         if actual != expected:
@@ -744,6 +779,32 @@ def check() -> list[str]:
         actual = by_id.get(row_id, {}).get("status")
         if actual != expected:
             errors.append(f"{row_id}: status={actual!r}, expected={expected}")
+
+    audit_targets = axiom_audit_targets()
+    for row_id in sorted(STRICT_AXIOM_AUDIT_ROWS):
+        row = by_id.get(row_id)
+        if row is None:
+            errors.append(f"strict axiom-audit row is absent: {row_id}")
+            continue
+        if row["status"] != "PASS":
+            errors.append(
+                f"{row_id}: strict axiom audit requires PASS, got "
+                f"{row['status']!r}"
+            )
+        for reference in row["reference"].split(";"):
+            target = reference.strip()
+            if not target or target == "-" or "*" in target:
+                errors.append(
+                    f"{row_id}: non-exact strict audit reference {target!r}"
+                )
+                continue
+            qualified = target if target.startswith("PLeaTTa.") else (
+                "PLeaTTa." + target
+            )
+            if qualified not in audit_targets:
+                errors.append(
+                    f"{row_id}: reference is not axiom-audited: {target}"
+                )
     return errors
 
 

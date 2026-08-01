@@ -601,6 +601,7 @@ private theorem pActive
       state.index.qterm = resultAtom ∧
       state.index.callerReferences = [] ∧
       state.index.outer = [] ∧
+      state.index.baseAlts = [] ∧
       state.index.session.resolver.database = referenceDatabase ∧
       state.index.session.resolver.nextFresh = 0 ∧
       state.index.openConf.persistent.world = executableWorld ∧
@@ -779,7 +780,8 @@ private theorem pActive
   refine
     ⟨after.carrier, ?_, ?_, alphaExact, facts.freshFrontierExact,
       facts.supportPreserved, currentExact, runtimeExact, facts.qtermPreserved,
-      facts.callerReferencesEmpty, facts.outerEmpty, ?_, ?_, ?_, facts.below,
+      facts.callerReferencesEmpty, facts.outerEmpty, facts.baseAltsEmpty,
+      ?_, ?_, ?_, facts.below,
       ?_, facts.fineSteps,
       ⟨after, rfl, facts.materializedBodyHeads⟩⟩
   · rw [facts.bodyReferences, branchExact]
@@ -817,6 +819,7 @@ theorem qReadyAfterP
       state.index.qterm = resultAtom ∧
       state.index.callerReferences = [] ∧
       state.index.outer = [] ∧
+      state.index.baseAlts = [] ∧
       state.index.session.resolver.database = referenceDatabase ∧
       state.index.session.resolver.nextFresh = 0 ∧
       state.index.openConf.persistent.world = executableWorld ∧
@@ -840,7 +843,8 @@ theorem qReadyAfterP
   obtain
     ⟨state, referenceHead, executableHead, alphaNil, freshExact, supportNil,
       currentNil, runtimeNil, qtermExact, callerReferencesEmpty, outerEmpty,
-      databaseExact, nextFreshZero, worldExact, below, rootSourceSteps,
+      baseAltsEmpty, databaseExact, nextFreshZero, worldExact, below,
+      rootSourceSteps,
       rootFineSteps, representative, representativeCarrier,
       materializedHeads⟩ :=
     pActive (prog := prog) (gt := gt)
@@ -878,7 +882,8 @@ theorem qReadyAfterP
   refine
     ⟨state, head, ?_, rfl, rfl, rfl, rfl, rfl, rfl, alphaNil, supportNil,
       currentNil, runtimeNil, qtermExact, callerReferencesEmpty, outerEmpty,
-      databaseExact, nextFreshZero, worldExact, rootSourceSteps, rootFineSteps,
+      baseAltsEmpty, databaseExact, nextFreshZero, worldExact, rootSourceSteps,
+      rootFineSteps,
       ⟨representative, representativeCarrier, headMaterialized⟩,
       ⟨qPreparedBranch, openedSingleton⟩⟩
   refine
@@ -1089,6 +1094,7 @@ theorem ground_p_q_r_two_nested_pushes
               after.index.bodyReferences = [] ∧
               after.index.bodyExecutables = [] ∧
               after.index.callerReferences = [] ∧
+              after.index.baseAlts = [] ∧
               after.index.outer.length = 2 ∧
               (∀ segment ∈ after.index.outer,
                 segment.references = []) := by
@@ -1096,7 +1102,8 @@ theorem ground_p_q_r_two_nested_pushes
     ⟨before, qHead, qReady, qPredicate, qPayload, qReferenceRest,
       qArguments, qResult, qExecutableRest, beforeAlphaNil,
       beforeSupportNil, beforeCurrentNil, _beforeRuntimeNil, beforeQterm,
-      beforeCallerReferencesEmpty, beforeOuterEmpty, beforeDatabase,
+      beforeCallerReferencesEmpty, beforeOuterEmpty, beforeBaseAltsEmpty,
+      beforeDatabase,
       beforeNextFresh, beforeWorld, rootSourceSteps, rootFineSteps,
       _beforeRepresentative, _beforeSingleton⟩ :=
     qReadyAfterP (prog := prog) (gt := gt)
@@ -1268,6 +1275,9 @@ theorem ground_p_q_r_two_nested_pushes
     facts.callerReferences.trans qReferenceRest
   have afterCallerReferencesEmpty : after.index.callerReferences = [] :=
     rFacts.callerReferences.trans rReferenceRest
+  have afterBaseAltsEmpty : after.index.baseAlts = [] :=
+    rFacts.baseAltsPreserved.trans
+      (facts.baseAltsPreserved.trans beforeBaseAltsEmpty)
   have afterOuterLength : after.index.outer.length = 2 := by
     rw [rFacts.outerSegments, facts.outerSegments, beforeOuterEmpty]
     rfl
@@ -1289,7 +1299,7 @@ theorem ground_p_q_r_two_nested_pushes
       beforeReferences, beforeExecutables, rootSourceSteps, rootFineSteps,
       qCertificate, rHead, after, rReady, rPredicate, rPayload, rCertificate,
       afterBodyReferences, afterBodyExecutables, afterCallerReferencesEmpty,
-      afterOuterLength, afterOuterAllEmpty⟩
+      afterBaseAltsEmpty, afterOuterLength, afterOuterAllEmpty⟩
 
 /-- The root activation and both dependent push certificates compose to one
 exact finite prefix.  Source observations retain call order; the fine lane
@@ -1311,7 +1321,8 @@ theorem ground_p_q_r_exact_prefix
       _beforeReferences, _beforeExecutables, rootSourceSteps, rootFineSteps,
       qCertificate, rHead, after, _rReady, _rPredicate, _rPayload,
       rCertificate, _afterBodyReferences, _afterBodyExecutables,
-      _afterCallerReferences, _afterOuterLength, _afterOuterAllEmpty⟩ :=
+      _afterCallerReferences, _afterBaseAlts, _afterOuterLength,
+      _afterOuterAllEmpty⟩ :=
     ground_p_q_r_two_nested_pushes (prog := prog) (gt := gt)
   have sourceSteps :=
     StepsN.trans rootSourceSteps

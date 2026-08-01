@@ -7,7 +7,7 @@ Purpose: Inhabit exact multi-frame scheduled-answer absorption with one live
 Trusted boundary: none
 -/
 import PLeaTTa.Proofs.PrologNestedCallReadyRegression
-import PLeaTTa.Proofs.PrologScheduledPayloadResumeBridge
+import PLeaTTa.Proofs.PrologRootClosedAnswerBridge
 
 namespace PLeaTTa.PrologScheduledPayloadResumeRegression
 
@@ -17,7 +17,40 @@ open DemandDrivenStep
 open PrologHeterogeneousPrefixBridge
 open PrologNestedCallChainBridge
 open PrologNestedCallReadyBridge
+open PrologRootClosedAnswerBridge
 open PrologScheduledPayloadResumeBridge
+
+/-- The literal depth-two run supplies one rooted scheduled carrier together
+with all hypotheses needed by both private absorption and closed public-pull
+classification. -/
+private theorem groundRootClosedScheduledCarrier
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ∃ before : RepresentativeScheduledPayloadState,
+      before.carrier.index.callerReferences = [] ∧
+        before.carrier.index.baseAlts = [] ∧
+        before.carrier.index.outer.length = 2 ∧
+        (∀ segment ∈ before.carrier.index.outer,
+          segment.references = []) := by
+  obtain
+    ⟨_root, _qHead, _middle, _qReady, _qPredicate, _qPayload,
+      _rootReferences, _rootExecutables, _rootSourceSteps, _rootFineSteps,
+      _qCertificate, _rHead, after, _rReady, _rPredicate, _rPayload,
+      _rCertificate, bodyReferencesEmpty, bodyExecutablesEmpty,
+      callerReferencesEmpty, baseAltsEmpty, outerLength, outerAllEmpty⟩ :=
+    PrologNestedCallReadyRegression.ground_p_q_r_two_nested_pushes
+      (prog := prog) (gt := gt)
+  obtain ⟨representative, carrierExact⟩ := after.existsRepresentative
+  subst after
+  let before :=
+    RepresentativeActivePayloadState.afterBodyAnswer prog gt representative
+      bodyReferencesEmpty bodyExecutablesEmpty
+  exact
+    ⟨before, by simpa [before] using callerReferencesEmpty,
+      by simpa only [before,
+        RepresentativeActivePayloadState.afterBodyAnswer_baseAlts] using
+          baseAltsEmpty,
+      by simpa [before] using outerLength,
+      by simpa [before] using outerAllEmpty⟩
 
 /-- The literal ground `p -> q -> r` run inhabits the exact live two-frame
 scheduled-answer theorem.
@@ -37,30 +70,42 @@ theorem ground_two_frame_live_absorption_is_inhabited
       DemandDrivenCallStep.StepsN prog gt 0 before.carrier.fineState
         before.carrier.fineState := by
   obtain
-    ⟨_root, _qHead, _middle, _qReady, _qPredicate, _qPayload,
-      _rootReferences, _rootExecutables, _rootSourceSteps, _rootFineSteps,
-      _qCertificate, _rHead, after, _rReady, _rPredicate, _rPayload,
-      _rCertificate, bodyReferencesEmpty, bodyExecutablesEmpty,
-      callerReferencesEmpty, outerLength, outerAllEmpty⟩ :=
-    PrologNestedCallReadyRegression.ground_p_q_r_two_nested_pushes
-      (prog := prog) (gt := gt)
-  obtain ⟨representative, carrierExact⟩ := after.existsRepresentative
-  subst after
-  let before :=
-    RepresentativeActivePayloadState.afterBodyAnswer prog gt representative
-      bodyReferencesEmpty bodyExecutablesEmpty
-  have beforeCallerReferencesEmpty :
-      before.carrier.index.callerReferences = [] := by
-    simpa [before] using callerReferencesEmpty
-  have beforeOuterLength : before.carrier.index.outer.length = 2 := by
-    simpa [before] using outerLength
-  have beforeOuterAllEmpty :
-      ∀ segment ∈ before.carrier.index.outer, segment.references = [] := by
-    simpa [before] using outerAllEmpty
+    ⟨before, beforeCallerReferencesEmpty, _beforeBaseAltsEmpty,
+      beforeOuterLength, beforeOuterAllEmpty⟩ :=
+    groundRootClosedScheduledCarrier (prog := prog) (gt := gt)
   obtain ⟨target, sourceSteps, fineSteps⟩ :=
     before.absorbAllEmptyFrames (prog := prog) (gt := gt)
       beforeCallerReferencesEmpty beforeOuterAllEmpty
   refine ⟨before, target, beforeOuterLength, ?_, fineSteps⟩
   simpa [beforeOuterLength] using sourceSteps
+
+/-- The same concrete carrier inhabits the rooted closed-bank classifier.
+The returned outcome is indexed by its computed full history and constrains
+the literal executable bank; no independent empty suffix or compatible
+history can be supplied. -/
+theorem ground_two_frame_root_closed_pull_is_inhabited
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ∃ before : RepresentativeScheduledPayloadState,
+      ∃ ready : RootClosedAnswerReady before,
+        before.carrier.index.outer.length = 2 ∧
+          ∃ events,
+            ClosedScheduledPullOutcome ready.result.history events ∧
+              ((∃ goals binding rest,
+                  events = [] ∧
+                    PrologFindallAnswerResourceBridge.PullOutcomeAgrees
+                      before.carrier.index.openConf.control.alts
+                      (some (goals, binding)) rest) ∨
+                (events = [.completed] ∧
+                  PrologFindallAnswerResourceBridge.PullOutcomeAgrees
+                    before.carrier.index.openConf.control.alts none [])) := by
+  obtain
+    ⟨before, callerEmpty, baseEmpty, outerLength, outerEmpty⟩ :=
+    groundRootClosedScheduledCarrier (prog := prog) (gt := gt)
+  let ready :=
+    PrologRootClosedAnswerBridge.RepresentativeScheduledPayloadState.rootClosedAnswerReady
+      before callerEmpty outerEmpty baseEmpty
+  obtain ⟨events, outcome, classified⟩ :=
+    PrologRootClosedAnswerBridge.RootClosedAnswerReady.classifyPull ready
+  exact ⟨before, ready, outerLength, events, outcome, classified⟩
 
 end PLeaTTa.PrologScheduledPayloadResumeRegression

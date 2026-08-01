@@ -501,6 +501,10 @@ structure NestedCallSuccessorFacts
       { barrier := before.index.callerBarrier
         references := before.index.callerReferences
         executables := before.index.callerExecutables } :: before.index.outer
+  /-- Recursive activation only pushes locally owned alternatives above the
+  existing outer bank.  The base suffix is an invariant of the whole rooted
+  run, not a decomposition that a later answer proof may reselect. -/
+  baseAltsPreserved : after.index.baseAlts = before.index.baseAlts
   activationStep :
     PLeaTTa.Step prog gt head.pending.pulled.toConf
       (PrologRepresentativeStepActivationBridge.activatedExecutableSuccessor
@@ -1042,6 +1046,7 @@ theorem pushDetailed {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
       callerReferences := rfl
       callerExecutables := rfl
       outerSegments := rfl
+      baseAltsPreserved := rfl
       activationStep := ?_
       runtimeExact := ?_
       alphaExtension := ?_
