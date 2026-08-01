@@ -510,6 +510,12 @@ structure NestedCallSuccessorFacts
     after.index.openConf.persistent.world =
       before.index.openConf.persistent.world
   qtermPreserved : after.index.qterm = before.index.qterm
+  executableContinuation :
+    flattenExecutables
+      ({ barrier := after.index.callerBarrier
+         references := after.index.callerReferences
+         executables := after.index.callerExecutables } :: after.index.outer) =
+      head.executableTail
   below : ConfBelowResolutionCounter after.index.openConf.toConf
   certificate :
     NestedCallPushCertificate prog gt count
@@ -1026,6 +1032,7 @@ theorem pushDetailed {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
       sessionExact := ?_
       worldPreserved := ?_
       qtermPreserved := ?_
+      executableContinuation := ?_
       below := ?_
       certificate := certificate
       representativeExtension := ⟨flattenedRepresentative, rfl⟩
@@ -1054,6 +1061,7 @@ theorem pushDetailed {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
           installed).world = state.carrier.index.openConf.persistent.world
     simpa [NestedCallHead.pending, DemandDrivenCallStep.pendingCallOf] using
       activation.worldPreserved
+  · rfl
   · rfl
   · change
       ConfBelowResolutionCounter

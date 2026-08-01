@@ -2354,6 +2354,73 @@ theorem exists_split_of_append
 
 end CertifiedPrefix
 
+/-! ## Producer readiness and arbitrary finite progress -/
+
+/-- Producer premises for the next certified active-state transition.
+
+This is deliberately not phrased as "some transition exists": that would
+make progress preservation circular.  The constructor carries the semantic
+and operational readiness of one literal materialized local-call head.  It
+contains no successor, transition, step count, or observation claim; those
+must be produced by the resolver bridge.  Later constructors may extend the
+same sum for other active transition kinds without changing
+`CertifiedPrefix`. -/
+inductive ActiveStepReady : ProductPhaseState → Prop where
+  | localCall (state : RepresentativeActivePayloadState)
+      (head : NestedCallHead state.carrier)
+      (ready : MaterializedNestedCallReady state head) :
+      ActiveStepReady (.active state)
+
+/-- One coupled progress-and-preservation obligation.
+
+The returned transition and readiness certificate share the same literal
+`next` index.  Splitting these into independent existentials would permit a
+shape-compatible but unrelated ready carrier to be paired with the produced
+transition. -/
+def ProgressPreservesReady (prog : PLeaTTa.Prog)
+    (gt : Metta.GroundingTable)
+    (invariant : ProductPhaseState → Prop) : Prop :=
+  ∀ {state : ProductPhaseState}, invariant state →
+    ActiveStepReady state ∧
+      ∃ kind : TransitionKind, ∃ next : ProductPhaseState,
+        ∃ _step : CertifiedTransition prog gt kind state next,
+          invariant next
+
+namespace ActiveStepReady
+
+/-- Repeated coupled progress inhabits an exact `CertifiedPrefix` of every
+requested finite length.
+
+This theorem intentionally returns a proposition containing the Type-valued
+run.  No `Classical.choice` extracts a successor or scan result into a
+computable definition; every intermediate remains the literal dependent
+index shared by adjacent constructors. -/
+theorem exists_prefix_of_ready
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {invariant : ProductPhaseState → Prop}
+    (progress : ProgressPreservesReady prog gt invariant)
+    {before : ProductPhaseState} (ready : invariant before) :
+    ∀ count : Nat,
+      ∃ kinds : List TransitionKind, ∃ after : ProductPhaseState,
+        kinds.length = count ∧
+          ∃ _run : CertifiedPrefix prog gt kinds before after,
+            invariant after ∧ ActiveStepReady after := by
+  intro count
+  induction count generalizing before with
+  | zero =>
+      exact ⟨[], before, rfl, .nil before, ready, (progress ready).1⟩
+  | succ count inductionHypothesis =>
+      obtain ⟨_currentReady, kind, middle, step, middleReady⟩ :=
+        progress ready
+      obtain ⟨kinds, after, lengthExact, tail, afterInvariant,
+          afterReady⟩ :=
+        inductionHypothesis middleReady
+      exact
+        ⟨kind :: kinds, after, by simp [lengthExact],
+          .cons step tail, afterInvariant, afterReady⟩
+
+end ActiveStepReady
+
 namespace RepresentativeUnifySuccessorFacts
 
 /-- Compose one selected primitive-unification successor with the immediately

@@ -6,7 +6,7 @@ Purpose: Exercise the representative-preserving nested-call bridge on a
   reachable non-ground p(Z) :- q(Z) prefix.
 Trusted boundary: none
 -/
-import PLeaTTa.Proofs.PrologNestedCallPrefixInductionBridge
+import PLeaTTa.Proofs.PrologHeterogeneousPrefixBridge
 
 namespace PLeaTTa.PrologUnboundNestedCallRegression
 
@@ -23,6 +23,7 @@ open PrologCallEntryBridge
 open PrologCallStepBridge
 open PrologControlSegmentSpineBridge
 open PrologCurrentSessionPayloadBridge
+open PrologHeterogeneousPrefixBridge
 open PrologMguBridge
 open PrologMguComposition
 open PrologMguTopology
@@ -1224,5 +1225,1175 @@ theorem reachable_unbound_p_q_exact_prefix
       afterExtension, facts.representativeExtension, singletonChain⟩
   · simpa using sourceSteps
   · simpa using fineSteps
+
+/-! ## Unbounded nondegenerate self recursion -/
+
+namespace SelfRecursive
+
+/-- A single locally owned clause which recursively calls a freshly copied
+version of its own output variable.  Unlike `loop :- loop`, every activation
+reserves a nonempty source interval and extends the ordered MGU chain. -/
+def referenceClause : LocalClause :=
+  { predicate := "p"
+    arguments := [.variable clauseIdentity]
+    body := [.call "p" [.variable clauseIdentity]] }
+
+def executableClause : PLeaTTa.Clause :=
+  { params := []
+    result := .var "x"
+    body := [.call "p" [] (.var "x")] }
+
+def database : Database := Database.empty.assertz referenceClause
+
+def world : PWorld :=
+  (default : PWorld).reindexClauses.appendProgClause
+    ("p", executableClause)
+
+private theorem clauseAgrees :
+    LocalClauseAgrees referenceClause ("p", executableClause) := by
+  refine
+    { predicate := rfl
+      outputLast := ?_
+      body := variableDefinedCallGoalsAgrees "p"
+      support := ?_ }
+  · exact
+      ⟨[], .variable clauseIdentity, rfl, CompilerAdequacy.TermsAgree.nil,
+        CompilerAdequacy.TermAgrees.sourceVariable "x"⟩
+  · intro name
+    simp [referenceClause, executableClause, clauseIdentity,
+      LocalClause.variables, resolutionClauseVars, Metta.Atom.vars,
+      specializationGoalsVars, specializationGoalVars, termsVariables,
+      termVariables, goalsVariables, goalVariables,
+      OpenBindingAgreement.logicVarExecutableName]
+
+theorem database_relates_world : DatabaseRelatesWorld database world := by
+  have related := emptyDatabaseRelatesIndexedWorld.assertz clauseAgrees
+  simpa [database, world] using related
+
+private theorem worldCoherent : world.ClauseIndexCoherent := by
+  have root := PWorld.reindexClauses_coherent (default : PWorld)
+  have appended :=
+    PWorld.appendProgClause_coherent _ ("p", executableClause) root
+  simpa [world] using appended
+
+theorem resolutionCandidates :
+    world.resolutionCandidates "p" 0 = [executableClause] := by
+  rw [PWorld.resolutionCandidates_eq _ _ _ worldCoherent]
+  have emptyClauses : (default : PWorld).progClauses = [] := rfl
+  simp [world, PWorld.reindexClauses, PWorld.appendProgClause,
+    PWorld.clausesOf, executableClause, emptyClauses]
+
+theorem visibleClauses :
+    database.visibleClausesAt database.generation "p" 1 =
+      [Database.empty.allocate referenceClause] := by
+  rfl
+
+theorem candidateBank :
+    SupportedCandidateBank "p"
+      (database.visibleClausesAt database.generation "p" 1)
+      (world.resolutionCandidates "p" 0) := by
+  rw [visibleClauses, resolutionCandidates]
+  let head : CandidateClauseAgrees "p"
+      (Database.empty.allocate referenceClause) executableClause := by
+    change LocalClauseAgrees referenceClause ("p", executableClause)
+    exact clauseAgrees
+  have encoding :
+      EncodingInjectiveOn
+        (Database.empty.allocate referenceClause).clause.variables := by
+    simp [EncodingInjectiveOn, Database.allocate, referenceClause,
+      LocalClause.variables, termsVariables, termVariables, goalsVariables,
+      goalVariables, clauseIdentity]
+  have body :
+      CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported
+        (Database.empty.allocate referenceClause).clause.variables
+        (Database.empty.allocate referenceClause).clause.variables
+        head.body := by
+    change
+      CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported
+        [clauseIdentity] [clauseIdentity] head.body
+    have bodyEq : head.body = variableDefinedCallGoalsAgrees "p" :=
+      Subsingleton.elim _ _
+    rw [bodyEq]
+    exact variableDefinedCallGoalsSupported "p"
+  refine ⟨List.Forall₂.cons head .nil, ?_⟩
+  exact .cons (head := head) encoding body .nil
+
+def initialSession : Session :=
+  { resolver :=
+      { database := database
+        nextFresh := 0 } }
+
+def initialOpenConf : OpenConf :=
+  { persistent :=
+      { world := world
+        counter := 0 }
+    control :=
+      { cur := some ([.call "p" [] queryAtom], [])
+        alts := []
+        qterm := queryAtom } }
+
+private def scan : List PLeaTTa.Alt × Nat :=
+  resolveAlts
+    (initialOpenConf.persistent.world.resolutionCandidates "p" 0)
+    [] [] queryAtom [] [] initialOpenConf.control.qterm
+    (barrierDepth initialOpenConf.toConf + 1)
+    initialOpenConf.toConf.counter
+
+private def pending : DemandDrivenCallStep.PendingCall :=
+  DemandDrivenCallStep.pendingCallOf initialOpenConf scan.1 scan.2
+
+private theorem entry :
+    RepresentativeSupportedCallEntryRelates rootAlpha
+      (openedFor initialSession "p" [queryTerm] []) initialOpenConf pending
+      [] [] queryAtom [] [] queryAtom
+      (barrierDepth initialOpenConf.toConf + 1)
+      initialOpenConf.toConf.counter := by
+  have databaseAgreement :
+      DatabaseRelatesWorld initialSession.resolver.database
+        initialOpenConf.persistent.world := by
+    simpa [initialSession, initialOpenConf] using database_relates_world
+  have ready : initialOpenConf.persistent.world.clauseIndexReady = true := by
+    rfl
+  have scanned :
+      resolveAlts
+          (initialOpenConf.persistent.world.resolutionCandidates "p" 0)
+          [] [] queryAtom [] [] initialOpenConf.control.qterm
+          (barrierDepth initialOpenConf.toConf + 1)
+          initialOpenConf.toConf.counter = scan := by
+    rfl
+  have query :=
+    PrologRecursiveCallPayloadBridge.TaskPayloadAgrees.representativeNormalizedCallAgrees
+      (rootPayload (barrierDepth initialOpenConf.toConf + 1))
+      rootPayloadSupported
+      (openedFor initialSession "p" [queryTerm] []).cursor
+      (by simp [openedFor, openLocalCall, requestFor, prepareCall])
+      (by simp [openedFor, openLocalCall, requestFor, prepareCall])
+  have constructed :=
+    openedFor_pendingCallOf_representative_supported_relates
+      databaseAgreement ready "p" [queryTerm] [] rootAlpha [] queryAtom [] []
+      scan.1 scan.2 (by rfl) (by rfl)
+      (by
+        calc
+          _ = scan := by
+            simpa only [List.length_nil, List.map_nil] using scanned
+          _ = (scan.1, scan.2) := (Prod.eta scan).symm)
+      query candidateBank
+  simpa [pending, initialOpenConf] using constructed
+
+private theorem initialBelow :
+    ConfBelowResolutionCounter initialOpenConf.toConf := by
+  apply ConfBelowResolutionCounter.of_names
+  intro name member
+  simp [resolutionLiveVars, initialOpenConf, OpenConf.toConf, Control.toConf,
+    specializationGoalsVars, specializationGoalVars, resolutionSubstVars,
+    queryAtom, Metta.Atom.vars] at member
+  subst name
+  simp [resolutionSeedHighWaterName, terminalResolutionSeed?,
+    terminalResolutionSeedRev, initialOpenConf, OpenConf.toConf,
+    Control.toConf]
+
+private def copied : PLeaTTa.Clause :=
+  PLeaTTa.freshenResolutionClause [] [] queryAtom [] []
+    initialOpenConf.control.qterm initialOpenConf.toConf.counter
+    (barrierDepth initialOpenConf.toConf + 1) executableClause
+
+private theorem copied_body :
+    copied.body = [.call "p" [] copied.result] := by
+  rfl
+
+private def alt : PLeaTTa.Alt :=
+  .br
+    (.eq (.expr [queryAtom])
+        (.expr (copied.params ++ [copied.result])) :: copied.body)
+    []
+
+private theorem scanExact :
+    scan = ([alt], initialOpenConf.toConf.counter + 1) := by
+  unfold scan
+  change
+    resolveAlts (world.resolutionCandidates "p" 0) [] [] queryAtom
+        [] [] queryAtom 1 0 =
+      ([alt], 1)
+  rw [resolutionCandidates]
+  simp [resolveAlts, executableClause, queryAtom, alt, copied,
+    initialOpenConf, OpenConf.toConf, Control.toConf, barrierDepth,
+    PLeaTTa.prologMatchCompat, PLeaTTa.prologMatchCompatList]
+
+private theorem scanNonempty : pending.branches ≠ [] := by
+  rw [pending, scanExact]
+  exact List.cons_ne_nil _ _
+
+def preparedBranch : ClauseBranch :=
+  { sourceId := (Database.empty.allocate referenceClause).id
+    callGeneration := database.generation
+    freshSubstitution :=
+      [(clauseIdentity, .variable (.generated 0))]
+    headEquations := [(queryTerm, .variable (.generated 0))]
+    body := [.call "p" [.variable (.generated 0)]]
+    bindings := []
+    firstFresh := 0
+    nextFresh := 1 }
+
+private theorem openedRemaining :
+    (openedFor initialSession "p" [queryTerm] []).cursor.remaining =
+      [preparedBranch] := by
+  rfl
+
+private theorem preparedBranch_resolves :
+    HeadResolution preparedBranch pSourceExtension := by
+  let extension : TreeSubstitution :=
+    [(queryIdentity, .variable (.generated 0))]
+  have computed :
+      ComputesDenotationalMgu
+        [(.variable queryIdentity, .variable (.generated 0))]
+        (TreeSubstitution.reify extension) := by
+    exact computes_singleton_left_variable queryIdentity
+      (.variable (.generated 0)) (by
+        intro equality
+        cases equality) (by rfl)
+  refine ⟨TreeSubstitution.reify extension, ?_, ?_⟩
+  · simpa [preparedBranch, ClauseBranch.normalizedHeadEquations,
+      extension, queryTerm] using computed
+  · simp [pSourceExtension, extension, preparedBranch]
+
+/-! ## A depth-indexed recursive source frontier -/
+
+/-- The exact cumulative source substitution after entering the root clause
+and then `depth` recursive clause occurrences.  Every recursive MGU is
+prepended in the resolver's deterministic left-variable orientation. -/
+def sourceChain : Nat → Substitution
+  | 0 => pSourceExtension
+  | depth + 1 =>
+      ((.generated depth : LogicVar),
+          .variable (.generated (depth + 1))) :: sourceChain depth
+
+/-- Raising a generated-domain boundary preserves the domain invariant. -/
+private theorem domainsBelow_mono {smaller larger : Nat}
+    {bindings : Substitution}
+    (below : Substitution.DomainsBelow smaller bindings)
+    (ordered : smaller ≤ larger) :
+    Substitution.DomainsBelow larger bindings := by
+  induction bindings with
+  | nil => trivial
+  | cons binding bindings inductionHypothesis =>
+      rcases binding with ⟨source, replacement⟩
+      rcases below with ⟨sourceBelow, tailBelow⟩
+      constructor
+      · cases source with
+        | source name => trivial
+        | anonymous index => trivial
+        | generated index =>
+            change index < larger
+            change index < smaller at sourceBelow
+            omega
+      · exact inductionHypothesis tailBelow
+
+/-- All generated substitution domains are strictly older than the current
+recursive tip.  This is the domain-only fact needed to show that the tip is
+still unbound. -/
+theorem sourceChain_domainsBelow (depth : Nat) :
+    Substitution.DomainsBelow depth (sourceChain depth) := by
+  induction depth with
+  | zero =>
+      simp [sourceChain, pSourceExtension, TreeSubstitution.reify,
+        Substitution.DomainsBelow, LogicVar.GeneratedBelowBoundary,
+        queryIdentity]
+  | succ depth inductionHypothesis =>
+      constructor
+      · simp [LogicVar.GeneratedBelowBoundary]
+      · exact domainsBelow_mono inductionHypothesis (Nat.le_succ depth)
+
+/-- Applying the cumulative state cannot rewrite any generated variable at
+or above the current recursive tip. -/
+theorem sourceChain_apply_generated_of_le (depth index : Nat)
+    (atLeast : depth ≤ index) :
+    (sourceChain depth).applyTerm (.variable (.generated index)) =
+      .variable (.generated index) := by
+  exact Substitution.applyTerm_eq_self_of_generatedAtLeast
+    (sourceChain_domainsBelow depth)
+    (by simpa [Term.GeneratedAtLeast] using atLeast)
+
+/-- The variables carried by the cumulative substitution have exclusive
+generated ceiling `depth + 1`: the newest variable occurs as a range value,
+while its domain remains absent. -/
+theorem sourceChain_generatedCeiling (depth : Nat) :
+    variablesGeneratedCeiling (substitutionVariables (sourceChain depth)) =
+      depth + 1 := by
+  induction depth with
+  | zero =>
+      simp [sourceChain, pSourceExtension, TreeSubstitution.reify,
+        substitutionVariables, variablesGeneratedCeiling,
+        logicVarGeneratedCeiling, queryIdentity, Tree.reify, termVariables]
+  | succ depth inductionHypothesis =>
+      simp [sourceChain, substitutionVariables, termVariables,
+        variablesGeneratedCeiling, logicVarGeneratedCeiling,
+        inductionHypothesis]
+
+/-- The live recursive request has the same exclusive ceiling as its
+cumulative state, so an incoming high-water of `depth + 1` needs no repair. -/
+theorem recursiveRequest_generatedCeiling (depth : Nat) :
+    (requestFor "p" [(.variable (.generated depth) : Term)]
+      (sourceChain depth)).generatedCeiling = depth + 1 := by
+  change
+    max (depth + 1)
+      (variablesGeneratedCeiling
+        (substitutionVariables (sourceChain depth))) = depth + 1
+  rw [sourceChain_generatedCeiling]
+  exact Nat.max_self _
+
+/-- The unique stored recursive clause occurrence prepared at the current
+call start.  Its one-variable interval is literally
+`[depth + 1, depth + 2)`. -/
+def preparedAt (depth : Nat) : ClauseBranch :=
+  { sourceId := (Database.empty.allocate referenceClause).id
+    callGeneration := database.generation
+    freshSubstitution :=
+      [(clauseIdentity, .variable (.generated (depth + 1)))]
+    headEquations :=
+      [(.variable (.generated depth),
+        .variable (.generated (depth + 1)))]
+    body := [.call "p" [.variable (.generated (depth + 1))]]
+    bindings := sourceChain depth
+    firstFresh := depth + 1
+    nextFresh := depth + 2 }
+
+/-- Opening the recursive request from the exact persistent state reserves
+precisely the next depth-indexed occurrence. -/
+theorem openedRemainingAt (session : Session) (depth : Nat)
+    (databaseExact : session.resolver.database = database)
+    (freshExact : session.resolver.nextFresh = depth + 1) :
+    (openedFor session "p" [(.variable (.generated depth) : Term)]
+      (sourceChain depth)).cursor.remaining = [preparedAt depth] := by
+  change
+    (prepareCall session.resolver
+      (requestFor "p" [(.variable (.generated depth) : Term)]
+        (sourceChain depth))).1.remaining = [preparedAt depth]
+  simp only [prepareCall]
+  rw [databaseExact, freshExact, recursiveRequest_generatedCeiling]
+  simp only [Nat.max_self, requestFor, List.length_singleton]
+  rw [visibleClauses]
+  rfl
+
+/-- The same open operation advances the persistent high-water by exactly
+one, past the newly frozen clause copy. -/
+theorem openedNextFreshAt (session : Session) (depth : Nat)
+    (databaseExact : session.resolver.database = database)
+    (freshExact : session.resolver.nextFresh = depth + 1) :
+    (openedFor session "p" [(.variable (.generated depth) : Term)]
+      (sourceChain depth)).session.resolver.nextFresh = depth + 2 := by
+  change
+    (prepareCall session.resolver
+      (requestFor "p" [(.variable (.generated depth) : Term)]
+        (sourceChain depth))).2.nextFresh = depth + 2
+  simp only [prepareCall]
+  rw [databaseExact, freshExact, recursiveRequest_generatedCeiling]
+  simp only [Nat.max_self, requestFor, List.length_singleton]
+  rw [visibleClauses]
+  rfl
+
+/-- Ordered head resolution links the current tip to the newly reserved tip
+and prepends that MGU to the complete cumulative source state. -/
+theorem preparedAt_resolves (depth : Nat) :
+    HeadResolution (preparedAt depth) (sourceChain (depth + 1)) := by
+  let extension : TreeSubstitution :=
+    [((.generated depth : LogicVar),
+      .variable (.generated (depth + 1)))]
+  have computed :
+      ComputesDenotationalMgu
+        [(.variable (.generated depth),
+          .variable (.generated (depth + 1)))]
+        (TreeSubstitution.reify extension) := by
+    exact computes_singleton_left_variable (.generated depth)
+      (.variable (.generated (depth + 1))) (by
+        intro equality
+        injection equality with identityEquality
+        injection identityEquality with indexEquality
+        omega) (by
+          have distinct :
+              (.generated (depth + 1) : LogicVar) ≠ .generated depth := by
+            intro equality
+            injection equality with indexEquality
+            omega
+          change
+            decide
+              ((.generated (depth + 1) : LogicVar) = .generated depth) =
+              false
+          simp [distinct])
+  refine ⟨TreeSubstitution.reify extension, ?_, ?_⟩
+  · simpa [preparedAt, ClauseBranch.normalizedHeadEquations, extension,
+      sourceChain_apply_generated_of_le] using computed
+  · simp [sourceChain, extension, preparedAt, TreeSubstitution.reify,
+      Tree.reify]
+
+/-! ## Semantic readiness at every recursive depth -/
+
+/-- The facts preserved from one literal recursive activation to the next.
+
+No successor or transition occurs in this structure.  In particular,
+`RecursiveReadyAt` cannot prove progress by projecting a hidden step; it must
+first reconstruct `MaterializedNestedCallReady` and invoke the certified
+resolver producer. -/
+structure RecursiveReadyAt (state : RepresentativeActivePayloadState)
+    (depth : Nat) (executableResult : Atom) : Prop where
+  bodyReferences :
+    state.carrier.index.bodyReferences =
+      [.call "p" [(.variable (.generated depth) : Term)]]
+  bodyExecutables :
+    state.carrier.index.bodyExecutables =
+      [.call "p" [] executableResult]
+  executableContinuation :
+    flattenExecutables
+      ({ barrier := state.carrier.index.callerBarrier
+         references := state.carrier.index.callerReferences
+         executables := state.carrier.index.callerExecutables } ::
+       state.carrier.index.outer) = []
+  current : state.carrier.index.current = sourceChain depth
+  support : state.carrier.index.support = rootAlpha
+  qterm : state.carrier.index.qterm = queryAtom
+  openQterm : state.carrier.index.openConf.control.qterm = queryAtom
+  database : state.carrier.index.session.resolver.database = SelfRecursive.database
+  world : state.carrier.index.openConf.persistent.world = SelfRecursive.world
+  nextFresh : state.carrier.index.session.resolver.nextFresh = depth + 1
+  exactFresh :
+    state.carrier.index.freshFrontier =
+      AlphaFreshFrontier state.carrier.index.alpha
+  below : ConfBelowResolutionCounter state.carrier.index.openConf.toConf
+  materialized :
+    MaterializedCallAgreesWith state.carrier.index.alpha
+      (sourceChain depth)
+      [(.variable (.generated depth) : Term)] []
+      (PLeaTTa.subst state.carrier.index.runtime executableResult)
+      state.representative state.carrier.index.referenceBase
+
+namespace RecursiveReadyAt
+
+/-- The semantic invariant reconstructs the next literal local-call producer
+premises without selecting a successor. -/
+theorem materializedReady
+    {state : RepresentativeActivePayloadState} {depth : Nat}
+    {executableResult : Atom}
+    (ready : RecursiveReadyAt state depth executableResult) :
+    ∃ head : NestedCallHead state.carrier,
+      MaterializedNestedCallReady state head ∧
+        head.predicate = "p" ∧
+        head.referencePayload =
+          [(.variable (.generated depth) : Term)] ∧
+        head.referenceRest = [] ∧
+        head.arguments = [] ∧
+        head.result = executableResult ∧
+        head.executableRest = [] ∧
+        head.executableTail = [] := by
+  let head : NestedCallHead state.carrier :=
+    { predicate := "p"
+      referencePayload := [(.variable (.generated depth) : Term)]
+      referenceRest := []
+      arguments := []
+      result := executableResult
+      executableRest := []
+      referenceHead := ready.bodyReferences
+      executableHead := ready.bodyExecutables }
+  have executableTailNil : head.executableTail = [] := by
+    simp [NestedCallHead.executableTail, head, ready.executableContinuation]
+  have openedSingleton :
+      (openedFor state.carrier.index.session "p"
+        [(.variable (.generated depth) : Term)]
+        (sourceChain depth)).cursor.remaining = [preparedAt depth] :=
+    openedRemainingAt state.carrier.index.session depth ready.database
+      ready.nextFresh
+  have operational : NestedCallOperationalReady state.carrier head := by
+    refine
+      { exactFresh := ready.exactFresh
+        indexReady := ?_
+        below := ready.below
+        candidateSupported := ?_
+        sourceNonempty := ?_
+        scanNonempty := ?_
+        selected := ?_
+        notThrow := ?_
+        notDatabase := ?_ }
+    · rw [ready.world]
+      rfl
+    · change
+        SupportedCandidateBank "p"
+          (state.carrier.index.session.resolver.database.visibleClausesAt
+            state.carrier.index.session.resolver.database.generation "p" 1)
+          (state.carrier.index.openConf.persistent.world.resolutionCandidates
+            "p" 0)
+      simpa [ready.database, ready.world] using candidateBank
+    · change
+        state.carrier.index.session.resolver.database.visibleClausesAt
+          state.carrier.index.session.resolver.database.generation "p" 1 ≠ []
+      rw [ready.database, visibleClauses]
+      simp
+    · unfold NestedCallHead.scan
+      rw [executableTailNil]
+      simp only [head, List.length_nil, List.map_nil]
+      rw [ready.world, resolutionCandidates]
+      have resultMatch :
+          PLeaTTa.prologMatchCompat
+              (PLeaTTa.subst state.carrier.index.runtime
+                executableResult)
+              (.var "x") = true := by
+        generalize
+          PLeaTTa.subst state.carrier.index.runtime
+            executableResult = result
+        cases result <;> rfl
+      simp [resolveAlts, executableClause, resultMatch,
+        PLeaTTa.prologMatchCompatList]
+    · intro count finish branch clause branchTail clauseTail altTail
+        copied pulls frontier
+      have finishNonempty : finish.remaining ≠ [] := by
+        rw [frontier.finishRemaining]
+        simp
+      have pullsExact :
+          RejectedPullsN count
+            (openedFor state.carrier.index.session "p"
+              [(.variable (.generated depth) : Term)]
+              (sourceChain depth)).cursor finish := by
+        simpa [head, ready.current] using pulls
+      have pathExact :=
+        _root_.PLeaTTa.PrologNestedCallReadyBridge.RejectedPullsN.eq_zero_of_singleton_of_finish_nonempty
+          openedSingleton pullsExact finishNonempty
+      have branchExact : branch = preparedAt depth := by
+        have remaining := frontier.finishRemaining
+        rw [pathExact.2, openedSingleton] at remaining
+        exact (List.cons.inj remaining).1.symm
+      refine ⟨sourceChain (depth + 1), ?_, ?_⟩
+      · simpa [branchExact] using preparedAt_resolves depth
+      · rw [ready.support, ready.qterm]
+        rw [executableTailNil]
+        simp only [List.append_nil]
+        intro identity name member
+        simp only [rootAlpha, List.mem_singleton] at member
+        have nameExact : name = "z" := congrArg Prod.snd member
+        subst name
+        exact PLeaTTa.isTrimRoot_qterm_mem copied.body queryAtom "z"
+          (by simp [queryAtom, Metta.Atom.vars])
+    · simp [head, BuiltinThrowCall]
+    · rfl
+  have materialized : MaterializedNestedCallReady state head := by
+    refine
+      { toNestedCallOperationalReady := operational
+        materialized := ?_ }
+    simpa [head, ready.current, executableTailNil] using ready.materialized
+  exact
+    ⟨head, materialized, rfl, rfl, rfl, rfl, rfl, rfl,
+      executableTailNil⟩
+
+/-- Every recursive invariant state exposes the producer-ready constructor
+used by the generic exact-prefix induction. -/
+theorem activeStepReady
+    {state : RepresentativeActivePayloadState} {depth : Nat}
+    {executableResult : Atom}
+    (ready : RecursiveReadyAt state depth executableResult) :
+    PLeaTTa.PrologHeterogeneousPrefixBridge.ActiveStepReady (.active state) := by
+  obtain ⟨head, materialized, _predicate, _payload, _referenceRest,
+      _arguments, _result, _executableRest, _tail⟩ := ready.materializedReady
+  exact
+    PLeaTTa.PrologHeterogeneousPrefixBridge.ActiveStepReady.localCall
+      state head materialized
+
+end RecursiveReadyAt
+
+/-! ## Literal root seed -/
+
+/-- The literal root task reaches the first recursive body head with the
+semantic invariant at depth zero.  The source and fine counts retain the
+entry/activation cost rather than beginning from a hand-constructed active
+midstate. -/
+theorem rootReady
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ∃ state : RepresentativeActivePayloadState, ∃ result : Atom,
+      RecursiveReadyAt state 0 result ∧
+        StepsN 2
+          (.running initialSession
+            (.task rootScope [.call "p" [queryTerm]] []))
+          [.opened (requestFor "p" [queryTerm] [])]
+          state.carrier.sourceState ∧
+        DemandDrivenCallStep.StepsN prog gt 3
+          (.ready initialOpenConf) state.carrier.fineState := by
+  have beforeSession :
+      SessionRelatesOpenConf (AlphaFreshFrontier rootAlpha)
+        ExactControlFrontiers initialSession initialOpenConf := by
+    refine ⟨?_, rfl, rfl, rfl⟩
+    refine ⟨?_, ?_⟩
+    · simpa [initialSession, initialOpenConf] using database_relates_world
+    · simp [AlphaFreshFrontier, GeneratedBelow, rootAlpha, queryIdentity,
+        resolutionSeedHighWaterNames, resolutionSeedHighWaterName,
+        terminalResolutionSeed?, terminalResolutionSeedRev,
+        initialSession, initialOpenConf]
+  have preHeadPayload :
+      TaskSpinePayloadAgrees rootAlpha rootAlpha [] [] [] []
+        [{ barrier := 0
+           references := [.call "p" [queryTerm]]
+           executables := [.call "p" [] queryAtom] }] :=
+    TaskSpinePayloadAgrees.singleton (rootPayload 0)
+  have selected :
+      ∀ {count : Nat} {finish : PreparedCursor} {branch : ClauseBranch}
+        {clause : PLeaTTa.Clause} {branchTail : List ClauseBranch}
+        {clauseTail : List PLeaTTa.Clause} {altTail : List PLeaTTa.Alt}
+        {selectedCopy : PLeaTTa.Clause},
+        RejectedPullsN count
+            (openedFor initialSession "p" [queryTerm] []).cursor finish →
+          RepresentativeRetainedCallFrontier rootAlpha
+            (openedFor initialSession "p" [queryTerm] []) initialOpenConf
+            pending finish branch clause branchTail clauseTail altTail
+            selectedCopy [] [] queryAtom [] [] queryAtom
+            (barrierDepth initialOpenConf.toConf + 1)
+            initialOpenConf.toConf.counter →
+          ∃ independentResult : Substitution,
+            HeadResolution branch independentResult ∧
+              AlphaRuntimeNamesLive rootAlpha selectedCopy.body queryAtom := by
+    intro count finish branch clause branchTail clauseTail altTail
+      selectedCopy pulls frontier
+    have finishNonempty : finish.remaining ≠ [] := by
+      rw [frontier.finishRemaining]
+      simp
+    have pathExact :=
+      _root_.PLeaTTa.PrologNestedCallReadyBridge.RejectedPullsN.eq_zero_of_singleton_of_finish_nonempty
+        openedRemaining pulls finishNonempty
+    have branchExact : branch = preparedBranch := by
+      have remaining := frontier.finishRemaining
+      rw [pathExact.2, openedRemaining] at remaining
+      exact (List.cons.inj remaining).1.symm
+    refine ⟨pSourceExtension, ?_, ?_⟩
+    · simpa [branchExact] using preparedBranch_resolves
+    · intro identity name member
+      simp only [rootAlpha, List.mem_singleton] at member
+      have nameExact : name = "z" := congrArg Prod.snd member
+      subst name
+      exact PLeaTTa.isTrimRoot_qterm_mem selectedCopy.body queryAtom "z"
+        (by simp [queryAtom, Metta.Atom.vars])
+  have notThrow : ¬ BuiltinThrowCall "p" [queryTerm] := by
+    simp [BuiltinThrowCall]
+  have notDatabase :
+      DatabaseActions.recognizeDatabaseAction "p" [queryTerm] = none := by
+    rfl
+  obtain
+      ⟨rejects, skippedBranches, skippedClauses, finish, branch, clause,
+        branchTail, clauseTail, altTail, selectedCopy, independentResult,
+        representative, nextAlpha, sourceCanonical, flattened, installed,
+        after, facts⟩ :=
+    RepresentativeSupportedCallEntryRelates.activate_literal_root
+      (prog := prog) (gt := gt) (scope := rootScope) (callerBarrier := 0)
+      entry preHeadPayload rootPayloadSupported beforeSession (by rfl)
+      (by rfl) initialBelow scanNonempty selected notThrow notDatabase
+  have sourceShape := facts.sourceBank
+  rw [openedRemaining] at sourceShape
+  have sourceLengths := congrArg List.length sourceShape
+  simp only [List.length_cons, List.length_nil, List.length_append] at sourceLengths
+  have skippedBranchesLength : skippedBranches.length = 0 := by omega
+  have branchTailLength : branchTail.length = 0 := by omega
+  have skippedBranchesNil : skippedBranches = [] :=
+    List.eq_nil_of_length_eq_zero skippedBranchesLength
+  have branchTailNil : branchTail = [] :=
+    List.eq_nil_of_length_eq_zero branchTailLength
+  have branchExact : branch = preparedBranch := by
+    subst skippedBranches
+    subst branchTail
+    simpa using sourceShape.symm
+  have rejectsZero : rejects = 0 := by
+    rw [← facts.sourceSkipCount]
+    exact skippedBranchesLength
+  have executableShape := facts.executableBank
+  change
+    world.resolutionCandidates "p" 0 =
+      skippedClauses ++ clause :: clauseTail at executableShape
+  rw [resolutionCandidates] at executableShape
+  have executableLengths := congrArg List.length executableShape
+  simp only [List.length_cons, List.length_nil, List.length_append] at executableLengths
+  have skippedClausesLength : skippedClauses.length = 0 := by omega
+  have clauseTailLength : clauseTail.length = 0 := by omega
+  have skippedClausesNil : skippedClauses = [] :=
+    List.eq_nil_of_length_eq_zero skippedClausesLength
+  have clauseTailNil : clauseTail = [] :=
+    List.eq_nil_of_length_eq_zero clauseTailLength
+  have clauseExact : clause = executableClause := by
+    subst skippedClauses
+    subst clauseTail
+    simpa using executableShape.symm
+  have selectedCopyExact : selectedCopy = copied := by
+    rw [facts.frontier.copiedExact, clauseExact]
+    rfl
+  have currentExact :
+      after.carrier.index.current = sourceChain 0 := by
+    have selectedResolution :
+        HeadResolution branch after.carrier.index.current := facts.resolution
+    have expected : HeadResolution branch pSourceExtension := by
+      simpa [branchExact] using preparedBranch_resolves
+    simpa [sourceChain] using
+      HeadResolution.deterministic selectedResolution expected
+  have bodyReferences :
+      after.carrier.index.bodyReferences =
+        [.call "p" [Term.variable (LogicVar.generated 0)]] := by
+    rw [facts.bodyReferences, branchExact]
+    rfl
+  have bodyExecutables :
+      after.carrier.index.bodyExecutables = [.call "p" [] copied.result] := by
+    rw [facts.bodyExecutables, selectedCopyExact, copied_body]
+  have supportExact : after.carrier.index.support = rootAlpha :=
+    facts.supportPreserved
+  have qtermExact : after.carrier.index.qterm = queryAtom := by
+    rw [facts.qtermPreserved]
+    rfl
+  have openQtermExact :
+      after.carrier.index.openConf.control.qterm = queryAtom := by
+    calc
+      _ = after.carrier.index.qterm :=
+        after.carrier.agreement.core.control.ready.2.2.1
+      _ = queryAtom := qtermExact
+  have databaseExact :
+      after.carrier.index.session.resolver.database = SelfRecursive.database := by
+    rw [facts.sessionExact]
+    rfl
+  have worldExact :
+      after.carrier.index.openConf.persistent.world = SelfRecursive.world := by
+    rw [facts.worldPreserved]
+    rfl
+  have nextFreshExact :
+      after.carrier.index.session.resolver.nextFresh = 1 := by
+    rw [facts.sessionExact]
+    rfl
+  have continuationEmpty :
+      flattenExecutables
+        ({ barrier := after.carrier.index.callerBarrier
+           references := after.carrier.index.callerReferences
+           executables := after.carrier.index.callerExecutables } ::
+         after.carrier.index.outer) = [] := by
+    rw [facts.callerExecutablesEmpty, facts.outerEmpty]
+    rfl
+  have materialized :
+      MaterializedCallAgreesWith after.carrier.index.alpha
+        (sourceChain 0) [Term.variable (LogicVar.generated 0)] []
+        (PLeaTTa.subst after.carrier.index.runtime copied.result)
+        after.representative after.carrier.index.referenceBase := by
+    have exactHead := facts.materializedBodyHeads bodyReferences bodyExecutables
+    simpa [currentExact] using exactHead
+  have recursiveReady : RecursiveReadyAt after 0 copied.result :=
+    { bodyReferences := bodyReferences
+      bodyExecutables := bodyExecutables
+      executableContinuation := continuationEmpty
+      current := currentExact
+      support := supportExact
+      qterm := qtermExact
+      openQterm := openQtermExact
+      database := databaseExact
+      world := worldExact
+      nextFresh := nextFreshExact
+      exactFresh := facts.freshFrontierExact
+      below := facts.below
+      materialized := materialized }
+  refine ⟨after, copied.result, recursiveReady, ?_, facts.fineSteps⟩
+  simpa [rejectsZero] using facts.sourceSteps
+
+/-! ## One invariant-preserving recursive activation -/
+
+/-- Eliminate one recursive invariant through the real resolver producer.
+
+The returned `RepresentativeNestedCallSuccessorFacts` is retained verbatim,
+so later composition can construct `CertifiedTransition.localCall` from the
+same literal successor that carries the next invariant.  Singleton-bank
+inversion additionally pins the selected source interval and executable
+clause. -/
+theorem RecursiveReadyAt.pushDetailed
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : RepresentativeActivePayloadState} {depth : Nat}
+    {executableResult : Atom}
+    (ready : RecursiveReadyAt before depth executableResult) :
+    ∃ head : NestedCallHead before.carrier,
+      ∃ count : Nat, ∃ skippedBranches : List ClauseBranch,
+      ∃ skippedClauses : List PLeaTTa.Clause,
+      ∃ finish : PreparedCursor, ∃ branch : ClauseBranch,
+      ∃ clause : PLeaTTa.Clause, ∃ branchTail : List ClauseBranch,
+      ∃ clauseTail : List PLeaTTa.Clause, ∃ altTail : List PLeaTTa.Alt,
+      ∃ selectedCopy : PLeaTTa.Clause, ∃ installed : Subst,
+      ∃ after : RepresentativeActivePayloadState,
+        RepresentativeNestedCallSuccessorFacts prog gt before head count
+            skippedBranches skippedClauses finish branch clause branchTail
+            clauseTail altTail selectedCopy installed after ∧
+          RecursiveReadyAt after (depth + 1) selectedCopy.result ∧
+          count = 0 ∧
+          branch = preparedAt depth ∧
+          clause = executableClause ∧
+          head.predicate = "p" ∧
+          head.referencePayload =
+            [(.variable (.generated depth) : Term)] := by
+  obtain ⟨head, materializedReady, predicateExact, payloadExact,
+      _referenceRest, argumentsExact, _resultExact, _executableRest,
+      executableTailNil⟩ := ready.materializedReady
+  obtain
+      ⟨count, skippedBranches, skippedClauses, finish, branch, clause,
+        branchTail, clauseTail, altTail, selectedCopy, installed, after,
+        facts⟩ :=
+    materializedReady.pushDetailed (prog := prog) (gt := gt)
+  have openedSingleton :
+      (openedFor before.carrier.index.session "p"
+        [(.variable (.generated depth) : Term)]
+        (sourceChain depth)).cursor.remaining = [preparedAt depth] :=
+    openedRemainingAt before.carrier.index.session depth ready.database
+      ready.nextFresh
+  have finishNonempty : finish.remaining ≠ [] := by
+    rw [facts.frontier.finishRemaining]
+    simp
+  have pullsExact :
+      RejectedPullsN count
+        (openedFor before.carrier.index.session "p"
+          [(.variable (.generated depth) : Term)]
+          (sourceChain depth)).cursor finish := by
+    simpa [predicateExact, payloadExact, ready.current] using facts.pulls
+  have pathExact :=
+    _root_.PLeaTTa.PrologNestedCallReadyBridge.RejectedPullsN.eq_zero_of_singleton_of_finish_nonempty
+      openedSingleton pullsExact finishNonempty
+  have countZero : count = 0 := pathExact.1
+  have branchExact : branch = preparedAt depth := by
+    have remaining := facts.frontier.finishRemaining
+    rw [pathExact.2, openedSingleton] at remaining
+    exact (List.cons.inj remaining).1.symm
+  have executableShape := facts.executableBank
+  rw [predicateExact, argumentsExact, ready.world] at executableShape
+  simp only [List.length_nil] at executableShape
+  rw [resolutionCandidates] at executableShape
+  have executableLengths := congrArg List.length executableShape
+  simp only [List.length_cons, List.length_nil, List.length_append] at executableLengths
+  have skippedClausesLength : skippedClauses.length = 0 := by omega
+  have clauseTailLength : clauseTail.length = 0 := by omega
+  have skippedClausesNil : skippedClauses = [] :=
+    List.eq_nil_of_length_eq_zero skippedClausesLength
+  have clauseTailNil : clauseTail = [] :=
+    List.eq_nil_of_length_eq_zero clauseTailLength
+  have clauseExact : clause = executableClause := by
+    subst skippedClauses
+    subst clauseTail
+    simpa using executableShape.symm
+  have selectedCopyBody :
+      selectedCopy.body = [.call "p" [] selectedCopy.result] := by
+    rw [facts.frontier.copiedExact, clauseExact]
+    rfl
+  have currentExact :
+      after.carrier.index.current = sourceChain (depth + 1) := by
+    have expected : HeadResolution branch (sourceChain (depth + 1)) := by
+      simpa [branchExact] using preparedAt_resolves depth
+    exact HeadResolution.deterministic facts.resolution expected
+  have bodyReferences :
+      after.carrier.index.bodyReferences =
+        [.call "p" [Term.variable (LogicVar.generated (depth + 1))]] := by
+    rw [facts.bodyReferences, branchExact]
+    rfl
+  have bodyExecutables :
+      after.carrier.index.bodyExecutables =
+        [.call "p" [] selectedCopy.result] := by
+    rw [facts.bodyExecutables, selectedCopyBody]
+  have continuationEmpty :
+      flattenExecutables
+        ({ barrier := after.carrier.index.callerBarrier
+           references := after.carrier.index.callerReferences
+           executables := after.carrier.index.callerExecutables } ::
+         after.carrier.index.outer) = [] := by
+    exact facts.executableContinuation.trans executableTailNil
+  have supportExact : after.carrier.index.support = rootAlpha := by
+    exact facts.supportPreserved.trans ready.support
+  have qtermExact : after.carrier.index.qterm = queryAtom := by
+    exact facts.qtermPreserved.trans ready.qterm
+  have openQtermExact :
+      after.carrier.index.openConf.control.qterm = queryAtom := by
+    calc
+      _ = after.carrier.index.qterm :=
+        after.carrier.agreement.core.control.ready.2.2.1
+      _ = queryAtom := qtermExact
+  have databaseExact :
+      after.carrier.index.session.resolver.database = SelfRecursive.database := by
+    rw [facts.sessionExact]
+    simp [openedFor, predicateExact, payloadExact, ready.current,
+      ready.database]
+  have worldExact :
+      after.carrier.index.openConf.persistent.world = SelfRecursive.world := by
+    exact facts.worldPreserved.trans ready.world
+  have nextFreshExact :
+      after.carrier.index.session.resolver.nextFresh = depth + 2 := by
+    rw [facts.sessionExact]
+    simpa [predicateExact, payloadExact, ready.current] using
+      openedNextFreshAt before.carrier.index.session depth ready.database
+        ready.nextFresh
+  have materialized :
+      MaterializedCallAgreesWith after.carrier.index.alpha
+        (sourceChain (depth + 1))
+        [Term.variable (LogicVar.generated (depth + 1))] []
+        (PLeaTTa.subst after.carrier.index.runtime selectedCopy.result)
+        after.representative after.carrier.index.referenceBase := by
+    have exactHead := facts.materializedBodyHeads bodyReferences bodyExecutables
+    simpa [currentExact] using exactHead
+  have nextReady :
+      RecursiveReadyAt after (depth + 1) selectedCopy.result :=
+    { bodyReferences := bodyReferences
+      bodyExecutables := bodyExecutables
+      executableContinuation := continuationEmpty
+      current := currentExact
+      support := supportExact
+      qterm := qtermExact
+      openQterm := openQtermExact
+      database := databaseExact
+      world := worldExact
+      nextFresh := by simpa [Nat.add_assoc] using nextFreshExact
+      exactFresh := facts.freshFrontierExact
+      below := facts.below
+      materialized := materialized }
+  exact
+    ⟨head, count, skippedBranches, skippedClauses, finish, branch, clause,
+      branchTail, clauseTail, altTail, selectedCopy, installed, after, facts,
+      nextReady, countZero, branchExact, clauseExact, predicateExact,
+      payloadExact⟩
+
+/-- The exact public request issued at one recursive depth. -/
+def recursiveRequestAt (depth : Nat) : CallRequest :=
+  requestFor "p" [(.variable (.generated depth) : Term)] (sourceChain depth)
+
+/-- Every recursive activation is a zero-rejection local-call transition. -/
+def recursiveKindAt (depth : Nat) : TransitionKind :=
+  .localCall 0 (recursiveRequestAt depth)
+
+/-- Compact one-step form of `pushDetailed`, retaining the certified
+transition and exact payload-cell growth while hiding only the already-pinned
+singleton scan data. -/
+theorem RecursiveReadyAt.pushCertified
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : RepresentativeActivePayloadState} {depth : Nat}
+    {executableResult : Atom}
+    (ready : RecursiveReadyAt before depth executableResult) :
+    ∃ after : RepresentativeActivePayloadState, ∃ nextResult : Atom,
+      ∃ _step : CertifiedTransition prog gt (recursiveKindAt depth)
+          (.active before) (.active after),
+        RecursiveReadyAt after (depth + 1) nextResult ∧
+          ∃ cell : PayloadCellIdentity,
+            after.carrier.cellIdentities =
+              cell :: before.carrier.cellIdentities := by
+  obtain
+      ⟨head, count, skippedBranches, skippedClauses, finish, branch,
+        clause, branchTail, clauseTail, altTail, selectedCopy, installed,
+        after, facts, nextReady, countZero, _branchExact, _clauseExact,
+        predicateExact, payloadExact⟩ :=
+    ready.pushDetailed (prog := prog) (gt := gt)
+  have step :
+      CertifiedTransition prog gt (recursiveKindAt depth)
+        (.active before) (.active after) := by
+    simpa [recursiveKindAt, recursiveRequestAt, countZero, predicateExact,
+      payloadExact, ready.current] using
+      (CertifiedTransition.localCall facts)
+  obtain ⟨cell, cells⟩ := facts.certificate.payloadCells
+  exact ⟨after, selectedCopy.result, step, nextReady, cell, cells⟩
+
+/-! ## Arbitrary exact recursive prefixes -/
+
+/-- The fixture-specific invariant over the heterogeneous phase carrier.
+Only active states can inhabit it, and each carries an explicit recursion
+depth plus the executable result atom selected by the certified compiler
+lane. -/
+def RecursiveInvariant : ProductPhaseState → Prop
+  | .active state =>
+      ∃ depth : Nat, ∃ executableResult : Atom,
+        RecursiveReadyAt state depth executableResult
+  | .scheduled _ | .committed _ => False
+
+/-- Coupled progress and invariant preservation for the self-recursive local
+clause.  The transition and next readiness share the literal `after` returned
+by one invocation of `pushDetailed`. -/
+theorem recursiveProgress
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ProgressPreservesReady prog gt RecursiveInvariant := by
+  intro phase invariant
+  cases phase with
+  | scheduled state => simp [RecursiveInvariant] at invariant
+  | committed state => simp [RecursiveInvariant] at invariant
+  | active before =>
+      change
+        ∃ depth : Nat, ∃ executableResult : Atom,
+          RecursiveReadyAt before depth executableResult at invariant
+      obtain ⟨depth, executableResult, ready⟩ := invariant
+      constructor
+      · exact ready.activeStepReady
+      · obtain
+          ⟨head, count, skippedBranches, skippedClauses, finish, branch,
+            clause, branchTail, clauseTail, altTail, selectedCopy, installed,
+            after, facts, nextReady, _countZero, _branchExact, _clauseExact,
+            _predicateExact, _payloadExact⟩ :=
+          ready.pushDetailed (prog := prog) (gt := gt)
+        refine
+          ⟨.localCall count
+              (requestFor head.predicate head.referencePayload
+                before.carrier.index.current),
+            .active after, .localCall facts, ?_⟩
+        exact ⟨depth + 1, selectedCopy.result, nextReady⟩
+
+/-- From the literal root task, every requested finite number of recursive
+local-call activations has one exact Type-valued prefix.  The endpoint remains
+producer-ready; no totality, fuel, or choice principle selects an infinite
+run. -/
+theorem arbitrary_recursive_prefix
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ∃ root : RepresentativeActivePayloadState, ∃ result : Atom,
+      RecursiveReadyAt root 0 result ∧
+        StepsN 2
+          (.running initialSession
+            (.task rootScope [.call "p" [queryTerm]] []))
+          [.opened (requestFor "p" [queryTerm] [])]
+          root.carrier.sourceState ∧
+        DemandDrivenCallStep.StepsN prog gt 3
+          (.ready initialOpenConf) root.carrier.fineState ∧
+        ∀ count : Nat,
+          ∃ kinds : List TransitionKind, ∃ after : ProductPhaseState,
+            kinds.length = count ∧
+              ∃ _run : CertifiedPrefix prog gt kinds (.active root) after,
+                RecursiveInvariant after ∧ ActiveStepReady after := by
+  obtain ⟨root, result, ready, sourceSteps, fineSteps⟩ :=
+    rootReady (prog := prog) (gt := gt)
+  have invariant : RecursiveInvariant (.active root) :=
+    ⟨0, result, ready⟩
+  refine ⟨root, result, ready, sourceSteps, fineSteps, ?_⟩
+  exact
+    ActiveStepReady.exists_prefix_of_ready
+      (recursiveProgress (prog := prog) (gt := gt)) invariant
+
+/-! ## Nondegenerate depth-four witness -/
+
+/-- Four literal recursive activations witness that arbitrary readiness is
+not coming from a stationary self-loop.
+
+The source allocator advances through four disjoint one-variable intervals,
+the ordered cumulative MGU moves from `sourceChain 0` through
+`sourceChain 4`, and the proof-relevant payload zipper gains four concrete
+cells.  Source observations and both execution costs are computed from the
+same `CertifiedPrefix`. -/
+theorem depth_four_recursive_prefix_exact
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ∃ state0 state1 state2 state3 state4 : RepresentativeActivePayloadState,
+      ∃ result0 result1 result2 result3 result4 : Atom,
+      ∃ run : CertifiedPrefix prog gt
+          [recursiveKindAt 0, recursiveKindAt 1,
+            recursiveKindAt 2, recursiveKindAt 3]
+          (.active state0) (.active state4),
+      ∃ cell1 cell2 cell3 cell4 : PayloadCellIdentity,
+        RecursiveReadyAt state0 0 result0 ∧
+        RecursiveReadyAt state1 1 result1 ∧
+        RecursiveReadyAt state2 2 result2 ∧
+        RecursiveReadyAt state3 3 result3 ∧
+        RecursiveReadyAt state4 4 result4 ∧
+        run.states =
+          [.active state0, .active state1, .active state2,
+            .active state3, .active state4] ∧
+        state0.carrier.index.current = sourceChain 0 ∧
+        state1.carrier.index.current = sourceChain 1 ∧
+        state2.carrier.index.current = sourceChain 2 ∧
+        state3.carrier.index.current = sourceChain 3 ∧
+        state4.carrier.index.current = sourceChain 4 ∧
+        state0.carrier.index.session.resolver.nextFresh = 1 ∧
+        state1.carrier.index.session.resolver.nextFresh = 2 ∧
+        state2.carrier.index.session.resolver.nextFresh = 3 ∧
+        state3.carrier.index.session.resolver.nextFresh = 4 ∧
+        state4.carrier.index.session.resolver.nextFresh = 5 ∧
+        (openedFor state0.carrier.index.session "p"
+          [(.variable (.generated 0) : Term)] (sourceChain 0)).cursor.remaining =
+            [preparedAt 0] ∧
+        (openedFor state1.carrier.index.session "p"
+          [(.variable (.generated 1) : Term)] (sourceChain 1)).cursor.remaining =
+            [preparedAt 1] ∧
+        (openedFor state2.carrier.index.session "p"
+          [(.variable (.generated 2) : Term)] (sourceChain 2)).cursor.remaining =
+            [preparedAt 2] ∧
+        (openedFor state3.carrier.index.session "p"
+          [(.variable (.generated 3) : Term)] (sourceChain 3)).cursor.remaining =
+            [preparedAt 3] ∧
+        [((preparedAt 0).firstFresh, (preparedAt 0).nextFresh),
+          ((preparedAt 1).firstFresh, (preparedAt 1).nextFresh),
+          ((preparedAt 2).firstFresh, (preparedAt 2).nextFresh),
+          ((preparedAt 3).firstFresh, (preparedAt 3).nextFresh)] =
+            [(1, 2), (2, 3), (3, 4), (4, 5)] ∧
+        state1.carrier.cellIdentities =
+          cell1 :: state0.carrier.cellIdentities ∧
+        state2.carrier.cellIdentities =
+          cell2 :: state1.carrier.cellIdentities ∧
+        state3.carrier.cellIdentities =
+          cell3 :: state2.carrier.cellIdentities ∧
+        state4.carrier.cellIdentities =
+          cell4 :: state3.carrier.cellIdentities ∧
+        state4.carrier.cellIdentities =
+          cell4 :: cell3 :: cell2 :: cell1 ::
+            state0.carrier.cellIdentities ∧
+        StepsN 10
+          (.running initialSession
+            (.task rootScope [.call "p" [queryTerm]] []))
+          [.opened (requestFor "p" [queryTerm] []),
+            .opened (recursiveRequestAt 0),
+            .opened (recursiveRequestAt 1),
+            .opened (recursiveRequestAt 2),
+            .opened (recursiveRequestAt 3)]
+          state4.carrier.sourceState ∧
+        DemandDrivenCallStep.StepsN prog gt 15
+          (.ready initialOpenConf) state4.carrier.fineState := by
+  obtain ⟨state0, result0, ready0, rootSource, rootFine⟩ :=
+    rootReady (prog := prog) (gt := gt)
+  obtain ⟨state1, result1, step1, ready1, cell1, cells1⟩ :=
+    ready0.pushCertified (prog := prog) (gt := gt)
+  obtain ⟨state2, result2, step2, ready2, cell2, cells2⟩ :=
+    ready1.pushCertified (prog := prog) (gt := gt)
+  obtain ⟨state3, result3, step3, ready3, cell3, cells3⟩ :=
+    ready2.pushCertified (prog := prog) (gt := gt)
+  obtain ⟨state4, result4, step4, ready4, cell4, cells4⟩ :=
+    ready3.pushCertified (prog := prog) (gt := gt)
+  let run : CertifiedPrefix prog gt
+      [recursiveKindAt 0, recursiveKindAt 1,
+        recursiveKindAt 2, recursiveKindAt 3]
+      (.active state0) (.active state4) :=
+    .cons step1 (.cons step2 (.cons step3 (.cons step4 (.nil _))))
+  have finalCells :
+      state4.carrier.cellIdentities =
+        cell4 :: cell3 :: cell2 :: cell1 ::
+          state0.carrier.cellIdentities := by
+    rw [cells4, cells3, cells2, cells1]
+  have opened0 :=
+    openedRemainingAt state0.carrier.index.session 0 ready0.database
+      ready0.nextFresh
+  have opened1 :=
+    openedRemainingAt state1.carrier.index.session 1 ready1.database
+      ready1.nextFresh
+  have opened2 :=
+    openedRemainingAt state2.carrier.index.session 2 ready2.database
+      ready2.nextFresh
+  have opened3 :=
+    openedRemainingAt state3.carrier.index.session 3 ready3.database
+      ready3.nextFresh
+  have nestedSource := run.sourceSteps
+  have allSource := rootSource.trans nestedSource
+  have exactSource :
+      StepsN 10
+        (.running initialSession
+          (.task rootScope [.call "p" [queryTerm]] []))
+        [.opened (requestFor "p" [queryTerm] []),
+          .opened (recursiveRequestAt 0),
+          .opened (recursiveRequestAt 1),
+          .opened (recursiveRequestAt 2),
+          .opened (recursiveRequestAt 3)]
+        state4.carrier.sourceState := by
+    simpa [recursiveKindAt, TransitionSchedule.sourceCost,
+      TransitionSchedule.sourceEvents, TransitionKind.sourceCost,
+      TransitionKind.sourceEvents, ProductPhaseState.sourceState] using
+      allSource
+  have nestedFine := run.fineSteps
+  have allFine := rootFine.trans nestedFine
+  have exactFine :
+      DemandDrivenCallStep.StepsN prog gt 15
+        (.ready initialOpenConf) state4.carrier.fineState := by
+    simpa [recursiveKindAt, TransitionSchedule.fineCost,
+      TransitionKind.fineCost, ProductPhaseState.fineState] using allFine
+  refine
+    ⟨state0, state1, state2, state3, state4,
+      result0, result1, result2, result3, result4, run,
+      cell1, cell2, cell3, cell4,
+      ready0, ready1, ready2, ready3, ready4, rfl,
+      ready0.current, ready1.current, ready2.current, ready3.current,
+      ready4.current, ready0.nextFresh, ready1.nextFresh, ready2.nextFresh,
+      ready3.nextFresh, ready4.nextFresh, opened0, opened1, opened2, opened3,
+      rfl, cells1, cells2, cells3, cells4, finalCells, exactSource,
+      exactFine⟩
+
+end SelfRecursive
 
 end PLeaTTa.PrologUnboundNestedCallRegression
