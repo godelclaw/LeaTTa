@@ -6,7 +6,7 @@ Purpose: Exercise the representative-preserving nested-call bridge on a
   reachable non-ground p(Z) :- q(Z) prefix.
 Trusted boundary: none
 -/
-import PLeaTTa.Proofs.PrologNestedCallReadyBridge
+import PLeaTTa.Proofs.PrologRootCallReadyBridge
 
 namespace PLeaTTa.PrologUnboundNestedCallRegression
 
@@ -36,6 +36,7 @@ open PrologProductResourceContextBridge
 open PrologRepresentativeCallFrontierBridge
 open PrologRepresentativeProductActivationBridge
 open PrologRecursiveCallPayloadBridge
+open PrologRootCallReadyBridge
 open PrologRetainedPayloadSnapshotBridge
 open PrologSourceProductContextBridge
 open PrologStateBridge
@@ -507,80 +508,6 @@ private theorem qPreparedBranch_resolves :
     exact computed
   · simp [qSourceExtension, extension, qPreparedBranch]
 
-/-- The concrete singleton occurrence is the unique retained source and
-executable clause; no rejected-prefix count is hidden in the witness. -/
-private theorem pRetainedFrontier
-    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    ∃ finish branch clause branchTail clauseTail altTail copied,
-      branch = pPreparedBranch ∧
-      branchTail = [] ∧
-      clause = pExecutableClause ∧
-      clauseTail = [] ∧
-      copied = pCopied ∧
-      RejectedPullsN 0
-        (openedFor initialSession "p" [queryTerm] []).cursor finish ∧
-      DemandDrivenCallStep.Step prog gt (.callPending pPending)
-        (.ready pPending.pulled) ∧
-      RepresentativeRetainedCallFrontier rootAlpha
-        (openedFor initialSession "p" [queryTerm] []) initialOpenConf
-        pPending finish branch clause branchTail clauseTail altTail copied
-        [] [] queryAtom [] [] queryAtom
-        (barrierDepth initialOpenConf.toConf + 1)
-        initialOpenConf.toConf.counter := by
-  obtain
-    ⟨count, skippedBranches, skippedClauses, finish, branch, clause,
-      branchTail, clauseTail, altTail, copied, sourceShape,
-      executableShape, sourceCount, executableCount, pulls, _sourceSteps,
-      executableStep, frontier⟩ :=
-    RepresentativeSupportedCallEntryRelates.callPull_retained_frontier
-      (prog := prog) (gt := gt) pEntry initialBelow pScanNonempty
-  change [pPreparedBranch] =
-    skippedBranches ++ branch :: branchTail at sourceShape
-  have executableCandidates :
-      pPending.persistent.world.resolutionCandidates
-          (openedFor initialSession "p" [queryTerm] []).cursor.predicate 0 =
-        [pExecutableClause] := by
-    simpa [pPending, initialOpenConf, openedFor, openLocalCall, requestFor,
-      prepareCall] using pResolutionCandidates
-  simp only [List.length_nil] at executableShape
-  rw [executableCandidates] at executableShape
-  have executableLengths := congrArg List.length executableShape
-  simp only [List.length_cons, List.length_nil, List.length_append] at executableLengths
-  have skippedClausesLength : skippedClauses.length = 0 := by omega
-  have clauseTailLength : clauseTail.length = 0 := by omega
-  have skippedClausesNil : skippedClauses = [] :=
-    List.eq_nil_of_length_eq_zero skippedClausesLength
-  have clauseTailNil : clauseTail = [] :=
-    List.eq_nil_of_length_eq_zero clauseTailLength
-  have countZero : count = 0 := by omega
-  have clauseExact : clause = pExecutableClause := by
-    subst skippedClauses
-    subst clauseTail
-    simpa using executableShape.symm
-  have sourceLengths := congrArg List.length sourceShape
-  simp only [List.length_cons, List.length_nil, List.length_append] at sourceLengths
-  have skippedBranchesLength : skippedBranches.length = 0 := by omega
-  have branchTailLength : branchTail.length = 0 := by omega
-  have skippedBranchesNil : skippedBranches = [] :=
-    List.eq_nil_of_length_eq_zero skippedBranchesLength
-  have branchTailNil : branchTail = [] :=
-    List.eq_nil_of_length_eq_zero branchTailLength
-  have branchExact : branch = pPreparedBranch := by
-    subst skippedBranches
-    subst branchTail
-    simpa using sourceShape.symm
-  have copiedExact : copied = pCopied := by
-    rw [frontier.copiedExact, clauseExact]
-    rfl
-  have pullsZero :
-      RejectedPullsN 0
-        (openedFor initialSession "p" [queryTerm] []).cursor finish := by
-    simpa [countZero] using pulls
-  exact
-    ⟨finish, branch, clause, branchTail, clauseTail, altTail, copied,
-      branchExact, branchTailNil, clauseExact, clauseTailNil, copiedExact,
-      pullsZero, executableStep, frontier⟩
-
 /-! ## Reachable materialized recursive head -/
 
 private def rootScope : CutScopeId := 0
@@ -589,12 +516,9 @@ private theorem pCopied_body :
     pCopied.body = [.call "q" [] pCopied.result] := by
   rfl
 
-/-- The actual open `p(Z)` call enters `p(X) :- q(X)` and exposes the next
-`q` head through the representative-preserving materialized interface.
-
-The final conjunct is the anti-vacuity hinge: the fresh source identity is
-not in the caller's old support, so the legacy raw-support interface really
-cannot justify this reachable next call. -/
+/-- The representative-preserving root activation factored through the
+generic literal-root certificate.  The concrete singleton clause identities
+and zero rejected-prefix cost are recovered from its returned banks. -/
 theorem reachable_unbound_p_to_q_materialized
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
     ∃ (finish : PreparedCursor) (branch : ClauseBranch)
@@ -641,172 +565,124 @@ theorem reachable_unbound_p_to_q_materialized
           (flattened ++ representative) [] ∧
         ¬ AlphaTermsSupported nextAlpha rootAlpha
           [(.variable (.generated 0))] := by
-  obtain
-    ⟨finish, branch, clause, branchTail, clauseTail, altTail, copied,
-      branchExact, branchTailNil, clauseExact, clauseTailNil, copiedExact,
-      pulls, finePull, frontier⟩ :=
-    pRetainedFrontier (prog := prog) (gt := gt)
-  subst branch
-  subst copied
-  have resolved : HeadResolution pPreparedBranch pSourceExtension := by
-    exact pPreparedBranch_resolves
+  have beforeSession :
+      SessionRelatesOpenConf (AlphaFreshFrontier rootAlpha)
+        ExactControlFrontiers initialSession initialOpenConf := by
+    refine ⟨?_, rfl, rfl, rfl⟩
+    refine ⟨?_, ?_⟩
+    · simpa [initialSession, initialOpenConf] using
+        referenceDatabase_relates_executableWorld
+    · simp [AlphaFreshFrontier, GeneratedBelow, rootAlpha, queryIdentity,
+        resolutionSeedHighWaterNames, resolutionSeedHighWaterName,
+        terminalResolutionSeed?, terminalResolutionSeedRev,
+        initialSession, initialOpenConf]
   have preHeadPayload :
       TaskSpinePayloadAgrees rootAlpha rootAlpha [] [] [] []
         [{ barrier := 0
            references := [.call "p" [queryTerm]]
            executables := [.call "p" [] queryAtom] }] :=
     TaskSpinePayloadAgrees.singleton (rootPayload 0)
-  have preHeadTask :=
-    PrologControlSegmentSpineBridge.TaskSpinePayloadAgrees.headPayload
-      preHeadPayload
-  obtain ⟨representative, oldCumulative, materializedAtOpen⟩ :=
-    (PrologRecursiveCallPayloadBridge.TaskPayloadAgrees.localCallPayload
-      preHeadTask).materializedCallAgreesWith rootPayloadSupported
-  have queryAtOpen :=
-    materializedAtOpen.toRepresentativeNormalizedCallAgreesWith
-      (openedFor initialSession "p" [queryTerm] []).cursor
-      (by rfl) (by rfl)
-  have referenceBelow :
-      GeneratedBelow finish.reservationStart (rootAlpha.map Prod.fst) := by
-    intro index member
-    simp [rootAlpha, queryIdentity] at member
-  have executableLive :
-      ∀ name, name ∈ rootAlpha.map Prod.snd →
-        name ∈ resolutionOccupiedVars [] queryAtom [] [] queryAtom := by
-    intro name member
-    simp only [rootAlpha, List.map_singleton, List.mem_singleton] at member
-    subst name
-    simp [resolutionOccupiedVars, queryAtom, Metta.Atom.vars]
-  have executableBelow :
-      resolutionSeedHighWaterNames (rootAlpha.map Prod.snd) ≤
-        initialOpenConf.toConf.counter := by
-    exact Nat.le_trans
-      (resolutionSeedHighWaterNames_le_of_subset executableLive)
-      frontier.highWater
-  have live : AlphaRuntimeNamesLive rootAlpha (pCopied.body ++ []) queryAtom := by
-    intro identity name member
-    simp only [rootAlpha, List.mem_singleton] at member
-    have identityEq : identity = queryIdentity := congrArg Prod.fst member
-    have nameEq : name = "z" := congrArg Prod.snd member
-    subst identity
-    subst name
-    change PLeaTTa.isTrimRoot (pCopied.body ++ []) queryAtom "z" = true
-    exact PLeaTTa.isTrimRoot_qterm_mem _ queryAtom "z"
-      (by simp [queryAtom, Metta.Atom.vars])
-  obtain
-    ⟨nextAlpha, sourceCanonical, flattened, installed, activation⟩ :=
-    RepresentativeRetainedCallFrontier.activate_spined_product_step_with
-      (prog := prog) (gt := gt) (referencePayload := [queryTerm])
-      (segmentReferenceRest := []) (segmentExecutableRest := [])
-      (outer := []) (callerBarrier := 0) (callerScope := rootScope)
-      pEntry frontier preHeadPayload oldCumulative queryAtOpen
-      (by simp [openedFor, openLocalCall, requestFor, prepareCall])
-      referenceBelow executableBelow live resolved
-  have dispatch :=
-    PrologCallEntryBridge.DatabaseRelatesWorld.callResolve_dispatch
-      pEntry.entry.database pEntry.indexReady "p" 0
-      (by
-        have nonempty :
-            referenceDatabase.visibleClausesAt referenceDatabase.generation
-              "p" 1 ≠ [] := by
-          rw [pVisibleClauses]
-          simp
-        simpa [openedFor, openLocalCall, initialSession] using nonempty)
-  have scanned :
-      resolveAlts
-          (initialOpenConf.toConf.world.resolutionCandidates "p" 0)
-          [] [] queryAtom [] [] initialOpenConf.toConf.qterm
-          (barrierDepth initialOpenConf.toConf + 1)
-          initialOpenConf.toConf.counter =
-        (pScan.1, pScan.2) := by
-    change pScan = (pScan.1, pScan.2)
-    exact (Prod.eta pScan).symm
-  have finishExact :
-      finish = (openedFor initialSession "p" [queryTerm] []).cursor := by
-    cases pulls
-    rfl
+  have selected :
+      ∀ {count : Nat} {finish : PreparedCursor} {branch : ClauseBranch}
+        {clause : PLeaTTa.Clause} {branchTail : List ClauseBranch}
+        {clauseTail : List PLeaTTa.Clause} {altTail : List PLeaTTa.Alt}
+        {copied : PLeaTTa.Clause},
+        RejectedPullsN count
+            (openedFor initialSession "p" [queryTerm] []).cursor finish →
+          RepresentativeRetainedCallFrontier rootAlpha
+            (openedFor initialSession "p" [queryTerm] []) initialOpenConf
+            pPending finish branch clause branchTail clauseTail altTail copied
+            [] [] queryAtom [] [] queryAtom
+            (barrierDepth initialOpenConf.toConf + 1)
+            initialOpenConf.toConf.counter →
+          ∃ independentResult : Substitution,
+            HeadResolution branch independentResult ∧
+              AlphaRuntimeNamesLive rootAlpha copied.body queryAtom := by
+    intro count finish branch clause branchTail clauseTail altTail copied
+      pulls frontier
+    have finishNonempty : finish.remaining ≠ [] := by
+      rw [frontier.finishRemaining]
+      simp
+    obtain ⟨_countZero, finishExact⟩ :=
+      PLeaTTa.PrologNestedCallReadyBridge.RejectedPullsN.eq_zero_of_singleton_of_finish_nonempty
+        pOpenedRemaining pulls finishNonempty
+    subst finish
+    have branchExact : branch = pPreparedBranch := by
+      have exact :
+          pPreparedBranch :: [] = branch :: branchTail := by
+        simpa [pOpenedRemaining] using frontier.finishRemaining
+      exact (List.cons.inj exact).1.symm
+    refine ⟨pSourceExtension, ?_, ?_⟩
+    · simpa [branchExact] using pPreparedBranch_resolves
+    · intro identity name member
+      simp only [rootAlpha, List.mem_singleton] at member
+      have nameExact : name = "z" := congrArg Prod.snd member
+      subst name
+      exact PLeaTTa.isTrimRoot_qterm_mem copied.body queryAtom "z"
+        (by simp [queryAtom, Metta.Atom.vars])
   have pNotThrow : ¬ BuiltinThrowCall "p" [queryTerm] := by
     simp [BuiltinThrowCall]
   have pNotDatabase :
       DatabaseActions.recognizeDatabaseAction "p" [queryTerm] = none := by
     rfl
-  have sourceEntryRaw :
-      RawStep initialSession
-        (.task rootScope [.call "p" [queryTerm]] [])
-        [.opened (requestFor "p" [queryTerm] [])] .none
-        (openedFor initialSession "p" [queryTerm] []).session
-        (.running
-          (sourceProductFrontier rootScope
-            (openedFor initialSession "p" [queryTerm] [])
-            (openedFor initialSession "p" [queryTerm] []).cursor [])) := by
-    simpa [sourceProductFrontier] using
-      (RawStep.taskCall rootScope "p" [queryTerm] [] [] initialSession
-        pNotThrow pNotDatabase)
-  have sourceEntryTransition :
-      Transition
-        (.running initialSession
-          (.task rootScope [.call "p" [queryTerm]] []))
-        [.opened (requestFor "p" [queryTerm] [])]
-        (.running
-          (openedFor initialSession "p" [queryTerm] []).session
-          (sourceProductFrontier rootScope
-            (openedFor initialSession "p" [queryTerm] [])
-            (openedFor initialSession "p" [queryTerm] []).cursor [])) := by
-    exact Transition.ordinary _ _ _ _ _ sourceEntryRaw
-  have sourceEntryTransitionFinish :
-      Transition
-        (.running initialSession
-          (.task rootScope [.call "p" [queryTerm]] []))
-        [.opened (requestFor "p" [queryTerm] [])]
-        (.running
-          (openedFor initialSession "p" [queryTerm] []).session
-          (sourceProductFrontier rootScope
-            (openedFor initialSession "p" [queryTerm] []) finish [])) := by
-    simpa [finishExact] using sourceEntryTransition
-  have sourceActivationTransition :
-      Transition
-        (.running
-          (openedFor initialSession "p" [queryTerm] []).session
-          (sourceProductFrontier rootScope
-            (openedFor initialSession "p" [queryTerm] []) finish []))
-        []
-        (.running
-          (openedFor initialSession "p" [queryTerm] []).session
-          (activatedSourceProduct rootScope
-            (openedFor initialSession "p" [queryTerm] []) finish
-            pPreparedBranch branchTail pSourceExtension [])) := by
-    exact Transition.ordinary _ _ _ _ _ activation.sourceStep
-  have rootSourceSteps :
-      StepsN 2
-        (.running initialSession
-          (.task rootScope [.call "p" [queryTerm]] []))
-        [.opened (requestFor "p" [queryTerm] [])]
-        (.running
-          (openedFor initialSession "p" [queryTerm] []).session
-          (activatedSourceProduct rootScope
-            (openedFor initialSession "p" [queryTerm] []) finish
-            pPreparedBranch branchTail pSourceExtension [])) := by
-    simpa using
-      StepsN.succ 1 _ _ _ _ _ sourceEntryTransitionFinish
-        (StepsN.succ 0 _ _ _ _ _ sourceActivationTransition
-          (StepsN.zero _))
-  have fineEntry :
-      DemandDrivenCallStep.Step prog gt (.ready initialOpenConf)
-        (.callPending pPending) := by
-    simpa [pPending] using
-      (DemandDrivenCallStep.Step.callEnter initialOpenConf "p" [] queryAtom
-        [] [] pScan.1 pScan.2 (by rfl) dispatch.1 dispatch.2 scanned)
-  have rootFineSteps :
-      DemandDrivenCallStep.StepsN prog gt 3 (.ready initialOpenConf)
-        (.ready
-          (PrologRepresentativeStepActivationBridge.activatedOpenSuccessor
-            pPending pCopied [] queryAtom installed)) := by
-    simpa using
-      DemandDrivenCallStep.StepsN.succ 2 _ _ _ fineEntry
-        (DemandDrivenCallStep.StepsN.succ 1 _ _ _ finePull
-          (DemandDrivenCallStep.StepsN.succ 0 _ _ _
-            activation.fineExecutableStep
-            (DemandDrivenCallStep.StepsN.zero _)))
+  obtain
+      ⟨rejects, skippedBranches, skippedClauses, finish, branch, clause,
+        branchTail, clauseTail, altTail, copied, independentResult,
+        representative, nextAlpha, sourceCanonical, flattened, installed,
+        after, facts⟩ :=
+    RepresentativeSupportedCallEntryRelates.activate_literal_root
+      (prog := prog) (gt := gt) (scope := rootScope) (callerBarrier := 0)
+      pEntry preHeadPayload rootPayloadSupported beforeSession (by rfl)
+      (by rfl) initialBelow pScanNonempty selected pNotThrow pNotDatabase
+  have sourceShape := facts.sourceBank
+  rw [pOpenedRemaining] at sourceShape
+  have sourceLengths := congrArg List.length sourceShape
+  simp only [List.length_cons, List.length_nil, List.length_append] at sourceLengths
+  have skippedBranchesLength : skippedBranches.length = 0 := by omega
+  have branchTailLength : branchTail.length = 0 := by omega
+  have skippedBranchesNil : skippedBranches = [] :=
+    List.eq_nil_of_length_eq_zero skippedBranchesLength
+  have branchTailNil : branchTail = [] :=
+    List.eq_nil_of_length_eq_zero branchTailLength
+  have branchExact : branch = pPreparedBranch := by
+    subst skippedBranches
+    subst branchTail
+    simpa using sourceShape.symm
+  have rejectsZero : rejects = 0 := by
+    rw [← facts.sourceSkipCount]
+    exact skippedBranchesLength
+  have executableShape := facts.executableBank
+  change
+    executableWorld.resolutionCandidates "p" 0 =
+      skippedClauses ++ clause :: clauseTail at executableShape
+  rw [pResolutionCandidates] at executableShape
+  have executableLengths := congrArg List.length executableShape
+  simp only [List.length_cons, List.length_nil, List.length_append] at executableLengths
+  have skippedClausesLength : skippedClauses.length = 0 := by omega
+  have clauseTailLength : clauseTail.length = 0 := by omega
+  have skippedClausesNil : skippedClauses = [] :=
+    List.eq_nil_of_length_eq_zero skippedClausesLength
+  have clauseTailNil : clauseTail = [] :=
+    List.eq_nil_of_length_eq_zero clauseTailLength
+  have clauseExact : clause = pExecutableClause := by
+    subst skippedClauses
+    subst clauseTail
+    simpa using executableShape.symm
+  have copiedExact : copied = pCopied := by
+    rw [facts.frontier.copiedExact, clauseExact]
+    rfl
+  have selectedResolution : HeadResolution branch independentResult := by
+    rw [← facts.carrierCurrent]
+    exact facts.resolution
+  have independentResultExact : independentResult = pSourceExtension :=
+    HeadResolution.deterministic selectedResolution
+      (by simpa [branchExact] using pPreparedBranch_resolves)
+  subst branch
+  subst branchTail
+  subst clause
+  subst clauseTail
+  subst copied
+  subst independentResult
   have materialized :
       MaterializedCallAgreesWith nextAlpha pSourceExtension
         [.variable (.generated 0)] []
@@ -814,10 +690,9 @@ theorem reachable_unbound_p_to_q_materialized
           (PLeaTTa.trimFor pCopied.body queryAtom installed)
           pCopied.result)
         (flattened ++ representative) [] := by
-    have exactHead := activation.materializedBodyHeads
-      (by rfl)
-      pCopied_body
-    simpa using exactHead
+    have exactHead := facts.activation.materializedBodyHeads
+      (by rfl) pCopied_body
+    simpa [initialOpenConf] using exactHead
   have rawUnsupported :
       ¬ AlphaTermsSupported nextAlpha rootAlpha
         [(.variable (.generated 0))] := by
@@ -830,7 +705,7 @@ theorem reachable_unbound_p_to_q_materialized
             [.call "q" [.variable (.generated 0)]]
             [.call "q" [] pCopied.result] := by
         simpa [pPreparedBranch, pCopied_body] using
-          activation.bodyPayload.control
+          facts.activation.bodyPayload.control
       obtain
         ⟨referenceArguments, referenceResult, payloadShape, _arguments,
           result, _tail⟩ :=
@@ -847,12 +722,23 @@ theorem reachable_unbound_p_to_q_materialized
     have observed := supported (.variable (.generated 0)) (by simp)
     have mustBeOld := observed name linked
     simp [rootAlpha, queryIdentity] at mustBeOld
-  exact
-    ⟨finish, pPreparedBranch, branchTail, altTail, pCopied, representative,
-      nextAlpha, sourceCanonical, flattened, installed, rfl,
-      rfl, by simpa [clauseExact, clauseTailNil] using frontier,
-      oldCumulative, by simpa using materializedAtOpen, activation,
-      rootSourceSteps, rootFineSteps, materialized, rawUnsupported⟩
+  refine
+    ⟨finish, pPreparedBranch, [], altTail, pCopied, representative,
+      nextAlpha, sourceCanonical, flattened, installed, rfl, rfl, ?_,
+      facts.oldCumulative, (by simpa using facts.materializedAtOpen),
+      facts.activation, ?_, ?_,
+      materialized, rawUnsupported⟩
+  · exact facts.frontier
+  · rw [← facts.sourceStateExact]
+    simpa [rejectsZero] using facts.sourceSteps
+  · have fineSteps := facts.fineSteps
+    rw [facts.fineStateExact] at fineSteps
+    have pendingExact :
+        DemandDrivenCallStep.pendingCallOf initialOpenConf pPending.branches
+          pScan.2 = pPending := by
+      rfl
+    rw [pendingExact] at fineSteps
+    exact fineSteps
 
 /-! ## Literal readiness of the reached `q/1` call -/
 
