@@ -8,6 +8,7 @@ Trusted boundary: none
 Main exports:
   NestedCallHead,
   NestedCallReady,
+  NestedCallSuccessorFacts,
   NestedCallReady.pushDetailed,
   NestedCallReady.pushTwice
 -/
@@ -715,11 +716,16 @@ theorem pushTwice {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {before : ActivePayloadState} {firstHead : NestedCallHead before}
     (firstReady : NestedCallReady before firstHead)
     (nextReady :
-      ∀ {firstRejects : Nat} {middle : ActivePayloadState},
-        NestedCallPushCertificate prog gt firstRejects
-            (requestFor firstHead.predicate firstHead.referencePayload
-              before.index.current)
-            before middle →
+      ∀ {firstRejects : Nat} {skippedBranches : List ClauseBranch}
+          {skippedClauses : List PLeaTTa.Clause}
+          {finish : PreparedCursor} {branch : ClauseBranch}
+          {clause : PLeaTTa.Clause} {branchTail : List ClauseBranch}
+          {clauseTail : List PLeaTTa.Clause} {altTail : List PLeaTTa.Alt}
+          {copied : PLeaTTa.Clause} {installed : Subst}
+          {middle : ActivePayloadState},
+        NestedCallSuccessorFacts prog gt before firstHead firstRejects
+            skippedBranches skippedClauses finish branch clause branchTail
+            clauseTail altTail copied installed middle →
           ∃ secondHead : NestedCallHead middle,
             NestedCallReady middle secondHead) :
     ∃ firstRejects : Nat, ∃ middle : ActivePayloadState,
@@ -734,11 +740,15 @@ theorem pushTwice {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
               (requestFor secondHead.predicate secondHead.referencePayload
                 middle.index.current)
               middle after := by
-  obtain ⟨firstRejects, middle, first⟩ := firstReady.push
-  obtain ⟨secondHead, secondReady⟩ := nextReady first
+  obtain
+    ⟨firstRejects, skippedBranches, skippedClauses, finish, branch, clause,
+      branchTail, clauseTail, altTail, copied, installed, middle, firstFacts⟩ :=
+    firstReady.pushDetailed (prog := prog) (gt := gt)
+  obtain ⟨secondHead, secondReady⟩ := nextReady firstFacts
   obtain ⟨secondRejects, after, second⟩ := secondReady.push
   exact
-    ⟨firstRejects, middle, first, secondHead, secondRejects, after, second⟩
+    ⟨firstRejects, middle, firstFacts.certificate, secondHead, secondRejects,
+      after, second⟩
 
 end NestedCallReady
 

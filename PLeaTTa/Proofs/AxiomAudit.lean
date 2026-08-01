@@ -1920,7 +1920,9 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologNestedCallChainBridge.two_nested_operational_prefixes_exact
 #print axioms PLeaTTa.PrologNestedCallReadyBridge.RejectedPullsN.eq_zero_of_singleton_of_finish_nonempty
 #print axioms PLeaTTa.PrologNestedCallReadyBridge.DemandDrivenCallStep.Step.ready_callPending_projects_to_sealed
+#print axioms PLeaTTa.PrologNestedCallReadyBridge.NestedCallHead.sourceEntry
 #print axioms PLeaTTa.PrologNestedCallReadyBridge.NestedCallReady.retainedFrontier
+#print axioms PLeaTTa.PrologNestedCallReadyBridge.NestedCallSuccessorFacts.certificate
 #print axioms PLeaTTa.PrologNestedCallReadyBridge.NestedCallReady.pushDetailed
 #print axioms PLeaTTa.PrologNestedCallReadyBridge.NestedCallReady.push
 #print axioms PLeaTTa.PrologNestedCallReadyBridge.NestedCallReady.pushTwice
