@@ -9,6 +9,8 @@ Main exports:
   RepresentativeProductActivation,
   SegmentedRepresentativeProductActivation,
   SpinedRepresentativeProductActivation,
+  RepresentativeRetainedCallFrontier.activate_product_step_head_with,
+  RepresentativeRetainedCallFrontier.activate_spined_product_step_with,
   RepresentativeRetainedCallFrontier.activate_spined_product_step,
   RepresentativeRetainedCallFrontier.activate_segmented_product_step,
   RepresentativeRetainedCallFrontier.activate_product_step
@@ -66,6 +68,27 @@ def activatedSourceProduct
         (.clauses opened.scope (finish.advance branch branchTail))))
     referenceRest
 
+/-- One pulled executable head carries the generated-MGU certificate for the
+literal equality goal that is about to run.
+
+The logical payload remains existential because `PendingCall` deliberately
+owns only control/resources.  The equality with `pending.pulled.cur` prevents
+the existential from describing a different call. -/
+def PendingHeadMguAgrees
+    (alpha : List (LogicVar × String))
+    (flattenedRepresentative : TreeSubstitution) (installed : Subst)
+    (pending : DemandDrivenCallStep.PendingCall) (copied : PLeaTTa.Clause)
+    (executableRest : List PLeaTTa.Goal) : Prop :=
+  ∃ base args result,
+    pending.pulled.toConf.cur =
+      some
+        (PLeaTTa.Goal.eq (.expr (args ++ [result]))
+            (.expr (copied.params ++ [copied.result])) ::
+          copied.body ++ executableRest,
+          base) ∧
+    ActivatedHeadMguAgrees alpha flattenedRepresentative base installed args
+      result copied
+
 /-! ## Exact paired activation packages -/
 
 /-- Shared semantic, executable, and ownership facts established by one
@@ -113,6 +136,9 @@ structure RepresentativeProductActivationCore
   sourceOrdered :
     OrderedTreeMgu
       (denoteEquations branch.normalizedHeadEquations) sourceCanonical
+  headMgu :
+    PendingHeadMguAgrees nextAlpha flattenedRepresentative installed pending
+      copied executableRest
   sourceStep :
     RawStep opened.session
       (sourceProductFrontier callerScope opened finish referenceRest)
@@ -138,6 +164,11 @@ structure RepresentativeProductActivationCore
       (sourceCanonical ++ canonical) referenceBase independentResult
       (PLeaTTa.trimFor (copied.body ++ executableRest) qterm installed)
       branch.body copied.body
+  materializedBodyHeads :
+    MaterializedLocalCallHeadsAgreeWith nextAlpha independentResult branch.body
+      copied.body
+      (PLeaTTa.trimFor (copied.body ++ executableRest) qterm installed)
+      (flattenedRepresentative ++ representative) referenceBase
   retainedAlts :
     (activatedExecutableSuccessor pending copied executableRest qterm
       installed).alts =
@@ -350,18 +381,17 @@ control segmentation is deliberately absent: clause selection, ordered MGU
 installation, resource ownership, and the local source `product` step do not
 depend on how many older predicate regions the sealed task flattened after the
 call. -/
-theorem RepresentativeRetainedCallFrontier.activate_product_step_head
+theorem RepresentativeRetainedCallFrontier.activate_product_step_head_with
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {alpha support : List (LogicVar × String)}
-    {canonical : TreeSubstitution} {referenceBase : Substitution}
-    {referenceBindings : Substitution}
+    {canonical representative : TreeSubstitution}
+    {referenceBase : Substitution}
     {opened : OpenedCall} {before : DemandDrivenStep.OpenConf}
     {pending : DemandDrivenCallStep.PendingCall}
     {finish : PreparedCursor}
     {branch : ClauseBranch} {clause : PLeaTTa.Clause}
     {branchTail : List ClauseBranch} {clauseTail : List PLeaTTa.Clause}
     {altTail : List PLeaTTa.Alt} {copied : PLeaTTa.Clause}
-    {referencePayload : List Term}
     {referenceRest : List PeTTaSpec.PrologCore.Goal}
     {argsv args : List Atom} {res : Atom}
     {executableRest : List PLeaTTa.Goal} {binding : Subst}
@@ -375,13 +405,18 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step_head
       RepresentativeRetainedCallFrontier alpha opened before pending finish
         branch clause branchTail clauseTail altTail copied argsv args res
         executableRest binding qterm barrier startCounter)
-    (payload :
-      LocalCallPayloadAgrees alpha support canonical referenceBase
-        referenceBindings binding referencePayload args res)
-    (payloadSupported :
-      AlphaTermsSupported alpha support referencePayload)
-    (openedArguments : opened.cursor.arguments = referencePayload)
-    (openedBindings : opened.cursor.bindings = referenceBindings)
+    (oldCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase binding representative)
+    (queryAtOpen :
+      RepresentativeNormalizedCallAgreesWith alpha opened.cursor
+        (args.map (PLeaTTa.subst binding))
+        (PLeaTTa.subst binding res) representative referenceBase)
+    (openedBindingShape :
+      opened.cursor.bindings =
+        TreeSubstitution.reify canonical ++ referenceBase)
+    (canonicalWellFormed : canonical.WellFormed)
+    (alphaShared : SharedRuntimeAlpha alpha)
     (queryReferenceBelow :
       GeneratedBelow finish.reservationStart (alpha.map Prod.fst))
     (queryExecutableLive :
@@ -392,21 +427,22 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step_head
     (live :
       AlphaRuntimeNamesLive support (copied.body ++ executableRest) qterm)
     (resolved : HeadResolution branch independentResult) :
-    ∃ representative nextAlpha sourceCanonical flattenedRepresentative
-        installed,
+    ∃ nextAlpha sourceCanonical flattenedRepresentative installed,
       RepresentativeProductActivationCore prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
         referenceRest executableRest qterm barrier startCounter callerScope
         independentResult representative nextAlpha sourceCanonical
         flattenedRepresentative installed := by
   obtain
-    ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
+    ⟨nextAlpha, sourceCanonical, flattened, installed,
       nextShared, alphaIncluded, alphaExtension, selectionFresh,
       independentShape,
-      sourceOrdered, sourceInnerStep, executableStep, cumulative, bodyPayload,
-      retainedAlts, worldPreserved, counterPreserved⟩ :=
-    PLeaTTa.PrologRepresentativeStepActivationBridge.RepresentativeRetainedCallFrontier.activate_task_step_head
-      entry frontier payload payloadSupported openedArguments openedBindings
+      sourceOrdered, headMgu, sourceInnerStep, executableStep, cumulative,
+      bodyPayload, materializedBodyHeads, retainedAlts, worldPreserved,
+      counterPreserved⟩ :=
+    PLeaTTa.PrologRepresentativeStepActivationBridge.RepresentativeRetainedCallFrontier.activate_task_step_head_with
+      entry frontier oldCumulative queryAtOpen openedBindingShape
+      canonicalWellFormed alphaShared
       queryReferenceBelow queryExecutableLive live resolved
   have normalizedSourceInnerStep :
       RawStep opened.session (.clauses opened.scope finish) [] .none
@@ -447,6 +483,10 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step_head
             copied.body ++ executableRest,
             binding) := by
     rw [frontier.pulledExact]
+  have pendingHeadMgu :
+      PendingHeadMguAgrees nextAlpha flattened installed pending copied
+        executableRest :=
+    ⟨binding, args, res, pulledHead, headMgu⟩
   have notFindall : ¬ findallRunHead pending.pulled.toConf := by
     simp [findallRunHead, pulledHead]
   have notLocalCall :
@@ -514,15 +554,82 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step_head
     PLeaTTa.PrologRetainedCursorOwnershipBridge.RepresentativeRetainedCallFrontier.tailOwnership
       entry frontier
   refine
-    ⟨representative, nextAlpha, sourceCanonical, flattened, installed, ?_⟩
+    ⟨nextAlpha, sourceCanonical, flattened, installed, ?_⟩
   exact
     ⟨nextShared, alphaIncluded, alphaExtension, freshFrontier, selectionFresh,
       persistentAgreement, independentShape, sourceOrdered,
-      sourceProductStep, executableStep, fineExecutableStep, cumulative,
-      bodyPayload, retainedAlts, retainedCursorOwnership,
+      pendingHeadMgu, sourceProductStep, executableStep, fineExecutableStep,
+      cumulative, bodyPayload, materializedBodyHeads, retainedAlts,
+      retainedCursorOwnership,
       frontier.tailScan.barrierCount_zero,
       retainedBarriers, barrierTag,
       worldPreserved, counterPreserved⟩
+
+/-- Compatibility wrapper which selects the residual representative once
+from a raw supported payload and then enters the fixed-representative product
+core. -/
+theorem RepresentativeRetainedCallFrontier.activate_product_step_head
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {referenceBindings : Substitution}
+    {opened : OpenedCall} {before : DemandDrivenStep.OpenConf}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor}
+    {branch : ClauseBranch} {clause : PLeaTTa.Clause}
+    {branchTail : List ClauseBranch} {clauseTail : List PLeaTTa.Clause}
+    {altTail : List PLeaTTa.Alt} {copied : PLeaTTa.Clause}
+    {referencePayload : List Term}
+    {referenceRest : List PeTTaSpec.PrologCore.Goal}
+    {argsv args : List Atom} {res : Atom}
+    {executableRest : List PLeaTTa.Goal} {binding : Subst}
+    {qterm : Atom} {barrier startCounter : Nat}
+    {callerScope : CutScopeId}
+    {independentResult : Substitution}
+    (entry :
+      RepresentativeSupportedCallEntryRelates alpha opened before pending
+        argsv args res executableRest binding qterm barrier startCounter)
+    (frontier :
+      RepresentativeRetainedCallFrontier alpha opened before pending finish
+        branch clause branchTail clauseTail altTail copied argsv args res
+        executableRest binding qterm barrier startCounter)
+    (payload :
+      LocalCallPayloadAgrees alpha support canonical referenceBase
+        referenceBindings binding referencePayload args res)
+    (payloadSupported :
+      AlphaTermsSupported alpha support referencePayload)
+    (openedArguments : opened.cursor.arguments = referencePayload)
+    (openedBindings : opened.cursor.bindings = referenceBindings)
+    (queryReferenceBelow :
+      GeneratedBelow finish.reservationStart (alpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ alpha.map Prod.snd →
+        name ∈
+          resolutionOccupiedVars
+            (args.map (PLeaTTa.subst binding)) res executableRest binding qterm)
+    (live :
+      AlphaRuntimeNamesLive support (copied.body ++ executableRest) qterm)
+    (resolved : HeadResolution branch independentResult) :
+    ∃ representative nextAlpha sourceCanonical flattenedRepresentative
+        installed,
+      RepresentativeProductActivationCore prog gt alpha support canonical
+        referenceBase opened pending finish branch branchTail altTail copied
+        referenceRest executableRest qterm barrier startCounter callerScope
+        independentResult representative nextAlpha sourceCanonical
+        flattenedRepresentative installed := by
+  obtain ⟨representative, oldCumulative, queryAtOpen⟩ :=
+    PLeaTTa.PrologRecursiveCallPayloadBridge.LocalCallPayloadAgrees.representativeNormalizedCallAgreesWith
+      payload payloadSupported opened.cursor openedArguments openedBindings
+  obtain ⟨nextAlpha, sourceCanonical, flattened, installed, core⟩ :=
+    RepresentativeRetainedCallFrontier.activate_product_step_head_with
+      (prog := prog) (gt := gt) (referenceRest := referenceRest)
+      (callerScope := callerScope) entry frontier oldCumulative queryAtOpen
+      (by simpa only [openedBindings] using payload.bindingShape)
+      payload.canonicalWellFormed payload.alphaShared queryReferenceBelow
+      queryExecutableLive live resolved
+  exact
+    ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
+      core⟩
 
 /-- One actual retained semantic clause and the corresponding sealed
 full-head equality step construct the exact two-region compatibility package.
@@ -600,6 +707,125 @@ theorem RepresentativeRetainedCallFrontier.activate_segmented_product_step
   exact
     ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
       ⟨core, segmentedPayload⟩⟩
+
+/-! ## Fixed-representative spined activation -/
+
+/-- Enter a retained recursive clause from an arbitrary-depth control spine
+while preserving one caller-selected residual representative.
+
+The whole spine remains the source of caller-continuation agreement.  Only
+the current call head is supplied in materialized form, so fresh or already
+bound variables need not satisfy the stronger raw-syntax support predicate. -/
+theorem RepresentativeRetainedCallFrontier.activate_spined_product_step_with
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase : Substitution}
+    {referenceBindings : Substitution}
+    {opened : OpenedCall} {before : DemandDrivenStep.OpenConf}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor}
+    {branch : ClauseBranch} {clause : PLeaTTa.Clause}
+    {branchTail : List ClauseBranch} {clauseTail : List PLeaTTa.Clause}
+    {altTail : List PLeaTTa.Alt} {copied : PLeaTTa.Clause}
+    {referencePayload : List Term}
+    {segmentReferenceRest : List PeTTaSpec.PrologCore.Goal}
+    {argsv args : List Atom} {res : Atom}
+    {segmentExecutableRest : List PLeaTTa.Goal}
+    {outer : List ControlSegment} {binding : Subst}
+    {qterm : Atom} {bodyBarrier callerBarrier startCounter : Nat}
+    {callerScope : CutScopeId}
+    {independentResult : Substitution}
+    (entry :
+      RepresentativeSupportedCallEntryRelates alpha opened before pending
+        argsv args res
+        (segmentExecutableRest ++ flattenExecutables outer)
+        binding qterm bodyBarrier startCounter)
+    (frontier :
+      RepresentativeRetainedCallFrontier alpha opened before pending finish
+        branch clause branchTail clauseTail altTail copied argsv args res
+        (segmentExecutableRest ++ flattenExecutables outer)
+        binding qterm bodyBarrier startCounter)
+    (payload :
+      TaskSpinePayloadAgrees alpha support canonical referenceBase
+        referenceBindings binding
+        ({ barrier := callerBarrier
+           references :=
+             .call opened.cursor.predicate referencePayload ::
+               segmentReferenceRest
+           executables :=
+             .call opened.cursor.predicate args res ::
+               segmentExecutableRest } ::
+         outer))
+    (oldCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith alpha support canonical
+        referenceBase binding representative)
+    (queryAtOpen :
+      RepresentativeNormalizedCallAgreesWith alpha opened.cursor
+        (args.map (PLeaTTa.subst binding))
+        (PLeaTTa.subst binding res) representative referenceBase)
+    (openedBindings : opened.cursor.bindings = referenceBindings)
+    (queryReferenceBelow :
+      GeneratedBelow finish.reservationStart (alpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ alpha.map Prod.snd →
+        name ∈
+          resolutionOccupiedVars
+            (args.map (PLeaTTa.subst binding)) res
+            (segmentExecutableRest ++ flattenExecutables outer)
+            binding qterm)
+    (live :
+      AlphaRuntimeNamesLive support
+        (copied.body ++
+          (segmentExecutableRest ++ flattenExecutables outer))
+        qterm)
+    (resolved : HeadResolution branch independentResult) :
+    ∃ nextAlpha sourceCanonical flattenedRepresentative installed,
+      SpinedRepresentativeProductActivation prog gt alpha support canonical
+        referenceBase opened pending finish branch branchTail altTail copied
+        segmentReferenceRest segmentExecutableRest outer qterm bodyBarrier
+        callerBarrier startCounter callerScope independentResult representative
+        nextAlpha sourceCanonical flattenedRepresentative installed := by
+  have headPayload :
+      TaskPayloadAgrees alpha support callerBarrier canonical referenceBase
+        referenceBindings binding
+        (.call opened.cursor.predicate referencePayload ::
+          segmentReferenceRest)
+        (.call opened.cursor.predicate args res :: segmentExecutableRest) :=
+    PrologControlSegmentSpineBridge.TaskSpinePayloadAgrees.headPayload payload
+  obtain
+    ⟨nextAlpha, sourceCanonical, flattened, installed, core⟩ :=
+    RepresentativeRetainedCallFrontier.activate_product_step_head_with
+      (prog := prog) (gt := gt)
+      (referenceRest := segmentReferenceRest)
+      (callerScope := callerScope) entry frontier oldCumulative queryAtOpen
+      (by
+        calc
+          opened.cursor.bindings = referenceBindings := openedBindings
+          _ = TreeSubstitution.reify canonical ++ referenceBase :=
+            (PrologRecursiveCallPayloadBridge.TaskPayloadAgrees.localCallPayload
+              headPayload).bindingShape)
+      headPayload.canonicalWellFormed headPayload.alphaShared
+      queryReferenceBelow queryExecutableLive live resolved
+  have spinePayload :
+      TaskSpinePayloadAgrees nextAlpha support
+        (sourceCanonical ++ canonical) referenceBase independentResult
+        (PLeaTTa.trimFor
+          (copied.body ++
+            (segmentExecutableRest ++ flattenExecutables outer))
+          qterm installed)
+        ({ barrier := bodyBarrier
+           references := branch.body
+           executables := copied.body } ::
+         { barrier := callerBarrier
+           references := segmentReferenceRest
+           executables := segmentExecutableRest } ::
+         outer) :=
+    PrologControlSegmentSpineBridge.TaskSpinePayloadAgrees.activateLocalCall
+      payload core.bodyPayload core.alphaIncluded
+  exact
+    ⟨nextAlpha, sourceCanonical, flattened, installed,
+      ⟨core, spinePayload⟩⟩
 
 /-- Enter a retained recursive clause from an arbitrary-depth control spine.
 

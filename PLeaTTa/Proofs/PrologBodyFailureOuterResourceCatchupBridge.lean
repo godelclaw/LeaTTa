@@ -953,6 +953,22 @@ private def chronologySnapshot
     RetainedCallPayloadSnapshot [] []
       (chronologyResource resourceBarrier counter)
       (chronologyCursor seed) (chronologySegment callerBarrier) outer := by
+  have supported :
+      AlphaTermsSupported [] [] [.integer 2] := by
+    intro term member
+    simp only [List.mem_singleton] at member
+    subst term
+    simp [AlphaTreeSupported, Term.denote,
+      PrologMguOpenAgreement.TreeVariablesSatisfy,
+      PrologMguOpenAgreement.TreesVariablesSatisfy]
+  have payload :
+      TaskSpinePayloadAgrees [] [] [] [] [] []
+        ({ barrier := callerBarrier
+           references := [.call "ranked" [.integer 2]]
+           executables := [.call "ranked" [] (.gnd (.int 2))] } ::
+         outer) :=
+    ⟨emptyTaskData,
+      .cons (chronologyCallControl callerBarrier) outerControl⟩
   refine
     { snapshotAlpha := []
       canonical := []
@@ -961,7 +977,9 @@ private def chronologySnapshot
       alphaIncluded := ?_
       allocationGap := ?_
       cursorArguments := rfl
-      payloadSupported := ?_
+      residualRepresentative := []
+      cumulative := ?_
+      materialized := ?_
       queryReferenceBelow := ?_
       queryExecutableLive := ?_
       queryExecutableBelow := ?_
@@ -970,12 +988,25 @@ private def chronologySnapshot
   · intro pair member
     simp at member
   · constructor <;> intro <;> simp_all
-  · intro term member
-    simp only [List.mem_singleton] at member
-    subst term
-    simp [AlphaTreeSupported, Term.denote,
-      PrologMguOpenAgreement.TreeVariablesSatisfy,
-      PrologMguOpenAgreement.TreesVariablesSatisfy]
+  · refine
+      ⟨TreeSubstitutionVariants.refl [], TreeSubstitutionTopological.nil,
+        ?_, ⟨emptyRuntimeTopological⟩, ?_⟩
+    · intro entry member
+      simp at member
+    · intro identity name member
+      simp at member
+  · refine
+      ⟨TreeSubstitutionVariants.refl [], ?_, ?_, ?_⟩
+    · intro entry member
+      simp at member
+    · intro entry member
+      simp at member
+    · have leaves :
+          List.Forall₂ (CanonicalRuntimeAgrees [])
+            [.node (.integer 2) []] [.gnd (.int 2)] :=
+        .cons (CanonicalRuntimeAgrees.integer (alpha := []) 2) .nil
+      simpa [chronologyResource, chronologyCursor, TreeSubstitution.apply,
+        Term.denote] using leaves
   · intro index member
     simp at member
   · intro name member
@@ -985,9 +1016,8 @@ private def chronologySnapshot
     simp [Metta.Atom.vars, specializationGoalsVars,
       resolutionSeedHighWaterNames]
   · simp [chronologyResource, chronologySegment, outerExecutables]
-  · exact
-      ⟨emptyTaskData,
-        .cons (chronologyCallControl callerBarrier) outerControl⟩
+  · simpa [chronologyCursor, chronologyResource, chronologySegment] using
+      payload
 
 private def chronologyOrderedZipper :
     SourceControlResourcePayloadContextAgrees [] [] (.sym "query") 30

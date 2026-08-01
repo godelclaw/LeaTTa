@@ -113,8 +113,13 @@ theorem
              .call opened.cursor.predicate args res ::
                segmentExecutableRest } ::
          outer))
-    (payloadSupported :
-      AlphaTermsSupported alpha support referencePayload)
+    (oldCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith alpha support canonical
+        referenceBase binding representative)
+    (materializedAtOpen :
+      MaterializedCallAgreesWith alpha referenceBindings referencePayload
+        (args.map (PLeaTTa.subst binding))
+        (PLeaTTa.subst binding res) representative referenceBase)
     (openedArguments : opened.cursor.arguments = referencePayload)
     (openedBindings : opened.cursor.bindings = referenceBindings)
     (queryReferenceBelow :
@@ -211,9 +216,9 @@ theorem
         outerAtSelected outerOrdered
   obtain ⟨active, snapshot, _existingContext, activeCounter, stack⟩ :=
     PLeaTTa.PrologRetainedPayloadSnapshotBridge.SpinedRepresentativeProductActivation.activeResourceStackWithSnapshot
-      frontier preHeadPayload payloadSupported openedArguments openedBindings
-      queryReferenceBelow queryExecutableLive activation outerNext baseAlts
-      outerAlts
+      frontier preHeadPayload oldCumulative materializedAtOpen openedArguments
+      openedBindings queryReferenceBelow queryExecutableLive activation
+      outerNext baseAlts outerAlts
   have branchFirstBelowSession :
       branch.firstFresh ≤ opened.session.resolver.nextFresh := by
     calc

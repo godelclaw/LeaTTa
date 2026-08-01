@@ -31,6 +31,7 @@ open PrologOrdinaryStepBridge
 open PrologPrefilterBridge
 open PrologRecursiveCallPayloadBridge
 open PrologRepresentativeActivationBridge
+open PrologStateBridge
 
 /-! ## Structural transport into the activated task -/
 
@@ -84,6 +85,23 @@ theorem AlphaValuationAgreesOn.monoAlpha
       included (valuation linked)
 
 /-! ## Exact clause-body activation -/
+
+/-- The generated executable MGU remains related to the chosen canonical
+representative before it is installed over the caller's carried binding.
+
+This evidence is deliberately separate from the support-restricted
+cumulative payload. Fresh clause-body variables belong to the enlarged alpha
+graph but not to the caller's fixed observable support; recursive call
+materialization therefore needs this full generated valuation. -/
+structure GeneratedMguAgrees
+    (alpha : List (LogicVar × String))
+    (flattened : TreeSubstitution) (base generated installed : Subst) : Prop
+    where
+  substitution : AlphaTreeSubstitutionAgrees alpha flattened generated
+  topological : Nonempty (PLeaTTa.SubstTopological generated)
+  valuation : AlphaValuationAgrees alpha flattened generated
+  avoidsBase : PLeaTTa.SubstEntriesAvoid base generated
+  installedShape : installed = installGenerated generated base
 
 /-- One source-resolved retained clause activates the actual executable
 head, composes that new MGU over both carried states, and enters the exact
@@ -181,6 +199,7 @@ theorem
                 (args.map (PLeaTTa.subst binding)) args result rest binding
                 qterm seed barrier clause).result])) =
         some installed ∧
+      GeneratedMguAgrees alpha flattened binding generated installed ∧
       AlphaCumulativeResidualVariantAgreesOnWith
         alpha support (sourceCanonical ++ oldCanonical) referenceBase
         (PLeaTTa.trimFor
@@ -199,7 +218,17 @@ theorem
         branch.body
         (freshenResolutionClause
           (args.map (PLeaTTa.subst binding)) args result rest binding
-          qterm seed barrier clause).body := by
+          qterm seed barrier clause).body ∧
+      MaterializedLocalCallHeadsAgreeWith alpha independentResult branch.body
+        (freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args result rest binding
+          qterm seed barrier clause).body
+        (PLeaTTa.trimFor
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body ++ rest)
+          qterm installed)
+        (flattened ++ residualRepresentative) referenceBase := by
   obtain
     ⟨alpha, sourceCanonical, representative, _semanticCanonical,
       flattened, generated, installed, shared, queryIncluded, extensionAbove,
@@ -287,6 +316,47 @@ theorem
         (fun pair member =>
           queryIncluded pair (payloadIncluded pair member))
         oldCumulative.representativeCovered)
+  have selectedStartsAbove : cursor.reservationStart ≤ branch.firstFresh :=
+    wellFormed.1.start_le_member_first member
+  have payloadBelowSelected :
+      GeneratedBelow branch.firstFresh (payloadAlpha.map Prod.fst) :=
+    payloadReferenceBelow.mono selectedStartsAbove
+  have cursorBelowStart :
+      GeneratedBelow cursor.reservationStart
+        (substitutionVariables cursor.bindings) := by
+    intro index indexMember
+    exact wellFormed.2.1 index
+      (List.mem_append_right _ indexMember)
+  have cursorBelowSelected :
+      GeneratedBelow branch.firstFresh
+        (substitutionVariables cursor.bindings) :=
+    cursorBelowStart.mono selectedStartsAbove
+  have residualKeysBelow :
+      ∀ identity,
+        identity ∈ TreeSubstitution.keys residualRepresentative →
+          identity.GeneratedBelowBoundary branch.firstFresh :=
+    PLeaTTa.PrologRepresentativeActivationBridge.TreeSubstitutionVariablesSatisfy.keysGeneratedBelow
+      oldCumulative.representativeCovered payloadBelowSelected
+  have referenceBaseKeysBelow :
+      ∀ identity,
+        identity ∈
+            TreeSubstitution.keys (Substitution.denote referenceBase) →
+          identity.GeneratedBelowBoundary branch.firstFresh :=
+    Substitution.denote_keysGeneratedBelow_of_subset
+      query.olderBaseIncluded cursorBelowSelected
+  have oldRepresentativeKeysBelow :
+      ∀ identity,
+        identity ∈ TreeSubstitution.keys
+            (residualRepresentative ++ Substitution.denote referenceBase) →
+          identity.GeneratedBelowBoundary branch.firstFresh := by
+    intro identity identityMember
+    have split :
+        identity ∈ TreeSubstitution.keys residualRepresentative ∨
+          identity ∈
+            TreeSubstitution.keys (Substitution.denote referenceBase) := by
+      simpa [TreeSubstitution.keys, List.map_append] using identityMember
+    exact split.elim (residualKeysBelow identity)
+      (referenceBaseKeysBelow identity)
   rcases oldCumulative.runtimeTopological with ⟨bindingTopological⟩
   have resolvedAvoids (atom : Atom) :
       PLeaTTa.AtomAvoids binding (PLeaTTa.subst binding atom) := by
@@ -399,12 +469,294 @@ theorem
     ⟨shared, compositeWellFormed, compositeResultShape,
       NormalizedAlphaGoalsAgree.ofAlphaGoalsAgree bodyControl,
       trimmedCumulative.weak⟩
-  exact
+  have bodyHeadMaterialized :
+      MaterializedLocalCallHeadsAgreeWith alpha independentResult branch.body
+        (freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args result rest binding
+          qterm seed barrier clause).body
+        (PLeaTTa.trimFor
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body ++ rest)
+          qterm installed)
+        (flattened ++ residualRepresentative) referenceBase := by
+    cases agreement with
+    | intro reference freshSeed executable base encoding bodySupported =>
+        intro predicate referencePayload referenceRest executableArguments
+          executableResult executableRest referenceShape executableShape
+        let suffix :=
+          resolutionFreshSuffix
+            (args.map (PLeaTTa.subst binding)) result rest binding qterm seed
+        let clauseAlpha :=
+          RuntimeAlpha.graph
+            (referenceFreshTargets
+              (reference.clause.freshCopy freshSeed).firstFresh
+              reference.clause.variables)
+            (executableFreshTargets suffix reference.clause.variables)
+        have clauseRuntimeAlpha :
+            RuntimeAlpha
+              (referenceFreshTargets
+                (reference.clause.freshCopy freshSeed).firstFresh
+                reference.clause.variables)
+              (executableFreshTargets suffix reference.clause.variables) := by
+          exact freshenClause_alpha_agrees reference.clause freshSeed suffix
+            encoding
+        have sourceBodyShape :
+            (reference.clause.freshCopy freshSeed).clause.body =
+              .call predicate referencePayload :: referenceRest := by
+          simpa [preparedBranchOf] using referenceShape
+        have clauseBodyControl :
+            AlphaGoalsAgree clauseAlpha barrier
+              (reference.clause.freshCopy freshSeed).clause.body
+              (freshenResolutionClause
+                (args.map (PLeaTTa.subst binding)) args result rest binding
+                qterm seed barrier clause).body := by
+          simpa [clauseAlpha, suffix] using
+            (freshenClause_body_alpha_agrees base bodySupported freshSeed
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier)
+        have localHeadControl :
+            NormalizedAlphaGoalsAgree clauseAlpha barrier
+              (.call predicate referencePayload :: referenceRest)
+              (.call predicate executableArguments executableResult ::
+                executableRest) := by
+          have normalized :=
+            NormalizedAlphaGoalsAgree.ofAlphaGoalsAgree clauseBodyControl
+          rw [sourceBodyShape, executableShape] at normalized
+          exact normalized
+        have ambientHeadControl :
+            NormalizedAlphaGoalsAgree alpha barrier
+              (.call predicate referencePayload :: referenceRest)
+              (.call predicate executableArguments executableResult ::
+                executableRest) := by
+          have normalized :=
+            NormalizedAlphaGoalsAgree.ofAlphaGoalsAgree bodyControl
+          rw [referenceShape, executableShape] at normalized
+          exact normalized
+        obtain
+          ⟨ambientReferenceArguments, ambientReferenceResult,
+            ambientPayloadShape, ambientArguments, ambientResult, _⟩ :=
+          NormalizedAlphaGoalsAgree.localCallHead ambientHeadControl
+        have ambientPayload :
+            AlphaTermsAgree alpha referencePayload
+              (executableArguments ++ [executableResult]) := by
+          rw [ambientPayloadShape]
+          exact AlphaTermsAgree.append_singleton ambientArguments ambientResult
+        obtain
+          ⟨localReferenceArguments, localReferenceResult,
+            localPayloadShape, localArguments, localResult, _⟩ :=
+          NormalizedAlphaGoalsAgree.localCallHead localHeadControl
+        have localPayload :
+            AlphaTermsAgree clauseAlpha referencePayload
+              (executableArguments ++ [executableResult]) := by
+          rw [localPayloadShape]
+          exact AlphaTermsAgree.append_singleton localArguments localResult
+        have clauseReferenceRange :
+            ∀ identity name, (identity, name) ∈ clauseAlpha →
+              ∃ index, identity = .generated index ∧
+                (reference.clause.freshCopy freshSeed).firstFresh ≤ index := by
+          intro identity name linked
+          have projectionMember :
+              identity ∈ clauseAlpha.map Prod.fst :=
+            List.mem_map.mpr ⟨(identity, name), linked, rfl⟩
+          rw [clauseRuntimeAlpha.graph_reference] at projectionMember
+          exact referenceFreshTargets_generated_lower projectionMember
+        have sourceFresh :
+            Terms.GeneratedAtLeast
+              (reference.clause.freshCopy freshSeed).firstFresh
+              referencePayload :=
+          AlphaTermsAgree.generatedAtLeast_of_graph localPayload
+            clauseReferenceRange
+        have runtimeAvoidsBase :
+            List.Forall₂
+              (fun _ atom => PLeaTTa.AtomAvoids binding atom)
+              referencePayload
+              (executableArguments ++ [executableResult]) := by
+          have runtimeAvoidsBase_of_agrees :
+              ∀ {referenceAtoms runtimeAtoms},
+                AlphaTermsAgree clauseAlpha referenceAtoms runtimeAtoms →
+                  List.Forall₂
+                    (fun _ atom => PLeaTTa.AtomAvoids binding atom)
+                    referenceAtoms runtimeAtoms := by
+            intro referenceAtoms runtimeAtoms termsAgree
+            induction termsAgree with
+            | nil => exact .nil
+            | cons head tail inductionHypothesis =>
+                apply List.Forall₂.cons
+                · intro name nameMember
+                  obtain ⟨identity, linked⟩ :=
+                    PLeaTTa.PrologMguTopology.AlphaTermAgrees.runtime_variable_linked
+                      head nameMember
+                  have projectionMember : name ∈ clauseAlpha.map Prod.snd :=
+                    List.mem_map.mpr ⟨(identity, name), linked, rfl⟩
+                  rw [clauseRuntimeAlpha.graph_executable] at projectionMember
+                  simp only [executableFreshTargets, List.mem_map] at projectionMember
+                  obtain ⟨source, _sourceMember, targetShape⟩ := projectionMember
+                  rw [← targetShape]
+                  exact resolutionFreshSuffix_lookup_none
+                    (args.map (PLeaTTa.subst binding)) result rest binding qterm
+                    seed highWater
+                    (OpenBindingAgreement.logicVarExecutableName source)
+                · exact inductionHypothesis
+          exact runtimeAvoidsBase_of_agrees localPayload
+        refine
+          ⟨?_, successorRepresentativeCovered, ?_, ?_⟩
+        · rw [compositeResultShape, Substitution.denote_append,
+              TreeSubstitution.denote_reify compositeWellFormed]
+          exact cumulativeVariants
+        · intro entry entryMember
+          rw [compositeResultShape]
+          simp [entryMember]
+        · let allRuntimeAtoms := executableArguments ++ [executableResult]
+          have transport :
+              ∀ {sourceTerms runtimeAtoms},
+                AlphaTermsAgree alpha sourceTerms runtimeAtoms →
+                Terms.GeneratedAtLeast
+                  (reference.clause.freshCopy freshSeed).firstFresh
+                  sourceTerms →
+                List.Forall₂
+                  (fun _ atom => PLeaTTa.AtomAvoids binding atom)
+                  sourceTerms runtimeAtoms →
+                (∀ atom, atom ∈ runtimeAtoms → atom ∈ allRuntimeAtoms) →
+                List.Forall₂
+                  (fun term atom =>
+                    CanonicalRuntimeAgrees alpha
+                      (TreeSubstitution.apply
+                        ((flattened ++ residualRepresentative) ++
+                          Substitution.denote referenceBase)
+                        (Term.denote term))
+                      (PLeaTTa.subst
+                        (PLeaTTa.trimFor
+                          ((freshenResolutionClause
+                              (args.map (PLeaTTa.subst binding)) args result
+                              rest binding qterm seed barrier clause).body ++
+                            rest)
+                          qterm installed)
+                        atom))
+                  sourceTerms runtimeAtoms := by
+            intro sourceTerms runtimeAtoms agreement sourceBounds atomAvoids
+              included
+            induction agreement with
+            | nil => exact .nil
+            | @cons sourceTerm runtimeAtom sourceTail runtimeTail head tail
+                inductionHypothesis =>
+                rcases sourceBounds with ⟨sourceBound, tailBounds⟩
+                cases atomAvoids with
+                | cons runtimeAvoids tailAvoids =>
+                    apply List.Forall₂.cons
+                    · have atomMember : runtimeAtom ∈ allRuntimeAtoms :=
+                        included runtimeAtom (by simp)
+                      have callAtomMember :
+                          runtimeAtom ∈ executableResult :: executableArguments := by
+                        rcases List.mem_append.mp atomMember with argumentMember |
+                            resultMember
+                        · exact List.mem_cons_of_mem executableResult argumentMember
+                        · have runtimeAtomEq : runtimeAtom = executableResult :=
+                            List.mem_singleton.mp resultMember
+                          subst runtimeAtom
+                          exact List.mem_cons_self
+                      have sourceOutside :
+                          TreeVariablesSatisfy
+                            (fun identity =>
+                              identity ∉ TreeSubstitution.keys
+                                (residualRepresentative ++
+                                  Substitution.denote referenceBase))
+                            (Term.denote sourceTerm) :=
+                        Term.denote_variablesSatisfy_of_generatedAtLeast
+                          (fun index above identityMember => by
+                            have below := oldRepresentativeKeysBelow
+                              (.generated index) identityMember
+                            simpa [preparedBranchOf] using
+                              below.ne_generated_atLeast above rfl)
+                          sourceTerm sourceBound
+                      have oldReferenceFixed :
+                          TreeSubstitution.apply
+                              (residualRepresentative ++
+                                Substitution.denote referenceBase)
+                              (Term.denote sourceTerm) =
+                            Term.denote sourceTerm :=
+                        TreeSubstitution.apply_eq_self_of_variables_outside
+                          sourceOutside
+                      have canonicalApplied :
+                          TreeSubstitution.apply
+                              ((flattened ++ residualRepresentative) ++
+                                Substitution.denote referenceBase)
+                              (Term.denote sourceTerm) =
+                            TreeSubstitution.apply flattened
+                              (Term.denote sourceTerm) := by
+                        rw [show
+                          (flattened ++ residualRepresentative) ++
+                              Substitution.denote referenceBase =
+                            flattened ++
+                              (residualRepresentative ++
+                                Substitution.denote referenceBase) by
+                              simp [List.append_assoc]]
+                        rw [TreeSubstitution.apply_append, oldReferenceFixed]
+                      have baseApplied :
+                          PLeaTTa.subst binding runtimeAtom = runtimeAtom :=
+                        PLeaTTa.subst_eq_self_of_domain_free binding runtimeAtom
+                          runtimeAvoids
+                      have installedApplied :
+                          PLeaTTa.subst installed runtimeAtom =
+                            PLeaTTa.subst generated runtimeAtom := by
+                        rw [installedShape',
+                          subst_installGenerated_eq_generated_after_base
+                            bindingTopological generatedTopological
+                            generatedAvoidsBinding runtimeAtom,
+                          baseApplied]
+                      have callMember :
+                          PLeaTTa.Goal.call predicate executableArguments
+                              executableResult ∈
+                            (freshenResolutionClause
+                                (args.map (PLeaTTa.subst binding)) args result
+                                rest binding qterm seed barrier clause).body ++
+                              rest := by
+                        rw [executableShape]
+                        simp
+                      have trimApplied :
+                          PLeaTTa.subst
+                              (PLeaTTa.trimFor
+                                ((freshenResolutionClause
+                                    (args.map (PLeaTTa.subst binding)) args
+                                    result rest binding qterm seed barrier
+                                    clause).body ++ rest)
+                                qterm installed)
+                              runtimeAtom =
+                            PLeaTTa.subst installed runtimeAtom :=
+                        PLeaTTa.subst_trimFor_eq_of_topological
+                          ((freshenResolutionClause
+                              (args.map (PLeaTTa.subst binding)) args result
+                              rest binding qterm seed barrier clause).body ++
+                            rest)
+                          qterm installed installedTopological runtimeAtom
+                          (fun name nameMember =>
+                            PLeaTTa.isTrimRoot_call_atom_of_mem _ qterm predicate
+                              executableArguments executableResult runtimeAtom
+                              name callMember callAtomMember nameMember)
+                      rw [canonicalApplied, trimApplied, installedApplied]
+                      exact canonicalRuntimeAgrees_apply
+                        (AlphaTermAgrees.canonicalRuntimeAgrees head)
+                        generatedValuation
+                    · exact inductionHypothesis tailBounds tailAvoids
+                        (fun atom atomMember =>
+                          included atom (by simp [atomMember]))
+          have transported :=
+            transport ambientPayload sourceFresh runtimeAvoidsBase
+              (fun atom atomMember => by
+                simpa [allRuntimeAtoms] using atomMember)
+          simpa only [List.map_append, List.map_singleton] using
+            (List.forall₂_map_right_iff.mpr transported)
+  refine
     ⟨alpha, sourceCanonical, flattened, generated, installed,
       shared, queryIncluded, extensionAbove, freshFrontier, allocationGap,
-      compositeResultShape,
-      sourceOrdered,
-      generatedExact, installedExact, trimmedCumulative, task⟩
+      compositeResultShape, sourceOrdered, generatedExact, installedExact,
+      ?_, trimmedCumulative, task, bodyHeadMaterialized⟩
+  exact
+    { substitution := generatedAgreement
+      topological := ⟨generatedTopological⟩
+      valuation := generatedValuation
+      avoidsBase := generatedAvoidsBinding
+      installedShape := installedShape' }
 
 /-- Immediate-call compatibility view of
 `unifyB_body_cumulativeWith_of_headResolution_extension`. -/
@@ -487,6 +839,7 @@ theorem
                 (args.map (PLeaTTa.subst binding)) args result rest binding
                 qterm seed barrier clause).result])) =
         some installed ∧
+      GeneratedMguAgrees alpha flattened binding generated installed ∧
       AlphaCumulativeResidualVariantAgreesOnWith
         alpha support (sourceCanonical ++ oldCanonical) referenceBase
         (PLeaTTa.trimFor
@@ -505,7 +858,17 @@ theorem
         branch.body
         (freshenResolutionClause
           (args.map (PLeaTTa.subst binding)) args result rest binding
-          qterm seed barrier clause).body := by
+          qterm seed barrier clause).body ∧
+      MaterializedLocalCallHeadsAgreeWith alpha independentResult branch.body
+        (freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args result rest binding
+          qterm seed barrier clause).body
+        (PLeaTTa.trimFor
+          ((freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body ++ rest)
+          qterm installed)
+        (flattened ++ residualRepresentative) referenceBase := by
   cases agreement with
   | intro reference freshSeed _ base encoding bodySupported =>
       have startsAbove :

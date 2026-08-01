@@ -232,7 +232,12 @@ def restoreSnapshot
       alphaIncluded := snapshot.alphaIncluded
       allocationGap := chronology.allocationGap
       cursorArguments := ?_
-      payloadSupported := snapshot.payloadSupported
+      residualRepresentative := snapshot.residualRepresentative
+      cumulative := by
+        simpa [afterPulledHead] using snapshot.cumulative
+      materialized := by
+        simpa [PreparedCursor.advance, afterPulledHead] using
+          snapshot.materialized
       queryReferenceBelow := ?_
       queryExecutableLive := ?_
       queryExecutableBelow := chronology.queryExecutableBelow
@@ -416,8 +421,8 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
     ⟨nextAlpha, sourceCanonical, flattened, generated, installed,
       nextShared, alphaIncluded, extensionAbove, freshFrontier, allocationGap,
       independentShape,
-      sourceOrdered, _generatedExact, installedExact, successorCumulative,
-      successorTask⟩ :=
+      sourceOrdered, _generatedExact, installedExact, _generatedAgreement,
+      successorCumulative, successorTask, _materializedHeads⟩ :=
     PLeaTTa.PrologRepresentativeTaskActivationBridge.SupportedPreparedCandidateAgrees.unifyB_body_cumulativeWith_of_headResolution_extension
       oldCumulative query cursorBindingShape
       snapshot.callPayload.canonicalWellFormed offset.cursorWellFormed member

@@ -22,6 +22,7 @@ open PeTTaSpec.PrologCore.Canonical
 open PrologMguBridge
 open PrologMguOpenAgreement
 open PrologPrefilterBridge
+open PrologStateBridge
 
 /-! ## Generic support calculus -/
 
@@ -958,6 +959,33 @@ theorem CanonicalRuntimeAgreesList.runtime_variable_supported
       · exact inductionHypothesis supported.2 tailMember
 
 end
+
+/-- A source variable can agree only with a runtime variable carrying its
+exact alpha edge.  This is the source-oriented counterpart of
+`runtime_variable_linked`; keeping both projections avoids exposing concrete
+fresh-name suffixes in recursive-call proofs. -/
+theorem AlphaTermAgrees.source_variable_linked
+    {alpha : List (LogicVar × String)} {identity : LogicVar} {atom : Atom}
+    (agreement : AlphaTermAgrees alpha (.variable identity) atom) :
+    ∃ name, atom = .var name ∧ (identity, name) ∈ alpha := by
+  cases agreement with
+  | «variable» linked => exact ⟨_, rfl, linked⟩
+
+/-- Every executable variable occurring in an alpha-related term is backed by
+an actual edge of that alpha graph.  This projection is the runtime analogue
+of canonical variable coverage and is the stable interface for freshness and
+capture arguments. -/
+theorem AlphaTermAgrees.runtime_variable_linked
+    {alpha : List (LogicVar × String)} {term : Term} {atom : Atom}
+    (agreement : AlphaTermAgrees alpha term atom) :
+    ∀ {name}, name ∈ atom.vars →
+      ∃ identity, (identity, name) ∈ alpha := by
+  intro name member
+  obtain ⟨identity, linked, _supported⟩ :=
+    CanonicalRuntimeAgrees.runtime_variable_supported
+      (AlphaTermAgrees.canonicalRuntimeAgrees agreement)
+      (treeVariablesSatisfy_true (Term.denote term)) member
+  exact ⟨identity, linked⟩
 
 /-- If an alpha-linked canonical variable is outside an aligned canonical
 domain, its runtime name is outside the aligned runtime domain as well. -/

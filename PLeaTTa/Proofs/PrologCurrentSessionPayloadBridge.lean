@@ -24,6 +24,7 @@ open DemandDrivenStep
 open PrologAlphaFreshFrontierBridge
 open PrologControlSegmentSpineBridge
 open PrologNestedRetainedPayloadBridge
+open PrologMguComposition
 open PrologProductResourceContextBridge
 open PrologProductResourceTransitionBridge
 open PrologRecursiveCallPayloadBridge
@@ -550,8 +551,13 @@ theorem
              .call opened.cursor.predicate args res ::
                segmentExecutableRest } ::
          outer))
-    (payloadSupported :
-      AlphaTermsSupported alpha support referencePayload)
+    (oldCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith alpha support canonical
+        referenceBase binding representative)
+    (materializedAtOpen :
+      MaterializedCallAgreesWith alpha referenceBindings referencePayload
+        (args.map (PLeaTTa.subst binding))
+        (PLeaTTa.subst binding res) representative referenceBase)
     (openedArguments : opened.cursor.arguments = referencePayload)
     (openedBindings : opened.cursor.bindings = referenceBindings)
     (queryReferenceBelow :
@@ -612,9 +618,9 @@ theorem
       ⟨active, _snapshot, payloadContext, endpoints, activationOrdered,
         outerPayloadExact, _outerActivationEndpoints, resourceStack⟩ :=
     _root_.PLeaTTa.PrologNestedRetainedPayloadBridge.SpinedRepresentativeProductActivation.activeResourceStackWithNestedSnapshots
-      frontier preHeadPayload payloadSupported openedArguments openedBindings
-      queryReferenceBelow queryExecutableLive activation sourceFresh
-      outerPayloads outerEndpoints outerOrdered baseAlts outerAlts
+      frontier preHeadPayload oldCumulative materializedAtOpen openedArguments
+      openedBindings queryReferenceBelow queryExecutableLive activation
+      sourceFresh outerPayloads outerEndpoints outerOrdered baseAlts outerAlts
   have counterExact :
       (activatedOpenSuccessor pending copied
         (segmentExecutableRest ++ flattenExecutables outer) qterm

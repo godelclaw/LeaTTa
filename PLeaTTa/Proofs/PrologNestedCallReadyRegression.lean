@@ -727,15 +727,24 @@ private theorem pActive
   have live : AlphaRuntimeNamesLive [] (copied.body ++ []) resultAtom := by
     intro identity name member
     simp at member
+  have preHeadTask :=
+    PrologControlSegmentSpineBridge.TaskSpinePayloadAgrees.headPayload
+      preHeadPayload
+  obtain ⟨representative, oldCumulative, materializedAtOpen⟩ :=
+    (PrologRecursiveCallPayloadBridge.TaskPayloadAgrees.localCallPayload
+      preHeadTask).materializedCallAgreesWith groundPayloadSupported
+  have queryAtOpen :=
+    materializedAtOpen.toRepresentativeNormalizedCallAgreesWith
+      (openedFor initialSession "p" [resultTerm] []).cursor
+      (by rfl) (by rfl)
   obtain
-    ⟨representative, nextAlpha, sourceCanonical, flattenedRepresentative,
-      installed, activation⟩ :=
-    RepresentativeRetainedCallFrontier.activate_spined_product_step
+    ⟨nextAlpha, sourceCanonical, flattenedRepresentative, installed,
+      activation⟩ :=
+    RepresentativeRetainedCallFrontier.activate_spined_product_step_with
       (prog := prog) (gt := gt) (referencePayload := [resultTerm])
       (segmentReferenceRest := []) (segmentExecutableRest := [])
       (outer := []) (callerBarrier := 0) (callerScope := rootScope)
-      pEntry frontier preHeadPayload groundPayloadSupported
-      (by simp [openedFor, openLocalCall, requestFor, prepareCall])
+      pEntry frontier preHeadPayload oldCumulative queryAtOpen
       (by simp [openedFor, openLocalCall, requestFor, prepareCall])
       referenceBelow executableLive live resolved
   let outerPayloads :
@@ -764,7 +773,7 @@ private theorem pActive
       (outer := []) (binding := []) (qterm := resultAtom)
       (callerBarrier := 0) (callerScope := rootScope)
       (outerScope := rootScope) (resources := []) (context := [])
-      frontier preHeadPayload groundPayloadSupported
+      frontier preHeadPayload oldCumulative materializedAtOpen
       (by simp [openedFor, openLocalCall, requestFor, prepareCall])
       (by simp [openedFor, openLocalCall, requestFor, prepareCall])
       referenceBelow executableLive activation sourceFresh outerPayloads
@@ -1033,20 +1042,20 @@ private theorem qReadyAfterP
       currentNil, qtermExact, databaseExact, nextFreshZero, worldExact,
       rootSourceSteps, rootFineSteps⟩
   refine
-    { exactFresh := freshExact
-      indexReady := ?_
-      below := below
-      payloadSupported := ?_
-      candidateSupported := ?_
-      sourceNonempty := ?_
-      scanNonempty := ?_
-      queryExecutableLive := ?_
-      selected := ?_
-      notThrow := ?_
-      notDatabase := ?_ }
+    { toNestedCallOperationalReady :=
+        { exactFresh := freshExact
+          indexReady := ?_
+          below := below
+          candidateSupported := ?_
+          sourceNonempty := ?_
+          scanNonempty := ?_
+          queryExecutableLive := ?_
+          selected := ?_
+          notThrow := ?_
+          notDatabase := ?_ }
+      payloadSupported := ?_ }
   · rw [worldExact]
     rfl
-  · simpa [alphaNil, supportNil] using groundPayloadSupported
   · change
       SupportedCandidateBank "q"
         (state.index.session.resolver.database.visibleClausesAt
@@ -1095,6 +1104,7 @@ private theorem qReadyAfterP
       simp at member
   · simp [head, BuiltinThrowCall]
   · rfl
+  · simpa [alphaNil, supportNil] using groundPayloadSupported
 
 /-- Any literal active carrier with the preserved ground substrate and an
 `r(7)` body head is ready for the unique local `r/1` occurrence. -/
@@ -1149,20 +1159,20 @@ private theorem rReadyFromGroundState
     rfl
   refine ⟨head, ?_, rfl, rfl, rfl, rfl, rfl, rfl⟩
   refine
-    { exactFresh := freshExact
-      indexReady := ?_
-      below := below
-      payloadSupported := ?_
-      candidateSupported := ?_
-      sourceNonempty := ?_
-      scanNonempty := ?_
-      queryExecutableLive := ?_
-      selected := ?_
-      notThrow := ?_
-      notDatabase := ?_ }
+    { toNestedCallOperationalReady :=
+        { exactFresh := freshExact
+          indexReady := ?_
+          below := below
+          candidateSupported := ?_
+          sourceNonempty := ?_
+          scanNonempty := ?_
+          queryExecutableLive := ?_
+          selected := ?_
+          notThrow := ?_
+          notDatabase := ?_ }
+      payloadSupported := ?_ }
   · rw [worldExact]
     rfl
-  · simpa [alphaNil, supportNil] using groundPayloadSupported
   · change
       SupportedCandidateBank "r"
         (state.index.session.resolver.database.visibleClausesAt
@@ -1211,6 +1221,7 @@ private theorem rReadyFromGroundState
       simp at member
   · simp [head, BuiltinThrowCall]
   · rfl
+  · simpa [alphaNil, supportNil] using groundPayloadSupported
 
 /-! ## Literal depth-two successor -/
 

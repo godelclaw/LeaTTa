@@ -2695,6 +2695,24 @@ private theorem addAtomVars_contains_of_mem_vars (tracked : String)
               exact ih child (by simp [hchild])
             · exact hrest
 
+/-- Folding the atom-variable collector over a list records every variable
+occurring in every member, independently of the initial accumulator. -/
+private theorem foldl_addAtomVars_contains_of_mem_vars (tracked : String) :
+    ∀ (xs : List Atom) (acc : VarSet) (atom : Atom),
+      atom ∈ xs → tracked ∈ atom.vars →
+        (xs.foldl addAtomVars acc).contains tracked = true := by
+  intro xs
+  induction xs with
+  | nil => simp
+  | cons head tail inductionHypothesis =>
+      intro acc atom atomMember trackedMember
+      simp only [List.foldl_cons]
+      rcases List.mem_cons.mp atomMember with rfl | tailMember
+      · apply foldl_addAtomVars_preserves_contains
+        exact addAtomVars_contains_of_mem_vars tracked atom acc trackedMember
+      · exact inductionHypothesis (addAtomVars acc head) atom tailMember
+          trackedMember
+
 mutual
 
 private theorem goalVarsFuel_preserves_contains (fuel : Nat)
@@ -2876,6 +2894,51 @@ private theorem goalsVarsFuel_eq_right_mem (tracked : String) :
               omega
             · exact htail
             · exact htracked
+
+/-- Every variable occurring in an argument or result of any pending local
+call reaches the optimized goal-variable accumulator. -/
+private theorem goalsVarsFuel_call_atom_mem (tracked : String) :
+    ∀ fuel goals acc predicate arguments result atom,
+      goalsFuel goals + 1 ≤ fuel →
+      Goal.call predicate arguments result ∈ goals →
+      atom ∈ result :: arguments →
+      tracked ∈ atom.vars →
+      (goalsVarsFuel fuel goals acc).contains tracked = true := by
+  intro fuel goals
+  induction goals generalizing fuel with
+  | nil => simp
+  | cons goal rest inductionHypothesis =>
+      intro acc predicate arguments result atom fuelEnough callMember atomMember
+        trackedMember
+      cases fuel with
+      | zero => omega
+      | succ fuel =>
+          simp only [goalsVarsFuel]
+          rcases List.mem_cons.mp callMember with head | tail
+          · subst goal
+            have fuelPositive : 0 < fuel := by
+              simp only [goalsFuel, goalFuel] at fuelEnough
+              omega
+            obtain ⟨fuel', rfl⟩ := Nat.exists_eq_succ_of_ne_zero
+              (Nat.ne_of_gt fuelPositive)
+            apply goalsVarsFuel_preserves_contains
+            simp only [goalVarsFuel]
+            rcases List.mem_cons.mp atomMember with rfl | argumentMember
+            · apply foldl_addAtomVars_preserves_contains
+              exact addAtomVars_contains_of_mem_vars tracked atom acc
+                trackedMember
+            · exact foldl_addAtomVars_contains_of_mem_vars tracked arguments
+                (addAtomVars acc result) atom argumentMember trackedMember
+          · apply inductionHypothesis fuel (goalVarsFuel fuel goal acc)
+              predicate arguments result atom
+            · simp only [goalsFuel] at fuelEnough
+              have restBound : goalsFuel rest ≤
+                  Nat.max (goalFuel goal) (goalsFuel rest) :=
+                Nat.le_max_right _ _
+              omega
+            · exact tail
+            · exact atomMember
+            · exact trackedMember
 
 private theorem addFreshAtomVars_preserves_contains (tracked : String)
     (state : VarSet × VarSet) (h : state.1.contains tracked = true)
@@ -3657,6 +3720,25 @@ theorem isTrimRoot_eq_right_of_mem (goals : List Goal) (qterm left rhs : Atom)
   · omega
   · exact heq
   · exact hname
+
+/-- Every variable occurring in an argument or result of any pending local
+call is directly live.  Unlike the singleton call lemmas below, this is the
+list-level interface needed after clause-body activation. -/
+theorem isTrimRoot_call_atom_of_mem (goals : List Goal) (qterm : Atom)
+    (predicate : String) (arguments : List Atom) (result atom : Atom)
+    (name : String)
+    (callMember : Goal.call predicate arguments result ∈ goals)
+    (atomMember : atom ∈ result :: arguments)
+    (nameMember : name ∈ atom.vars) :
+    isTrimRoot goals qterm name = true := by
+  unfold isTrimRoot goalsVars
+  apply addAtomVars_preserves_contains
+  apply goalsVarsFuel_call_atom_mem name (goalsFuel goals + 1) goals
+    (Std.HashSet.emptyWithCapacity 64) predicate arguments result atom
+  · omega
+  · exact callMember
+  · exact atomMember
+  · exact nameMember
 
 /-- Every query-term variable is directly live for every continuation. -/
 theorem isTrimRoot_qterm_mem (goals : List Goal) (qterm : Atom)

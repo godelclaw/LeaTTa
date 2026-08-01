@@ -24,6 +24,7 @@ open PrologAlphaFreshFrontierBridge
 open PrologCallStepBridge
 open PrologControlSegmentSpineBridge
 open PrologCurrentSessionPayloadBridge
+open PrologMguComposition
 open PrologNestedRetainedPayloadBridge
 open PrologProductResourceContextBridge
 open PrologProductResourceTransitionBridge
@@ -333,7 +334,13 @@ theorem
                references := callerReferences
                executables := callerExecutables } :: outer))
         runtime qterm nestedBodyBarrier state.persistent.counter)
-    (payloadSupported : AlphaTermsSupported alpha support referencePayload)
+    (oldCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith alpha support canonical
+        referenceBase runtime representative)
+    (materializedAtOpen :
+      MaterializedCallAgreesWith alpha current referencePayload
+        (args.map (PLeaTTa.subst runtime))
+        (PLeaTTa.subst runtime res) representative referenceBase)
     (queryReferenceBelow :
       GeneratedBelow nestedFinish.reservationStart (alpha.map Prod.fst))
     (queryExecutableLive :
@@ -462,7 +469,7 @@ theorem
   obtain
       ⟨nestedActive, nestedPayloadContext, nestedAgreement, payloadHandoff⟩ :=
     SpinedRepresentativeProductActivation.spinedProductPayloadResourceRelates
-      frontier preHeadPayload payloadSupported (by rfl) (by rfl)
+      frontier preHeadPayload oldCumulative materializedAtOpen (by rfl) (by rfl)
       queryReferenceBelow queryExecutableLive activation entry.sourceFresh
       currentPayloadContext outerEndpoints currentAgreement.activationOrdered
       baseAlts outerAlts

@@ -282,6 +282,10 @@ PROLOG_NESTED_CALL_READY_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologNestedCallReadyRegression.lean"
 )
+PROLOG_UNBOUND_NESTED_CALL_REGRESSION = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologUnboundNestedCallRegression.lean"
+)
 PROLOG_RETAINED_PAYLOAD_SNAPSHOT_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRetainedPayloadSnapshotBridge.lean"
@@ -569,6 +573,8 @@ def check() -> list[str]:
             digest(PROLOG_NESTED_CALL_READY_BRIDGE),
         "prolog_nested_call_ready_regression_sha256":
             digest(PROLOG_NESTED_CALL_READY_REGRESSION),
+        "prolog_unbound_nested_call_regression_sha256":
+            digest(PROLOG_UNBOUND_NESTED_CALL_REGRESSION),
         "prolog_retained_payload_snapshot_bridge_sha256":
             digest(PROLOG_RETAINED_PAYLOAD_SNAPSHOT_BRIDGE),
         "prolog_retained_payload_catchup_bridge_sha256":

@@ -6,6 +6,7 @@ Purpose: Compose the semantic retained-call frontier with the actual
   independent clausesPull and sealed executable eq_ok successors.
 Trusted boundary: none
 Main exports:
+  RepresentativeRetainedCallFrontier.activate_task_step_head_with,
   RepresentativeRetainedCallFrontier.activate_task_step_head,
   RepresentativeRetainedCallFrontier.activate_task_step
 -/
@@ -139,6 +140,25 @@ def activatedOpenSuccessor
       pending.pulled.toConf.barriers :=
   rfl
 
+/-- The executable head unifier and the independent flattened MGU denote the
+same generated substitution before it is installed over the caller binding.
+
+Keeping the generated substitution inside this package avoids turning its
+implementation-specific orientation into an index of every later control
+structure, while still preventing a consumer from choosing a different
+unifier witness. -/
+def ActivatedHeadMguAgrees
+    (alpha : List (LogicVar × String))
+    (flattened : TreeSubstitution) (base installed : Subst)
+    (args : List Atom) (result : Atom) (copied : PLeaTTa.Clause) : Prop :=
+  ∃ generated : Subst,
+    PLeaTTa.unifyTopExact
+        (.expr ((args ++ [result]).map (PLeaTTa.subst base)))
+        (.expr
+          ((copied.params ++ [copied.result]).map (PLeaTTa.subst base))) =
+      some generated ∧
+    GeneratedMguAgrees alpha flattened base generated installed
+
 /-! ## Semantic frontier to paired machine step -/
 
 /-- One actual active recursive task, one actual retained-call frontier, and
@@ -158,6 +178,245 @@ Only three semantic support obligations remain caller-visible:
 
 The frontier itself discharges the executable fresh-counter high-water and
 pins the retained alternative tail, world, counter, order, and multiplicity. -/
+/- Fixed-representative core of retained-clause activation.
+
+Unlike the compatibility wrapper below, this theorem does not recover an
+existential residual orientation from raw payload support.  Its caller must
+carry one explicit representative through the cumulative valuation and the
+materialized call reading.  That makes it impossible for activation and the
+next call to choose two different, merely variant residual orientations. -/
+theorem RepresentativeRetainedCallFrontier.activate_task_step_head_with
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase : Substitution}
+    {opened : OpenedCall} {before : DemandDrivenStep.OpenConf}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor}
+    {branch : ClauseBranch} {clause : PLeaTTa.Clause}
+    {branchTail : List ClauseBranch} {clauseTail : List PLeaTTa.Clause}
+    {altTail : List PLeaTTa.Alt} {copied : PLeaTTa.Clause}
+    {argsv args : List Atom} {res : Atom}
+    {rest : List PLeaTTa.Goal} {binding : Subst}
+    {qterm : Atom} {barrier startCounter : Nat}
+    {independentResult : Substitution}
+    (entry :
+      RepresentativeSupportedCallEntryRelates alpha opened before pending
+        argsv args res rest binding qterm barrier startCounter)
+    (frontier :
+      RepresentativeRetainedCallFrontier alpha opened before pending finish
+        branch clause branchTail clauseTail altTail copied argsv args res rest
+        binding qterm barrier startCounter)
+    (oldCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase binding representative)
+    (queryAtOpen :
+      RepresentativeNormalizedCallAgreesWith alpha opened.cursor
+        (args.map (PLeaTTa.subst binding))
+        (PLeaTTa.subst binding res) representative referenceBase)
+    (openedBindingShape :
+      opened.cursor.bindings =
+        TreeSubstitution.reify canonical ++ referenceBase)
+    (canonicalWellFormed : canonical.WellFormed)
+    (alphaShared : SharedRuntimeAlpha alpha)
+    (queryReferenceBelow :
+      GeneratedBelow finish.reservationStart (alpha.map Prod.fst))
+    (queryExecutableLive :
+      ∀ name, name ∈ alpha.map Prod.snd →
+        name ∈
+          resolutionOccupiedVars
+            (args.map (PLeaTTa.subst binding)) res rest binding qterm)
+    (live :
+      AlphaRuntimeNamesLive support (copied.body ++ rest) qterm)
+    (resolved : HeadResolution branch independentResult) :
+    ∃ nextAlpha sourceCanonical flattened installed,
+      SharedRuntimeAlpha nextAlpha ∧
+      (∀ pair, pair ∈ alpha → pair ∈ nextAlpha) ∧
+      AlphaExtendsAbove alpha nextAlpha branch.firstFresh startCounter ∧
+      AlphaFreshFrontier nextAlpha branch.nextFresh (startCounter + 1) ∧
+      independentResult =
+        TreeSubstitution.reify (sourceCanonical ++ canonical) ++
+          referenceBase ∧
+      OrderedTreeMgu
+        (denoteEquations branch.normalizedHeadEquations) sourceCanonical ∧
+      ActivatedHeadMguAgrees nextAlpha flattened binding installed args res
+        copied ∧
+      RawStep opened.session (.clauses opened.scope finish) [] .none
+        opened.session
+        (.running
+          (.choice opened.scope
+            (.task opened.scope (branch.enter independentResult).rawBody
+              (branch.enter independentResult).bindings)
+            (.clauses opened.scope
+              (finish.advance branch branchTail)))) ∧
+      PLeaTTa.Step prog gt pending.pulled.toConf
+        (activatedExecutableSuccessor pending copied rest qterm installed) ∧
+      AlphaCumulativeResidualVariantAgreesOnWith
+        nextAlpha support (sourceCanonical ++ canonical) referenceBase
+        (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
+        (flattened ++ representative) ∧
+      TaskPayloadAgrees nextAlpha support barrier
+        (sourceCanonical ++ canonical) referenceBase independentResult
+        (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
+        branch.body copied.body ∧
+      MaterializedLocalCallHeadsAgreeWith nextAlpha independentResult
+        branch.body copied.body
+        (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
+        (flattened ++ representative) referenceBase ∧
+      (activatedExecutableSuccessor pending copied rest qterm installed).alts =
+        altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts ∧
+      (activatedExecutableSuccessor pending copied rest qterm installed).world =
+        pending.persistent.world ∧
+      (activatedExecutableSuccessor pending copied rest qterm installed).counter =
+        pending.persistent.counter := by
+  have queryAtFinish :
+      RepresentativeNormalizedCallAgreesWith alpha finish
+        (args.map (PLeaTTa.subst binding))
+        (PLeaTTa.subst binding res) representative referenceBase :=
+    PLeaTTa.PrologRepresentativeCallFrontierBridge.CursorCallContext.representativeNormalizedCallAgreesWith
+      frontier.finishContext (.refl opened.cursor) queryAtOpen
+  have cursorBindingShape :
+      finish.bindings =
+        TreeSubstitution.reify canonical ++ referenceBase := by
+    calc
+      finish.bindings = opened.cursor.bindings :=
+        frontier.finishContext.bindings_eq
+      _ = TreeSubstitution.reify canonical ++ referenceBase :=
+        openedBindingShape
+  have member : branch ∈ finish.remaining := by
+    rw [frontier.finishRemaining]
+    simp
+  have copiedExact :
+      copied =
+        PLeaTTa.freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args res rest binding qterm
+          startCounter barrier clause := by
+    simpa only [frontier.substitutedArgs] using frontier.copiedExact
+  have highWater :
+      resolutionSeedHighWaterNames
+          (resolutionOccupiedVars
+            (args.map (PLeaTTa.subst binding)) res rest binding qterm) ≤
+        startCounter := by
+    simpa only [frontier.substitutedArgs] using frontier.highWater
+  have exactLive :
+      AlphaRuntimeNamesLive support
+        ((PLeaTTa.freshenResolutionClause
+            (args.map (PLeaTTa.subst binding)) args res rest binding qterm
+            startCounter barrier clause).body ++ rest)
+        qterm := by
+    intro identity name linked
+    have observed := live linked
+    rw [copiedExact] at observed
+    exact observed
+  obtain
+    ⟨nextAlpha, sourceCanonical, flattened, generated, installed,
+      nextShared, alphaIncluded, extensionAbove, freshFrontier,
+      independentShape,
+      sourceOrdered,
+      generatedExact, installedExact, generatedMgu, successorCumulative,
+      successorTask, successorHeads⟩ :=
+    PLeaTTa.PrologRepresentativeTaskActivationBridge.SupportedPreparedCandidateAgrees.unifyB_body_cumulativeWith_of_headResolution
+      oldCumulative queryAtFinish cursorBindingShape
+      canonicalWellFormed frontier.finishWellFormed member
+      frontier.supported frontier.arity alphaShared queryReferenceBelow
+      queryExecutableLive highWater exactLive resolved
+  have sourceStep :
+      RawStep opened.session (.clauses opened.scope finish) [] .none
+        opened.session
+        (.running
+          (.choice opened.scope
+            (.task opened.scope (branch.enter independentResult).rawBody
+              (branch.enter independentResult).bindings)
+            (.clauses opened.scope
+              (finish.advance branch branchTail)))) :=
+    matched_clause_splices_body_first opened.scope opened.session
+      (.matched finish branch branchTail independentResult
+        frontier.finishRemaining resolved)
+  have current :
+      pending.pulled.toConf.cur =
+        some
+          (PLeaTTa.Goal.eq (.expr (args ++ [res]))
+              (.expr (copied.params ++ [copied.result])) ::
+            copied.body ++ rest,
+            binding) := by
+    rw [frontier.pulledExact]
+  have installedExactCopied :
+      PLeaTTa.unifyB binding (.expr (args ++ [res]))
+          (.expr (copied.params ++ [copied.result])) =
+        some installed := by
+    simpa only [copiedExact] using installedExact
+  have headMguCopied :
+      ActivatedHeadMguAgrees nextAlpha flattened binding installed args res
+        copied := by
+    refine ⟨generated, ?_, generatedMgu⟩
+    simpa only [copiedExact] using generatedExact
+  have executableQueryTerm : pending.pulled.toConf.qterm = qterm := by
+    calc
+      pending.pulled.toConf.qterm = pending.installed.toConf.qterm := by
+        rw [frontier.pulledExact]
+      _ = pending.outer.qterm := rfl
+      _ = before.control.qterm := by rw [entry.entry.outer]
+      _ = before.toConf.qterm := rfl
+      _ = qterm := frontier.queryTerm.symm
+  have executableStep :
+      PLeaTTa.Step prog gt pending.pulled.toConf
+        (activatedExecutableSuccessor pending copied rest qterm installed) := by
+    simpa only [activatedExecutableSuccessor, executableQueryTerm] using
+      (PLeaTTa.Step.eq_ok pending.pulled.toConf
+        (.expr (args ++ [res]))
+        (.expr (copied.params ++ [copied.result]))
+        (copied.body ++ rest) binding installed current
+        installedExactCopied)
+  have cumulativeCopied :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        nextAlpha support (sourceCanonical ++ canonical) referenceBase
+        (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
+        (flattened ++ representative) := by
+    simpa only [copiedExact] using successorCumulative
+  have taskCopied :
+      TaskPayloadAgrees nextAlpha support barrier
+        (sourceCanonical ++ canonical) referenceBase independentResult
+        (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
+        branch.body copied.body := by
+    simpa only [copiedExact] using successorTask
+  have headsCopied :
+      MaterializedLocalCallHeadsAgreeWith nextAlpha independentResult
+        branch.body copied.body
+        (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
+        (flattened ++ representative) referenceBase := by
+    rw [copiedExact]
+    exact successorHeads
+  have retainedAlts :
+      (activatedExecutableSuccessor pending copied rest qterm installed).alts =
+        altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts := by
+    simp only [activatedExecutableSuccessor_alts]
+    rw [frontier.pulledExact]
+  have worldPreserved :
+      (activatedExecutableSuccessor pending copied rest qterm installed).world =
+        pending.persistent.world := by
+    simp only [activatedExecutableSuccessor_world]
+    rw [frontier.pulledExact]
+    rfl
+  have counterPreserved :
+      (activatedExecutableSuccessor pending copied rest qterm installed).counter =
+        pending.persistent.counter := by
+    simp only [activatedExecutableSuccessor_counter]
+    rw [frontier.pulledExact]
+    rfl
+  refine
+    ⟨nextAlpha, sourceCanonical, flattened, installed,
+      nextShared, alphaIncluded, extensionAbove, freshFrontier,
+      independentShape,
+      sourceOrdered, headMguCopied, sourceStep, executableStep, ?_, taskCopied,
+      headsCopied, retainedAlts, worldPreserved, counterPreserved⟩
+  simpa only using cumulativeCopied
+
+/-- Compatibility view which reconstructs the fixed representative from the
+raw supported payload exactly once, then delegates all activation work to
+`activate_task_step_head_with`.
+
+New non-ground callers should prefer the fixed-representative theorem and
+carry a materialized call certificate instead of re-proving raw support. -/
 theorem RepresentativeRetainedCallFrontier.activate_task_step_head
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {alpha support : List (LogicVar × String)}
@@ -208,6 +467,8 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step_head
           referenceBase ∧
       OrderedTreeMgu
         (denoteEquations branch.normalizedHeadEquations) sourceCanonical ∧
+      ActivatedHeadMguAgrees nextAlpha flattened binding installed args res
+        copied ∧
       RawStep opened.session (.clauses opened.scope finish) [] .none
         opened.session
         (.running
@@ -226,6 +487,10 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step_head
         (sourceCanonical ++ canonical) referenceBase independentResult
         (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
         branch.body copied.body ∧
+      MaterializedLocalCallHeadsAgreeWith nextAlpha independentResult
+        branch.body copied.body
+        (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
+        (flattened ++ representative) referenceBase ∧
       (activatedExecutableSuccessor pending copied rest qterm installed).alts =
         altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts ∧
       (activatedExecutableSuccessor pending copied rest qterm installed).world =
@@ -235,135 +500,16 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step_head
   obtain ⟨representative, oldCumulative, queryAtOpen⟩ :=
     PLeaTTa.PrologRecursiveCallPayloadBridge.LocalCallPayloadAgrees.representativeNormalizedCallAgreesWith
       payload payloadSupported opened.cursor openedArguments openedBindings
-  have queryAtFinish :
-      RepresentativeNormalizedCallAgreesWith alpha finish
-        (args.map (PLeaTTa.subst binding))
-        (PLeaTTa.subst binding res) representative referenceBase :=
-    PLeaTTa.PrologRepresentativeCallFrontierBridge.CursorCallContext.representativeNormalizedCallAgreesWith
-      frontier.finishContext (.refl opened.cursor) queryAtOpen
-  have cursorBindingShape :
-      finish.bindings =
-        TreeSubstitution.reify canonical ++ referenceBase := by
-    calc
-      finish.bindings = opened.cursor.bindings :=
-        frontier.finishContext.bindings_eq
-      _ = referenceBindings := openedBindings
-      _ = TreeSubstitution.reify canonical ++ referenceBase :=
-        payload.bindingShape
-  have member : branch ∈ finish.remaining := by
-    rw [frontier.finishRemaining]
-    simp
-  have copiedExact :
-      copied =
-        PLeaTTa.freshenResolutionClause
-          (args.map (PLeaTTa.subst binding)) args res rest binding qterm
-          startCounter barrier clause := by
-    simpa only [frontier.substitutedArgs] using frontier.copiedExact
-  have highWater :
-      resolutionSeedHighWaterNames
-          (resolutionOccupiedVars
-            (args.map (PLeaTTa.subst binding)) res rest binding qterm) ≤
-        startCounter := by
-    simpa only [frontier.substitutedArgs] using frontier.highWater
-  have exactLive :
-      AlphaRuntimeNamesLive support
-        ((PLeaTTa.freshenResolutionClause
-            (args.map (PLeaTTa.subst binding)) args res rest binding qterm
-            startCounter barrier clause).body ++ rest)
-        qterm := by
-    intro identity name linked
-    have observed := live linked
-    rw [copiedExact] at observed
-    exact observed
   obtain
-    ⟨nextAlpha, sourceCanonical, flattened, generated, installed,
-      nextShared, alphaIncluded, extensionAbove, freshFrontier,
-      independentShape,
-      sourceOrdered,
-      _generatedExact, installedExact, successorCumulative, successorTask⟩ :=
-    PLeaTTa.PrologRepresentativeTaskActivationBridge.SupportedPreparedCandidateAgrees.unifyB_body_cumulativeWith_of_headResolution
-      oldCumulative queryAtFinish cursorBindingShape
-      payload.canonicalWellFormed frontier.finishWellFormed member
-      frontier.supported frontier.arity payload.alphaShared queryReferenceBelow
-      queryExecutableLive highWater exactLive resolved
-  have sourceStep :
-      RawStep opened.session (.clauses opened.scope finish) [] .none
-        opened.session
-        (.running
-          (.choice opened.scope
-            (.task opened.scope (branch.enter independentResult).rawBody
-              (branch.enter independentResult).bindings)
-            (.clauses opened.scope
-              (finish.advance branch branchTail)))) :=
-    matched_clause_splices_body_first opened.scope opened.session
-      (.matched finish branch branchTail independentResult
-        frontier.finishRemaining resolved)
-  have current :
-      pending.pulled.toConf.cur =
-        some
-          (PLeaTTa.Goal.eq (.expr (args ++ [res]))
-              (.expr (copied.params ++ [copied.result])) ::
-            copied.body ++ rest,
-            binding) := by
-    rw [frontier.pulledExact]
-  have installedExactCopied :
-      PLeaTTa.unifyB binding (.expr (args ++ [res]))
-          (.expr (copied.params ++ [copied.result])) =
-        some installed := by
-    simpa only [copiedExact] using installedExact
-  have executableQueryTerm : pending.pulled.toConf.qterm = qterm := by
-    calc
-      pending.pulled.toConf.qterm = pending.installed.toConf.qterm := by
-        rw [frontier.pulledExact]
-      _ = pending.outer.qterm := rfl
-      _ = before.control.qterm := by rw [entry.entry.outer]
-      _ = before.toConf.qterm := rfl
-      _ = qterm := frontier.queryTerm.symm
-  have executableStep :
-      PLeaTTa.Step prog gt pending.pulled.toConf
-        (activatedExecutableSuccessor pending copied rest qterm installed) := by
-    simpa only [activatedExecutableSuccessor, executableQueryTerm] using
-      (PLeaTTa.Step.eq_ok pending.pulled.toConf
-        (.expr (args ++ [res]))
-        (.expr (copied.params ++ [copied.result]))
-        (copied.body ++ rest) binding installed current
-        installedExactCopied)
-  have cumulativeCopied :
-      AlphaCumulativeResidualVariantAgreesOnWith
-        nextAlpha support (sourceCanonical ++ canonical) referenceBase
-        (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
-        (flattened ++ representative) := by
-    simpa only [copiedExact] using successorCumulative
-  have taskCopied :
-      TaskPayloadAgrees nextAlpha support barrier
-        (sourceCanonical ++ canonical) referenceBase independentResult
-        (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
-        branch.body copied.body := by
-    simpa only [copiedExact] using successorTask
-  have retainedAlts :
-      (activatedExecutableSuccessor pending copied rest qterm installed).alts =
-        altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts := by
-    simp only [activatedExecutableSuccessor_alts]
-    rw [frontier.pulledExact]
-  have worldPreserved :
-      (activatedExecutableSuccessor pending copied rest qterm installed).world =
-        pending.persistent.world := by
-    simp only [activatedExecutableSuccessor_world]
-    rw [frontier.pulledExact]
-    rfl
-  have counterPreserved :
-      (activatedExecutableSuccessor pending copied rest qterm installed).counter =
-        pending.persistent.counter := by
-    simp only [activatedExecutableSuccessor_counter]
-    rw [frontier.pulledExact]
-    rfl
-  refine
+    ⟨nextAlpha, sourceCanonical, flattened, installed, result⟩ :=
+    RepresentativeRetainedCallFrontier.activate_task_step_head_with
+      entry frontier oldCumulative queryAtOpen
+      (by simpa only [openedBindings] using payload.bindingShape)
+      payload.canonicalWellFormed payload.alphaShared queryReferenceBelow
+      queryExecutableLive live resolved
+  exact
     ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
-      nextShared, alphaIncluded, extensionAbove, freshFrontier,
-      independentShape,
-      sourceOrdered, sourceStep, executableStep, ?_, taskCopied, retainedAlts,
-      worldPreserved, counterPreserved⟩
-  simpa only using cumulativeCopied
+      result⟩
 
 /-- Compatibility wrapper for callers that still carry a uniformly tagged
 whole-task payload.
@@ -425,6 +571,8 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step
           referenceBase ∧
       OrderedTreeMgu
         (denoteEquations branch.normalizedHeadEquations) sourceCanonical ∧
+      ActivatedHeadMguAgrees nextAlpha flattened binding installed args res
+        copied ∧
       RawStep opened.session (.clauses opened.scope finish) [] .none
         opened.session
         (.running
@@ -443,6 +591,10 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step
         (sourceCanonical ++ canonical) referenceBase independentResult
         (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
         branch.body copied.body ∧
+      MaterializedLocalCallHeadsAgreeWith nextAlpha independentResult
+        branch.body copied.body
+        (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
+        (flattened ++ representative) referenceBase ∧
       (activatedExecutableSuccessor pending copied rest qterm installed).alts =
         altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts ∧
       (activatedExecutableSuccessor pending copied rest qterm installed).world =

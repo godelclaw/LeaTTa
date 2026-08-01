@@ -26,6 +26,7 @@ open PrologCallStepBridge
 open PrologControlSegmentSpineBridge
 open PrologCurrentSessionPayloadBridge
 open PrologCurrentSessionPayloadTransitionBridge
+open PrologMguComposition
 open PrologNestedCallEntryPayloadBridge
 open PrologPrefilterScanBridge
 open PrologProductResourceContextBridge
@@ -658,7 +659,13 @@ theorem
       RejectedPullsN count
         (openedFor session predicate referencePayload current).cursor
         nestedFinish)
-    (payloadSupported : AlphaTermsSupported alpha support referencePayload)
+    (oldCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith alpha support canonical
+        referenceBase runtime representative)
+    (materializedAtOpen :
+      MaterializedCallAgreesWith alpha current referencePayload
+        (args.map (PLeaTTa.subst runtime))
+        (PLeaTTa.subst runtime res) representative referenceBase)
     (queryReferenceBelow :
       GeneratedBelow nestedFinish.reservationStart (alpha.map Prod.fst))
     (queryExecutableLive :
@@ -952,8 +959,8 @@ theorem
       ⟨nestedActive, nestedPayloadContext, nestedAgreement, payloadHandoff,
         countGrowth⟩ :=
     PLeaTTa.PrologNestedCallEntryPayloadBridge.SpinedRepresentativeProductActivation.spinedNestedProductPayloadResourceRelates
-      currentAgreement entry frontier payloadSupported queryReferenceBelow
-        queryExecutableLive activation
+      currentAgreement entry frontier oldCumulative materializedAtOpen
+        queryReferenceBelow queryExecutableLive activation
   have sourceExact :
       StepsN (count + 2) (.running session currentSource)
         [.opened (requestFor predicate referencePayload current)]

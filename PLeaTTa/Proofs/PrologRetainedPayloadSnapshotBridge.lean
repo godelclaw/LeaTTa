@@ -61,12 +61,14 @@ always come from the current state when the resource is reactivated.
 resource.
 
 `currentAlpha` may grow while nested calls run.  `snapshotAlpha`,
-`support`, and the cumulative substitution remain the values certified when
-this resource was created; `support` is the fixed finite observation domain
-of that payload, not a runtime occupied-name set.  `alphaIncluded` is the only
-permitted graph transport to a later alpha.  The caller segment and every
-older segment are stored exactly so a later activation cannot retag or
-flatten distinct cut regions. -/
+`support`, the concrete residual representative, and the cumulative
+substitution remain the values certified when this resource was created;
+`support` is the fixed finite observation domain of that payload, not a
+runtime occupied-name set.  Storing the representative as data is
+load-bearing: later activation cannot reselect a different legal residual
+orientation.  `alphaIncluded` is the only permitted graph transport to a
+later alpha.  The caller segment and every older segment are stored exactly
+so a later activation cannot retag or flatten distinct cut regions. -/
 structure RetainedCallPayloadSnapshot
     (currentAlpha support : List (LogicVar × String))
     (resource : RetainedAlternativeSegment)
@@ -86,8 +88,15 @@ structure RetainedCallPayloadSnapshot
     AlphaAllocationGap currentAlpha cursor.reservationStart
       cursor.reservedUntil resource.counter resource.finalCounter
   cursorArguments : cursor.arguments = referencePayload
-  payloadSupported :
-    AlphaTermsSupported snapshotAlpha support referencePayload
+  residualRepresentative : TreeSubstitution
+  cumulative :
+    AlphaCumulativeResidualVariantAgreesOnWith snapshotAlpha support canonical
+      referenceBase resource.binding residualRepresentative
+  materialized :
+    MaterializedCallAgreesWith snapshotAlpha cursor.bindings referencePayload
+      (resource.args.map (PLeaTTa.subst resource.binding))
+      (PLeaTTa.subst resource.binding resource.res) residualRepresentative
+      referenceBase
   queryReferenceBelow :
     GeneratedBelow cursor.reservationStart (snapshotAlpha.map Prod.fst)
   queryExecutableLive :
@@ -227,6 +236,8 @@ def transportCursor
       outer :=
   { snapshot with
     cursorArguments := context.arguments_eq.trans snapshot.cursorArguments
+    materialized := by
+      simpa [context.bindings_eq] using snapshot.materialized
     queryReferenceBelow :=
       snapshot.queryReferenceBelow.mono reservationOrdered
     allocationGap := by
@@ -270,7 +281,15 @@ def afterPulledHead
           [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
           using advanced
       cursorArguments := snapshot.cursorArguments
-      payloadSupported := snapshot.payloadSupported
+      residualRepresentative := snapshot.residualRepresentative
+      cumulative := by
+        simpa
+          [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
+          using snapshot.cumulative
+      materialized := by
+        simpa
+          [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
+          using snapshot.materialized
       queryReferenceBelow := snapshot.queryReferenceBelow
       queryExecutableLive := ?_
       queryExecutableBelow := ?_
@@ -417,9 +436,9 @@ theorem representative
         (resource.args.map (PLeaTTa.subst resource.binding))
         (PLeaTTa.subst resource.binding resource.res)
         representative snapshot.referenceBase :=
-  PLeaTTa.PrologRecursiveCallPayloadBridge.TaskPayloadAgrees.representativeNormalizedCallAgreesWith
-    snapshot.callPayload snapshot.payloadSupported cursor
-    snapshot.cursorArguments rfl
+  ⟨snapshot.residualRepresentative, snapshot.cumulative,
+    snapshot.materialized.toRepresentativeNormalizedCallAgreesWith cursor
+      snapshot.cursorArguments rfl⟩
 
 /-- Recover the one representative selected at snapshot creation and
 transport that exact witness to the current alpha graph.
@@ -1132,7 +1151,8 @@ def ActiveProductResourceStackAgrees.prependPayloadContext
 /-! ## Construction at the real activation site -/
 
 /-- One real spined activation creates the active retained resource and its
-immutable pre-head payload in the same construction.
+immutable pre-head payload in the same construction, using the exact residual
+representative selected for that activation.
 
 The result uses the exact `RepresentativeRetainedCallFrontier`, rather than
 destructing a later existential ownership proof and attempting to reconstruct
@@ -1180,8 +1200,13 @@ theorem
              .call opened.cursor.predicate args res ::
                segmentExecutableRest } ::
          outer))
-    (payloadSupported :
-      AlphaTermsSupported alpha support referencePayload)
+    (oldCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith alpha support canonical
+        referenceBase binding representative)
+    (materializedAtOpen :
+      MaterializedCallAgreesWith alpha referenceBindings referencePayload
+        (args.map (PLeaTTa.subst binding))
+        (PLeaTTa.subst binding res) representative referenceBase)
     (openedArguments : opened.cursor.arguments = referencePayload)
     (openedBindings : opened.cursor.bindings = referenceBindings)
     (queryReferenceBelow :
@@ -1334,7 +1359,11 @@ theorem
           simpa [active, advanced, PreparedCursor.advance] using
             activation.selectionFresh
         cursorArguments := advancedArguments
-        payloadSupported := payloadSupported
+        residualRepresentative := representative
+        cumulative := by
+          simpa [active] using oldCumulative
+        materialized := by
+          simpa [active, advancedBindings] using materializedAtOpen
         queryReferenceBelow := advancedBelow
         queryExecutableLive := ?_
         queryExecutableBelow := ?_
