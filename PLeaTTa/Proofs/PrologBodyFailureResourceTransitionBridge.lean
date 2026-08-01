@@ -171,9 +171,29 @@ structure PulledHeadOffsetAgrees
       PLeaTTa.freshenResolutionClause resource.argsv resource.args
         resource.res resource.rest resource.binding resource.qterm
         resource.counter resource.barrier clause
-  tailOwnership :
-    (afterPulledHead resource remainingAlts).Owns alpha
-      (cursor.advance branch branchTail)
+  positionedTailOwnership :
+    ∃ callStart position,
+      CallScopedCursorPosition callStart cursor position ∧
+        (afterPulledHead resource remainingAlts).Owns alpha
+          callStart (cursor.advance branch branchTail) (position + 1)
+
+/-- Forgetting the pre-head coordinate retains a genuine indexed ownership
+certificate for the post-head resource. -/
+theorem PulledHeadOffsetAgrees.tailOwnership
+    {alpha : List (LogicVar × String)}
+    {cursor : PreparedCursor}
+    {branch : ClauseBranch} {clause : PLeaTTa.Clause}
+    {branchTail : List ClauseBranch} {copied : PLeaTTa.Clause}
+    {resource : RetainedAlternativeSegment}
+    {remainingAlts : List PLeaTTa.Alt}
+    (agreement :
+      PulledHeadOffsetAgrees alpha cursor branch clause branchTail copied
+        resource remainingAlts) :
+    (afterPulledHead resource remainingAlts).HasIndexedOwnershipAt alpha
+      (cursor.advance branch branchTail) := by
+  rcases agreement.positionedTailOwnership with
+    ⟨callStart, position, _positioned, ownership⟩
+  exact ⟨callStart, position + 1, ownership⟩
 
 /-! ## Anti-vacuity guards for the offset phase -/
 
@@ -676,7 +696,9 @@ theorem SpinedActiveProductResourceRelatesAt.afterUnifyFailureRetained
   let advanced := finish.advance selected selectedTail
   have advancedRemaining : advanced.remaining = selectedTail := by
     simp [advanced, PreparedCursor.advance]
-  rcases agreement.resourceStack.activeOwnership.scan with
+  rcases agreement.resourceStack.activeOwnership with
+    ⟨callStart, activePosition, activeOwnership⟩
+  rcases activeOwnership.scan with
     ⟨candidates, advancedWellFormed, advancedQuery, substitutedArgs,
       supportedCandidates, candidateArities, candidateScan⟩
   obtain
@@ -928,7 +950,8 @@ theorem SpinedActiveProductResourceRelatesAt.afterUnifyFailureRetained
     simp [member]
   have tailOwnership :
       (afterPulledHead active nextAltTail).Owns alpha
-        (next.advance nextBranch nextBranchTail) := by
+        callStart (next.advance nextBranch nextBranchTail)
+          ((activePosition + count) + 1) := by
     have nextAdvancedIdentity :
         PreparedCallIdentity.ofCursor
             (next.advance nextBranch nextBranchTail) =
@@ -959,17 +982,22 @@ theorem SpinedActiveProductResourceRelatesAt.afterUnifyFailureRetained
           (fun _branch _clause supported =>
             nextAdvancedContext.supportedPreparedCandidate supported)
       simpa [PreparedCursor.advance] using transported
-    refine ⟨?_, nextClauseTail, nextAdvancedWellFormed,
-      queryAtNextAdvanced, substitutedArgs, tailSupportedAtAdvanced,
-      tailArities, tailScan⟩
-    calc
-      (afterPulledHead active nextAltTail).callIdentity =
-          active.callIdentity := rfl
-      _ = PreparedCallIdentity.ofCursor advanced :=
-        agreement.resourceStack.activeOwnership.1
-      _ = PreparedCallIdentity.ofCursor
-          (next.advance nextBranch nextBranchTail) :=
-        nextAdvancedIdentity.symm
+    refine ⟨?_, ?_, ?_⟩
+    · calc
+        (afterPulledHead active nextAltTail).callIdentity =
+            active.callIdentity := rfl
+        _ = PreparedCallIdentity.ofCursor advanced :=
+          activeOwnership.identity
+        _ = PreparedCallIdentity.ofCursor
+            (next.advance nextBranch nextBranchTail) :=
+          nextAdvancedIdentity.symm
+    · exact
+        ⟨nextClauseTail, nextAdvancedWellFormed,
+          queryAtNextAdvanced, substitutedArgs, tailSupportedAtAdvanced,
+          tailArities, tailScan⟩
+    · exact
+        (CallScopedCursorPosition.afterRejected pulls
+          activeOwnership.positioned).advance nextRemainingHead
   have nextSupportedAtCursor :
       SupportedPreparedCandidateAgrees next.callGeneration next.predicate
         next.arguments next.bindings nextBranch nextClause :=
@@ -979,7 +1007,10 @@ theorem SpinedActiveProductResourceRelatesAt.afterUnifyFailureRetained
         nextBranchTail nextCopied active nextAltTail :=
     ⟨nextRemainingHead, nextWellFormed, queryAtNext, substitutedArgs,
       nextSupportedAtCursor, nextArity, nextRetained, priorAlts, rfl,
-      tailOwnership⟩
+      ⟨callStart, activePosition + count,
+        CallScopedCursorPosition.afterRejected pulls
+          activeOwnership.positioned,
+        tailOwnership⟩⟩
 
   have activeBank :
       state.control.alts =

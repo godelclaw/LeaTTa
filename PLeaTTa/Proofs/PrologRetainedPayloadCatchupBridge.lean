@@ -75,7 +75,9 @@ theorem OuterResourceCatchupPartition.firstCursorWellFormed
     (partition :
       OuterResourceCatchupPartition alpha segments resources context) :
     partition.firstCursor.WellFormed := by
-  rcases partition.firstOwnership.scan with
+  rcases partition.firstOwnership with
+    ⟨_callStart, _position, ownership⟩
+  rcases ownership.scan with
     ⟨_candidates, wellFormed, _query, _substitutedArgs, _supported,
       _arities, _scan⟩
   exact wellFormed

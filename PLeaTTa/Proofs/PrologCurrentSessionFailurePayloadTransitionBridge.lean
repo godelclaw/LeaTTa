@@ -170,9 +170,10 @@ theorem owns_wellFormed
     {alpha : List (LogicVar × String)}
     {cursor : PreparedCursor}
     {resource : RetainedAlternativeSegment}
-    (ownership : resource.Owns alpha cursor) :
+    (ownership : resource.HasIndexedOwnershipAt alpha cursor) :
     cursor.WellFormed := by
-  rcases ownership.scan with
+  rcases ownership with ⟨_callStart, _position, exactOwnership⟩
+  rcases exactOwnership.scan with
     ⟨_candidates, wellFormed, _query, _substitutedArgs, _supported, _arities,
       _scan⟩
   exact wellFormed

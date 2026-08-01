@@ -403,7 +403,9 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
       cursorDominated
   have seedReserved :
       resource.counter + 1 ≤ resource.finalCounter := by
-    rcases offset.tailOwnership.scan with
+    rcases offset.tailOwnership with
+      ⟨_callStart, _position, tailOwnership⟩
+    rcases tailOwnership.scan with
       ⟨_candidates, _wellFormed, _query, _substitutedArgs, _supported,
         _arities, scan⟩
     have scanExact := scan.counter_exact

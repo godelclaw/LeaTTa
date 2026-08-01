@@ -289,6 +289,10 @@ theorem SpinedRepresentativeProductActivation.underNearestCollection
     {installed : Subst}
     {resources : List RetainedAlternativeSegment}
     {productContext : ActiveProductContext}
+    (retainedPosition : Nat)
+    (positioned :
+      CallScopedCursorPosition opened.cursor
+        (finish.advance branch branchTail) retainedPosition)
     (activation :
       SpinedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
@@ -360,7 +364,7 @@ theorem SpinedRepresentativeProductActivation.underNearestCollection
               outerContext.collectionCells remaining := by
   obtain ⟨active, activeAgreement⟩ :=
     _root_.PLeaTTa.PrologProductResourceTransitionBridge.SpinedRepresentativeProductActivation.spinedProductResourceRelates
-      activation alignment [] outerAlts
+      retainedPosition positioned activation alignment [] outerAlts
   have composed :=
     spinedActiveProduct_underNearestCollection
       (activeAgreement := activeAgreement) collectionScope

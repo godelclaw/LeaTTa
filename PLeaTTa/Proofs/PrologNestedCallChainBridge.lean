@@ -944,12 +944,25 @@ theorem
                 qterm installed))
             activation.fineExecutableStep
             (DemandDrivenCallStep.StepsN.zero _)))
+  have finishPositioned :
+      CallScopedCursorPosition
+        (openedFor session predicate referencePayload current).cursor
+        nestedFinish count := by
+    simpa using
+      (CallScopedCursorPosition.afterRejected pulls
+        (CallScopedCursorPosition.refl
+          (openedFor session predicate referencePayload current).cursor))
+  have retainedPositioned :
+      CallScopedCursorPosition
+        (openedFor session predicate referencePayload current).cursor
+        (nestedFinish.advance nestedBranch nestedBranchTail) (count + 1) :=
+    finishPositioned.advance frontier.finishRemaining
   obtain
       ⟨nestedActive, nestedPayloadContext, nestedAgreement, payloadHandoff,
         countGrowth⟩ :=
     PLeaTTa.PrologNestedCallEntryPayloadBridge.SpinedRepresentativeProductActivation.spinedNestedProductPayloadResourceRelates
-      currentAgreement entry frontier oldCumulative materializedAtOpen
-        queryReferenceBelow activation
+      currentAgreement entry frontier (count + 1) retainedPositioned
+        oldCumulative materializedAtOpen queryReferenceBelow activation
   have sourceExact :
       StepsN (count + 2) (.running session currentSource)
         [.opened (requestFor predicate referencePayload current)]

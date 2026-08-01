@@ -306,9 +306,9 @@ structure SelectedReadyFrontier
     (resource : RetainedAlternativeSegment)
     (selectedGoals : List PLeaTTa.Goal) (selectedBinding : Subst)
     (selectedTail : List PLeaTTa.Alt)
-    (original finish : PreparedCursor)
+    (callStart original finish : PreparedCursor) (startPosition : Nat)
     (candidates : List PLeaTTa.Clause) : Prop where
-  ownership : resource.Owns alpha original
+  ownership : resource.Owns alpha callStart original startPosition
   selected :
     resource.alts = .br selectedGoals selectedBinding :: selectedTail
   context :
@@ -330,10 +330,11 @@ theorem head_exact
     {resource : RetainedAlternativeSegment}
     {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
     {selectedTail : List PLeaTTa.Alt}
-    {original finish : PreparedCursor} {candidates : List PLeaTTa.Clause}
+    {callStart original finish : PreparedCursor} {startPosition : Nat}
+    {candidates : List PLeaTTa.Clause}
     (frontier :
       SelectedReadyFrontier alpha resource selectedGoals selectedBinding
-        selectedTail original finish candidates) :
+        selectedTail callStart original finish startPosition candidates) :
     exists branch clause branchTail clauseTail altTail,
       finish.remaining = branch :: branchTail /\
       candidates = clause :: clauseTail /\
@@ -378,15 +379,17 @@ theorem source_occurrence_at
     {resource : RetainedAlternativeSegment}
     {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
     {selectedTail : List PLeaTTa.Alt}
-    {callStart original finish : PreparedCursor} {position : Nat}
+    {callStart original finish : PreparedCursor}
+    {startPosition finishPosition : Nat}
     {candidates : List PLeaTTa.Clause}
-    (positioned : CallScopedCursorPosition callStart finish position)
+    (positioned :
+      CallScopedCursorPosition callStart finish finishPosition)
     (frontier :
       SelectedReadyFrontier alpha resource selectedGoals selectedBinding
-        selectedTail original finish candidates) :
+        selectedTail callStart original finish startPosition candidates) :
     exists consumed branch clause branchTail clauseTail,
       callStart.remaining = consumed ++ (branch :: branchTail) /\
-      consumed.length = position /\
+      consumed.length = finishPosition /\
       finish.remaining = branch :: branchTail /\
       candidates = clause :: clauseTail /\
       SupportedPreparedCandidateAgrees original.callGeneration
@@ -417,10 +420,9 @@ theorem catchupSelectedAt
     {callStart cursor : PreparedCursor} {position : Nat}
     {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
     {selectedTail : List PLeaTTa.Alt}
-    (ownership : resource.Owns alpha cursor)
+    (ownership : resource.Owns alpha callStart cursor position)
     (selected :
       resource.alts = .br selectedGoals selectedBinding :: selectedTail)
-    (positioned : CallScopedCursorPosition callStart cursor position)
     (scope : CutScopeId) (session : Session) :
     exists count finish,
       exists readyClauses,
@@ -428,7 +430,7 @@ theorem catchupSelectedAt
           (.clauses scope finish) /\
         CallScopedCursorPosition callStart finish (position + count) /\
           SelectedReadyFrontier alpha resource selectedGoals selectedBinding
-            selectedTail cursor finish readyClauses := by
+            selectedTail callStart cursor finish position readyClauses := by
   rcases ownership.scan with
     ⟨candidates, wellFormed, query, substitutedArgs, supported, arities,
       scan⟩
@@ -451,7 +453,7 @@ theorem catchupSelectedAt
     ⟨count, finish, readyClauses,
       PLeaTTa.PrologAnswerSourceCatchupBridge.RejectedPullsN.toSilentStepsN
         pulls scope session,
-      CallScopedCursorPosition.afterRejected pulls positioned,
+      CallScopedCursorPosition.afterRejected pulls ownership.positioned,
       { ownership := ownership
         selected := selected
         context := finishContext
@@ -462,8 +464,9 @@ prepared occurrence silently and then performs one genuine exhausted-cursor
 completion. -/
 theorem catchupEmpty
     {alpha : List (LogicVar × String)}
-    {resource : RetainedAlternativeSegment} {cursor : PreparedCursor}
-    (ownership : resource.Owns alpha cursor)
+    {resource : RetainedAlternativeSegment}
+    {callStart cursor : PreparedCursor} {position : Nat}
+    (ownership : resource.Owns alpha callStart cursor position)
     (empty : resource.alts = [])
     (scope : CutScopeId) (session : Session) :
     exists count,
@@ -519,14 +522,15 @@ inductive ConservativeReadyTarget
     List PLeaTTa.Alt -> Search -> Prop where
   | clauses (scope : CutScopeId)
       (callStart original finish : PreparedCursor)
-      (position : Nat)
-      (positioned : CallScopedCursorPosition callStart finish position)
+      (startPosition finishPosition : Nat)
+      (positioned :
+        CallScopedCursorPosition callStart finish finishPosition)
       (resource : RetainedAlternativeSegment)
       (selectedTail : List PLeaTTa.Alt)
       (candidates : List PLeaTTa.Clause)
       (frontier :
         SelectedReadyFrontier alpha resource selectedGoals selectedBinding
-          selectedTail original finish candidates) :
+          selectedTail callStart original finish startPosition candidates) :
       ConservativeReadyTarget alpha selectedGoals selectedBinding selectedTail
         (.clauses scope finish)
   | taskChoices (support : List (LogicVar × String))
@@ -772,23 +776,22 @@ private theorem realizeRightClauses
     {alpha : List (LogicVar × String)} (session : Session)
     (scope : CutScopeId) (callStart cursor : PreparedCursor)
     (position : Nat)
-    (positioned : CallScopedCursorPosition callStart cursor position)
     (resource : RetainedAlternativeSegment)
-    (ownership : resource.Owns alpha cursor)
+    (ownership : resource.Owns alpha callStart cursor position)
     (goals : List PLeaTTa.Goal) (binding : Subst)
     (tail : List PLeaTTa.Alt)
     (head : resource.alts = .br goals binding :: tail)
     (pullExact : PLeaTTa.pullAux resource.alts = some ((goals, binding), tail)) :
     RightLandingRealizes session
-      (.clauses scope callStart cursor position positioned resource ownership
+      (.clauses scope callStart cursor position resource ownership
         goals binding tail head pullExact) := by
   obtain ⟨count, finish, candidates, steps, finishPosition, frontier⟩ :=
     PLeaTTa.PrologAnswerSourceCatchupBridge.RetainedAlternativeSegment.catchupSelectedAt
-      ownership head positioned scope session
+      ownership head scope session
   exact
     ⟨count, .clauses scope finish, steps,
       ConservativeReadyPullTarget.exact
-        (.clauses scope callStart cursor finish (position + count)
+        (.clauses scope callStart cursor finish position (position + count)
           finishPosition resource tail candidates frontier)⟩
 
 private theorem realizeRightScheduled
@@ -843,15 +846,14 @@ private theorem realizeRightTaskChoices
 
 private theorem realizeRightEmptyClauses
     {alpha : List (LogicVar × String)} (session : Session)
-    (scope : CutScopeId) (_callStart cursor : PreparedCursor)
-    (_position : Nat)
-    (_positioned : CallScopedCursorPosition _callStart cursor _position)
+    (scope : CutScopeId) (callStart cursor : PreparedCursor)
+    (position : Nat)
     (resource : RetainedAlternativeSegment)
-    (ownership : resource.Owns alpha cursor)
+    (ownership : resource.Owns alpha callStart cursor position)
     (empty : resource.alts = [])
     (pullNone : PLeaTTa.pullAux resource.alts = none) :
     RightEmptyRealizes session
-      (.clauses scope _callStart cursor _position _positioned resource ownership
+      (.clauses scope callStart cursor position resource ownership
         empty pullNone) := by
   exact
     PLeaTTa.PrologAnswerSourceCatchupBridge.RetainedAlternativeSegment.catchupEmpty

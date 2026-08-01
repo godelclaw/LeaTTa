@@ -344,7 +344,7 @@ structure ActiveProductResourceStackAgrees
   activeAlts : active.alts = altTail
   activeFinalCounter :
     active.finalCounter = pending.persistent.counter
-  activeOwnership : active.Owns alpha cursor
+  activeOwnership : active.HasIndexedOwnershipAt alpha cursor
   outerAlignment :
     SourceControlResourceContextAgrees alpha qterm callerBarrier outer
       resources callerScope context outerScope
@@ -844,7 +844,7 @@ theorem barrierCount_exact
       (resources.length + 1) + PLeaTTa.barrierCount baseAlts := by
   rw [agreement.actualAlts, flattenOwnedAlts_cons,
     PLeaTTa.barrierCount_append,
-      RetainedAlternativeSegment.barrierCount_zero
+      RetainedAlternativeSegment.HasIndexedOwnershipAt.barrierCount_zero
         agreement.activeOwnership,
     PLeaTTa.barrierCount_cons_barrier,
     agreement.outerAlignment.flattenOwnedAlts_barrierCount]
@@ -874,7 +874,7 @@ theorem surviving_bank_ne_active_bank
   have counts := congrArg PLeaTTa.barrierCount equality
   rw [agreement.outerAlignment.flattenOwnedAlts_barrierCount,
     flattenOwnedAlts_cons, PLeaTTa.barrierCount_append,
-      RetainedAlternativeSegment.barrierCount_zero
+      RetainedAlternativeSegment.HasIndexedOwnershipAt.barrierCount_zero
         agreement.activeOwnership,
     PLeaTTa.barrierCount_cons_barrier,
     agreement.outerAlignment.flattenOwnedAlts_barrierCount] at counts
@@ -1002,6 +1002,10 @@ theorem
     {installed : Subst}
     {resources : List RetainedAlternativeSegment}
     {context : ActiveProductContext}
+    (retainedPosition : Nat)
+    (positioned :
+      CallScopedCursorPosition opened.cursor
+        (finish.advance branch branchTail) retainedPosition)
     (activation :
       SpinedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
@@ -1025,10 +1029,13 @@ theorem
     ⟨active, activeRest, activeQuery, activeBarrier, activeAlts,
       activeFinalCounter, activeOwnership, actualAlts, _markerCount,
       _controlAlignment⟩ :=
-    activation.resources_throughAlignedContext alignment baseAlts outerAlts
+    activation.resources_throughAlignedContext retainedPosition positioned
+      alignment baseAlts outerAlts
   refine
     ⟨active, activeRest, activeQuery, activeBarrier, activeAlts,
-      activeFinalCounter, activeOwnership, alignment, outerAlts, ?_⟩
+      activeFinalCounter,
+      ⟨opened.cursor, retainedPosition, activeOwnership⟩,
+      alignment, outerAlts, ?_⟩
   exact actualAlts
 
 /-- The real spined activation constructs one fully composed state whose
@@ -1055,6 +1062,10 @@ theorem
     {installed : Subst}
     {resources : List RetainedAlternativeSegment}
     {context : ActiveProductContext}
+    (retainedPosition : Nat)
+    (positioned :
+      CallScopedCursorPosition opened.cursor
+        (finish.advance branch branchTail) retainedPosition)
     (activation :
       SpinedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
@@ -1085,7 +1096,7 @@ theorem
           (callerExecutables ++ flattenExecutables outer) qterm installed) := by
   obtain ⟨active, resourceStack⟩ :=
     _root_.PLeaTTa.PrologProductResourceTransitionBridge.SpinedRepresentativeProductActivation.activeResourceStackAgrees
-      activation alignment baseAlts outerAlts
+      retainedPosition positioned activation alignment baseAlts outerAlts
   refine
     ⟨active,
       _root_.PLeaTTa.PrologProductResourceTransitionBridge.SpinedRepresentativeProductActivation.spinedActiveProductRelates

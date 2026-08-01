@@ -97,6 +97,10 @@ theorem
     {installed : Subst}
     {resources : List RetainedAlternativeSegment}
     {context : ActiveProductContext}
+    (retainedPosition : Nat)
+    (positioned :
+      CallScopedCursorPosition opened.cursor
+        (finish.advance branch branchTail) retainedPosition)
     (frontier :
       RepresentativeRetainedCallFrontier alpha opened before pending finish
         branch clause branchTail clauseTail altTail copied argsv args res
@@ -209,7 +213,8 @@ theorem
         outerAtSelected outerOrdered
   obtain ⟨active, snapshot, _existingContext, activeCounter, stack⟩ :=
     PLeaTTa.PrologRetainedPayloadSnapshotBridge.SpinedRepresentativeProductActivation.activeResourceStackWithSnapshot
-      frontier preHeadPayload oldCumulative materializedAtOpen openedArguments
+      retainedPosition positioned frontier preHeadPayload oldCumulative
+      materializedAtOpen openedArguments
       openedBindings queryReferenceBelow activation
       outerNext baseAlts outerAlts
   have branchFirstBelowSession :

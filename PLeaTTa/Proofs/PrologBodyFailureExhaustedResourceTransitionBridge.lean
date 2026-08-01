@@ -312,7 +312,7 @@ structure ExhaustedCursorOffsetAgrees
   cursorEmpty : cursor.remaining = []
   altsEmpty : resource.alts = []
   counterExact : resource.finalCounter = resource.counter
-  ownership : resource.Owns alpha cursor
+  ownership : resource.HasIndexedOwnershipAt alpha cursor
 
 /-- Empty-cursor and retained-head offsets are disjoint phases. -/
 theorem ExhaustedCursorOffsetAgrees.not_pulledHead
@@ -491,7 +491,9 @@ theorem SpinedActiveProductResourceRelates.afterUnifyFailureExhausted
   let advanced := finish.advance selected selectedTail
   have advancedRemaining : advanced.remaining = selectedTail := by
     simp [advanced, PreparedCursor.advance]
-  rcases agreement.resourceStack.activeOwnership.scan with
+  rcases agreement.resourceStack.activeOwnership with
+    ⟨callStart, activePosition, activeOwnership⟩
+  rcases activeOwnership.scan with
     ⟨candidates, advancedWellFormed, advancedQuery, substitutedArgs,
       supportedCandidates, candidateArities, candidateScan⟩
   obtain
@@ -718,7 +720,8 @@ theorem SpinedActiveProductResourceRelates.afterUnifyFailureExhausted
       nextContext (.refl advanced) advancedQuery
   have nextRemainingEmpty : next.remaining = [] :=
     nextRemaining.trans readyBranchesEmpty
-  have nextOwnership : active.Owns alpha next := by
+  have nextOwnership :
+      active.Owns alpha callStart next (activePosition + count) := by
     have nextIdentity :
         PreparedCallIdentity.ofCursor next =
           PreparedCallIdentity.ofCursor advanced := by
@@ -726,21 +729,25 @@ theorem SpinedActiveProductResourceRelates.afterUnifyFailureExhausted
       exact
         PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_reservedUntil
           pulls
-    refine ⟨?_, [], nextWellFormed, queryAtNext, substitutedArgs, ?_, ?_, ?_⟩
-    · exact agreement.resourceStack.activeOwnership.1.trans
-        nextIdentity.symm
-    · rw [nextRemainingEmpty]
-      exact .nil
-    · intro clause member
-      simp at member
-    · simpa [empty, counterExact] using
-        (ResolutionScan.nil active.counter :
-          ResolutionScan active.argsv active.args active.res active.rest
-            active.binding active.qterm active.barrier [] active.counter []
-            active.counter)
+    refine ⟨?_, ?_, ?_⟩
+    · exact activeOwnership.identity.trans nextIdentity.symm
+    · refine ⟨[], nextWellFormed, queryAtNext, substitutedArgs, ?_, ?_, ?_⟩
+      · rw [nextRemainingEmpty]
+        exact .nil
+      · intro clause member
+        simp at member
+      · simpa [empty, counterExact] using
+          (ResolutionScan.nil active.counter :
+            ResolutionScan active.argsv active.args active.res active.rest
+              active.binding active.qterm active.barrier [] active.counter []
+              active.counter)
+    · exact
+        CallScopedCursorPosition.afterRejected pulls
+          activeOwnership.positioned
   have exhausted :
       ExhaustedCursorOffsetAgrees alpha next active :=
-    ⟨nextRemainingEmpty, empty, counterExact, nextOwnership⟩
+    ⟨nextRemainingEmpty, empty, counterExact,
+      ⟨callStart, activePosition + count, nextOwnership⟩⟩
 
   have predecessorAlts :
       state.control.alts =
@@ -876,7 +883,7 @@ inductive CrossedEmptyResourceFramesAgrees
       (cursor finish : PreparedCursor) (count tailCount : Nat)
       (retainedShape :
         frame.retained = .clauses frame.predicateScope cursor)
-      (ownership : resource.Owns alpha cursor)
+      (ownership : resource.HasIndexedOwnershipAt alpha cursor)
       (empty : resource.alts = [])
       (pulls : RejectedPullsN count cursor finish)
       (finishEmpty : finish.remaining = [])
@@ -967,7 +974,7 @@ structure OuterResourceCatchupPartition
       rejectionSteps
   firstRetainedShape :
     firstFrame.retained = .clauses firstFrame.predicateScope firstCursor
-  firstOwnership : first.Owns alpha firstCursor
+  firstOwnership : first.HasIndexedOwnershipAt alpha firstCursor
   firstHead : first.alts = .br goals binding :: tail
 
 /-- Structural sibling for terminal catch-up.
@@ -1016,10 +1023,11 @@ theorem RetainedAlternativeSegment.exhaustionWitness
     {alpha : List (LogicVar × String)}
     {resource : RetainedAlternativeSegment}
     {cursor : PreparedCursor}
-    (ownership : resource.Owns alpha cursor)
+    (ownership : resource.HasIndexedOwnershipAt alpha cursor)
     (empty : resource.alts = []) :
     ExhaustedOwnedResource alpha resource cursor := by
-  rcases ownership.scan with
+  rcases ownership with ⟨_callStart, _position, exactOwnership⟩
+  rcases exactOwnership.scan with
     ⟨candidates, wellFormed, query, substitutedArgs, supportedCandidates,
       candidateArities, candidateScan⟩
   obtain
@@ -1214,7 +1222,7 @@ theorem SourceControlResourceContextAgrees.classifyLocal
           cases head with
           | barrier =>
               have markerFree :=
-                RetainedAlternativeSegment.barrierCount_zero
+                RetainedAlternativeSegment.HasIndexedOwnershipAt.barrierCount_zero
                   resourceOwnership
               rw [altsEq] at markerFree
               simp at markerFree

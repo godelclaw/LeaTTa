@@ -319,38 +319,100 @@ deriving Repr
 
 namespace RetainedAlternativeSegment
 
-/-- One explicit resource descriptor is certified by the exact
-cursor/alternative ownership relation. -/
-def Owns
+/-- One explicit resource descriptor is certified jointly by its immutable
+call-start coordinate, current cursor suffix, and exact alternative scan.
+
+Keeping `callStart`, `cursor`, and `position` as relation indices rather than
+mutable-looking fields is load-bearing: a record update cannot silently carry
+a stale source coordinate across rejected pulls or executable-head
+consumption.  Authenticity of `callStart` as an actual `openedFor` cursor is
+established by producer theorems; this relation couples that supplied origin
+to the resource without manufacturing it. -/
+structure Owns
     (alpha : List (LogicVar × String))
-    (cursor : PreparedCursor)
-    (resource : RetainedAlternativeSegment) : Prop :=
-  resource.callIdentity = PreparedCallIdentity.ofCursor cursor ∧
+    (callStart cursor : PreparedCursor) (position : Nat)
+    (resource : RetainedAlternativeSegment) : Prop where
+  identity :
+    resource.callIdentity = PreparedCallIdentity.ofCursor cursor
+  scan :
     RetainedCursorAlternativeOwnership alpha cursor resource.argsv
       resource.args resource.res resource.rest resource.binding resource.qterm
       resource.barrier resource.counter resource.alts resource.finalCounter
+  positioned : CallScopedCursorPosition callStart cursor position
 
 /-- Exact ownership exposes the pre-existing ordered-scan certificate after
 the activation identity has been checked. -/
-theorem Owns.scan
+theorem Owns.scanExact
     {alpha : List (LogicVar × String)}
-    {cursor : PreparedCursor} {resource : RetainedAlternativeSegment}
-    (ownership : resource.Owns alpha cursor) :
+    {callStart cursor : PreparedCursor} {position : Nat}
+    {resource : RetainedAlternativeSegment}
+    (ownership : resource.Owns alpha callStart cursor position) :
     RetainedCursorAlternativeOwnership alpha cursor resource.argsv
       resource.args resource.res resource.rest resource.binding resource.qterm
       resource.barrier resource.counter resource.alts resource.finalCounter :=
-  ownership.2
+  ownership.scan
 
 /-- Enlarging the alpha graph changes only the semantic scan certificate;
 the exact call identity and every executable resource field remain fixed. -/
 theorem Owns.mono
     {smaller larger : List (LogicVar × String)}
     (included : ∀ pair, pair ∈ smaller → pair ∈ larger)
+    {callStart cursor : PreparedCursor} {position : Nat}
+    {resource : RetainedAlternativeSegment}
+    (ownership : resource.Owns smaller callStart cursor position) :
+    resource.Owns larger callStart cursor position :=
+  ⟨ownership.identity,
+    RetainedCursorAlternativeOwnership.mono included ownership.scan,
+    ownership.positioned⟩
+
+/-- Existential packaging for consumers that retain an exact indexed
+ownership certificate but do not inspect its call-start coordinate.
+
+This is intentionally not a defaulting constructor: callers must supply an
+actual `Owns` proof, including its `CallScopedCursorPosition`.  Producer
+theorems continue to expose the concrete call start and position whenever
+those coordinates are semantically relevant. -/
+def HasIndexedOwnershipAt
+    (resource : RetainedAlternativeSegment)
+    (alpha : List (LogicVar × String)) (cursor : PreparedCursor) : Prop :=
+  ∃ callStart position, resource.Owns alpha callStart cursor position
+
+namespace HasIndexedOwnershipAt
+
+/-- Enlarging the alpha graph preserves the same hidden call-start coordinate
+and absolute source position. -/
+theorem mono
+    {smaller larger : List (LogicVar × String)}
+    (included : ∀ pair, pair ∈ smaller → pair ∈ larger)
     {cursor : PreparedCursor} {resource : RetainedAlternativeSegment}
-    (ownership : resource.Owns smaller cursor) :
-    resource.Owns larger cursor :=
-  ⟨ownership.1,
-    RetainedCursorAlternativeOwnership.mono included ownership.scan⟩
+    (ownership : resource.HasIndexedOwnershipAt smaller cursor) :
+    resource.HasIndexedOwnershipAt larger cursor := by
+  rcases ownership with ⟨callStart, position, exactOwnership⟩
+  exact ⟨callStart, position, exactOwnership.mono included⟩
+
+/-- Existential packaging does not erase marker-freedom of the exact owned
+alternative slice. -/
+theorem barrierCount_zero
+    {alpha : List (LogicVar × String)} {cursor : PreparedCursor}
+    {resource : RetainedAlternativeSegment}
+    (ownership : resource.HasIndexedOwnershipAt alpha cursor) :
+    PLeaTTa.barrierCount resource.alts = 0 := by
+  rcases ownership with ⟨_callStart, _position, exactOwnership⟩
+  exact RetainedCursorAlternativeOwnership.barrierCount_zero
+    exactOwnership.scan
+
+/-- Existential packaging also retains the source-occurrence upper bound on
+the executable alternative slice. -/
+theorem alts_length_le
+    {alpha : List (LogicVar × String)} {cursor : PreparedCursor}
+    {resource : RetainedAlternativeSegment}
+    (ownership : resource.HasIndexedOwnershipAt alpha cursor) :
+    resource.alts.length ≤ cursor.remaining.length := by
+  rcases ownership with ⟨_callStart, _position, exactOwnership⟩
+  exact RetainedCursorAlternativeOwnership.alts_length_le
+    exactOwnership.scan
+
+end HasIndexedOwnershipAt
 
 /-- One resource cannot own two different exhausted cursors.  At exhaustion
 both retained banks are literally empty, while `Owns` fixes every immutable
@@ -358,14 +420,18 @@ call-entry field through `PreparedCallIdentity`; cursor extensionality then
 closes the formerly ambiguous occurrence. -/
 theorem Owns.exhausted_cursor_injective
     {alpha : List (LogicVar × String)}
-    {left right : PreparedCursor}
+    {leftStart rightStart left right : PreparedCursor}
+    {leftPosition rightPosition : Nat}
     {resource : RetainedAlternativeSegment}
-    (leftOwnership : resource.Owns alpha left)
-    (rightOwnership : resource.Owns alpha right)
+    (leftOwnership :
+      resource.Owns alpha leftStart left leftPosition)
+    (rightOwnership :
+      resource.Owns alpha rightStart right rightPosition)
     (leftEmpty : left.remaining = [])
     (rightEmpty : right.remaining = []) :
     left = right := by
-  have identity := leftOwnership.1.symm.trans rightOwnership.1
+  have identity :=
+    leftOwnership.identity.symm.trans rightOwnership.identity
   have leftWellFormed : left.WellFormed := by
     rcases leftOwnership.scan with
       ⟨_candidates, wellFormed, _query, _args, _supported, _arities, _scan⟩
@@ -390,8 +456,9 @@ theorem Owns.exhausted_cursor_injective
 that marker is inserted once by `flattenOwnedAlts`. -/
 theorem barrierCount_zero
     {alpha : List (LogicVar × String)}
-    {cursor : PreparedCursor} {resource : RetainedAlternativeSegment}
-    (ownership : resource.Owns alpha cursor) :
+    {callStart cursor : PreparedCursor} {position : Nat}
+    {resource : RetainedAlternativeSegment}
+    (ownership : resource.Owns alpha callStart cursor position) :
     PLeaTTa.barrierCount resource.alts = 0 :=
   RetainedCursorAlternativeOwnership.barrierCount_zero ownership.scan
 
@@ -399,8 +466,9 @@ theorem barrierCount_zero
 never create more alternatives than frozen source occurrences. -/
 theorem alts_length_le
     {alpha : List (LogicVar × String)}
-    {cursor : PreparedCursor} {resource : RetainedAlternativeSegment}
-    (ownership : resource.Owns alpha cursor) :
+    {callStart cursor : PreparedCursor} {position : Nat}
+    {resource : RetainedAlternativeSegment}
+    (ownership : resource.Owns alpha callStart cursor position) :
     resource.alts.length ≤ cursor.remaining.length :=
   RetainedCursorAlternativeOwnership.alts_length_le ownership.scan
 
@@ -435,6 +503,8 @@ theorem pendingOwnership_exists_segment
     {cursor : PreparedCursor}
     {rest : List PLeaTTa.Goal} {qterm : Atom} {barrier : Nat}
     {alts : List PLeaTTa.Alt}
+    (callStart : PreparedCursor) (position : Nat)
+    (positioned : CallScopedCursorPosition callStart cursor position)
     (ownership :
       PendingRetainedCursorAlternativeOwnership alpha pending cursor rest
         qterm barrier alts) :
@@ -444,7 +514,7 @@ theorem pendingOwnership_exists_segment
       resource.barrier = barrier ∧
       resource.alts = alts ∧
       resource.finalCounter = pending.persistent.counter ∧
-      resource.Owns alpha cursor := by
+      resource.Owns alpha callStart cursor position := by
   rcases ownership with
     ⟨argsv, args, res, binding, counter, callHead, queryTerm, barrierExact,
       cursorOwnership⟩
@@ -461,7 +531,8 @@ theorem pendingOwnership_exists_segment
       alts := alts
       finalCounter := pending.persistent.counter }
   exact
-    ⟨resource, rfl, rfl, rfl, rfl, rfl, rfl, cursorOwnership⟩
+    ⟨resource, rfl, rfl, rfl, rfl, rfl,
+      ⟨rfl, cursorOwnership, positioned⟩⟩
 
 /-- Arbitrary-depth alignment of:
 
@@ -491,7 +562,9 @@ inductive SourceControlResourceContextAgrees
           segment.executables ++ flattenExecutables segments)
       (resourceQuery : resource.qterm = qterm)
       (resourceBarrier : resource.barrier = currentBarrier)
-      (resourceOwnership : resource.Owns alpha cursor)
+      (resourceOwnership :
+        ∃ callStart position,
+          resource.Owns alpha callStart cursor position)
       (outerAgrees :
         SourceControlResourceContextAgrees alpha qterm segment.barrier
           segments resources nextScope context outerScope) :
@@ -576,6 +649,8 @@ theorem flattenOwnedAlts_barrierCount
       resource resources cursor context segmentAgrees resourceRest
       resourceQuery resourceBarrier resourceOwnership outerAgrees
       inductionHypothesis =>
+      rcases resourceOwnership with
+        ⟨callStart, position, resourceOwnership⟩
       rw [flattenOwnedAlts_cons, PLeaTTa.barrierCount_append,
         RetainedAlternativeSegment.barrierCount_zero resourceOwnership,
         PLeaTTa.barrierCount_cons_barrier, inductionHypothesis]
@@ -636,8 +711,9 @@ theorem two_resource_frames_are_inhabited
   have owns (predicate : String) (rest : List PLeaTTa.Goal)
       (barrier : Nat) :
       (resourceFor predicate rest barrier).Owns alpha
-        (cursorFor predicate) := by
-    refine ⟨rfl, [], ?_, ?_, rfl, .nil, ?_, ?_⟩
+        (cursorFor predicate) (cursorFor predicate) 0 := by
+    refine ⟨rfl, ?_, CallScopedCursorPosition.refl _⟩
+    refine ⟨[], ?_, ?_, rfl, .nil, ?_, ?_⟩
     · refine ⟨.nil 0, ?_, ?_, ?_⟩
       · intro index member
         simp [cursorFor, termsVariables, termVariables,
@@ -672,12 +748,14 @@ theorem two_resource_frames_are_inhabited
          retained := .clauses middle secondCursor
          callerRest := second.references }]
       firstAgrees rfl rfl rfl
-      (owns "owned-first"
-        (first.executables ++ flattenExecutables [second]) currentBarrier)
+      ⟨firstCursor, 0,
+        owns "owned-first"
+          (first.executables ++ flattenExecutables [second]) currentBarrier⟩
         (.cons first.barrier middle outer outer second [] secondResource []
         secondCursor [] secondAgrees (by simp [secondResource, resourceFor])
         rfl rfl
-        (owns "owned-second" second.executables first.barrier)
+        ⟨secondCursor, 0,
+          owns "owned-second" second.executables first.barrier⟩
         (.nil second.barrier outer))
 
 /-- Deleting the anonymous marker after an owned retained suffix changes the
@@ -685,11 +763,11 @@ resource bank.  This is the positional anti-vacuity guard: equal cursor and
 branch data cannot compensate for a dropped predicate boundary. -/
 theorem dropped_owned_barrier_is_rejected
     {alpha : List (LogicVar × String)}
-    {cursor : PreparedCursor}
+    {callStart cursor : PreparedCursor} {position : Nat}
     (resource : RetainedAlternativeSegment)
     (resources : List RetainedAlternativeSegment)
     (base : List PLeaTTa.Alt)
-    (ownership : resource.Owns alpha cursor) :
+    (ownership : resource.Owns alpha callStart cursor position) :
     resource.alts ++ flattenOwnedAlts resources base ≠
       flattenOwnedAlts (resource :: resources) base := by
   intro equality
@@ -704,11 +782,11 @@ other linearity direction: one source frame cannot own two executable
 predicate boundaries. -/
 theorem extra_owned_barrier_is_rejected
     {alpha : List (LogicVar × String)}
-    {cursor : PreparedCursor}
+    {callStart cursor : PreparedCursor} {position : Nat}
     (resource : RetainedAlternativeSegment)
     (resources : List RetainedAlternativeSegment)
     (base : List PLeaTTa.Alt)
-    (ownership : resource.Owns alpha cursor) :
+    (ownership : resource.Owns alpha callStart cursor position) :
     resource.alts ++
         PLeaTTa.Alt.barrier :: PLeaTTa.Alt.barrier ::
           flattenOwnedAlts resources base ≠
@@ -747,6 +825,10 @@ theorem
     {installed : Subst}
     {resources : List RetainedAlternativeSegment}
     {context : ActiveProductContext}
+    (retainedPosition : Nat)
+    (positioned :
+      CallScopedCursorPosition opened.cursor
+        (finish.advance branch branchTail) retainedPosition)
     (activation :
       SpinedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
@@ -766,7 +848,8 @@ theorem
       active.barrier = bodyBarrier ∧
       active.alts = altTail ∧
       active.finalCounter = pending.persistent.counter ∧
-      active.Owns nextAlpha (finish.advance branch branchTail) ∧
+      active.Owns nextAlpha opened.cursor
+        (finish.advance branch branchTail) retainedPosition ∧
       (activatedExecutableSuccessor pending copied
         (segmentExecutableRest ++ flattenExecutables outer)
         qterm installed).alts =
@@ -788,7 +871,8 @@ theorem
   obtain
     ⟨active, activeRest, activeQuery, activeBarrier, activeAlts,
       activeFinalCounter, activeOwnership⟩ :=
-    pendingOwnership_exists_segment liftedOwnership
+    pendingOwnership_exists_segment opened.cursor retainedPosition positioned
+      liftedOwnership
   have actualAlts :
       (activatedExecutableSuccessor pending copied
         (segmentExecutableRest ++ flattenExecutables outer)

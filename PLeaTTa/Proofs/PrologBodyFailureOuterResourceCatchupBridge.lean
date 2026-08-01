@@ -506,8 +506,11 @@ private theorem crossedRejectedClash :
   crossedRejectedHead.no_headResolution_of_rejected (by rfl)
 
 private theorem crossedRejectedOwnership :
-    crossedRejectedResource.Owns [] crossedRejectedCursor := by
-  refine ⟨rfl, [crossedRejectedExecutable], crossedRejectedWellFormed,
+    crossedRejectedResource.HasIndexedOwnershipAt []
+      crossedRejectedCursor := by
+  refine ⟨crossedRejectedCursor, 0, ?_⟩
+  refine ⟨rfl, ?_, CallScopedCursorPosition.refl _⟩
+  refine ⟨[crossedRejectedExecutable], crossedRejectedWellFormed,
     ?_, rfl, ?_, ?_, ?_⟩
   · simpa [crossedRejectedResource] using crossedRejectedQuery
   · exact .cons crossedRejectedSupported .nil
@@ -547,7 +550,7 @@ theorem one_rejected_crossed_frame_is_inhabited :
       resource.alts = [] ∧
       finish.remaining = [] ∧
       RejectedPullsN 1 cursor finish ∧
-      resource.Owns [] cursor ∧
+      resource.HasIndexedOwnershipAt [] cursor ∧
       CrossedEmptyResourceFramesAgrees []
         [resource] [frame] 1 := by
   refine ⟨crossedRejectedResource, crossedRejectedFrame,
@@ -653,8 +656,10 @@ private theorem partitionLiveQuery :
       AlphaTermsAgree.nil)
 
 private theorem partitionLiveOwnership :
-    partitionLiveResource.Owns [] partitionLiveCursor := by
-  refine ⟨rfl, [crossedRejectedExecutable], partitionLiveWellFormed,
+    partitionLiveResource.HasIndexedOwnershipAt [] partitionLiveCursor := by
+  refine ⟨partitionLiveCursor, 0, ?_⟩
+  refine ⟨rfl, ?_, CallScopedCursorPosition.refl _⟩
+  refine ⟨[crossedRejectedExecutable], partitionLiveWellFormed,
     ?_, rfl, ?_, ?_, ?_⟩
   · simpa [partitionLiveResource] using partitionLiveQuery
   · exact .cons partitionLiveSupported .nil
@@ -893,9 +898,11 @@ private theorem chronologyQuery (seed : Nat) :
 
 private theorem chronologyOwnership
     (seed barrier counter : Nat) :
-    (chronologyResource seed barrier counter).Owns []
+    (chronologyResource seed barrier counter).HasIndexedOwnershipAt []
       (chronologyCursor seed) := by
-  refine ⟨rfl, [crossedRejectedExecutable], chronologyWellFormed seed,
+  refine ⟨chronologyCursor seed, 0, ?_⟩
+  refine ⟨rfl, ?_, CallScopedCursorPosition.refl _⟩
+  refine ⟨[crossedRejectedExecutable], chronologyWellFormed seed,
     ?_, rfl, ?_, ?_, ?_⟩
   · simpa [chronologyResource] using chronologyQuery seed
   · exact .cons (chronologySupported seed) .nil

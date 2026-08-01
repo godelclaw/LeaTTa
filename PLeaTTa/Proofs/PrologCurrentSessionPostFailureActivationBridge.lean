@@ -233,7 +233,9 @@ theorem activateSelectedHead
       _ ≤ session.resolver.nextFresh := cursorDominated
   have seedReserved :
       resource.counter + 1 ≤ resource.finalCounter := by
-    rcases agreement.core.resourceStack.offset.tailOwnership.scan with
+    rcases agreement.core.resourceStack.offset.tailOwnership with
+      ⟨_callStart, _position, tailOwnership⟩
+    rcases tailOwnership.scan with
       ⟨_candidates, _wellFormed, _query, _substitutedArgs, _supported,
         _arities, scan⟩
     have scanExact := scan.counter_exact
@@ -270,7 +272,7 @@ theorem activateSelectedHead
         ControlSegment).Agrees nextAlpha :=
     (agreement.core.control.callerSpine.head).mono alphaIncluded
   have activeOwnership :
-      (afterPulledHead resource remainingAlts).Owns nextAlpha
+      (afterPulledHead resource remainingAlts).HasIndexedOwnershipAt nextAlpha
         (cursor.advance branch branchTail) :=
     agreement.core.resourceStack.offset.tailOwnership.mono alphaIncluded
   let nextPayloadContext :
@@ -392,7 +394,7 @@ theorem activateSelectedHead
         sessionAdvanced := agreement.core.control.sessionAdvanced
         retainedAlts := ?_
         retainedAltsZero :=
-          RetainedAlternativeSegment.barrierCount_zero
+          RetainedAlternativeSegment.HasIndexedOwnershipAt.barrierCount_zero
             agreement.core.resourceStack.offset.tailOwnership
         retainedBarriers := ?_
         bodyBarrierTag := agreement.core.control.bodyBarrierTag

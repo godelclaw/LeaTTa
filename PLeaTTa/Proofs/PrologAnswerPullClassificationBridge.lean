@@ -51,9 +51,8 @@ mutual
       List PLeaTTa.Goal → Subst → List PLeaTTa.Alt → Prop where
     | clauses (scope : CutScopeId)
         (original cursor : Resolver.PreparedCursor) (position : Nat)
-        (positioned : CallScopedCursorPosition original cursor position)
         (resource : RetainedAlternativeSegment)
-        (ownership : resource.Owns alpha cursor)
+        (ownership : resource.Owns alpha original cursor position)
         (goals : List PLeaTTa.Goal) (binding : Subst)
         (tail : List PLeaTTa.Alt)
         (head : resource.alts = .br goals binding :: tail)
@@ -61,7 +60,7 @@ mutual
           PLeaTTa.pullAux resource.alts =
             some ((goals, binding), tail)) :
         RightRegionLanding alpha
-          (.clauses scope original cursor position positioned resource ownership)
+          (.clauses scope original cursor position resource ownership)
           goals binding tail
     | scheduled (callerScope : CutScopeId)
         (callerTail : List PeTTaSpec.PrologCore.Goal)
@@ -111,13 +110,12 @@ mutual
       Prop where
     | clauses (scope : CutScopeId)
         (original cursor : Resolver.PreparedCursor) (position : Nat)
-        (positioned : CallScopedCursorPosition original cursor position)
         (resource : RetainedAlternativeSegment)
-        (ownership : resource.Owns alpha cursor)
+        (ownership : resource.Owns alpha original cursor position)
         (empty : resource.alts = [])
         (pullNone : PLeaTTa.pullAux resource.alts = none) :
         RightRegionEmpty alpha
-          (.clauses scope original cursor position positioned resource ownership)
+          (.clauses scope original cursor position resource ownership)
     | scheduled (callerScope : CutScopeId)
         (callerTail : List PeTTaSpec.PrologCore.Goal)
         {leafScope : CutScopeId} {bindings : OpenSubstitution.Substitution}
@@ -370,7 +368,7 @@ theorem pullAux_exact
     (landing : RightRegionLanding alpha agreement goals binding tail) :
     PLeaTTa.pullAux segment = some ((goals, binding), tail) := by
   cases landing with
-  | clauses _ _ _ _ _ _ _ _ _ _ _ pullExact => exact pullExact
+  | clauses _ _ _ _ _ _ _ _ _ _ pullExact => exact pullExact
   | scheduled _ _ _ _ _ _ _ _ _ _ pullExact => exact pullExact
   | taskChoices _ _ _ _ _ _ _ _ _ _ _ pullExact => exact pullExact
 
@@ -387,7 +385,7 @@ theorem pullAux_none
     (empty : RightRegionEmpty alpha agreement) :
     PLeaTTa.pullAux segment = none := by
   cases empty with
-  | clauses _ _ _ _ _ _ _ _ pullNone => exact pullNone
+  | clauses _ _ _ _ _ _ _ pullNone => exact pullNone
   | scheduled _ _ _ _ _ _ _ pullNone => exact pullNone
 
 end RightRegionEmpty
@@ -538,22 +536,22 @@ theorem classifyPrefix
       (∃ goals binding rest,
           OriginPrefixLanding alpha originAgreement goals binding rest) ∨
         OriginPrefixFallsThrough alpha originAgreement)
-    (fun scope original cursor position positioned resource ownership => by
+    (fun scope original cursor position resource ownership => by
       cases pullEq : PLeaTTa.pullAux resource.alts with
       | none =>
           have empty := eq_nil_of_pullAux_none_of_barrierCount_zero
             (resource.barrierCount_zero ownership) pullEq
           exact .inr
-            (.clauses scope original cursor position positioned resource
-              ownership empty pullEq)
+            (.clauses scope original cursor position resource ownership empty
+              pullEq)
       | some result =>
           rcases result with ⟨⟨goals, binding⟩, tail⟩
           have head := eq_cons_of_pullAux_some_of_barrierCount_zero
             (resource.barrierCount_zero ownership) pullEq
           exact .inl
             ⟨goals, binding, tail,
-              .clauses scope original cursor position positioned resource
-                ownership goals binding tail head pullEq⟩)
+              .clauses scope original cursor position resource ownership goals
+                binding tail head pullEq⟩)
     (by
       intro callerScope callerTail leafScope bindings head next historyOrigin
         resources nonempty history historyIH
@@ -811,7 +809,8 @@ theorem live_owned_region_is_inhabited :
     ∃ resource : RetainedAlternativeSegment,
       ∃ cursor : Resolver.PreparedCursor,
         ∃ goals binding tail,
-          resource.Owns ([] : List (LogicVar × String)) cursor ∧
+          resource.HasIndexedOwnershipAt
+            ([] : List (LogicVar × String)) cursor ∧
             resource.alts = .br goals binding :: tail := by
   obtain ⟨partition, _, _, _⟩ :=
     PLeaTTa.PrologBodyFailureOuterResourceCatchupBridge.two_crossed_then_live_partition_is_inhabited
@@ -826,7 +825,8 @@ the empty bank is therefore not a fabricated empty descriptor. -/
 theorem empty_owned_region_is_inhabited :
     ∃ resource : RetainedAlternativeSegment,
       ∃ cursor : Resolver.PreparedCursor,
-        resource.Owns ([] : List (LogicVar × String)) cursor ∧
+        resource.HasIndexedOwnershipAt
+          ([] : List (LogicVar × String)) cursor ∧
           resource.alts = [] := by
   obtain
       ⟨resource, _, cursor, _, _, empty, _, _, ownership, _⟩ :=
@@ -864,11 +864,12 @@ theorem first_local_region_is_inhabited :
   have agreement :
       AnswerOriginResourceAgrees ([] : List (LogicVar × String)) origin
         [resource] [] (resource.alts ++ [.barrier]) [] := by
+    rcases ownership with ⟨callStart, position, exactOwnership⟩
     simpa [origin] using
       (AnswerOriginResourceAgrees.active_call_exact_at
         (alpha := ([] : List (LogicVar × String))) 1
-        ([] : OpenSubstitution.Substitution) cursor cursor 0
-        (CallScopedCursorPosition.refl cursor) resource [] [] ownership)
+        ([] : OpenSubstitution.Substitution) callStart cursor position
+        resource [] [] exactOwnership)
   have nonempty : resource.alts ≠ [] := by
     rw [head]
     simp
@@ -942,8 +943,12 @@ theorem second_local_region_after_empty_is_inhabited :
   have emptyRegion :
       RightAlternativeRegionAgrees ([] : List (LogicVar × String))
         (.clauses 1 emptyCursor) [emptyResource] emptyResource.alts :=
-    .clauses 1 emptyCursor emptyCursor 0
-      (CallScopedCursorPosition.refl emptyCursor) emptyResource emptyOwnership
+    by
+      rcases emptyOwnership with
+        ⟨emptyCallStart, emptyPosition, exactEmptyOwnership⟩
+      exact
+        .clauses 1 emptyCallStart emptyCursor emptyPosition emptyResource
+          exactEmptyOwnership
   have innerAgreement :
       AnswerOriginResourceAgrees ([] : List (LogicVar × String)) innerOrigin
         [emptyResource, liveResource] [liveResource]
@@ -954,8 +959,12 @@ theorem second_local_region_after_empty_is_inhabited :
   have liveRegion :
       RightAlternativeRegionAgrees ([] : List (LogicVar × String))
         (.clauses 2 liveCursor) [liveResource] liveResource.alts :=
-    .clauses 2 liveCursor liveCursor 0
-      (CallScopedCursorPosition.refl liveCursor) liveResource liveOwnership
+    by
+      rcases liveOwnership with
+        ⟨liveCallStart, livePosition, exactLiveOwnership⟩
+      exact
+        .clauses 2 liveCallStart liveCursor livePosition liveResource
+          exactLiveOwnership
   have innerAgreementForOuter :
       AnswerOriginResourceAgrees ([] : List (LogicVar × String)) innerOrigin
         [emptyResource, liveResource] ([liveResource] ++ [])

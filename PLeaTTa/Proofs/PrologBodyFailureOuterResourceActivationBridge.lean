@@ -202,7 +202,9 @@ theorem
         qterm outerScope suffixBarrier segments resources context baseAlts
         predecessor partition count finish branch clause branchTail copied
         (firstLiveReadySourceFrontier partition finish) successor := by
-  rcases partition.firstOwnership.scan with
+  rcases partition.firstOwnership with
+    ⟨callStart, firstPosition, firstOwnership⟩
+  rcases firstOwnership.scan with
     ⟨candidates, cursorWellFormed, query, substitutedArgs,
       supportedCandidates, candidateArities, candidateScan⟩
   obtain
@@ -287,9 +289,14 @@ theorem
         (fun _branch _clause item =>
           advancedContext.supportedPreparedCandidate item)
     simpa [PreparedCursor.advance] using transported
+  have finishPositioned :
+      CallScopedCursorPosition callStart finish
+        (firstPosition + count) :=
+    CallScopedCursorPosition.afterRejected pulls firstOwnership.positioned
   have tailOwnership :
       (afterPulledHead partition.first altTail).Owns alpha
-        (finish.advance branch branchTail) :=
+        callStart (finish.advance branch branchTail)
+          ((firstPosition + count) + 1) :=
     by
       have advancedIdentity :
           PreparedCallIdentity.ofCursor (finish.advance branch branchTail) =
@@ -298,20 +305,23 @@ theorem
         simpa [PreparedCursor.advance] using
           (PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_reservedUntil
             pulls)
-      refine ⟨?_, clauseTail, advancedWellFormed, queryAtAdvanced,
-        substitutedArgs, tailSupportedAtAdvanced, tailArities, tailScan⟩
-      calc
-        (afterPulledHead partition.first altTail).callIdentity =
-            partition.first.callIdentity := rfl
-        _ = PreparedCallIdentity.ofCursor partition.firstCursor :=
-          partition.firstOwnership.1
-        _ = PreparedCallIdentity.ofCursor
-            (finish.advance branch branchTail) := advancedIdentity.symm
+      refine ⟨?_, ?_, finishPositioned.advance cursorRemaining⟩
+      · calc
+          (afterPulledHead partition.first altTail).callIdentity =
+              partition.first.callIdentity := rfl
+          _ = PreparedCallIdentity.ofCursor partition.firstCursor :=
+            firstOwnership.identity
+          _ = PreparedCallIdentity.ofCursor
+              (finish.advance branch branchTail) := advancedIdentity.symm
+      · exact
+          ⟨clauseTail, advancedWellFormed, queryAtAdvanced,
+            substitutedArgs, tailSupportedAtAdvanced, tailArities, tailScan⟩
   have offsetAtAltTail :
       PulledHeadOffsetAgrees alpha finish branch clause branchTail copied
         partition.first altTail :=
     ⟨cursorRemaining, finishWellFormed, queryAtFinish, substitutedArgs,
-      supportedAtFinish, arity, retained, priorAlts, rfl, tailOwnership⟩
+      supportedAtFinish, arity, retained, priorAlts, rfl,
+      ⟨callStart, firstPosition + count, finishPositioned, tailOwnership⟩⟩
   have banksEqual :
       resolutionAlt partition.first.argsv partition.first.args
             partition.first.res partition.first.rest partition.first.binding
@@ -593,9 +603,11 @@ private theorem prefixPull :
       [prefixRetainedBranch] prefixFinish (by rfl) prefixRejectedClash
       (.zero prefixFinish))
 
-private theorem prefixOwnership : prefixResource.Owns [] prefixCursor := by
+private theorem prefixOwnership :
+    prefixResource.Owns [] prefixCursor prefixCursor 0 := by
+  refine ⟨rfl, ?_, CallScopedCursorPosition.refl prefixCursor⟩
   refine
-    ⟨rfl, [prefixRejectedExecutable, prefixRetainedExecutable],
+    ⟨[prefixRejectedExecutable, prefixRetainedExecutable],
       prefixCursorWellFormed, ?_, rfl,
       .cons prefixRejectedSupported (.cons prefixRetainedSupported .nil),
       ?_, ?_⟩
@@ -630,6 +642,47 @@ private theorem prefixOwnership : prefixResource.Owns [] prefixCursor := by
         (ResolutionScan.retained prefixRetainedExecutable [] 0 1 []
           retainedAfterSubst (ResolutionScan.nil 1)))
 
+private theorem prefixFinishOwnership :
+    prefixResource.Owns [] prefixCursor prefixFinish 1 := by
+  have finishWellFormed : prefixFinish.WellFormed :=
+    PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_wellFormed
+      prefixPull prefixCursorWellFormed
+  have finishContext :
+      CursorCallContext prefixFinish 0 "ranked-ready" [.integer 1] [] :=
+    (CursorCallContext.refl prefixCursor).advance prefixRejectedBranch
+      [prefixRetainedBranch]
+  have queryAtFinish :
+      RepresentativeNormalizedCallAgrees [] prefixFinish []
+        (.gnd (.int 1)) :=
+    CursorCallContext.representativeNormalizedCallAgrees finishContext
+      (.refl prefixCursor) prefixQuery
+  have supportedAtFinish :
+      SupportedPreparedCandidateAgrees prefixFinish.callGeneration
+        prefixFinish.predicate prefixFinish.arguments prefixFinish.bindings
+        prefixRetainedBranch prefixRetainedExecutable :=
+    finishContext.supportedPreparedCandidate prefixRetainedSupported
+  have positioned : CallScopedCursorPosition prefixCursor prefixFinish 1 := by
+    simpa using
+      (CallScopedCursorPosition.afterRejected prefixPull
+        (CallScopedCursorPosition.refl prefixCursor))
+  refine ⟨?_, ?_, positioned⟩
+  · rfl
+  · refine
+      ⟨[prefixRetainedExecutable], finishWellFormed,
+        (by simpa [prefixResource] using queryAtFinish), rfl,
+        .cons supportedAtFinish .nil, ?_, ?_⟩
+    · intro clause member
+      simp [prefixRetainedExecutable] at member
+      subst clause
+      rfl
+    · have retained :
+          resolutionClauseRetained [] (.gnd (.int 1))
+            prefixRetainedExecutable = true := by
+        rfl
+      simpa [prefixResource] using
+        (ResolutionScan.retained prefixRetainedExecutable [] 0 1 []
+          (by simpa using retained) (ResolutionScan.nil 1))
+
 private theorem prefixOffset :
     PulledHeadOffsetAgrees [] prefixFinish prefixRetainedBranch
       prefixRetainedExecutable [] prefixCopied prefixResource [] := by
@@ -659,10 +712,15 @@ private theorem prefixOffset :
           prefixRetainedExecutable = true := by
       rfl
     simpa [prefixResource] using retained
+  have finishPositioned :
+      CallScopedCursorPosition prefixCursor prefixFinish 1 :=
+    prefixFinishOwnership.positioned
   have tailOwnership :
       (afterPulledHead prefixResource []).Owns []
-        (prefixFinish.advance prefixRetainedBranch []) := by
-    refine ⟨rfl, [], ?_, ?_, rfl, .nil, ?_, ?_⟩
+        prefixCursor (prefixFinish.advance prefixRetainedBranch [])
+          (1 + 1) := by
+    refine ⟨rfl, ?_, finishPositioned.advance (by rfl)⟩
+    refine ⟨[], ?_, ?_, rfl, .nil, ?_, ?_⟩
     · exact prefixFinish.advance_wellFormed finishWellFormed (by rfl)
     · have advancedContext :=
         finishContext.advance prefixRetainedBranch []
@@ -678,7 +736,7 @@ private theorem prefixOffset :
   exact
     ⟨rfl, finishWellFormed, by simpa [prefixResource] using queryAtFinish,
       rfl, supportedAtFinish, rfl, retainedAtResource, rfl, rfl,
-      tailOwnership⟩
+      ⟨prefixCursor, 1, finishPositioned, tailOwnership⟩⟩
 
 /-- The ready-offset relation genuinely contains a nonzero rejected prefix
 before a retained occurrence.  Thus it cannot be satisfied only by
@@ -706,7 +764,7 @@ theorem one_rejected_source_position_one_counter_zero :
       RejectedPullsN 1 before finish /\
       CallScopedCursorPosition before finish 1 /\
       finish.remaining.length = 1 /\
-      resource.Owns [] before /\
+      resource.Owns [] before finish 1 /\
       resource.counter = 0 /\
       resource.alts.length = 1 := by
   have positioned : CallScopedCursorPosition prefixCursor prefixFinish 1 := by
@@ -715,6 +773,6 @@ theorem one_rejected_source_position_one_counter_zero :
         (CallScopedCursorPosition.refl prefixCursor))
   exact
     ⟨prefixCursor, prefixFinish, prefixResource, prefixPull, positioned,
-      rfl, prefixOwnership, rfl, rfl⟩
+      rfl, prefixFinishOwnership, rfl, rfl⟩
 
 end PLeaTTa.PrologBodyFailureOuterResourceActivationBridge

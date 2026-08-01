@@ -590,6 +590,10 @@ theorem nested_wrapped_local_live_source_run_is_inhabited :
       ⟨liveResource, liveCursor, goals, binding, localTail, liveOwnership,
         liveHead⟩ :=
     PLeaTTa.PrologAnswerPullClassificationBridge.live_owned_region_is_inhabited
+  rcases emptyOwnership with
+    ⟨emptyCallStart, emptyPosition, emptyExactOwnership⟩
+  rcases liveOwnership with
+    ⟨liveCallStart, livePosition, liveExactOwnership⟩
   let leaf :
       AnswerOrigin 1 ([] : Substitution) (.task 1 [] []) .done := .task
   let innerOrigin :
@@ -613,10 +617,10 @@ theorem nested_wrapped_local_live_source_run_is_inhabited :
     .task 1 [] [emptyResource, liveResource]
       (emptyResource.alts ++ liveResource.alts)
   have emptyRegion :
-      RightAlternativeRegionAgrees [] (.clauses 1 emptyCursor)
+    RightAlternativeRegionAgrees [] (.clauses 1 emptyCursor)
         [emptyResource] emptyResource.alts :=
-    .clauses 1 emptyCursor emptyCursor 0
-      (CallScopedCursorPosition.refl emptyCursor) emptyResource emptyOwnership
+    .clauses 1 emptyCallStart emptyCursor emptyPosition
+      emptyResource emptyExactOwnership
   have innerAgreement :
       AnswerOriginResourceAgrees [] innerOrigin [emptyResource, liveResource]
         [liveResource]
@@ -628,10 +632,10 @@ theorem nested_wrapped_local_live_source_run_is_inhabited :
     · simpa [List.append_assoc] using leafAgreement
     · exact emptyRegion
   have liveRegion :
-      RightAlternativeRegionAgrees [] (.clauses 2 liveCursor)
+    RightAlternativeRegionAgrees [] (.clauses 2 liveCursor)
         [liveResource] liveResource.alts :=
-    .clauses 2 liveCursor liveCursor 0
-      (CallScopedCursorPosition.refl liveCursor) liveResource liveOwnership
+    .clauses 2 liveCallStart liveCursor livePosition
+      liveResource liveExactOwnership
   have originAgreement :
       AnswerOriginResourceAgrees [] origin [emptyResource, liveResource] []
         (emptyResource.alts ++ liveResource.alts) [] := by

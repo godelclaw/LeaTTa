@@ -535,6 +535,8 @@ theorem reachable_unbound_p_to_q_materialized
           [] [] queryAtom [] [] queryAtom
           (barrierDepth initialOpenConf.toConf + 1)
           initialOpenConf.toConf.counter ∧
+        RejectedPullsN 0
+          (openedFor initialSession "p" [queryTerm] []).cursor finish ∧
         AlphaCumulativeResidualVariantAgreesOnWith rootAlpha rootAlpha [] [] []
           representative ∧
         MaterializedCallAgreesWith rootAlpha [] [queryTerm] [] queryAtom
@@ -727,6 +729,7 @@ theorem reachable_unbound_p_to_q_materialized
   refine
     ⟨finish, pPreparedBranch, [], altTail, pCopied, representative,
       nextAlpha, sourceCanonical, flattened, installed, rfl, rfl, ?_,
+      (by simpa [rejectsZero] using facts.pulls),
       facts.oldCumulative, (by simpa using facts.materializedAtOpen),
       facts.activation, ?_, ?_,
       materialized, rawUnsupported⟩
@@ -787,8 +790,8 @@ theorem qMaterializedReadyAfterP
   obtain
     ⟨finish, branch, branchTail, altTail, copied, representative, nextAlpha,
       sourceCanonical, flattened, installed, branchExact, copiedExact,
-      frontier, oldCumulative, materializedAtOpen, activation, rootSourceSteps,
-      rootFineSteps, materialized, _rawUnsupported⟩ :=
+      frontier, rootPulls, oldCumulative, materializedAtOpen, activation,
+      rootSourceSteps, rootFineSteps, materialized, _rawUnsupported⟩ :=
     reachable_unbound_p_to_q_materialized (prog := prog) (gt := gt)
   subst branch
   subst copied
@@ -819,6 +822,17 @@ theorem qMaterializedReadyAfterP
     rfl
   have outerAlts : pPending.outer.alts = flattenOwnedAlts [] [] := by
     rfl
+  have finishPositioned :
+      CallScopedCursorPosition
+        (openedFor initialSession "p" [queryTerm] []).cursor finish 0 :=
+    CallScopedCursorPosition.afterRejected rootPulls
+      (CallScopedCursorPosition.refl
+        (openedFor initialSession "p" [queryTerm] []).cursor)
+  have retainedPositioned :
+      CallScopedCursorPosition
+        (openedFor initialSession "p" [queryTerm] []).cursor
+        (finish.advance pPreparedBranch branchTail) 1 := by
+    simpa using finishPositioned.advance frontier.finishRemaining
   obtain ⟨active, payloadContext, agreement, _outerExact⟩ :=
     SpinedRepresentativeProductActivation.spinedProductPayloadResourceRelates
       (prog := prog) (gt := gt) (alpha := rootAlpha) (support := rootAlpha)
@@ -828,7 +842,7 @@ theorem qMaterializedReadyAfterP
       (outer := []) (binding := []) (qterm := queryAtom)
       (callerBarrier := 0) (callerScope := rootScope)
       (outerScope := rootScope) (resources := []) (context := [])
-      frontier preHeadPayload oldCumulative
+      1 retainedPositioned frontier preHeadPayload oldCumulative
       (by simpa using materializedAtOpen)
       (by simp [openedFor, openLocalCall, requestFor, prepareCall])
       (by simp [openedFor, openLocalCall, requestFor, prepareCall])

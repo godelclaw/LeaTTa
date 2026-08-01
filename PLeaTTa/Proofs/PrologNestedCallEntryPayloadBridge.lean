@@ -334,6 +334,12 @@ theorem
                references := callerReferences
                executables := callerExecutables } :: outer))
         runtime qterm nestedBodyBarrier state.persistent.counter)
+    (retainedPosition : Nat)
+    (positioned :
+      CallScopedCursorPosition
+        (openedFor session predicate referencePayload current).cursor
+        (nestedFinish.advance nestedBranch nestedBranchTail)
+        retainedPosition)
     (oldCumulative :
       AlphaCumulativeResidualVariantAgreesOnWith alpha support canonical
         referenceBase runtime representative)
@@ -458,8 +464,9 @@ theorem
   obtain
       ⟨nestedActive, nestedPayloadContext, nestedAgreement, payloadHandoff⟩ :=
     SpinedRepresentativeProductActivation.spinedProductPayloadResourceRelates
-      frontier preHeadPayload oldCumulative materializedAtOpen (by rfl) (by rfl)
-      queryReferenceBelow activation entry.sourceFresh
+      retainedPosition positioned frontier preHeadPayload oldCumulative
+      materializedAtOpen (by rfl) (by rfl) queryReferenceBelow activation
+      entry.sourceFresh
       currentPayloadContext outerEndpoints currentAgreement.activationOrdered
       baseAlts outerAlts
   refine

@@ -434,9 +434,8 @@ mutual
     | clauses (scope : CutScopeId)
         (original cursor : PeTTaSpec.PrologCore.Resolver.PreparedCursor)
         (position : Nat)
-        (positioned : CallScopedCursorPosition original cursor position)
         (resource : RetainedAlternativeSegment)
-        (ownership : resource.Owns alpha cursor) :
+        (ownership : resource.Owns alpha original cursor position) :
         RightAlternativeRegionAgrees alpha (.clauses scope cursor)
           [resource] resource.alts
     | scheduled (callerScope : CutScopeId)
@@ -561,10 +560,12 @@ theorem clauses_exact
     (agreement :
       RightAlternativeRegionAgrees alpha (.clauses scope cursor)
         [resource] segment) :
-    segment = resource.alts ∧ resource.Owns alpha cursor := by
+    ∃ original position,
+      segment = resource.alts ∧
+        resource.Owns alpha original cursor position := by
   cases agreement with
-  | clauses _ _ _ _ _ _ ownership =>
-      exact ⟨rfl, ownership⟩
+  | clauses _ original _ position _ ownership =>
+      exact ⟨original, position, rfl, ownership⟩
 
 /-- A clause region retains the immutable call-start cursor and the absolute
 position of its current suffix head.  The position is source-derived and
@@ -580,10 +581,10 @@ theorem clauses_position_exact
     exists original position,
       CallScopedCursorPosition original cursor position /\
         segment = resource.alts /\
-        resource.Owns alpha cursor := by
+        resource.Owns alpha original cursor position := by
   cases agreement with
-  | clauses _ original _ position positioned _ ownership =>
-      exact ⟨original, position, positioned, rfl, ownership⟩
+  | clauses _ original _ position _ ownership =>
+      exact ⟨original, position, ownership.positioned, rfl, ownership⟩
 
 /-- Shape inversion for a clause region without presupposing the singleton
 resource.  This is the robust form used by order-rejection proofs: the
@@ -597,11 +598,12 @@ theorem clauses_shape
       RightAlternativeRegionAgrees alpha (.clauses scope cursor)
         resources segment) :
     ∃ resource : RetainedAlternativeSegment,
-      resources = [resource] ∧ segment = resource.alts ∧
-        resource.Owns alpha cursor := by
+      ∃ original position,
+        resources = [resource] ∧ segment = resource.alts ∧
+          resource.Owns alpha original cursor position := by
   cases agreement with
-  | clauses _ _ _ _ _ resource ownership =>
-      exact ⟨resource, rfl, rfl, ownership⟩
+  | clauses _ original _ position resource ownership =>
+      exact ⟨resource, original, position, rfl, rfl, ownership⟩
   | taskChoices => contradiction
 
 /-- A scheduled product exposes its literal nonempty flattened resource slice
@@ -775,7 +777,7 @@ mutual
         RightAlternativeRegionAgrees alpha right resources segment) :
       ResourcesBarrierFree resources := by
     cases agreement with
-    | clauses _ _ _ _ _ resource ownership =>
+    | clauses _ _ _ _ resource ownership =>
         intro candidate member
         simp only [List.mem_singleton] at member
         subst candidate
@@ -888,7 +890,8 @@ private theorem head_resource_owns
            retained := .clauses currentScope cursor
            callerRest := segment.references } :: context)
         outerScope) :
-    resource.Owns alpha cursor := by
+    ∃ callStart position,
+      resource.Owns alpha callStart cursor position := by
   cases agreement with
   | cons currentBarrier currentScope nextScope outerScope segment segments
       resource resources cursor context segmentAgrees resourceRest
@@ -1011,11 +1014,10 @@ theorem active_call_exact_at
     (original : PeTTaSpec.PrologCore.Resolver.PreparedCursor)
     (cursor : PeTTaSpec.PrologCore.Resolver.PreparedCursor)
     (position : Nat)
-    (positioned : CallScopedCursorPosition original cursor position)
     (resource : RetainedAlternativeSegment)
     (resources : List RetainedAlternativeSegment)
     (base : List PLeaTTa.Alt)
-    (ownership : resource.Owns alpha cursor) :
+    (ownership : resource.Owns alpha original cursor position) :
     AnswerOriginResourceAgrees alpha
       (AnswerOrigin.cutBoundary predicateScope
         (AnswerOrigin.choice predicateScope (.clauses predicateScope cursor)
@@ -1028,7 +1030,7 @@ theorem active_call_exact_at
     (regionResources := [resource]) (regionAlts := resource.alts)
   · exact AnswerOriginResourceAgrees.task _ _ _ _
   · exact RightAlternativeRegionAgrees.clauses _ original cursor position
-      positioned resource ownership
+      resource ownership
 
 /-- A one-level scheduled right branch is the historical product successor of
 the exact active-call answer path.  This is a corollary of the general
@@ -1039,7 +1041,7 @@ theorem one_level_scheduled_region_exact
     (cursor : PeTTaSpec.PrologCore.Resolver.PreparedCursor)
     (callerTail : List PeTTaSpec.PrologCore.Goal)
     (resource : RetainedAlternativeSegment)
-    (ownership : resource.Owns alpha cursor) :
+    (ownership : resource.HasIndexedOwnershipAt alpha cursor) :
     RightAlternativeRegionAgrees alpha
       (.product callerScope
         (.cutBoundary predicateScope
@@ -1058,9 +1060,10 @@ theorem one_level_scheduled_region_exact
   have history :
       AnswerOriginResourceAgrees alpha origin [resource] []
         (flattenOwnedAlts [resource] []) [] := by
+    rcases ownership with ⟨original, position, exactOwnership⟩
     simpa [flattenOwnedAlts] using
-      (active_call_exact_at predicateScope bindings cursor cursor 0
-        (CallScopedCursorPosition.refl cursor) resource [] [] ownership)
+      (active_call_exact_at predicateScope bindings original cursor position
+        resource [] [] exactOwnership)
   simpa [flattenOwnedAlts] using
     (RightAlternativeRegionAgrees.scheduled callerScope callerTail origin
       [resource] (by simp) history)
@@ -1076,7 +1079,7 @@ theorem scheduled_call_exact
     (resource : RetainedAlternativeSegment)
     (resources : List RetainedAlternativeSegment)
     (base : List PLeaTTa.Alt)
-    (ownership : resource.Owns alpha cursor) :
+    (ownership : resource.HasIndexedOwnershipAt alpha cursor) :
     AnswerOriginResourceAgrees alpha
       (AnswerOrigin.choice callerScope
         (.product callerScope
@@ -1114,7 +1117,7 @@ theorem active_call_prefix_exact
         (resource :: resources) resources beforeAlts afterAlts) :
     beforeAlts =
         resource.alts ++ (PLeaTTa.Alt.barrier :: afterAlts) ∧
-      resource.Owns alpha cursor := by
+      resource.HasIndexedOwnershipAt alpha cursor := by
   have activeChoice := cutBoundary_layer_exact
     (inside :=
       AnswerOrigin.choice predicateScope (.clauses predicateScope cursor)
@@ -1128,9 +1131,10 @@ theorem active_call_prefix_exact
     apply List.append_cancel_right
     simpa only [List.singleton_append] using leafEndpoints.1
   subst regionResources
-  rcases regionAgrees.clauses_exact with ⟨regionAltsExact, ownership⟩
+  rcases regionAgrees.clauses_exact with
+    ⟨original, position, regionAltsExact, ownership⟩
   subst regionAlts
-  exact ⟨leafEndpoints.2, ownership⟩
+  exact ⟨leafEndpoints.2, ⟨original, position, ownership⟩⟩
 
 /-- A singleton historical slice ending in the literal one-level predicate
 successor recovers ownership of that successor's retained cursor.
@@ -1151,7 +1155,7 @@ theorem one_level_scheduled_history_owns
     (history :
       AnswerOriginResourceAgrees alpha origin [resource] []
         (flattenOwnedAlts [resource] []) []) :
-    resource.Owns alpha cursor := by
+    resource.HasIndexedOwnershipAt alpha cursor := by
   cases origin with
   | cutBoundary _ inside =>
       have activeChoice := cutBoundary_layer_exact (inside := inside) history
@@ -1166,7 +1170,9 @@ theorem one_level_scheduled_history_owns
                 apply List.append_cancel_right
                 simpa only [List.singleton_append] using leafEndpoints.1
               subst regionResources
-              exact regionAgrees.clauses_exact.2
+              rcases regionAgrees.clauses_exact with
+                ⟨original, position, _regionAltsExact, ownership⟩
+              exact ⟨original, position, ownership⟩
 
 /-- Inversion of the scheduled-call witness: one choice owns the retained
 scan and exactly one marker, with no second cut-boundary consumption. -/
@@ -1191,7 +1197,7 @@ theorem scheduled_call_prefix_exact
         (resource :: resources) resources beforeAlts afterAlts) :
     beforeAlts =
         (resource.alts ++ [PLeaTTa.Alt.barrier]) ++ afterAlts ∧
-      resource.Owns alpha cursor := by
+      resource.HasIndexedOwnershipAt alpha cursor := by
   rcases choice_layer_exact agreement with
     ⟨regionResources, regionAlts, leafAgrees, regionAgrees⟩
   have leafEndpoints := task_endpoints_exact leafAgrees
@@ -1202,7 +1208,7 @@ theorem scheduled_call_prefix_exact
   rcases regionAgrees.scheduled_exact with
     ⟨regionAltsExact, _nonempty, leafScope, priorBindings, head, origin,
       history⟩
-  have ownership : resource.Owns alpha cursor :=
+  have ownership : resource.HasIndexedOwnershipAt alpha cursor :=
     one_level_scheduled_history_owns history
   have regionAltsOne :
       regionAlts = resource.alts ++ [PLeaTTa.Alt.barrier] := by
@@ -1222,8 +1228,8 @@ theorem active_under_scheduled_exact
     (outerCallerTail : List PeTTaSpec.PrologCore.Goal)
     (innerResource outerResource : RetainedAlternativeSegment)
     (base : List PLeaTTa.Alt)
-    (innerOwnership : innerResource.Owns alpha innerCursor)
-    (outerOwnership : outerResource.Owns alpha outerCursor) :
+    (innerOwnership : innerResource.HasIndexedOwnershipAt alpha innerCursor)
+    (outerOwnership : outerResource.HasIndexedOwnershipAt alpha outerCursor) :
     AnswerOriginResourceAgrees alpha
       (AnswerOrigin.choice outerCallerScope
         (.product outerCallerScope
@@ -1259,11 +1265,14 @@ theorem active_under_scheduled_exact
         (innerResource.alts ++
           (PLeaTTa.Alt.barrier ::
             ((outerResource.alts ++ [PLeaTTa.Alt.barrier]) ++ base)))
-        ((outerResource.alts ++ [PLeaTTa.Alt.barrier]) ++ base) :=
-    active_call_exact_at innerPredicateScope bindings innerCursor innerCursor 0
-      (CallScopedCursorPosition.refl innerCursor) innerResource [outerResource]
-      ((outerResource.alts ++ [PLeaTTa.Alt.barrier]) ++ base)
-      innerOwnership
+      ((outerResource.alts ++ [PLeaTTa.Alt.barrier]) ++ base) := by
+    rcases innerOwnership with
+      ⟨innerCallStart, innerPosition, exactInnerOwnership⟩
+    exact
+      active_call_exact_at innerPredicateScope bindings innerCallStart
+        innerCursor innerPosition innerResource [outerResource]
+        ((outerResource.alts ++ [PLeaTTa.Alt.barrier]) ++ base)
+        exactInnerOwnership
   have regionAgrees :
       RightAlternativeRegionAgrees alpha
         (.product outerCallerScope
@@ -1310,8 +1319,8 @@ theorem two_level_scheduled_region_exact
       PeTTaSpec.PrologCore.Resolver.PreparedCursor)
     (finalCallerTail outerCallerTail : List PeTTaSpec.PrologCore.Goal)
     (innerResource outerResource : RetainedAlternativeSegment)
-    (innerOwnership : innerResource.Owns alpha innerCursor)
-    (outerOwnership : outerResource.Owns alpha outerCursor) :
+    (innerOwnership : innerResource.HasIndexedOwnershipAt alpha innerCursor)
+    (outerOwnership : outerResource.HasIndexedOwnershipAt alpha outerCursor) :
     RightAlternativeRegionAgrees alpha
       (.product finalCallerScope
         (.choice outerCallerScope
@@ -1379,8 +1388,8 @@ theorem two_level_scheduled_marker_count_discriminates
       PeTTaSpec.PrologCore.Resolver.PreparedCursor)
     (finalCallerTail outerCallerTail : List PeTTaSpec.PrologCore.Goal)
     (innerResource outerResource : RetainedAlternativeSegment)
-    (innerOwnership : innerResource.Owns alpha innerCursor)
-    (outerOwnership : outerResource.Owns alpha outerCursor) :
+    (innerOwnership : innerResource.HasIndexedOwnershipAt alpha innerCursor)
+    (outerOwnership : outerResource.HasIndexedOwnershipAt alpha outerCursor) :
     let segment := flattenOwnedAlts [innerResource, outerResource] []
     PLeaTTa.barrierCount segment = 2 ∧
       PLeaTTa.barrierCount segment ≠ 1 ∧
@@ -1426,10 +1435,10 @@ theorem nested_answer_resource_path_is_inhabited :
       ⟨innerCursor, outerCursor, innerResource, outerResource, alignment⟩ :=
     two_resource_frames_are_inhabited (.sym "answer-origin-query")
       1 2 3 0 emptySegment emptySegment emptySegmentAgrees emptySegmentAgrees
-  have innerOwnership : innerResource.Owns [] innerCursor :=
+  have innerOwnership : innerResource.HasIndexedOwnershipAt [] innerCursor :=
     head_resource_owns alignment
   have outerAlignment := tail_resource_context alignment
-  have outerOwnership : outerResource.Owns [] outerCursor :=
+  have outerOwnership : outerResource.HasIndexedOwnershipAt [] outerCursor :=
     head_resource_owns outerAlignment
   refine ⟨innerCursor, outerCursor, innerResource, outerResource, ?_⟩
   simpa using
@@ -1551,7 +1560,7 @@ theorem empty_bank_wrong_cursor_rejected_of_notOwned
     {resources : List RetainedAlternativeSegment}
     {base : List PLeaTTa.Alt}
     (_empty : resource.alts = [])
-    (notOwned : ¬ resource.Owns alpha cursor) :
+    (notOwned : ¬ resource.HasIndexedOwnershipAt alpha cursor) :
     ¬ AnswerOriginResourceAgrees alpha
       (AnswerOrigin.cutBoundary predicateScope
         (AnswerOrigin.choice predicateScope (.clauses predicateScope cursor)
@@ -1591,10 +1600,12 @@ private def exhaustedIdentityResource
 
 private theorem exhaustedIdentityResource_owns
     (predicate : String) :
-    (exhaustedIdentityResource predicate).Owns
+    (exhaustedIdentityResource predicate).HasIndexedOwnershipAt
       ([] : List (LogicVar × String))
       (exhaustedIdentityCursor predicate) := by
-  refine ⟨rfl, [], ?_, ?_, rfl, .nil, ?_, ?_⟩
+  refine ⟨exhaustedIdentityCursor predicate, 0, ?_⟩
+  refine ⟨rfl, ?_, CallScopedCursorPosition.refl _⟩
+  refine ⟨[], ?_, ?_, rfl, .nil, ?_, ?_⟩
   · refine ⟨.nil 0, ?_, ?_, ?_⟩
     · intro index member
       simp [exhaustedIdentityCursor,
@@ -1628,8 +1639,8 @@ theorem exhausted_resource_wrong_predicate_rejected :
     let resource := exhaustedIdentityResource "owned-left"
     leftCursor ≠ rightCursor ∧
       resource.alts = [] ∧
-      resource.Owns [] leftCursor ∧
-      ¬ resource.Owns [] rightCursor := by
+      resource.HasIndexedOwnershipAt [] leftCursor ∧
+      ¬ resource.HasIndexedOwnershipAt [] rightCursor := by
   dsimp only
   have cursorsDifferent :
       exhaustedIdentityCursor "owned-left" ≠
@@ -1641,9 +1652,13 @@ theorem exhausted_resource_wrong_predicate_rejected :
   have leftOwnership := exhaustedIdentityResource_owns "owned-left"
   refine ⟨cursorsDifferent, rfl, leftOwnership, ?_⟩
   intro rightOwnership
+  rcases leftOwnership with
+    ⟨leftStart, leftPosition, exactLeftOwnership⟩
+  rcases rightOwnership with
+    ⟨rightStart, rightPosition, exactRightOwnership⟩
   exact cursorsDifferent
     (RetainedAlternativeSegment.Owns.exhausted_cursor_injective
-      leftOwnership rightOwnership (by rfl) (by rfl))
+      exactLeftOwnership exactRightOwnership (by rfl) (by rfl))
 
 private def duplicateOccurrenceReference
     (id : ClauseId) : VersionedClause :=
@@ -1773,12 +1788,15 @@ private theorem duplicateOccurrenceQuery (id : ClauseId) :
       AlphaTermsAgree.nil)
 
 private theorem duplicateOccurrenceResource_owns (id : ClauseId) :
-    duplicateOccurrenceResource.Owns
+    duplicateOccurrenceResource.HasIndexedOwnershipAt
       ([] : List (LogicVar × String)) (duplicateOccurrenceCursor id) := by
+  refine ⟨duplicateOccurrenceCursor id, 0, ?_⟩
   refine
-    ⟨rfl, [duplicateOccurrenceExecutable],
-      duplicateOccurrenceWellFormed id, ?_, rfl,
-      .cons (duplicateOccurrenceSupported id) .nil, ?_, ?_⟩
+    ⟨rfl,
+      ⟨[duplicateOccurrenceExecutable],
+        duplicateOccurrenceWellFormed id, ?_, rfl,
+        .cons (duplicateOccurrenceSupported id) .nil, ?_, ?_⟩,
+      CallScopedCursorPosition.refl _⟩
   · simpa [duplicateOccurrenceResource] using duplicateOccurrenceQuery id
   · intro clause member
     simp [duplicateOccurrenceExecutable] at member
@@ -1807,8 +1825,8 @@ theorem nonempty_duplicate_occurrence_ownership_not_cursor_injective :
     leftCursor ≠ rightCursor ∧
       leftCursor.remaining ≠ [] ∧
       rightCursor.remaining ≠ [] ∧
-      resource.Owns [] leftCursor ∧
-      resource.Owns [] rightCursor := by
+      resource.HasIndexedOwnershipAt [] leftCursor ∧
+      resource.HasIndexedOwnershipAt [] rightCursor := by
   dsimp only
   have cursorsDifferent :
       duplicateOccurrenceCursor 0 ≠ duplicateOccurrenceCursor 1 := by
@@ -1837,7 +1855,8 @@ theorem swapped_resource_order_rejected
     {outerCallerTail : List PeTTaSpec.PrologCore.Goal}
     {innerResource outerResource : RetainedAlternativeSegment}
     {beforeAlts base : List PLeaTTa.Alt}
-    (outerNotInner : ¬ outerResource.Owns alpha innerCursor) :
+    (outerNotInner :
+      ¬ outerResource.HasIndexedOwnershipAt alpha innerCursor) :
     ¬ AnswerOriginResourceAgrees alpha
       (AnswerOrigin.choice outerCallerScope
         (.product outerCallerScope
@@ -1876,14 +1895,14 @@ theorem swapped_resource_order_rejected
     ⟨innerRegionResources, innerRegionAlts, leafAgrees, innerRegion⟩
   have leafEndpoints := task_endpoints_exact leafAgrees
   rcases innerRegion.clauses_shape with
-    ⟨ownedResource, innerResourcesEq, _innerAltsEq, owned⟩
+    ⟨ownedResource, original, position, innerResourcesEq, _innerAltsEq, owned⟩
   subst innerRegionResources
   have resourceHeadEq : outerResource = ownedResource := by
     have resourcesEq := leafEndpoints.1
     simp only [List.singleton_append, List.cons.injEq] at resourcesEq
     exact resourcesEq.1
   subst ownedResource
-  exact outerNotInner owned
+  exact outerNotInner ⟨original, position, owned⟩
 
 private def taskChoiceEmptyRuntimeTopological :
     PLeaTTa.SubstTopological [] := by

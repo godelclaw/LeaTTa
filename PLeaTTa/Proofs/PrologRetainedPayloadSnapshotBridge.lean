@@ -525,7 +525,7 @@ inductive SourceControlResourcePayloadContextAgrees
           segment.executables ++ flattenExecutables segments)
       (resourceQuery : resource.qterm = qterm)
       (resourceBarrier : resource.barrier = currentBarrier)
-      (resourceOwnership : resource.Owns alpha cursor)
+      (resourceOwnership : resource.HasIndexedOwnershipAt alpha cursor)
       (snapshot :
         RetainedCallPayloadSnapshot alpha support resource cursor segment
           segments)
@@ -1174,6 +1174,10 @@ theorem
     {installed : Subst}
     {resources : List RetainedAlternativeSegment}
     {context : ActiveProductContext}
+    (retainedPosition : Nat)
+    (positioned :
+      CallScopedCursorPosition opened.cursor
+        (finish.advance branch branchTail) retainedPosition)
     (frontier :
       RepresentativeRetainedCallFrontier alpha opened before pending finish
         branch clause branchTail clauseTail altTail copied argsv args res
@@ -1282,10 +1286,12 @@ theorem
       counter := startCounter + 1
       alts := altTail
       finalCounter := pending.persistent.counter }
-  have activeOwnership : active.Owns nextAlpha advanced :=
+  have activeOwnership :
+      active.Owns nextAlpha opened.cursor advanced retainedPosition :=
     ⟨rfl,
       RetainedCursorAlternativeOwnership.mono activation.alphaIncluded
-        ownership⟩
+        ownership,
+      positioned⟩
   have alignment :
       SourceControlResourceContextAgrees nextAlpha qterm callerBarrier outer
         resources callerScope context outerScope :=
@@ -1312,7 +1318,9 @@ theorem
           (segmentExecutableRest ++ flattenExecutables outer)
           qterm installed) := by
     exact
-      ⟨rfl, rfl, rfl, rfl, rfl, activeOwnership, alignment, outerAlts,
+      ⟨rfl, rfl, rfl, rfl, rfl,
+        ⟨opened.cursor, retainedPosition, activeOwnership⟩,
+        alignment, outerAlts,
         actualAlts⟩
   have advancedArguments : advanced.arguments = referencePayload := by
     exact advancedContext.arguments_eq.trans openedArguments
