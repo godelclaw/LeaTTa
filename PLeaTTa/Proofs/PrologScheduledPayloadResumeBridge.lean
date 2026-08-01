@@ -87,6 +87,13 @@ def currentAnswerHistory
     (currentAnswerHistory state).resources = [state.carrier.index.active] :=
   ScheduledAnswerHistory.oneLevel_resources _ _ _ _ _ _
 
+/-- Private scheduling changes only control ownership; the answer packet
+retains the live cumulative source substitution selected by the current
+clause body. -/
+@[simp] theorem currentAnswerHistory_bindings
+    (state : RepresentativeScheduledPayloadState) :
+    (currentAnswerHistory state).bindings = state.carrier.index.current := rfl
+
 /-! ## One exact live private resume -/
 
 /-- One live scheduled answer crossing the next older payload cell.

@@ -153,6 +153,37 @@ def flattenExecutables (segments : List ControlSegment) :
     flattenExecutables (segment :: segments) =
       segment.executables ++ flattenExecutables segments := rfl
 
+namespace ControlSpineAgrees
+
+/-- If every source continuation in a certified spine is literally empty,
+the exact flattened executable continuation is empty as well.  The proof is
+pointwise and order preserving; it does not infer emptiness from a length or
+from the final machine state. -/
+theorem flattenExecutables_eq_nil_of_all_references_eq_nil
+    {alpha : List (LogicVar × String)} {segments : List ControlSegment}
+    (agreement : ControlSpineAgrees alpha segments)
+    (allEmpty :
+      forall segment, segment ∈ segments -> segment.references = []) :
+    flattenExecutables segments = [] := by
+  induction agreement with
+  | nil =>
+      rfl
+  | @cons segment segments head tail inductionHypothesis =>
+      have referencesEmpty : segment.references = [] :=
+        allEmpty segment (by simp)
+      have executablesEmpty : segment.executables = [] :=
+        PrologOrdinaryStepBridge.NormalizedAlphaGoalsAgree.executables_eq_nil_of_references_eq_nil
+          head referencesEmpty
+      have tailEmpty :
+          forall candidate, candidate ∈ segments ->
+            candidate.references = [] := by
+        intro candidate member
+        exact allEmpty candidate (by simp [member])
+      simp only [flattenExecutables_cons, executablesEmpty, List.nil_append,
+        inductionHypothesis tailEmpty]
+
+end ControlSpineAgrees
+
 /-- One logical task payload whose flattened control has arbitrarily many cut
 regions.
 

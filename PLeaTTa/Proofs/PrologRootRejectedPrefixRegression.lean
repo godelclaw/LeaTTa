@@ -61,7 +61,7 @@ def secondRejectedReference : LocalClause :=
 def selectedReference : LocalClause :=
   { predicate := "p"
     arguments := [queryTerm]
-    body := [.call "chosen" [bodyTerm]] }
+    body := [.conjunction []] }
 
 def retainedReference : LocalClause :=
   { predicate := "p"
@@ -81,7 +81,7 @@ def secondRejectedExecutable : PLeaTTa.Clause :=
 def selectedExecutable : PLeaTTa.Clause :=
   { params := []
     result := queryAtom
-    body := [.call "chosen" [] bodyAtom] }
+    body := [] }
 
 def retainedExecutable : PLeaTTa.Clause :=
   { params := []
@@ -236,16 +236,15 @@ private theorem selectedClauseAgrees :
   refine
     { predicate := rfl
       outputLast := ?_
-      body := groundBodyAgrees "chosen"
+      body := .conjunction .nil .nil
       support := ?_ }
   · exact
       ⟨[], queryTerm, rfl, CompilerAdequacy.TermsAgree.nil,
         CompilerAdequacy.TermAgrees.integer 0⟩
   · intro name
     simp [selectedReference, selectedExecutable, queryTerm, queryAtom,
-      bodyTerm, bodyAtom,
       LocalClause.variables, resolutionClauseVars, Metta.Atom.vars,
-      specializationGoalsVars, specializationGoalVars, termsVariables,
+      specializationGoalsVars, termsVariables,
       termVariables, goalsVariables, goalVariables]
 
 private theorem retainedClauseAgrees :
@@ -360,7 +359,7 @@ private theorem pCandidateBank :
   have selectedEncoding :
       EncodingInjectiveOn selectedVersion.clause.variables := by
     simp [EncodingInjectiveOn, selectedVersion, Database.allocate,
-      selectedReference, queryTerm, bodyTerm, LocalClause.variables,
+      selectedReference, queryTerm, LocalClause.variables,
       termsVariables, termVariables, goalsVariables, goalVariables]
   have retainedEncoding :
       EncodingInjectiveOn retainedVersion.clause.variables := by
@@ -395,10 +394,12 @@ private theorem pCandidateBank :
         selectedHead.body := by
     change CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported [] []
       selectedHead.body
-    have bodyEq : selectedHead.body = groundBodyAgrees "chosen" :=
+    have bodyEq : selectedHead.body =
+        (CompilerAdequacy.GoalsAgree.conjunction
+          CompilerAdequacy.GoalsAgree.nil CompilerAdequacy.GoalsAgree.nil) :=
       Subsingleton.elim _ _
     rw [bodyEq]
-    exact groundBodySupported "chosen"
+    exact .conjunction .nil .nil
   have retainedBody :
       CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported
         retainedVersion.clause.variables retainedVersion.clause.variables
@@ -489,6 +490,16 @@ private def selectedAlt : PLeaTTa.Alt :=
 
 private def retainedAlt : PLeaTTa.Alt :=
   resolutionAlt [] [] queryAtom [] [] queryAtom 1 1 retainedExecutable
+
+/-- The selected administrative wrapper compiles to no executable body. -/
+theorem selectedCopied_body_empty : selectedCopied.body = [] := by
+  rfl
+
+/-- The retained matching occurrence is a real executable branch, not an
+anonymous cut marker.  The concrete goals and binding remain encapsulated. -/
+theorem retainedAlt_is_branch :
+    exists goals binding, retainedAlt = .br goals binding := by
+  exact ⟨_, _, rfl⟩
 
 private theorem pScanExact : pScan = ([selectedAlt, retainedAlt], 2) := by
   unfold pScan

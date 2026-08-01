@@ -323,31 +323,6 @@ theorem sourceCatchup
 
 end ActiveFindallLocalLiveAnswerResourceAgrees
 
-namespace PullOutcomeAgrees
-
-/-- A selected concrete pull fixes both post-pull control fields.  This is an
-inversion of the total pull classifier, not a second execution of `pullAux`. -/
-theorem fields_of_pull_some
-    {beforeAlts : List PLeaTTa.Alt}
-    {cur : Option (List PLeaTTa.Goal × Subst)}
-    {afterAlts : List PLeaTTa.Alt}
-    {goals : List PLeaTTa.Goal} {binding : Subst}
-    {rest : List PLeaTTa.Alt}
-    (outcome : PullOutcomeAgrees beforeAlts cur afterAlts)
-    (selected :
-      PLeaTTa.pullAux beforeAlts = some ((goals, binding), rest)) :
-    cur = some (goals, binding) ∧ afterAlts = rest := by
-  cases outcome with
-  | exhausted exhausted =>
-      rw [exhausted] at selected
-      cases selected
-  | selected actualGoals actualBinding actualRest actual =>
-      rw [actual] at selected
-      cases selected
-      exact ⟨rfl, rfl⟩
-
-end PullOutcomeAgrees
-
 /-- Exact contextual correspondence for one active local collector answer
 whose eager executable pull selects another locally owned occurrence.
 
@@ -453,7 +428,7 @@ theorem localLiveCatchup
   have fineSelected :
       answered.control.cur = some (selectedGoals, selectedBinding) ∧
         answered.control.alts = selectedTail :=
-    PLeaTTa.PrologFindallLocalLiveCatchupBridge.PullOutcomeAgrees.fields_of_pull_some
+    PLeaTTa.PrologFindallAnswerResourceBridge.PullOutcomeAgrees.fields_of_pull_some
       answer.finePullOutcome source.pullExact
   have answerCopy :
       CopyStep prog gt (.open before) (.open answered) := by

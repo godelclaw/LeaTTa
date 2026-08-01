@@ -348,6 +348,14 @@ PROLOG_ROOT_CLOSED_ANSWER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRootClosedAnswerBridge.lean"
 )
+PROLOG_ROOT_CLOSED_LOCAL_LIVE_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologRootClosedLocalLiveBridge.lean"
+)
+PROLOG_ROOT_CLOSED_LOCAL_LIVE_REGRESSION = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologRootClosedLocalLiveRegression.lean"
+)
 PROLOG_CURRENT_SESSION_ASSERTION_TRANSITION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologCurrentSessionAssertionTransitionBridge.lean"
@@ -449,7 +457,10 @@ REQUIRED_PREFIXES = {
 # declaration names.  New rows opt into exact checking here until that legacy
 # metadata is normalized.  A listed row must be PASS and every semicolon-
 # separated reference must be an actual `#print axioms` target.
-STRICT_AXIOM_AUDIT_ROWS = {"BISIM.root_closed_answer_pull"}
+STRICT_AXIOM_AUDIT_ROWS = {
+    "BISIM.root_closed_answer_pull",
+    "BISIM.root_closed_local_live_answer",
+}
 
 
 def digest(path: Path) -> str:
@@ -672,6 +683,10 @@ def check() -> list[str]:
             digest(PROLOG_SCHEDULED_PAYLOAD_RESUME_REGRESSION),
         "prolog_root_closed_answer_bridge_sha256":
             digest(PROLOG_ROOT_CLOSED_ANSWER_BRIDGE),
+        "prolog_root_closed_local_live_bridge_sha256":
+            digest(PROLOG_ROOT_CLOSED_LOCAL_LIVE_BRIDGE),
+        "prolog_root_closed_local_live_regression_sha256":
+            digest(PROLOG_ROOT_CLOSED_LOCAL_LIVE_REGRESSION),
         "prolog_current_session_assertion_transition_bridge_sha256":
             digest(PROLOG_CURRENT_SESSION_ASSERTION_TRANSITION_BRIDGE),
         "prolog_current_session_unify_transition_bridge_sha256":

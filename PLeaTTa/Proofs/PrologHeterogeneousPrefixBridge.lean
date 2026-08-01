@@ -669,6 +669,63 @@ def afterAdministrative
     (afterAdministrative prog gt state steps).carrier.fineState =
       state.carrier.fineState := rfl
 
+/-- Source-only administration preserves the caller continuation literally. -/
+@[simp] theorem afterAdministrative_callerReferences
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+    (steps :
+      AdministrativeStepsN count state.carrier.index.bodyReferences
+        afterBody) :
+    (afterAdministrative prog gt state steps).carrier.index.callerReferences =
+      state.carrier.index.callerReferences := rfl
+
+/-- Source-only administration preserves every older control segment. -/
+@[simp] theorem afterAdministrative_outer
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+    (steps :
+      AdministrativeStepsN count state.carrier.index.bodyReferences
+        afterBody) :
+    (afterAdministrative prog gt state steps).carrier.index.outer =
+      state.carrier.index.outer := rfl
+
+/-- Source-only administration neither consumes nor manufactures an older
+executable alternative. -/
+@[simp] theorem afterAdministrative_baseAlts
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+    (steps :
+      AdministrativeStepsN count state.carrier.index.bodyReferences
+        afterBody) :
+    (afterAdministrative prog gt state steps).carrier.index.baseAlts =
+      state.carrier.index.baseAlts := rfl
+
+/-- Source-only administration preserves the selected call's retained
+alternative resource. -/
+@[simp] theorem afterAdministrative_active
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+    (steps :
+      AdministrativeStepsN count state.carrier.index.bodyReferences
+        afterBody) :
+    (afterAdministrative prog gt state steps).carrier.index.active =
+      state.carrier.index.active := rfl
+
+/-- Source-only administration preserves the already-owned outer resources. -/
+@[simp] theorem afterAdministrative_resources
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+    (steps :
+      AdministrativeStepsN count state.carrier.index.bodyReferences
+        afterBody) :
+    (afterAdministrative prog gt state steps).carrier.index.resources =
+      state.carrier.index.resources := rfl
+
 /-- Consuming the constructed truth predecessor returns the same literal
 proof-relevant active state. -/
 theorem afterAdministrative_beforeTruth
@@ -822,6 +879,26 @@ def afterBodyAnswer
     (executableEmpty : state.carrier.index.bodyExecutables = []) :
     (afterBodyAnswer prog gt state referenceEmpty executableEmpty).carrier.index.baseAlts =
       state.carrier.index.baseAlts := rfl
+
+/-- Completing the selected body preserves its retained sibling resource. -/
+@[simp] theorem afterBodyAnswer_active
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    (referenceEmpty : state.carrier.index.bodyReferences = [])
+    (executableEmpty : state.carrier.index.bodyExecutables = []) :
+    (afterBodyAnswer prog gt state referenceEmpty
+      executableEmpty).carrier.index.active =
+        state.carrier.index.active := rfl
+
+/-- Completing the selected body preserves every older owned resource. -/
+@[simp] theorem afterBodyAnswer_resources
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    (referenceEmpty : state.carrier.index.bodyReferences = [])
+    (executableEmpty : state.carrier.index.bodyExecutables = []) :
+    (afterBodyAnswer prog gt state referenceEmpty
+      executableEmpty).carrier.index.resources =
+        state.carrier.index.resources := rfl
 
 /-- Source focus after a clause-local cut consumes the selected product. -/
 def cutSource (state : RepresentativeActivePayloadState)

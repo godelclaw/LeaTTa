@@ -100,6 +100,22 @@ inductive NormalizedAlphaGoalsAgree
 
 namespace NormalizedAlphaGoalsAgree
 
+/-- An administratively normalized source region with no source goals cannot
+hide executable work.  Truth erasure and conjunction flattening may remove
+source constructors, but none of the constructors can manufacture an
+executable goal from the literal empty source list. -/
+theorem executables_eq_nil_of_references_eq_nil
+    {alpha : List (LogicVar × String)} {barrier : Nat}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (agreement :
+      NormalizedAlphaGoalsAgree alpha barrier references executables)
+    (referencesEmpty : references = []) :
+    executables = [] := by
+  subst references
+  cases agreement
+  rfl
+
 /-- The sealed machine retains two spellings of primitive equality.
 `compileAlias` is defensive compiler metadata, but both constructors execute
 the same `unifyB` operation.  Keeping the spelling explicit lets the bridge

@@ -440,6 +440,28 @@ theorem of_pull (conf : PLeaTTa.Conf) :
       rcases result with ⟨⟨goals, binding⟩, rest⟩
       exact .selected goals binding rest sameOutcome.symm
 
+/-- A selected concrete pull fixes both post-pull control fields.  This is an
+inversion of the total pull classifier, not a second execution of `pullAux`,
+and is independent of findall control. -/
+theorem fields_of_pull_some
+    {beforeAlts : List PLeaTTa.Alt}
+    {cur : Option (List PLeaTTa.Goal × Subst)}
+    {afterAlts : List PLeaTTa.Alt}
+    {goals : List PLeaTTa.Goal} {binding : Subst}
+    {rest : List PLeaTTa.Alt}
+    (outcome : PullOutcomeAgrees beforeAlts cur afterAlts)
+    (selected :
+      PLeaTTa.pullAux beforeAlts = some ((goals, binding), rest)) :
+    cur = some (goals, binding) ∧ afterAlts = rest := by
+  cases outcome with
+  | exhausted exhausted =>
+      rw [exhausted] at selected
+      cases selected
+  | selected actualGoals actualBinding actualRest actual =>
+      rw [actual] at selected
+      cases selected
+      exact ⟨rfl, rfl⟩
+
 end PullOutcomeAgrees
 
 /-- The private-answer successor exposes the total result of the same real

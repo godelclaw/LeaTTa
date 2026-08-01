@@ -22,6 +22,7 @@ open PeTTaSpec.PrologCore.Resolver
 open DemandDrivenStep
 open PrologAnswerPullClassificationBridge
 open PrologAnswerResourceBridge
+open PrologControlSegmentSpineBridge
 open PrologCurrentSessionPayloadTransitionBridge
 open PrologHeterogeneousPrefixBridge
 open PrologProductResourceContextBridge
@@ -47,6 +48,7 @@ structure AllEmptyHistoryResult
   targetSourceExact : targetSource = expectedSource
   targetNext : Search
   history : ScheduledAnswerHistory alpha targetSource targetNext
+  bindingsExact : history.bindings = initial.bindings
   resourcesExact :
     history.resources = initial.resources ++ outerResources
 
@@ -80,6 +82,7 @@ noncomputable def absorbAllEmptyHistory
           targetSourceExact := rfl
           targetNext := next
           history := history
+          bindingsExact := rfl
           resourcesExact := by simp only [List.append_nil] }
   | cons currentBarrier currentScope nextScope outerScope segment segments
       resource resources cursor context segmentAgrees resourceRest
@@ -106,10 +109,13 @@ noncomputable def absorbAllEmptyHistory
           targetSourceExact := ?_
           targetNext := tailResult.targetNext
           history := tailResult.history
+          bindingsExact := ?_
           resourcesExact := ?_ }
       · simpa [absorbContextTarget, empty, nextHistory,
           PrivateScheduledResume.nextHistory, privateResumeTarget,
           enclosingHeadNext] using tailResult.targetSourceExact
+      · simpa [nextHistory, PrivateScheduledResume.nextHistory] using
+          tailResult.bindingsExact
       · simpa [ScheduledAnswerHistory.resources, nextHistory,
           PrivateScheduledResume.nextHistory, List.append_assoc] using
           tailResult.resourcesExact
@@ -210,6 +216,9 @@ structure RootClosedAnswerReady
   bankExact :
     before.carrier.index.openConf.control.alts =
       flattenOwnedAlts result.history.resources []
+  fineHead :
+    before.carrier.index.openConf.toConf.cur =
+      some ([], before.carrier.index.runtime)
 
 namespace RepresentativeScheduledPayloadState
 
@@ -261,10 +270,27 @@ noncomputable def rootClosedAnswerReady
     rw [before.carrier.agreement.core.resourceStack.actualAlts, rootClosed]
     rw [result.resourcesExact, currentAnswerHistory_resources]
     rfl
+  have scheduledReady := before.carrier.agreement.core.control.ready
+  rcases scheduledReady with
+    ⟨_persistent, currentControl, _queryTerm, payload⟩
+  have callerExecutablesEmpty :
+      before.carrier.index.callerExecutables = [] :=
+    PrologOrdinaryStepBridge.NormalizedAlphaGoalsAgree.executables_eq_nil_of_references_eq_nil
+      payload.control.head referenceEmpty
+  have outerExecutablesEmpty :
+      flattenExecutables before.carrier.index.outer = [] :=
+    payload.control.tail.flattenExecutables_eq_nil_of_all_references_eq_nil
+      allEmpty
+  have fineHead :
+      before.carrier.index.openConf.toConf.cur =
+        some ([], before.carrier.index.runtime) := by
+    simpa [OpenConf.toConf, Control.toConf, callerExecutablesEmpty,
+      outerExecutablesEmpty] using currentControl
   exact
     { result := result
       sourceSteps := exactSourceSteps
-      bankExact := bankExact }
+      bankExact := bankExact
+      fineHead := fineHead }
 
 end RepresentativeScheduledPayloadState
 

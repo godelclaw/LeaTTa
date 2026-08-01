@@ -7,7 +7,7 @@ Purpose: Inhabit exact multi-frame scheduled-answer absorption with one live
 Trusted boundary: none
 -/
 import PLeaTTa.Proofs.PrologNestedCallReadyRegression
-import PLeaTTa.Proofs.PrologRootClosedAnswerBridge
+import PLeaTTa.Proofs.PrologRootClosedLocalLiveBridge
 
 namespace PLeaTTa.PrologScheduledPayloadResumeRegression
 
@@ -18,6 +18,7 @@ open PrologHeterogeneousPrefixBridge
 open PrologNestedCallChainBridge
 open PrologNestedCallReadyBridge
 open PrologRootClosedAnswerBridge
+open PrologRootClosedLocalLiveBridge
 open PrologScheduledPayloadResumeBridge
 
 /-- The literal depth-two run supplies one rooted scheduled carrier together
@@ -107,5 +108,32 @@ theorem ground_two_frame_root_closed_pull_is_inhabited
   obtain ⟨events, outcome, classified⟩ :=
     PrologRootClosedAnswerBridge.RootClosedAnswerReady.classifyPull ready
   exact ⟨before, ready, outerLength, events, outcome, classified⟩
+
+/-- The literal depth-two carrier consumes the strengthened rooted
+classifier: any locally live result is coupled to its exact source answer and
+fine answer/pull step, while the only other result is genuine source
+fall-through.  This is deliberately a dichotomy because the p/q/r fixture has
+one clause per predicate and therefore need not inhabit the local-live arm. -/
+theorem ground_two_frame_root_closed_answer_couples_or_terminates
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ∃ before : RepresentativeScheduledPayloadState,
+      ∃ ready : RootClosedAnswerReady before,
+        before.carrier.index.outer.length = 2 ∧
+          ((∃ selectedGoals selectedBinding selectedTail count target,
+              RootClosedLocalLiveAnswerRelates prog gt before ready
+                selectedGoals selectedBinding selectedTail count target) ∨
+            PrologAnswerPullClassificationBridge.OriginPrefixFallsThrough
+              before.carrier.index.alpha
+              ready.result.history.resourceAgreement) := by
+  obtain
+    ⟨before, callerEmpty, baseEmpty, outerLength, outerEmpty⟩ :=
+    groundRootClosedScheduledCarrier (prog := prog) (gt := gt)
+  let ready :=
+    PrologRootClosedAnswerBridge.RepresentativeScheduledPayloadState.rootClosedAnswerReady
+      before callerEmpty outerEmpty baseEmpty
+  have classified :=
+    PLeaTTa.PrologRootClosedLocalLiveBridge.RootClosedAnswerReady.classifyPullAndRelate
+      (prog := prog) (gt := gt) ready
+  exact ⟨before, ready, outerLength, classified⟩
 
 end PLeaTTa.PrologScheduledPayloadResumeRegression

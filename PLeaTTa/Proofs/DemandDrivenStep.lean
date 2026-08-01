@@ -2018,6 +2018,26 @@ def publicAnswers (state : OpenConf) : List Atom :=
           frames := remaining } := by
   rfl
 
+/-- Any literal executable answer head takes exactly one fine transition to
+the real eager-pull successor.  No collector frame is needed for the step
+itself; frame ownership is relevant only to the stronger public-suppression
+statement below. -/
+theorem answer_is_one_step
+    (prog : Prog) (gt : GroundingTable) (state : OpenConf)
+    (binding : Subst)
+    (head : state.toConf.cur = some ([], binding)) :
+    Step prog gt state (privateAnswerTarget state binding) := by
+  have notFindall : ¬ findallRunHead state.toConf := by
+    intro findallHead
+    rcases findallHead with
+      ⟨template, sub, result, rest, otherBinding, conflict⟩
+    rw [head] at conflict
+    cases conflict
+  simpa [privateAnswerTarget] using
+    (Step.ordinary state (answerSuccessor state.toConf binding)
+      notFindall
+      (PLeaTTa.Step.answer state.toConf binding head))
+
 /-- A private generator answer is suppressed from the public accumulator but
 is still exactly one fine transition.  Thus infinitely many private answers
 cannot collapse to a zero-step empty observation list. -/
@@ -2036,18 +2056,9 @@ theorem answer_is_one_private_step
         subst binding state.control.qterm :: state.control.answers ∧
       publicAnswers (privateAnswerTarget state binding) =
         publicAnswers state := by
-  have notFindall : ¬ findallRunHead state.toConf := by
-    intro findallHead
-    rcases findallHead with
-      ⟨template, sub, result, rest, otherBinding, conflict⟩
-    rw [head] at conflict
-    cases conflict
   have fineStep :
       Step prog gt state (privateAnswerTarget state binding) := by
-    simpa [privateAnswerTarget] using
-      (Step.ordinary state (answerSuccessor state.toConf binding)
-        notFindall
-        (PLeaTTa.Step.answer state.toConf binding head))
+    exact answer_is_one_step prog gt state binding head
   refine ⟨fineStep, by simp, by simp, by simp, by simp, by simp, ?_⟩
   simp [publicAnswers, publicControl, privateAnswerTarget, OpenConf.stepOpen,
     OpenConf.ofConfWith, frameHead]
