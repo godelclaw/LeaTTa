@@ -27,6 +27,7 @@ open PrologControlSegmentSpineBridge
 open PrologCurrentSessionFailurePayloadTransitionBridge
 open PrologCurrentSessionPayloadBridge
 open PrologMguBridge
+open PrologMguComposition
 open PrologOrdinaryStepBridge
 open PrologProductResourceContextBridge
 open PrologProductResourceTransitionBridge
@@ -104,8 +105,9 @@ theorem activateSelectedHead
     let restored :=
       SelectedHeadActivationChronology.restoreSnapshot consumed
         agreement.activationChronology agreement.core.resourceStack.offset
-    ∃ (nextAlpha : List (LogicVar × String))
-        (sourceCanonical : TreeSubstitution)
+    ∃ (representative : TreeSubstitution)
+        (nextAlpha : List (LogicVar × String))
+        (sourceCanonical flattened : TreeSubstitution)
         (installed : Subst),
       ∃ extension :
           AlphaExtendsAbove alpha nextAlpha branch.firstFresh resource.counter,
@@ -132,6 +134,12 @@ theorem activateSelectedHead
           (.ready
             (unifySuccessor state (copied.body ++ resource.rest)
               installed)) ∧
+        AlphaCumulativeResidualVariantAgreesOnWith
+          nextAlpha support (sourceCanonical ++ restored.canonical)
+          restored.referenceBase
+          (PLeaTTa.trimFor (copied.body ++ resource.rest)
+            state.control.qterm installed)
+          (flattened ++ representative) ∧
         SpinedActiveProductPayloadResourceRelatesAt
           (AlphaFreshFrontier nextAlpha) nextAlpha support
           (sourceCanonical ++ restored.canonical) restored.referenceBase
@@ -166,7 +174,7 @@ theorem activateSelectedHead
       resource.finalCounter ≤ state.persistent.counter := by
     simpa [afterPulledHead] using endpointComponents.2.1
   obtain
-      ⟨_representative, nextAlpha, sourceCanonical, _flattened, installed,
+      ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
         nextShared, alphaIncluded, extension, freshFrontier,
         independentShape, sourceOrdered, sourceLeaf, sealedStep, fineStep,
         cumulative, bodyPayload, nextSnapshotNonempty, successorBelow,
@@ -458,10 +466,19 @@ theorem activateSelectedHead
         (unifySuccessor state (copied.body ++ resource.rest) installed)
         nextPayloadContext :=
     ⟨targetCore, nextEndpointsCurrent, nextActivationOrdered⟩
+  have cumulativeAtStateQuery :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        nextAlpha support (sourceCanonical ++ restored.canonical)
+        restored.referenceBase
+        (PLeaTTa.trimFor (copied.body ++ resource.rest)
+          state.control.qterm installed)
+        (flattened ++ representative) := by
+    simpa [currentQuery] using cumulative
   exact
-    ⟨nextAlpha, sourceCanonical, installed, extension, nextPayloadContext,
-      nextShared, alphaIncluded, nextOuterPayloadExact, sourceStep, sealedStep,
-      fineStep, targetPayload⟩
+    ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
+      extension, nextPayloadContext, nextShared, alphaIncluded,
+      nextOuterPayloadExact, sourceStep, sealedStep, fineStep,
+      cumulativeAtStateQuery, targetPayload⟩
 
 end SpinedPostFailureFrontierPayloadResourceRelatesAt
 
