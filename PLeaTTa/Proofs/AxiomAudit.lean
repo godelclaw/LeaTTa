@@ -597,10 +597,14 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseReachable.assertz
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseReachable.retractId
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.exists_retractId_of_mem_currentEntries
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.Resolver.Database.retractId_generation
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseMutation.generation_eq_succ
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseMutation.preserves_generationClosed
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseMutation.preserves_idsClosed
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseMutation.preserves_reachable
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseMutation.retract_effect_exact
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseChronology.generation_eq_add_length
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseChronology.generation_mono
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseChronology.preserves_generationClosed
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseChronology.preserves_idsClosed
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseChronology.preserves_reachable
@@ -647,6 +651,8 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.nextCollectionScope_mono
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.preserves_cursorOwnership
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.database_chronology
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.database_generation_eq_add_effects
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.database_generation_mono
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.preserves_databaseClosed
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.RawStep.deterministic
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.Transition.deterministic
@@ -1379,6 +1385,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologStateBridge.SessionHighWatersExtend.refl
 #print axioms PLeaTTa.PrologStateBridge.SessionHighWatersExtend.trans
 #print axioms PLeaTTa.PrologStateBridge.SessionHighWatersExtend.of_rawStep
+#print axioms PLeaTTa.PrologStateBridge.SessionHighWatersExtend.rejects_generation_regression
 #print axioms PLeaTTa.PrologStateBridge.SessionHighWatersExtend.rejects_fresh_regression
 #print axioms PLeaTTa.PrologStateBridge.SessionHighWatersExtend.strict_fresh_witness
 #print axioms PLeaTTa.PrologProductResourceTransitionBridge.SpinedActiveProductRelatesAt.resources

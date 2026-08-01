@@ -243,7 +243,9 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.afterAssertion
       SessionHighWatersExtend session
         (session.withDatabase
           (operation.update session.resolver.database referenceClause)) :=
-    SessionHighWatersExtend.withDatabase _ _
+    SessionHighWatersExtend.withDatabase _ _ (by
+      rw [operation.update_generation]
+      exact Nat.le_succ _)
 
   have nextBodyControl :
       NormalizedAlphaGoalsAgree alpha bodyBarrier

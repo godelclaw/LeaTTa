@@ -2584,6 +2584,26 @@ theorem database_chronology {before after : Session} {search : Search}
       | simpa [databaseEffects, databaseEffects_append] using
           (by assumption : DatabaseChronology _ _ _)
 
+/-- A raw step advances the persistent logical-update generation by exactly
+the number of ordered database effects that it emits. -/
+theorem database_generation_eq_add_effects {before after : Session}
+    {search : Search} {events : List Observation}
+    {signal : Trace.CutSignal} {target : RawTarget}
+    (step : RawStep before search events signal after target) :
+    after.resolver.database.generation =
+      before.resolver.database.generation +
+        (databaseEffects events).length :=
+  step.database_chronology.generation_eq_add_length
+
+/-- Persistent logical-update generations cannot regress across a raw step. -/
+theorem database_generation_mono {before after : Session}
+    {search : Search} {events : List Observation}
+    {signal : Trace.CutSignal} {target : RawTarget}
+    (step : RawStep before search events signal after target) :
+    before.resolver.database.generation ≤
+      after.resolver.database.generation :=
+  step.database_chronology.generation_mono
+
 /-- Database histories stay completely reachable across every raw transition,
 including failure, backtracking, and exception unwinding. -/
 theorem preserves_databaseClosed {before after : Session} {search : Search}

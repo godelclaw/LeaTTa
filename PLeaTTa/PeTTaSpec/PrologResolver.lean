@@ -159,6 +159,28 @@ def Database.retractId (database : Database) (id : ClauseId) :
   | some history =>
       some { database with generation := nextGeneration, history := history }
 
+/-- Every successful identity retraction advances the logical-update
+generation exactly once.  Failure has no successor database and therefore
+cannot fabricate a generation. -/
+theorem Database.retractId_generation
+    {database after : Database} {id : ClauseId}
+    (retracted : database.retractId id = some after) :
+    after.generation = database.generation + 1 := by
+  cases retiredHistoryEq :
+      retireFirst (database.generation + 1) id database.history with
+  | none =>
+      simp [Database.retractId, retiredHistoryEq] at retracted
+  | some retiredHistory =>
+      have someEq :
+          some
+              { database with
+                generation := database.generation + 1
+                history := retiredHistory } =
+            some after := by
+        simpa [Database.retractId, retiredHistoryEq] using retracted
+      have shape := Option.some.inj someEq
+      rw [← shape]
+
 /-- Clause occurrences visible to one call, preserving database order and
 duplicate multiplicity. -/
 def Database.visibleClausesAt (database : Database)

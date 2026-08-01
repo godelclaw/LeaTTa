@@ -121,7 +121,8 @@ theorem sessionHighWaters
       after.carrier.index.session := by
   rw [facts.sessionExact]
   refine
-    ⟨openLocalCall_nextFresh_mono before.carrier.index.session
+    ⟨Nat.le_refl _,
+      openLocalCall_nextFresh_mono before.carrier.index.session
         (requestFor head.predicate head.referencePayload
           before.carrier.index.current), ?_, ?_, ?_⟩
   · simp [openedFor]
@@ -491,7 +492,8 @@ theorem extend_literal_root_nested_prefix
       SessionHighWatersExtend session rootAfter.carrier.index.session := by
     rw [root.sessionExact]
     refine
-      ⟨openLocalCall_nextFresh_mono session
+      ⟨Nat.le_refl _,
+        openLocalCall_nextFresh_mono session
           (requestFor predicate referencePayload referenceBindings),
         ?_, ?_, ?_⟩
     · simp [openedFor]

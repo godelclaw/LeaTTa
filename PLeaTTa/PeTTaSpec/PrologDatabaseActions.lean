@@ -764,6 +764,19 @@ inductive DatabaseMutation :
 
 namespace DatabaseMutation
 
+/-- Every successful database mutation advances the logical-update
+generation exactly once.  In particular, a successful retract cannot be
+silently represented as a same-generation world replacement. -/
+theorem generation_eq_succ
+    {before after : Database} {effect : LocalDatabaseEffect}
+    (mutation : DatabaseMutation before effect after) :
+    after.generation = before.generation + 1 := by
+  cases mutation with
+  | asserta => rfl
+  | assertz => rfl
+  | retract _ _ retracted =>
+      exact Database.retractId_generation retracted
+
 theorem preserves_generationClosed
     {before after : Database} {effect : LocalDatabaseEffect}
     (mutation : DatabaseMutation before effect after)
@@ -822,6 +835,27 @@ inductive DatabaseChronology :
       DatabaseChronology before (effect :: effects) after
 
 namespace DatabaseChronology
+
+/-- The endpoint generation is the start generation plus the exact number of
+ordered successful mutations.  This is stronger than monotonicity and keeps
+the mutation trace from being a decorative payload. -/
+theorem generation_eq_add_length
+    {before after : Database} {effects : List LocalDatabaseEffect}
+    (chronology : DatabaseChronology before effects after) :
+    after.generation = before.generation + effects.length := by
+  induction chronology with
+  | refl => simp
+  | step mutation tail inductionHypothesis =>
+      rw [inductionHypothesis, mutation.generation_eq_succ]
+      simp [Nat.add_comm, Nat.add_left_comm]
+
+/-- Logical-update generations never regress along a real chronology. -/
+theorem generation_mono
+    {before after : Database} {effects : List LocalDatabaseEffect}
+    (chronology : DatabaseChronology before effects after) :
+    before.generation ≤ after.generation := by
+  rw [chronology.generation_eq_add_length]
+  exact Nat.le_add_right _ _
 
 /-- A well-formed reachable history remains generation-closed across every
 ordered mutation chronology. -/
