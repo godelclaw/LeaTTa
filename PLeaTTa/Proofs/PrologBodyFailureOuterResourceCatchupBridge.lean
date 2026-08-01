@@ -981,7 +981,6 @@ private def chronologySnapshot
       cumulative := ?_
       materialized := ?_
       queryReferenceBelow := ?_
-      queryExecutableLive := ?_
       queryExecutableBelow := ?_
       resourceRest := ?_
       payload := ?_ }
@@ -1008,8 +1007,6 @@ private def chronologySnapshot
       simpa [chronologyResource, chronologyCursor, TreeSubstitution.apply,
         Term.denote] using leaves
   · intro index member
-    simp at member
-  · intro name member
     simp at member
   · simp only [chronologyResource]
     unfold resolutionOccupiedVars

@@ -668,17 +668,6 @@ theorem
         (PLeaTTa.subst runtime res) representative referenceBase)
     (queryReferenceBelow :
       GeneratedBelow nestedFinish.reservationStart (alpha.map Prod.fst))
-    (queryExecutableLive :
-      ∀ name, name ∈ alpha.map Prod.snd →
-        name ∈
-          resolutionOccupiedVars
-            (args.map (PLeaTTa.subst runtime)) res
-            (nestedExecutableRest ++
-              flattenExecutables
-                ({ barrier := callerBarrier
-                   references := callerReferences
-                   executables := callerExecutables } :: outer))
-            runtime qterm)
     (activation :
       SpinedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase
@@ -960,7 +949,7 @@ theorem
         countGrowth⟩ :=
     PLeaTTa.PrologNestedCallEntryPayloadBridge.SpinedRepresentativeProductActivation.spinedNestedProductPayloadResourceRelates
       currentAgreement entry frontier oldCumulative materializedAtOpen
-        queryReferenceBelow queryExecutableLive activation
+        queryReferenceBelow activation
   have sourceExact :
       StepsN (count + 2) (.running session currentSource)
         [.opened (requestFor predicate referencePayload current)]

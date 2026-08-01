@@ -758,8 +758,14 @@ theorem
       avoidsBase := generatedAvoidsBinding
       installedShape := installedShape' }
 
-/-- Immediate-call compatibility view of
-`unifyB_body_cumulativeWith_of_headResolution_extension`. -/
+/-- Immediate-call view of
+`unifyB_body_cumulativeWith_of_headResolution_extension`.
+
+The alpha graph is historical: entries may remain after their variables have
+left the current call syntax.  Fresh extension therefore needs only the exact
+allocator fact that every recorded runtime name lies below `seed`, not the
+strictly stronger claim that every such name occurs in this call's occupied
+set. -/
 theorem
     SupportedPreparedCandidateAgrees.unifyB_body_cumulativeWith_of_headResolution
     {queryAlpha support : List (LogicVar × String)}
@@ -792,11 +798,8 @@ theorem
     (queryShared : SharedRuntimeAlpha queryAlpha)
     (queryReferenceBelow :
       GeneratedBelow cursor.reservationStart (queryAlpha.map Prod.fst))
-    (queryExecutableLive :
-      ∀ name, name ∈ queryAlpha.map Prod.snd →
-        name ∈
-          resolutionOccupiedVars
-            (args.map (PLeaTTa.subst binding)) result rest binding qterm)
+    (queryExecutableBelow :
+      resolutionSeedHighWaterNames (queryAlpha.map Prod.snd) ≤ seed)
     (highWater :
       resolutionSeedHighWaterNames
         (resolutionOccupiedVars
@@ -890,11 +893,7 @@ theorem
         constructor
         · simpa [preparedBranchOf] using
             queryReferenceBelow.mono queryEnd
-        · exact Nat.le_trans
-            (Nat.le_trans
-              (resolutionSeedHighWaterNames_le_of_subset
-                queryExecutableLive)
-              highWater)
+        · exact Nat.le_trans queryExecutableBelow
             (Nat.le_add_right seed 1)
       have supported :
           SupportedPreparedCandidateAgrees cursor.callGeneration
@@ -907,10 +906,7 @@ theorem
           AlphaFreshFrontier queryAlpha cursor.reservationStart seed := by
         constructor
         · exact queryReferenceBelow
-        · exact Nat.le_trans
-            (resolutionSeedHighWaterNames_le_of_subset
-              queryExecutableLive)
-            highWater
+        · exact queryExecutableBelow
       have queryGap :
           AlphaAllocationGap queryAlpha cursor.reservationStart
             cursor.reservedUntil seed (seed + 1) :=

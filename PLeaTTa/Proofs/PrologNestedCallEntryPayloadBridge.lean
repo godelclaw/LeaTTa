@@ -343,17 +343,6 @@ theorem
         (PLeaTTa.subst runtime res) representative referenceBase)
     (queryReferenceBelow :
       GeneratedBelow nestedFinish.reservationStart (alpha.map Prod.fst))
-    (queryExecutableLive :
-      ∀ name, name ∈ alpha.map Prod.snd →
-        name ∈
-          resolutionOccupiedVars
-            (args.map (PLeaTTa.subst runtime)) res
-            (nestedExecutableRest ++
-              flattenExecutables
-                ({ barrier := callerBarrier
-                   references := callerReferences
-                   executables := callerExecutables } :: outer))
-            runtime qterm)
     (activation :
       SpinedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase
@@ -470,7 +459,7 @@ theorem
       ⟨nestedActive, nestedPayloadContext, nestedAgreement, payloadHandoff⟩ :=
     SpinedRepresentativeProductActivation.spinedProductPayloadResourceRelates
       frontier preHeadPayload oldCumulative materializedAtOpen (by rfl) (by rfl)
-      queryReferenceBelow queryExecutableLive activation entry.sourceFresh
+      queryReferenceBelow activation entry.sourceFresh
       currentPayloadContext outerEndpoints currentAgreement.activationOrdered
       baseAlts outerAlts
   refine

@@ -239,7 +239,6 @@ def restoreSnapshot
         simpa [PreparedCursor.advance, afterPulledHead] using
           snapshot.materialized
       queryReferenceBelow := ?_
-      queryExecutableLive := ?_
       queryExecutableBelow := chronology.queryExecutableBelow
       resourceRest := ?_
       payload := ?_ }
@@ -263,7 +262,6 @@ def restoreSnapshot
         simpa [PreparedCursor.advance] using
           offset.cursorWellFormed.1.member_next_le_final branchMember
       omega
-  · simpa [afterPulledHead] using snapshot.queryExecutableLive
   · simpa [afterPulledHead] using snapshot.resourceRest
   · simpa [PreparedCursor.advance, afterPulledHead] using snapshot.payload
 

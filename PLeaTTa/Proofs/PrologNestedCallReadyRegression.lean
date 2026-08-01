@@ -724,6 +724,13 @@ private theorem pActive
           resolutionOccupiedVars [] resultAtom [] [] resultAtom := by
     intro name member
     simp at member
+  have executableBelow :
+      resolutionSeedHighWaterNames
+          (([] : List (LogicVar × String)).map Prod.snd) ≤
+        initialOpenConf.toConf.counter := by
+    exact Nat.le_trans
+      (resolutionSeedHighWaterNames_le_of_subset executableLive)
+      frontier.highWater
   have live : AlphaRuntimeNamesLive [] (copied.body ++ []) resultAtom := by
     intro identity name member
     simp at member
@@ -746,7 +753,7 @@ private theorem pActive
       (outer := []) (callerBarrier := 0) (callerScope := rootScope)
       pEntry frontier preHeadPayload oldCumulative queryAtOpen
       (by simp [openedFor, openLocalCall, requestFor, prepareCall])
-      referenceBelow executableLive live resolved
+      referenceBelow executableBelow live resolved
   let outerPayloads :
       SourceControlResourcePayloadContextAgrees [] [] resultAtom 0 [] []
         rootScope [] rootScope :=
@@ -776,7 +783,7 @@ private theorem pActive
       frontier preHeadPayload oldCumulative materializedAtOpen
       (by simp [openedFor, openLocalCall, requestFor, prepareCall])
       (by simp [openedFor, openLocalCall, requestFor, prepareCall])
-      referenceBelow executableLive activation sourceFresh outerPayloads
+      referenceBelow activation sourceFresh outerPayloads
       outerEndpoints outerOrdered [] outerAlts
   have nextAlphaBelowFirst :
       GeneratedBelow branch.firstFresh (nextAlpha.map Prod.fst) := by
@@ -1049,7 +1056,6 @@ private theorem qReadyAfterP
           candidateSupported := ?_
           sourceNonempty := ?_
           scanNonempty := ?_
-          queryExecutableLive := ?_
           selected := ?_
           notThrow := ?_
           notDatabase := ?_ }
@@ -1082,9 +1088,6 @@ private theorem qReadyAfterP
       rfl
     simp [resolveAlts, qExecutableClause, resultAtom, argumentsMatch,
       resultMatch]
-  · intro name member
-    rw [alphaNil] at member
-    simp at member
   · intro count finish branch clause branchTail clauseTail altTail copied
       pulls frontier
     have finishNonempty : finish.remaining ≠ [] := by
@@ -1166,7 +1169,6 @@ private theorem rReadyFromGroundState
           candidateSupported := ?_
           sourceNonempty := ?_
           scanNonempty := ?_
-          queryExecutableLive := ?_
           selected := ?_
           notThrow := ?_
           notDatabase := ?_ }
@@ -1199,9 +1201,6 @@ private theorem rReadyFromGroundState
       rfl
     simp [resolveAlts, rExecutableClause, resultAtom, argumentsMatch,
       resultMatch]
-  · intro name member
-    rw [alphaNil] at member
-    simp at member
   · intro count finish branch clause branchTail clauseTail altTail copied
       pulls frontier
     have finishNonempty : finish.remaining ≠ [] := by

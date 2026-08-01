@@ -221,11 +221,8 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step_head_with
     (alphaShared : SharedRuntimeAlpha alpha)
     (queryReferenceBelow :
       GeneratedBelow finish.reservationStart (alpha.map Prod.fst))
-    (queryExecutableLive :
-      ∀ name, name ∈ alpha.map Prod.snd →
-        name ∈
-          resolutionOccupiedVars
-            (args.map (PLeaTTa.subst binding)) res rest binding qterm)
+    (queryExecutableBelow :
+      resolutionSeedHighWaterNames (alpha.map Prod.snd) ≤ startCounter)
     (live :
       AlphaRuntimeNamesLive support (copied.body ++ rest) qterm)
     (resolved : HeadResolution branch independentResult) :
@@ -319,7 +316,7 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step_head_with
       oldCumulative queryAtFinish cursorBindingShape
       canonicalWellFormed frontier.finishWellFormed member
       frontier.supported frontier.arity alphaShared queryReferenceBelow
-      queryExecutableLive highWater exactLive resolved
+      queryExecutableBelow highWater exactLive resolved
   have sourceStep :
       RawStep opened.session (.clauses opened.scope finish) [] .none
         opened.session
@@ -500,13 +497,24 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step_head
   obtain ⟨representative, oldCumulative, queryAtOpen⟩ :=
     PLeaTTa.PrologRecursiveCallPayloadBridge.LocalCallPayloadAgrees.representativeNormalizedCallAgreesWith
       payload payloadSupported opened.cursor openedArguments openedBindings
+  have queryExecutableBelow :
+      resolutionSeedHighWaterNames (alpha.map Prod.snd) ≤ startCounter := by
+    have occupiedBelow :
+        resolutionSeedHighWaterNames
+            (resolutionOccupiedVars
+              (args.map (PLeaTTa.subst binding)) res rest binding qterm) ≤
+          startCounter := by
+      simpa only [frontier.substitutedArgs] using frontier.highWater
+    exact Nat.le_trans
+      (resolutionSeedHighWaterNames_le_of_subset queryExecutableLive)
+      occupiedBelow
   obtain
     ⟨nextAlpha, sourceCanonical, flattened, installed, result⟩ :=
     RepresentativeRetainedCallFrontier.activate_task_step_head_with
       entry frontier oldCumulative queryAtOpen
       (by simpa only [openedBindings] using payload.bindingShape)
       payload.canonicalWellFormed payload.alphaShared queryReferenceBelow
-      queryExecutableLive live resolved
+      queryExecutableBelow live resolved
   exact
     ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
       result⟩

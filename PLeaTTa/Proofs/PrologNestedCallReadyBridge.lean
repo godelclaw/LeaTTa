@@ -375,12 +375,6 @@ structure NestedCallOperationalReady (state : ActivePayloadState)
       state.index.session.resolver.database.generation head.predicate
       head.referencePayload.length ≠ []
   scanNonempty : head.scan.1 ≠ []
-  queryExecutableLive :
-    ∀ name, name ∈ state.index.alpha.map Prod.snd →
-      name ∈
-        resolutionOccupiedVars
-          (head.arguments.map (PLeaTTa.subst state.index.runtime))
-          head.result head.executableTail state.index.runtime state.index.qterm
   selected :
     ∀ {count : Nat} {finish : PreparedCursor} {branch : ClauseBranch}
       {clause : PLeaTTa.Clause} {branchTail : List ClauseBranch}
@@ -555,6 +549,19 @@ theorem RepresentativeNestedCallSuccessorFacts.materializedReady
 
 namespace NestedCallOperationalReady
 
+/-- The carrier's actual persistent allocator inhabits the exact alpha
+frontier named by readiness.  This is the reusable executable-name bound for
+recursive activation; it does not require every historical name to remain in
+the current call syntax. -/
+theorem alphaFresh {state : ActivePayloadState}
+    {head : NestedCallHead state}
+    (ready : NestedCallOperationalReady state head) :
+    AlphaFreshFrontier state.index.alpha
+      state.index.session.resolver.nextFresh
+      state.index.openConf.persistent.counter := by
+  rw [← ready.exactFresh]
+  exact state.agreement.core.control.ready.1.fresh
+
 /-- Operational readiness alone determines the executable entry step; no
 source payload-support premise participates in scan scheduling. -/
 theorem fineEntry {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
@@ -635,13 +642,7 @@ theorem queryReferenceBelow {state : ActivePayloadState}
     (frontier :
       head.Frontier finish branch clause branchTail clauseTail altTail copied) :
     GeneratedBelow finish.reservationStart (state.index.alpha.map Prod.fst) := by
-  have exactFrontier :
-      AlphaFreshFrontier state.index.alpha
-        state.index.session.resolver.nextFresh
-        state.index.openConf.persistent.counter := by
-    rw [← ready.exactFresh]
-    exact state.agreement.core.control.ready.1.fresh
-  apply exactFrontier.1.mono
+  apply ready.alphaFresh.1.mono
   exact Nat.le_trans
     (openLocalCall_reservationStart_ge state.index.session
       (requestFor head.predicate head.referencePayload state.index.current))
@@ -922,7 +923,10 @@ theorem pushDetailed {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
       ready.entryRelates frontier head.spinePayload state.cumulative
       ready.queryAtOpen
       (by simp [openedFor, openLocalCall, requestFor, prepareCall])
-      (ready.queryReferenceBelow frontier) ready.queryExecutableLive live
+      (ready.queryReferenceBelow frontier)
+      (by
+        simpa [OpenConf.toConf, Control.toConf] using
+          ready.toNestedCallOperationalReady.alphaFresh.2) live
       resolved
   obtain
     ⟨nestedActive, nestedPayloadContext, _sourceSteps, _fineSteps,
@@ -933,7 +937,7 @@ theorem pushDetailed {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
       (entry := ready.entryRelates.entry)
       (frontier := frontier) (pulls := pulls)
       state.cumulative ready.materialized (ready.queryReferenceBelow frontier)
-      ready.queryExecutableLive activation ready.notThrow ready.notDatabase
+      activation ready.notThrow ready.notDatabase
       ready.fineEntry
   have sealedEntry :
       PLeaTTa.Step prog gt state.carrier.index.openConf.toConf

@@ -124,13 +124,6 @@ theorem
     (openedBindings : opened.cursor.bindings = referenceBindings)
     (queryReferenceBelow :
       GeneratedBelow finish.reservationStart (alpha.map Prod.fst))
-    (queryExecutableLive :
-      ∀ name, name ∈ alpha.map Prod.snd →
-        name ∈
-          resolutionOccupiedVars
-            (args.map (PLeaTTa.subst binding)) res
-            (segmentExecutableRest ++ flattenExecutables outer)
-            binding qterm)
     (activation :
       SpinedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
@@ -217,7 +210,7 @@ theorem
   obtain ⟨active, snapshot, _existingContext, activeCounter, stack⟩ :=
     PLeaTTa.PrologRetainedPayloadSnapshotBridge.SpinedRepresentativeProductActivation.activeResourceStackWithSnapshot
       frontier preHeadPayload oldCumulative materializedAtOpen openedArguments
-      openedBindings queryReferenceBelow queryExecutableLive activation
+      openedBindings queryReferenceBelow activation
       outerNext baseAlts outerAlts
   have branchFirstBelowSession :
       branch.firstFresh ≤ opened.session.resolver.nextFresh := by

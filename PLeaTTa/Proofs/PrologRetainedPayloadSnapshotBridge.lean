@@ -99,12 +99,6 @@ structure RetainedCallPayloadSnapshot
       referenceBase
   queryReferenceBelow :
     GeneratedBelow cursor.reservationStart (snapshotAlpha.map Prod.fst)
-  queryExecutableLive :
-    ∀ name, name ∈ snapshotAlpha.map Prod.snd →
-      name ∈
-        resolutionOccupiedVars
-          (resource.args.map (PLeaTTa.subst resource.binding))
-          resource.res resource.rest resource.binding resource.qterm
   queryExecutableBelow :
     resolutionSeedHighWaterNames
         (resolutionOccupiedVars
@@ -291,13 +285,9 @@ def afterPulledHead
           [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
           using snapshot.materialized
       queryReferenceBelow := snapshot.queryReferenceBelow
-      queryExecutableLive := ?_
       queryExecutableBelow := ?_
       resourceRest := ?_
       payload := ?_ }
-  · simpa
-      [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
-      using snapshot.queryExecutableLive
   · have oldBound := snapshot.queryExecutableBelow
     simpa
       [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
@@ -1211,13 +1201,6 @@ theorem
     (openedBindings : opened.cursor.bindings = referenceBindings)
     (queryReferenceBelow :
       GeneratedBelow finish.reservationStart (alpha.map Prod.fst))
-    (queryExecutableLive :
-      ∀ name, name ∈ alpha.map Prod.snd →
-        name ∈
-          resolutionOccupiedVars
-            (args.map (PLeaTTa.subst binding)) res
-            (segmentExecutableRest ++ flattenExecutables outer)
-            binding qterm)
     (activation :
       SpinedRepresentativeProductActivation prog gt alpha support canonical
         referenceBase opened pending finish branch branchTail altTail copied
@@ -1365,11 +1348,9 @@ theorem
         materialized := by
           simpa [active, advancedBindings] using materializedAtOpen
         queryReferenceBelow := advancedBelow
-        queryExecutableLive := ?_
         queryExecutableBelow := ?_
         resourceRest := rfl
         payload := ?_ }
-    · simpa [active] using queryExecutableLive
     · have oldBound :
           resolutionSeedHighWaterNames
               (resolutionOccupiedVars
