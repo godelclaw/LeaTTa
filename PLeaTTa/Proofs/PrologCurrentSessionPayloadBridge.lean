@@ -610,14 +610,31 @@ theorem
             payloadContext ∧
           ExtendsAboveAt branch.firstFresh startCounter
             activation.alphaExtension outerPayloads
-            (SourceControlResourcePayloadContextAgrees.tail payloadContext) := by
-  obtain
-      ⟨active, _snapshot, payloadContext, endpoints, activationOrdered,
-        outerPayloadExact, _outerActivationEndpoints, resourceStack⟩ :=
+            (SourceControlResourcePayloadContextAgrees.tail payloadContext) ∧
+          (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.residualRepresentative =
+            representative := by
+  obtain ⟨active, _snapshot, payloadContext, result⟩ :=
     _root_.PLeaTTa.PrologNestedRetainedPayloadBridge.SpinedRepresentativeProductActivation.activeResourceStackWithNestedSnapshots
       retainedPosition positioned frontier preHeadPayload oldCumulative
       materializedAtOpen openedArguments openedBindings queryReferenceBelow activation
       sourceFresh outerPayloads outerEndpoints outerOrdered baseAlts outerAlts
+  have endpoints := result.1
+  have activationOrdered := result.2.1
+  have outerPayloadExact := result.2.2.1
+  have _outerActivationEndpoints := result.2.2.2.1
+  have resourceStack :
+      ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
+        callerBarrier pending (finish.advance branch branchTail)
+        (segmentExecutableRest ++ flattenExecutables outer)
+        altTail active outer resources callerScope outerScope context
+        baseAlts
+        (activatedOpenSuccessor pending copied
+          (segmentExecutableRest ++ flattenExecutables outer) qterm
+          installed) := result.2.2.2.2.1
+  have snapshotRepresentative :
+      (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.residualRepresentative =
+        representative :=
+    result.2.2.2.2.2
   have counterExact :
       (activatedOpenSuccessor pending copied
         (segmentExecutableRest ++ flattenExecutables outer) qterm
@@ -634,7 +651,7 @@ theorem
     rw [counterExact]
     exact endpoints
   refine
-    ⟨active, payloadContext, ?_, outerPayloadExact⟩
+    ⟨active, payloadContext, ?_, outerPayloadExact, snapshotRepresentative⟩
   refine ⟨?_, endpointsCurrent, activationOrdered⟩
   refine ⟨?_, resourceStack, ?_⟩
   · exact

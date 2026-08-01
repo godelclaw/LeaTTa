@@ -105,8 +105,7 @@ theorem activateSelectedHead
     let restored :=
       SelectedHeadActivationChronology.restoreSnapshot consumed
         agreement.activationChronology agreement.core.resourceStack.offset
-    ∃ (representative : TreeSubstitution)
-        (nextAlpha : List (LogicVar × String))
+    ∃ (nextAlpha : List (LogicVar × String))
         (sourceCanonical flattened : TreeSubstitution)
         (installed : Subst),
       ∃ extension :
@@ -139,7 +138,7 @@ theorem activateSelectedHead
           restored.referenceBase
           (PLeaTTa.trimFor (copied.body ++ resource.rest)
             state.control.qterm installed)
-          (flattened ++ representative) ∧
+          (flattened ++ restored.residualRepresentative) ∧
         SpinedActiveProductPayloadResourceRelatesAt
           (AlphaFreshFrontier nextAlpha) nextAlpha support
           (sourceCanonical ++ restored.canonical) restored.referenceBase
@@ -174,8 +173,9 @@ theorem activateSelectedHead
       resource.finalCounter ≤ state.persistent.counter := by
     simpa [afterPulledHead] using endpointComponents.2.1
   obtain
-      ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
-        nextShared, alphaIncluded, extension, freshFrontier,
+      ⟨nextAlpha, sourceCanonical, flattened, installed,
+        nextShared, alphaIncluded, extension,
+        freshFrontier,
         independentShape, sourceOrdered, sourceLeaf, sealedStep, fineStep,
         cumulative, bodyPayload, nextSnapshotNonempty, successorBelow,
         persistentExact, framesExact, altsExact⟩ :=
@@ -472,11 +472,11 @@ theorem activateSelectedHead
         restored.referenceBase
         (PLeaTTa.trimFor (copied.body ++ resource.rest)
           state.control.qterm installed)
-        (flattened ++ representative) := by
+        (flattened ++ restored.residualRepresentative) := by
     simpa [currentQuery] using cumulative
   exact
-    ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
-      extension, nextPayloadContext, nextShared, alphaIncluded,
+    ⟨nextAlpha, sourceCanonical, flattened, installed, extension,
+      nextPayloadContext, nextShared, alphaIncluded,
       nextOuterPayloadExact, sourceStep, sealedStep, fineStep,
       cumulativeAtStateQuery, targetPayload⟩
 

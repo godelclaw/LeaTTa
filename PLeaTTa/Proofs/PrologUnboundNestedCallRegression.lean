@@ -833,7 +833,9 @@ theorem qMaterializedReadyAfterP
         (openedFor initialSession "p" [queryTerm] []).cursor
         (finish.advance pPreparedBranch branchTail) 1 := by
     simpa using finishPositioned.advance frontier.finishRemaining
-  obtain ⟨active, payloadContext, agreement, _outerExact⟩ :=
+  obtain
+      ⟨active, payloadContext, agreement, _outerExact,
+        _snapshotRepresentative⟩ :=
     SpinedRepresentativeProductActivation.spinedProductPayloadResourceRelates
       (prog := prog) (gt := gt) (alpha := rootAlpha) (support := rootAlpha)
       (canonical := []) (referenceBase := []) (referenceBindings := [])

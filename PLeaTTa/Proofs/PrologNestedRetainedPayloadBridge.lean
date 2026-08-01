@@ -181,14 +181,17 @@ theorem
                 (SourceControlResourcePayloadContextAgrees.tail payloadContext)
                 (finish.advance branch branchTail).reservationStart
                 active.counter ∧
-              ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
+              (ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
                 callerBarrier pending (finish.advance branch branchTail)
                 (segmentExecutableRest ++ flattenExecutables outer)
                 altTail active outer resources callerScope outerScope context
                 baseAlts
                 (activatedOpenSuccessor pending copied
                   (segmentExecutableRest ++ flattenExecutables outer)
-                  qterm installed) := by
+                  qterm installed)) ∧
+              (SourceControlResourcePayloadContextAgrees.headCell
+                payloadContext).snapshot.residualRepresentative =
+                  representative := by
   have branchMember : branch ∈ finish.remaining := by
     rw [frontier.finishRemaining]
     simp
@@ -211,12 +214,24 @@ theorem
     exact
       ActivationOrdered.extendAbove activation.alphaExtension outerPayloads
         outerAtSelected outerOrdered
-  obtain ⟨active, snapshot, _existingContext, activeCounter, stack⟩ :=
+  obtain ⟨active, snapshot, _existingContext, result⟩ :=
     PLeaTTa.PrologRetainedPayloadSnapshotBridge.SpinedRepresentativeProductActivation.activeResourceStackWithSnapshot
       retainedPosition positioned frontier preHeadPayload oldCumulative
       materializedAtOpen openedArguments
       openedBindings queryReferenceBelow activation
       outerNext baseAlts outerAlts
+  have activeCounter : active.counter = startCounter + 1 := result.1
+  have stack :
+      ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
+        callerBarrier pending (finish.advance branch branchTail)
+        (segmentExecutableRest ++ flattenExecutables outer)
+        altTail active outer resources callerScope outerScope context
+        baseAlts
+        (activatedOpenSuccessor pending copied
+          (segmentExecutableRest ++ flattenExecutables outer)
+          qterm installed) := result.2.1
+  have snapshotRepresentative :
+      snapshot.residualRepresentative = representative := result.2.2
   have branchFirstBelowSession :
       branch.firstFresh ≤ opened.session.resolver.nextFresh := by
     calc
@@ -313,6 +328,9 @@ theorem
   exact
     ⟨active, snapshot, payloadContextExact, payloadContextExactBelow,
       payloadContextExactOrdered, outerPayloadExact, outerActivationEndpoints,
-      stack⟩
+      ⟨stack, by
+        simpa [payloadContextExact,
+          SourceControlResourcePayloadContextAgrees.headCell] using
+          snapshotRepresentative⟩⟩
 
 end PLeaTTa.PrologNestedRetainedPayloadBridge

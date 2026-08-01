@@ -116,9 +116,19 @@ structure RepresentativeRootCallSuccessorFacts
       scope independentResult representative nextAlpha sourceCanonical
       flattenedRepresentative installed
   carrierAlpha : after.carrier.index.alpha = nextAlpha
+  carrierSupport : after.carrier.index.support = support
   carrierCurrent : after.carrier.index.current = independentResult
+  retainedCursorExact :
+    after.carrier.index.finish.advance after.carrier.index.branch
+        after.carrier.index.branchTail =
+      finish.advance branch branchTail
+  activeAltsExact : after.carrier.index.active.alts = altTail
   carrierRepresentative :
     after.representative = flattenedRepresentative ++ representative
+  snapshotRepresentative :
+    (SourceControlResourcePayloadContextAgrees.headCell
+      after.carrier.payloadContext).snapshot.residualRepresentative =
+        representative
   sourceStateExact :
     after.carrier.sourceState =
       .running
@@ -319,7 +329,9 @@ theorem RepresentativeSupportedCallEntryRelates.activate_literal_root
       CallScopedCursorPosition opened.cursor
         (finish.advance branch branchTail) (rejects + 1) :=
     finishPositioned.advance frontier.finishRemaining
-  obtain ⟨active, payloadContext, agreement, _outerExact⟩ :=
+  obtain
+      ⟨active, payloadContext, agreement, _outerExact,
+        snapshotRepresentative⟩ :=
     SpinedRepresentativeProductActivation.spinedProductPayloadResourceRelates
       (prog := prog) (gt := gt) (alpha := alpha) (support := support)
       (canonical := canonical) (referenceBase := referenceBase)
@@ -523,8 +535,16 @@ theorem RepresentativeSupportedCallEntryRelates.activate_literal_root
       materializedAtOpen := materializedAtOpen
       activation := activation
       carrierAlpha := rfl
+      carrierSupport := rfl
       carrierCurrent := rfl
+      retainedCursorExact := rfl
+      activeAltsExact := by
+        simpa [after, carrier, ActivePayloadState.ofAgreement] using
+          agreement.core.resourceStack.activeAlts
       carrierRepresentative := rfl
+      snapshotRepresentative := by
+        simpa [after, carrier, ActivePayloadState.ofAgreement] using
+          snapshotRepresentative
       sourceStateExact := rfl
       fineStateExact := rfl
       materializedBodyHeads := ?_

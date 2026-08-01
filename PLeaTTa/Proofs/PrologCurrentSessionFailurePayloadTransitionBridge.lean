@@ -588,6 +588,45 @@ theorem headCursor_afterRejectedPullsAndPulledHead
   cases payloadContext
   rfl
 
+/-- Failure catch-up changes cursor and executable ownership metadata but
+preserves the immutable logical representative stored in the retained head
+payload. -/
+theorem headSnapshotRepresentative_afterRejectedPullsAndPulledHead
+    {alpha support : List (LogicVar × String)}
+    {qterm : Atom}
+    {opened : OpenedCall}
+    {finish : PreparedCursor} {selected : ClauseBranch}
+    {selectedTail : List ClauseBranch}
+    {next : PreparedCursor}
+    {nextBranch : ClauseBranch} {nextClause : PLeaTTa.Clause}
+    {nextBranchTail : List ClauseBranch}
+    {nextCopied : PLeaTTa.Clause}
+    {nextAltTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    (payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish selected
+        selectedTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context)
+    {count : Nat}
+    (pulls :
+      RejectedPullsN count (finish.advance selected selectedTail) next)
+    (offset :
+      PulledHeadOffsetAgrees alpha next nextBranch nextClause nextBranchTail
+        nextCopied active nextAltTail) :
+    (PostFailurePayloadOffsetContext.headSnapshot
+      (afterRejectedPullsAndPulledHead payloadContext pulls offset)).residualRepresentative =
+      (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.residualRepresentative := by
+  cases payloadContext
+  rfl
+
 /-- Consequently the operational source cursor cannot be confused with the
 payload cursor already owned by the eager executable head. -/
 theorem sourceCursor_ne_payloadHead

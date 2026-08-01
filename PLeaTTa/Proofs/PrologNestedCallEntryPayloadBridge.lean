@@ -462,7 +462,8 @@ theorem
     callEntry_pendingOuterAlts_of_activeResourceStack entry
       currentAgreement.core.resourceStack
   obtain
-      ⟨nestedActive, nestedPayloadContext, nestedAgreement, payloadHandoff⟩ :=
+      ⟨nestedActive, nestedPayloadContext, nestedAgreement, payloadHandoff,
+        _snapshotRepresentative⟩ :=
     SpinedRepresentativeProductActivation.spinedProductPayloadResourceRelates
       retainedPosition positioned frontier preHeadPayload oldCumulative
       materializedAtOpen (by rfl) (by rfl) queryReferenceBelow activation

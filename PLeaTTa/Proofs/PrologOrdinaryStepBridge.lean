@@ -2713,6 +2713,26 @@ not identified with the independent leaf's branch-completion terminal. -/
 def unifyFailureSuccessor (state : OpenConf) : OpenConf :=
   state.stepOpen (PLeaTTa.pull { state.toConf with cur := none })
 
+/-- The eager pull after a failed primitive equality preserves the global
+resolution-name bound.  Clearing the failed current goal only removes live
+names; the existing pull theorem then accounts for the selected alternative. -/
+theorem ConfBelowResolutionCounter.unifyFailureSuccessor
+    (state : OpenConf)
+    (below : ConfBelowResolutionCounter state.toConf) :
+    ConfBelowResolutionCounter (unifyFailureSuccessor state).toConf := by
+  let cleared : Conf := { state.toConf with cur := none }
+  have clearedBelow : ConfBelowResolutionCounter cleared := by
+    apply ConfBelowResolutionCounter.of_subset (target := cleared) below
+      (Nat.le_refl _)
+    intro name member
+    simp only [cleared, resolutionLiveVars, List.nil_append,
+      List.mem_append] at member ⊢
+    aesop
+  have pulledBelow := clearedBelow.pull
+  unfold _root_.PLeaTTa.PrologOrdinaryStepBridge.unifyFailureSuccessor
+  rw [OpenConf.stepOpen_toConf]
+  simpa [cleared] using pulledBelow
+
 /-- Pulling after primitive-unification failure changes only backtrackable
 control.  The dynamic world and global high-water remain current. -/
 @[simp] theorem unifyFailureSuccessor_persistent (state : OpenConf) :

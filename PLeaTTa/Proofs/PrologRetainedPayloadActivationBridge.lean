@@ -313,7 +313,7 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
       AlphaRuntimeNamesLive support
         (copied.body ++ resource.rest) resource.qterm)
     (resolved : HeadResolution branch independentResult) :
-    ∃ representative nextAlpha sourceCanonical flattened installed,
+    ∃ nextAlpha sourceCanonical flattened installed,
       SharedRuntimeAlpha nextAlpha ∧
       (∀ pair, pair ∈ currentAlpha → pair ∈ nextAlpha) ∧
       AlphaExtendsAbove currentAlpha nextAlpha branch.firstFresh
@@ -343,7 +343,7 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
         snapshot.referenceBase
         (PLeaTTa.trimFor (copied.body ++ resource.rest)
           resource.qterm installed)
-        (flattened ++ representative) ∧
+        (flattened ++ snapshot.residualRepresentative) ∧
       TaskPayloadAgrees nextAlpha support resource.barrier
         (sourceCanonical ++ snapshot.canonical) snapshot.referenceBase
         independentResult
@@ -362,8 +362,21 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
           installed).frames = state.frames ∧
       (unifySuccessor state (copied.body ++ resource.rest)
           installed).control.alts = state.control.alts := by
-  obtain ⟨representative, oldCumulative, query⟩ :=
-    snapshot.representative
+  let representative := snapshot.residualRepresentative
+  have oldCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        snapshot.snapshotAlpha support snapshot.canonical
+        snapshot.referenceBase resource.binding representative := by
+    simpa [representative] using snapshot.cumulative
+  have query :
+      PrologRecursiveCallPayloadBridge.RepresentativeNormalizedCallAgreesWith
+        snapshot.snapshotAlpha finish
+        (resource.args.map (PLeaTTa.subst resource.binding))
+        (PLeaTTa.subst resource.binding resource.res)
+        representative snapshot.referenceBase := by
+    simpa [representative] using
+      snapshot.materialized.toRepresentativeNormalizedCallAgreesWith finish
+        snapshot.cursorArguments rfl
   have cursorBindingShape :
       finish.bindings =
         TreeSubstitution.reify snapshot.canonical ++
@@ -490,8 +503,8 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
         snapshot.referenceBase
         (PLeaTTa.trimFor (copied.body ++ resource.rest)
           resource.qterm installed)
-        (flattened ++ representative) := by
-    simpa only [copiedExact] using successorCumulative
+        (flattened ++ snapshot.residualRepresentative) := by
+    simpa only [copiedExact, representative] using successorCumulative
   have taskCopied :
       TaskPayloadAgrees nextAlpha support resource.barrier
         (sourceCanonical ++ snapshot.canonical) snapshot.referenceBase
@@ -536,7 +549,7 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
         snapshot.referenceBase
         (PLeaTTa.trimFor (copied.body ++ resource.rest)
           state.control.qterm installed)
-        (flattened ++ representative) := by
+        (flattened ++ snapshot.residualRepresentative) := by
     simpa [currentQuery] using cumulativeCopied
   have taskAtStateQuery :
       TaskPayloadAgrees nextAlpha support resource.barrier
@@ -547,7 +560,7 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
         branch.body copied.body := by
     simpa [currentQuery] using taskCopied
   refine
-    ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
+    ⟨nextAlpha, sourceCanonical, flattened, installed,
       nextShared, alphaIncluded, extensionAbove, freshFrontier,
       independentShape,
       sourceOrdered, sourceStep, sealedStep, fineStep, cumulativeCopied,

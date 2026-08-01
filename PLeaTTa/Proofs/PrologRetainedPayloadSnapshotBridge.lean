@@ -1241,14 +1241,15 @@ theorem
                context)
               outerScope,
           active.counter = startCounter + 1 ∧
-            ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
+            (ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
               callerBarrier pending (finish.advance branch branchTail)
               (segmentExecutableRest ++ flattenExecutables outer)
               altTail active outer resources callerScope outerScope context
               baseAlts
               (activatedOpenSuccessor pending copied
                 (segmentExecutableRest ++ flattenExecutables outer)
-                qterm installed) := by
+                qterm installed)) ∧
+            _snapshot.residualRepresentative = representative := by
   let advanced := finish.advance branch branchTail
   have advancedRemaining : advanced.remaining = branchTail := by
     simp [advanced, PreparedCursor.advance]
@@ -1336,7 +1337,7 @@ theorem
         exact
           queryReferenceBelow.mono
             (Nat.le_trans startsAbove nonemptyInterval)
-  have snapshot :
+  let snapshot :
       RetainedCallPayloadSnapshot nextAlpha support active advanced
         { barrier := callerBarrier
           references := segmentReferenceRest
@@ -1406,6 +1407,6 @@ theorem
          context)
         outerScope := by
     simpa [caller] using payloadContext
-  exact ⟨active, snapshot, payloadContextExact, rfl, stack⟩
+  exact ⟨active, snapshot, payloadContextExact, rfl, stack, rfl⟩
 
 end PLeaTTa.PrologRetainedPayloadSnapshotBridge
