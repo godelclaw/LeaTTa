@@ -782,6 +782,24 @@ def afterBodyAnswer
     (afterBodyAnswer prog gt state referenceEmpty executableEmpty).carrier.fineState =
       state.carrier.fineState := rfl
 
+/-- Completing the selected body preserves the literal caller continuation. -/
+@[simp] theorem afterBodyAnswer_callerReferences
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    (referenceEmpty : state.carrier.index.bodyReferences = [])
+    (executableEmpty : state.carrier.index.bodyExecutables = []) :
+    (afterBodyAnswer prog gt state referenceEmpty executableEmpty).carrier.index.callerReferences =
+      state.carrier.index.callerReferences := rfl
+
+/-- Completing the selected body preserves the literal older control spine. -/
+@[simp] theorem afterBodyAnswer_outer
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    (referenceEmpty : state.carrier.index.bodyReferences = [])
+    (executableEmpty : state.carrier.index.bodyExecutables = []) :
+    (afterBodyAnswer prog gt state referenceEmpty executableEmpty).carrier.index.outer =
+      state.carrier.index.outer := rfl
+
 /-- Source focus after a clause-local cut consumes the selected product. -/
 def cutSource (state : RepresentativeActivePayloadState)
     (bodyRest : List PeTTaSpec.PrologCore.Goal) : Search :=

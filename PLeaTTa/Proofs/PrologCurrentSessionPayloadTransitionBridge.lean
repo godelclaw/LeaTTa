@@ -98,6 +98,33 @@ def outerPayload
   | .cons _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ outerAgrees =>
       outerAgrees
 
+/-- The active payload cell owns the literal advanced cursor retained by the
+scheduled source product.  This projection is coupled to the same dependent
+zipper as `outerPayload`; it cannot be supplied from a shape-compatible
+resource belonging to another call. -/
+def activeOwnership
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {opened : OpenedCall} {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    (payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context) :
+    active.HasIndexedOwnershipAt alpha (finish.advance branch branchTail) := by
+  cases payloadContext with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
+      exact resourceOwnership
+
 /-- The active-product-specific pop is exactly the generic linear zipper
 tail.  Naming the equality avoids dependent abbreviation unfolding at every
 chronology-preservation site. -/

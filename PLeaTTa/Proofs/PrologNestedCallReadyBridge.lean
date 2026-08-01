@@ -485,6 +485,22 @@ structure NestedCallSuccessorFacts
   resolution : HeadResolution branch after.index.current
   bodyReferences : after.index.bodyReferences = branch.body
   bodyExecutables : after.index.bodyExecutables = copied.body
+  /-- The activated callee stores the literal source continuation following
+  the call head, not a shape-compatible caller tail. -/
+  callerReferences :
+    after.index.callerReferences = head.referenceRest
+  /-- The executable caller continuation is the same literal tail selected
+  by `head`. -/
+  callerExecutables :
+    after.index.callerExecutables = head.executableRest
+  /-- Entering the callee prepends exactly the predecessor caller segment to
+  the older control spine.  This equation is needed when a later answer
+  unwinds several private product frames. -/
+  outerSegments :
+    after.index.outer =
+      { barrier := before.index.callerBarrier
+        references := before.index.callerReferences
+        executables := before.index.callerExecutables } :: before.index.outer
   activationStep :
     PLeaTTa.Step prog gt head.pending.pulled.toConf
       (PrologRepresentativeStepActivationBridge.activatedExecutableSuccessor
@@ -1023,6 +1039,9 @@ theorem pushDetailed {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
       resolution := ?_
       bodyReferences := ?_
       bodyExecutables := ?_
+      callerReferences := rfl
+      callerExecutables := rfl
+      outerSegments := rfl
       activationStep := ?_
       runtimeExact := ?_
       alphaExtension := ?_

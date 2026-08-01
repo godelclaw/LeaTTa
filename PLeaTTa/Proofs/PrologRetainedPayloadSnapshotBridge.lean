@@ -1058,8 +1058,14 @@ structure HeadCell
     (scope : CutScopeId)
     (frame : ActiveProductFrame) where
   cursor : PreparedCursor
+  predicateScopeExact : frame.predicateScope = scope
   retainedShape :
     frame.retained = .clauses scope cursor
+  callerRestExact : frame.callerRest = segment.references
+  /-- Exact ownership at this same cursor.  Keeping it in the head package
+  prevents a consumer from pairing the snapshot with a merely
+  shape-compatible ownership proof extracted from another payload cell. -/
+  ownership : resource.HasIndexedOwnershipAt alpha cursor
   snapshot :
     RetainedCallPayloadSnapshot alpha support resource cursor segment segments
 
@@ -1082,7 +1088,7 @@ def headCell
   | cons currentBarrier currentScope nextScope outerScope segment segments
       resource resources cursor context segmentAgrees resourceRest
       resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
-      exact ⟨cursor, rfl, snapshot⟩
+      exact ⟨cursor, rfl, rfl, rfl, resourceOwnership, snapshot⟩
 
 end SourceControlResourcePayloadContextAgrees
 

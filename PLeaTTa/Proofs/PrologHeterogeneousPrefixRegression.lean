@@ -1080,9 +1080,10 @@ theorem truth_then_ground_reflexive_unify_then_q_call_exact_literal_states
   obtain
     ⟨middleCarrier, head, rawReady, qPredicate, qPayload, _qReferenceRest,
       _qArguments, _qResult, _qExecutableRest, middleAlpha, _middleSupport,
-      middleCurrent, middleRuntime, _middleQterm, _middleDatabase,
-      _middleNextFresh, _middleWorld, _rootSourceSteps, _rootFineSteps,
-      representativeWitness, only, openedSingleton⟩ :=
+      middleCurrent, middleRuntime, _middleQterm, _middleCallerReferences,
+      _middleOuter, _middleDatabase, _middleNextFresh, _middleWorld,
+      _rootSourceSteps, _rootFineSteps, representativeWitness, only,
+      openedSingleton⟩ :=
     PLeaTTa.PrologNestedCallReadyRegression.qReadyAfterP
       (prog := prog) (gt := gt)
   obtain ⟨middleState, carrierExact, materialized⟩ :=

@@ -579,6 +579,82 @@ inductive SourceControlResourceContextAgrees
 
 namespace SourceControlResourceContextAgrees
 
+/-- The head resource owns the exact prepared cursor stored by the head
+source frame. -/
+theorem headOwnership
+    {alpha : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {currentScope nextScope outerScope : CutScopeId}
+    {cursor : PreparedCursor} {context : ActiveProductContext}
+    (agreement :
+      SourceControlResourceContextAgrees alpha qterm currentBarrier
+        (segment :: segments) (resource :: resources) currentScope
+        ({ callerScope := nextScope
+           predicateScope := currentScope
+           retained := .clauses currentScope cursor
+           callerRest := segment.references } :: context)
+        outerScope) :
+    resource.HasIndexedOwnershipAt alpha cursor := by
+  cases agreement with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership outerAgrees =>
+      exact resourceOwnership
+
+/-- The head resource carries the query identity indexed by the complete
+alignment. -/
+theorem headQuery
+    {alpha : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {currentScope nextScope outerScope : CutScopeId}
+    {cursor : PreparedCursor} {context : ActiveProductContext}
+    (agreement :
+      SourceControlResourceContextAgrees alpha qterm currentBarrier
+        (segment :: segments) (resource :: resources) currentScope
+        ({ callerScope := nextScope
+           predicateScope := currentScope
+           retained := .clauses currentScope cursor
+           callerRest := segment.references } :: context)
+        outerScope) :
+    resource.qterm = qterm := by
+  cases agreement with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership outerAgrees =>
+      exact resourceQuery
+
+/-- Remove the head resource/control/frame cell with its shifted barrier and
+scope indices intact. -/
+def tail
+    {alpha : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {currentScope nextScope outerScope : CutScopeId}
+    {cursor : PreparedCursor} {context : ActiveProductContext}
+    (agreement :
+      SourceControlResourceContextAgrees alpha qterm currentBarrier
+        (segment :: segments) (resource :: resources) currentScope
+        ({ callerScope := nextScope
+           predicateScope := currentScope
+           retained := .clauses currentScope cursor
+           callerRest := segment.references } :: context)
+        outerScope) :
+    SourceControlResourceContextAgrees alpha qterm segment.barrier segments
+      resources nextScope context outerScope := by
+  cases agreement with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership outerAgrees =>
+      exact outerAgrees
+
 /-- Forgetting executable resources recovers the earlier exact
 source/control-segment zipper. -/
 theorem control

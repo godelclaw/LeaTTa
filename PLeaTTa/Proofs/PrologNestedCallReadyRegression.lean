@@ -599,6 +599,8 @@ private theorem pActive
       state.index.current = [] ∧
       state.index.runtime = [] ∧
       state.index.qterm = resultAtom ∧
+      state.index.callerReferences = [] ∧
+      state.index.outer = [] ∧
       state.index.session.resolver.database = referenceDatabase ∧
       state.index.session.resolver.nextFresh = 0 ∧
       state.index.openConf.persistent.world = executableWorld ∧
@@ -777,7 +779,8 @@ private theorem pActive
   refine
     ⟨after.carrier, ?_, ?_, alphaExact, facts.freshFrontierExact,
       facts.supportPreserved, currentExact, runtimeExact, facts.qtermPreserved,
-      ?_, ?_, ?_, facts.below, ?_, facts.fineSteps,
+      facts.callerReferencesEmpty, facts.outerEmpty, ?_, ?_, ?_, facts.below,
+      ?_, facts.fineSteps,
       ⟨after, rfl, facts.materializedBodyHeads⟩⟩
   · rw [facts.bodyReferences, branchExact]
     rfl
@@ -812,6 +815,8 @@ theorem qReadyAfterP
       state.index.current = [] ∧
       state.index.runtime = [] ∧
       state.index.qterm = resultAtom ∧
+      state.index.callerReferences = [] ∧
+      state.index.outer = [] ∧
       state.index.session.resolver.database = referenceDatabase ∧
       state.index.session.resolver.nextFresh = 0 ∧
       state.index.openConf.persistent.world = executableWorld ∧
@@ -834,9 +839,10 @@ theorem qReadyAfterP
           state.index.current).cursor.remaining = [only] := by
   obtain
     ⟨state, referenceHead, executableHead, alphaNil, freshExact, supportNil,
-      currentNil, runtimeNil, qtermExact, databaseExact, nextFreshZero,
-      worldExact, below, rootSourceSteps, rootFineSteps, representative,
-      representativeCarrier, materializedHeads⟩ :=
+      currentNil, runtimeNil, qtermExact, callerReferencesEmpty, outerEmpty,
+      databaseExact, nextFreshZero, worldExact, below, rootSourceSteps,
+      rootFineSteps, representative, representativeCarrier,
+      materializedHeads⟩ :=
     pActive (prog := prog) (gt := gt)
   let head : NestedCallHead state :=
     { predicate := "q"
@@ -871,8 +877,8 @@ theorem qReadyAfterP
     rfl
   refine
     ⟨state, head, ?_, rfl, rfl, rfl, rfl, rfl, rfl, alphaNil, supportNil,
-      currentNil, runtimeNil, qtermExact, databaseExact, nextFreshZero,
-      worldExact, rootSourceSteps, rootFineSteps,
+      currentNil, runtimeNil, qtermExact, callerReferencesEmpty, outerEmpty,
+      databaseExact, nextFreshZero, worldExact, rootSourceSteps, rootFineSteps,
       ⟨representative, representativeCarrier, headMaterialized⟩,
       ⟨qPreparedBranch, openedSingleton⟩⟩
   refine
@@ -1079,13 +1085,20 @@ theorem ground_p_q_r_two_nested_pushes
               rHead.predicate = "r" ∧
               rHead.referencePayload = [resultTerm] ∧
               NestedCallPushCertificate prog gt 0
-                (requestFor "r" [resultTerm] []) middle after := by
+                (requestFor "r" [resultTerm] []) middle after ∧
+              after.index.bodyReferences = [] ∧
+              after.index.bodyExecutables = [] ∧
+              after.index.callerReferences = [] ∧
+              after.index.outer.length = 2 ∧
+              (∀ segment ∈ after.index.outer,
+                segment.references = []) := by
   obtain
     ⟨before, qHead, qReady, qPredicate, qPayload, qReferenceRest,
       qArguments, qResult, qExecutableRest, beforeAlphaNil,
       beforeSupportNil, beforeCurrentNil, _beforeRuntimeNil, beforeQterm,
-      beforeDatabase, beforeNextFresh, beforeWorld, rootSourceSteps,
-      rootFineSteps, _beforeRepresentative, _beforeSingleton⟩ :=
+      beforeCallerReferencesEmpty, beforeOuterEmpty, beforeDatabase,
+      beforeNextFresh, beforeWorld, rootSourceSteps, rootFineSteps,
+      _beforeRepresentative, _beforeSingleton⟩ :=
     qReadyAfterP (prog := prog) (gt := gt)
   obtain
     ⟨count, skippedBranches, skippedClauses, finish, branch, clause,
@@ -1230,6 +1243,42 @@ theorem ground_p_q_r_two_nested_pushes
     _root_.PLeaTTa.PrologNestedCallReadyBridge.RejectedPullsN.eq_zero_of_singleton_of_finish_nonempty
       rOpenedSingleton rPullsConcrete rFinishNonempty
   have rCountZero : rCount = 0 := rPathExact.1
+  have rBranchExact : rBranch = rPreparedBranch := by
+    have remaining := rFacts.frontier.finishRemaining
+    rw [rPathExact.2, rOpenedSingleton] at remaining
+    exact (List.cons.inj remaining).1.symm
+  have rSkippedClausesNil : rSkippedClauses = [] := by
+    apply List.eq_nil_of_length_eq_zero
+    rw [rFacts.executableSkipCount, rCountZero]
+  have rExecutableShape := rFacts.executableBank
+  rw [rPredicate, rArguments, middleWorld, rSkippedClausesNil] at rExecutableShape
+  simp only [List.length_nil] at rExecutableShape
+  rw [rResolutionCandidates] at rExecutableShape
+  have rClauseExact : rClause = rExecutableClause :=
+    (List.cons.inj rExecutableShape).1.symm
+  have rCopiedBody : rCopied.body = [] := by
+    rw [rFacts.frontier.copiedExact, rClauseExact]
+    simp [PLeaTTa.freshenResolutionClause, rExecutableClause]
+  have afterBodyReferences : after.index.bodyReferences = [] := by
+    rw [rFacts.bodyReferences, rBranchExact]
+    rfl
+  have afterBodyExecutables : after.index.bodyExecutables = [] := by
+    rw [rFacts.bodyExecutables, rCopiedBody]
+  have middleCallerReferencesEmpty : middle.index.callerReferences = [] :=
+    facts.callerReferences.trans qReferenceRest
+  have afterCallerReferencesEmpty : after.index.callerReferences = [] :=
+    rFacts.callerReferences.trans rReferenceRest
+  have afterOuterLength : after.index.outer.length = 2 := by
+    rw [rFacts.outerSegments, facts.outerSegments, beforeOuterEmpty]
+    rfl
+  have afterOuterAllEmpty :
+      ∀ segment ∈ after.index.outer, segment.references = [] := by
+    intro segment member
+    rw [rFacts.outerSegments, facts.outerSegments, beforeOuterEmpty] at member
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+    rcases member with rfl | rfl
+    · exact middleCallerReferencesEmpty
+    · exact beforeCallerReferencesEmpty
   have rCertificate :
       NestedCallPushCertificate prog gt 0
         (requestFor "r" [resultTerm] []) middle after := by
@@ -1238,7 +1287,9 @@ theorem ground_p_q_r_two_nested_pushes
   exact
     ⟨before, qHead, middle, qReady, qPredicate, qPayload,
       beforeReferences, beforeExecutables, rootSourceSteps, rootFineSteps,
-      qCertificate, rHead, after, rReady, rPredicate, rPayload, rCertificate⟩
+      qCertificate, rHead, after, rReady, rPredicate, rPayload, rCertificate,
+      afterBodyReferences, afterBodyExecutables, afterCallerReferencesEmpty,
+      afterOuterLength, afterOuterAllEmpty⟩
 
 /-- The root activation and both dependent push certificates compose to one
 exact finite prefix.  Source observations retain call order; the fine lane
@@ -1259,7 +1310,8 @@ theorem ground_p_q_r_exact_prefix
     ⟨before, qHead, middle, _qReady, _qPredicate, _qPayload,
       _beforeReferences, _beforeExecutables, rootSourceSteps, rootFineSteps,
       qCertificate, rHead, after, _rReady, _rPredicate, _rPayload,
-      rCertificate⟩ :=
+      rCertificate, _afterBodyReferences, _afterBodyExecutables,
+      _afterCallerReferences, _afterOuterLength, _afterOuterAllEmpty⟩ :=
     ground_p_q_r_two_nested_pushes (prog := prog) (gt := gt)
   have sourceSteps :=
     StepsN.trans rootSourceSteps
