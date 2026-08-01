@@ -6,7 +6,7 @@ Purpose: Exercise the representative-preserving nested-call bridge on a
   reachable non-ground p(Z) :- q(Z) prefix.
 Trusted boundary: none
 -/
-import PLeaTTa.Proofs.PrologRootCallReadyBridge
+import PLeaTTa.Proofs.PrologNestedCallPrefixInductionBridge
 
 namespace PLeaTTa.PrologUnboundNestedCallRegression
 
@@ -28,6 +28,7 @@ open PrologMguComposition
 open PrologMguTopology
 open PrologMguVariant
 open PrologNestedCallChainBridge
+open PrologNestedCallPrefixInductionBridge
 open PrologNestedCallReadyBridge
 open PrologOrdinaryStepBridge
 open PrologPrefilterCallBridge
@@ -1077,8 +1078,13 @@ theorem reachable_unbound_p_q_exact_prefix
         AlphaFreshFrontier after.carrier.index.alpha 2 2 ∧
         AlphaExtendsAbove before.carrier.index.alpha
           after.carrier.index.alpha 1 1 ∧
-        ∃ extension : TreeSubstitution,
-          after.representative = extension ++ before.representative := by
+        (∃ extension : TreeSubstitution,
+          after.representative = extension ++ before.representative) ∧
+        NestedCallPushes prog gt
+          [(0,
+            requestFor "q" [(.variable (.generated 0) : Term)]
+              pSourceExtension)]
+          before after := by
   obtain
     ⟨before, head, ready, qPredicate, qPayload, qReferenceRest, qArguments,
       qResult, qExecutableRest, beforeCurrent, beforeDatabase, _beforeWorld,
@@ -1152,10 +1158,19 @@ theorem reachable_unbound_p_q_exact_prefix
   have sourceSteps := StepsN.trans rootSourceSteps qCertificate.sourceSteps
   have fineSteps :=
     DemandDrivenCallStep.StepsN.trans rootFineSteps qCertificate.fineSteps
+  have singletonChain :
+      NestedCallPushes prog gt
+        [(0,
+          requestFor "q" [(.variable (.generated 0) : Term)]
+            pSourceExtension)]
+        before after := by
+    have raw := NestedCallPushes.snoc
+      (NestedCallPushes.nil (prog := prog) (gt := gt) before) facts
+    simpa [countZero, qPredicate, qPayload, beforeCurrent] using raw
   refine
     ⟨before, after, rootSourceSteps, rootFineSteps, beforeNextFresh,
       beforeFrontier, ?_, ?_, afterCurrent, afterNextFresh, afterFrontier,
-      afterExtension, facts.representativeExtension⟩
+      afterExtension, facts.representativeExtension, singletonChain⟩
   · simpa using sourceSteps
   · simpa using fineSteps
 

@@ -72,6 +72,70 @@ def AlphaExtendsAbove
 
 namespace AlphaExtendsAbove
 
+/-- Appending no alpha pairs is an exact extension above arbitrary allocator
+floors.  This is the neutral element used by finite activation spines. -/
+theorem refl (alpha : List (LogicVar × String))
+    (referenceFloor executableFloor : Nat) :
+    AlphaExtendsAbove alpha alpha referenceFloor executableFloor := by
+  refine ⟨[], by simp, ?_, ?_, ?_⟩
+  · simp
+  · simp
+  · simp
+
+/-- A suffix allocated above two frontiers is also allocated above any older
+pair of frontiers.  Both inequalities point toward the certified allocation
+floors; reversing either one would admit a stale high-water. -/
+theorem weaken
+    {smaller larger : List (LogicVar × String)}
+    {referenceFloor executableFloor
+      olderReferenceFloor olderExecutableFloor : Nat}
+    (extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor)
+    (referenceOlder : olderReferenceFloor ≤ referenceFloor)
+    (executableOlder : olderExecutableFloor ≤ executableFloor) :
+    AlphaExtendsAbove smaller larger olderReferenceFloor
+      olderExecutableFloor := by
+  rcases extension with
+    ⟨suffix, largerEq, generated, referenceAbove, executableAbove⟩
+  refine ⟨suffix, largerEq, generated, ?_, ?_⟩
+  · intro index member
+    exact Nat.le_trans referenceOlder (referenceAbove index member)
+  · intro name member
+    exact Nat.lt_of_le_of_lt executableOlder (executableAbove name member)
+
+/-- Exact chronological alpha extensions compose by concatenating their
+fresh suffixes.  The result retains order and multiplicity rather than
+quotienting the graph to membership. -/
+theorem trans
+    {first middle last : List (LogicVar × String)}
+    {referenceFloor executableFloor : Nat}
+    (left :
+      AlphaExtendsAbove first middle referenceFloor executableFloor)
+    (right :
+      AlphaExtendsAbove middle last referenceFloor executableFloor) :
+    AlphaExtendsAbove first last referenceFloor executableFloor := by
+  rcases left with
+    ⟨leftSuffix, middleEq, leftGenerated, leftReference, leftExecutable⟩
+  rcases right with
+    ⟨rightSuffix, lastEq, rightGenerated, rightReference, rightExecutable⟩
+  refine ⟨leftSuffix ++ rightSuffix, ?_, ?_, ?_, ?_⟩
+  · rw [lastEq, middleEq, List.append_assoc]
+  · intro identity name member
+    rw [List.mem_append] at member
+    rcases member with member | member
+    · exact leftGenerated identity name member
+    · exact rightGenerated identity name member
+  · intro index member
+    rw [List.map_append, List.mem_append] at member
+    rcases member with member | member
+    · exact leftReference index member
+    · exact rightReference index member
+  · intro name member
+    rw [List.map_append, List.mem_append] at member
+    rcases member with member | member
+    · exact leftExecutable name member
+    · exact rightExecutable name member
+
 /-- An exact chronological extension contains every old alpha pair. -/
 theorem included
     {smaller larger : List (LogicVar × String)}

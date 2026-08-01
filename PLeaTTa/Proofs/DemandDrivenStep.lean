@@ -637,6 +637,34 @@ theorem StepsN.trans {prog : Prog} {gt : GroundingTable}
       rw [lengthEq] at combined
       exact combined
 
+/-- Every fine open-machine transition carries the executable allocation
+high-water forward.  The ordinary case inherits the sealed machine theorem;
+collector entry preserves the counter; collector exit may advance it while
+copying the completed bag. -/
+theorem Step.counter_mono {prog : Prog} {gt : GroundingTable}
+    {before after : OpenConf} (step : Step prog gt before after) :
+    before.persistent.counter ≤ after.persistent.counter := by
+  cases step with
+  | ordinary next _ sealed =>
+      simpa [OpenConf.toConf, Control.toConf, OpenConf.stepOpen,
+        OpenConf.ofConfWith, persistentOf] using sealed.counter_mono
+  | findallEnter template sub result rest binding head =>
+      exact Nat.le_refl _
+  | findallExit frame remaining frameHead done =>
+      exact copyFindallBag_counter_mono before.persistent.counter
+        before.control.answerValues
+
+/-- Exact finite fine prefixes inherit the persistent counter high-water
+monotonicity of their individual transitions. -/
+theorem StepsN.counter_mono {prog : Prog} {gt : GroundingTable}
+    {count : Nat} {before after : OpenConf}
+    (steps : StepsN prog gt count before after) :
+    before.persistent.counter ≤ after.persistent.counter := by
+  induction steps with
+  | zero state => exact Nat.le_refl _
+  | succ count before middle after step tail ih =>
+      exact Nat.le_trans step.counter_mono ih
+
 /-- A bracketed terminating execution for the currently fine-grained
 `findall` fragment.  Ordinary sealed steps remain one step; a collector owns
 one recursively structured inner run plus its entry and exit.  This gives one

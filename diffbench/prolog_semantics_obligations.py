@@ -282,6 +282,10 @@ PROLOG_ROOT_CALL_READY_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRootCallReadyBridge.lean"
 )
+PROLOG_NESTED_CALL_PREFIX_INDUCTION_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologNestedCallPrefixInductionBridge.lean"
+)
 PROLOG_NESTED_CALL_READY_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologNestedCallReadyRegression.lean"
@@ -581,6 +585,8 @@ def check() -> list[str]:
             digest(PROLOG_NESTED_CALL_READY_BRIDGE),
         "prolog_root_call_ready_bridge_sha256":
             digest(PROLOG_ROOT_CALL_READY_BRIDGE),
+        "prolog_nested_call_prefix_induction_bridge_sha256":
+            digest(PROLOG_NESTED_CALL_PREFIX_INDUCTION_BRIDGE),
         "prolog_nested_call_ready_regression_sha256":
             digest(PROLOG_NESTED_CALL_READY_REGRESSION),
         "prolog_unbound_nested_call_regression_sha256":

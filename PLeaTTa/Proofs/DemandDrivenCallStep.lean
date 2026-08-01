@@ -85,6 +85,12 @@ def FineConf.toSealed : FineConf → Conf
   | .ready state => state.toConf
   | .callPending pending => pending.pulled.toConf
 
+/-- The executable allocation high-water carried by either call-fine phase.
+Unlike `toSealed`, this projection does not perform or ghost-erase a pull. -/
+def FineConf.counter : FineConf → Nat
+  | .ready state => state.persistent.counter
+  | .callPending pending => pending.persistent.counter
+
 /-- Exact local-resolution head recognized by sealed `Step.call_resolve`.
 The result bank is intentionally absent: `resolveAlts` computes it in
 `callEnter`, rather than accepting it from an oracle. -/
@@ -203,6 +209,39 @@ theorem StepsN.trans {prog : Prog} {gt : GroundingTable}
         rw [Nat.add_assoc, Nat.add_comm n 1, ← Nat.add_assoc]
       rw [lengthEq] at combined
       exact combined
+
+/-- Call fine-graining never rolls back the executable fresh-name
+high-water.  Entry inherits the exact `resolveAlts` allocation result, pull
+preserves persistent state, and ordinary open steps use their own monotonicity
+theorem. -/
+theorem Step.counter_mono {prog : Prog} {gt : GroundingTable}
+    {before after : FineConf} (step : Step prog gt before after) :
+    before.counter ≤ after.counter := by
+  cases step with
+  | ordinary before after _ openStep =>
+      exact openStep.counter_mono
+  | callEnter state f args res rest binding branches counter head headNonempty
+      arityPresent scanned =>
+      have mono :=
+        resolveAlts_counter_mono
+          (state.toConf.world.resolutionCandidates f args.length)
+          (args.map (subst binding)) args res rest binding state.toConf.qterm
+          (barrierDepth state.toConf + 1) state.toConf.counter
+      rw [scanned] at mono
+      simpa [FineConf.counter, OpenConf.toConf, Control.toConf] using mono
+  | callPull pending =>
+      simp [FineConf.counter]
+
+/-- Exact call-fine prefixes carry the executable high-water monotonically
+through every entry/pull/ordinary phase. -/
+theorem StepsN.counter_mono {prog : Prog} {gt : GroundingTable}
+    {count : Nat} {before after : FineConf}
+    (steps : StepsN prog gt count before after) :
+    before.counter ≤ after.counter := by
+  induction steps with
+  | zero state => exact Nat.le_refl _
+  | succ count before middle after step tail ih =>
+      exact Nat.le_trans step.counter_mono ih
 
 /-- The pending variant contains the exact sealed pre-pull configuration:
 same world, advanced counter, exact branch bank, one barrier before the old
