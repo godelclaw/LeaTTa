@@ -107,6 +107,7 @@ import PLeaTTa.Proofs.Unification
 import PLeaTTa.Proofs.Reachability
 import PLeaTTa.Proofs.Simulation
 import PLeaTTa.Proofs.ResolutionCounter
+import PLeaTTa.Proofs.PrologRetractRegression
 import PLeaTTa.Proofs.CompilerAdequacy
 import PLeaTTa.Proofs.CompilerDesugaring
 import PLeaTTa.Proofs.CompilerProgramDesugaring
@@ -184,9 +185,11 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.CompilerAdequacy.compileExprFuel_initial_sound
 #print axioms PLeaTTa.compileExprFuel_assertaPredicate_eq
 #print axioms PLeaTTa.compileExprFuel_assertzPredicate_eq
-#print axioms PLeaTTa.CompilerAdequacy.GoalAgrees.wact_assertion_operation
+#print axioms PLeaTTa.compileExprFuel_retractPredicate_eq
+#print axioms PLeaTTa.CompilerAdequacy.GoalAgrees.wact_owned_operation
 #print axioms PLeaTTa.CompilerAdequacy.GoalAgrees.assertaPredicate_operation_eq
 #print axioms PLeaTTa.CompilerAdequacy.GoalAgrees.assertzPredicate_operation_eq
+#print axioms PLeaTTa.CompilerAdequacy.GoalAgrees.retractPredicate_operation_eq
 #print axioms PLeaTTa.eraseCompileAliasesGoal_aliasFree
 #print axioms PLeaTTa.eraseCompileAliasesGoals_aliasFree
 #print axioms PLeaTTa.substCompiledGoal_aliasFree
@@ -2327,7 +2330,19 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.installPredicateClause_coherent_of_no_descendants
 #print axioms PLeaTTa.wactDispatch_assertaPredicate
 #print axioms PLeaTTa.wactDispatch_assertzPredicate
-#print axioms PLeaTTa.wactDispatch_retractPredicate_missing
+#print axioms PLeaTTa.wactDispatch_retractPredicate
+#print axioms PLeaTTa.retractClauseScanWith_partitions
+#print axioms PLeaTTa.retractClauseScanWith_counterExact
+#print axioms PLeaTTa.retractClauseScanWith_map
+#print axioms PLeaTTa.retractClauseScanWith_matched_unifies
+#print axioms PLeaTTa.retractPredicateDispatchWith_map
+#print axioms PLeaTTa.retractPredicateDispatch_matched_unify
+#print axioms PLeaTTa.retractPredicateMatchedCounter_old_le
+#print axioms PLeaTTa.retractPredicateMatchedCounter_scan_le
+#print axioms PLeaTTa.retractPredicateMatchedCounter_binding_le
+#print axioms PLeaTTa.PrologRetractRegression.variable_binding_high_water_exact
+#print axioms PLeaTTa.PrologRetractRegression.variable_matched_counter_noop
+#print axioms PLeaTTa.PrologRetractRegression.persistent_step_erases_exact
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.asserta_of_projection
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.assertz_of_projection
 #print axioms PLeaTTa.PrologDatabaseActionStepBridge.AssertionOperation.mutation

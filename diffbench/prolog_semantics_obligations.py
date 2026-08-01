@@ -341,6 +341,9 @@ PROLOG_CURRENT_SESSION_UNIFY_TRANSITION_BRIDGE = (
 RESOLUTION_COUNTER = (
     ROOT / "PLeaTTa" / "Proofs" / "ResolutionCounter.lean"
 )
+PROLOG_RETRACT_REGRESSION = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologRetractRegression.lean"
+)
 PROLOG_CURRENT_SESSION_ADMINISTRATIVE_TRANSITION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologCurrentSessionAdministrativeTransitionBridge.lean"
@@ -625,6 +628,8 @@ def check() -> list[str]:
         "prolog_current_session_unify_transition_bridge_sha256":
             digest(PROLOG_CURRENT_SESSION_UNIFY_TRANSITION_BRIDGE),
         "resolution_counter_sha256": digest(RESOLUTION_COUNTER),
+        "prolog_retract_regression_sha256":
+            digest(PROLOG_RETRACT_REGRESSION),
         "prolog_current_session_administrative_transition_bridge_sha256":
             digest(PROLOG_CURRENT_SESSION_ADMINISTRATIVE_TRANSITION_BRIDGE),
         "prolog_current_session_failure_payload_transition_bridge_sha256":

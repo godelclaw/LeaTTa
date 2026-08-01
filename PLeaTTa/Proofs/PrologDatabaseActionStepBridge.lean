@@ -400,7 +400,8 @@ theorem assertionExecutableStep
           [executablePayload] executableResult trueA executableTail runtime
           (PLeaTTa.installPredicateClause state.persistent.world true
             functor executableClause)
-          (state.persistent.counter + 1) sealedHead dispatch)
+          (state.persistent.counter + 1) sealedHead
+          (by simp [PLeaTTa.retractPredicatePayload?]) dispatch)
   | assertz =>
       have dispatch :=
         PLeaTTa.wactDispatch_assertzPredicate state.persistent.world gt
@@ -412,7 +413,8 @@ theorem assertionExecutableStep
           [executablePayload] executableResult trueA executableTail runtime
           (PLeaTTa.installPredicateClause state.persistent.world false
             functor executableClause)
-          (state.persistent.counter + 1) sealedHead dispatch)
+          (state.persistent.counter + 1) sealedHead
+          (by simp [PLeaTTa.retractPredicatePayload?]) dispatch)
 
 /-- Re-establish the persistent database/fresh relation after the exact owned
 assertion transition.

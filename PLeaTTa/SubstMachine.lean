@@ -2209,6 +2209,47 @@ theorem mapConf_finishResolution {Source Target : Type}
   rcases built with ⟨builtAlts, nextCounter⟩
   simp [mapConf, mapAlt]
 
+/-- Engine-polymorphic exact retract.  Payload materialization may update
+representation-only substitution caches; matching then uses the shared
+ordered scan with the engine's law-bearing unifier. -/
+def retractPredicateDispatchWithState (engine : SubstEngine)
+    (world : PWorld) (gt : GroundingTable) (counter : Nat)
+    (state : engine.State) (payload : Atom) :
+    Option (RetractPredicateOutcome engine.State) :=
+  let materialized := engine.subst state payload
+  retractPredicateDispatchWith engine.unify world gt counter materialized.2
+    materialized.1
+
+/-- The optimized dispatcher selects the same occurrence, returns the same
+cumulative binding under `denote`, and consumes the same freshness counter as
+the reference dispatcher. -/
+theorem retractPredicateDispatchWithState_erase (engine : SubstEngine)
+    (world : PWorld) (gt : GroundingTable) (counter : Nat)
+    (state : engine.State) (payload : Atom) (valid : engine.Valid state) :
+    (retractPredicateDispatchWithState engine world gt counter state payload).map
+        (RetractPredicateOutcome.map engine.denote) =
+      retractPredicateDispatch world gt counter (engine.denote state) payload := by
+  have materializedValue := engine.subst_value state payload valid
+  have materializedValid := engine.subst_valid state payload valid
+  have materializedDenote := engine.subst_denote state payload valid
+  cases materializedEq : engine.subst state payload with
+  | mk materialized next =>
+      simp only [materializedEq] at materializedValue materializedValid materializedDenote
+      unfold retractPredicateDispatchWithState retractPredicateDispatch
+      simp only [materializedEq]
+      have dispatchMap := retractPredicateDispatchWith_map engine.denote
+        engine.unify PLeaTTa.unifyB world gt counter next materialized
+        (fun left right =>
+          engine.unify_denote next left right materializedValid)
+      simpa [materializedValue, materializedDenote] using dispatchMap
+
+@[simp] theorem retractPredicateDispatchWithState_reference
+    (world : PWorld) (gt : GroundingTable) (counter : Nat)
+    (binding : Subst) (payload : Atom) :
+    retractPredicateDispatchWithState reference world gt counter binding
+        payload =
+      retractPredicateDispatch world gt counter binding payload := rfl
+
 /-- Substitute a world action and retain its post-read engine state. Ordinary
 actions use the batch path; data `add-atom` additionally carries certified
 exact-key metadata into the derived space index. -/
@@ -2633,13 +2674,31 @@ def stepWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable)
           counter := built.2
           alts := built.1 ++ c.alts }
     | .wact op args res =>
-        match wactDispatchWithState engine c.world gt c.counter state op args with
-        | some (result, world, counter', next) =>
-            { c with
-              cur := some (Goal.eq res result :: rest, next)
-              world := world
-              counter := max c.counter counter' }
-        | none => pull { c with cur := none }
+        match retractPredicatePayload? op args with
+        | some payload =>
+            match retractPredicateDispatchWithState engine c.world gt c.counter
+                state payload with
+            | some (.matched functor before _selected after next counter') =>
+                { c with
+                  cur := some (Goal.eq res trueA :: rest, next)
+                  world := retractPredicateMatchedWorld
+                    (c.world.invalidateSpecializations functor) before after
+                  counter := retractPredicateMatchedCounter c.counter counter'
+                    (engine.denote next) }
+            | some (.missing counter') =>
+                { c with
+                  cur := some (Goal.eq res (Atom.sym "False") :: rest, state)
+                  counter := max c.counter counter' }
+            | none => pull { c with cur := none }
+        | none =>
+            match wactDispatchWithState engine c.world gt c.counter state op
+                args with
+            | some (result, world, counter', next) =>
+                { c with
+                  cur := some (Goal.eq res result :: rest, next)
+                  world := world
+                  counter := max c.counter counter' }
+            | none => pull { c with cur := none }
     | .findall tmpl sub res =>
         let subConf := subConfOfWith engine c sub state tmpl
         let done := runWith engine prog gt fuel subConf none
@@ -2663,52 +2722,6 @@ def runWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable) :
       else runWith engine prog gt fuel (stepWith engine prog gt fuel c) limit
 
 end
-
-@[simp] theorem stepWith_reference_wact (prog : Prog) (gt : GroundingTable)
-    (fuel : Nat) (world : PWorld) (counter : Nat) (binding : Subst)
-    (op : String) (args : List Atom) (res : Atom) (rest : List Goal)
-    (alts : List Alt) (qterm : Atom) (answers : List Atom)
-    (answerKeys : List (Option PersistentSubst.AtomExactKey))
-    (answerKeys_sound : answerKeys =
-      answers.map PersistentSubst.atomExactKey)
-    (barriers : Option Nat) :
-    stepWith reference prog gt fuel
-        ({ cur := some (Goal.wact op args res :: rest, binding)
-           alts := alts
-           world := world
-           counter := counter
-           qterm := qterm
-           answers := answers
-           answerKeys := answerKeys
-           answerKeys_sound := answerKeys_sound
-           barriers := barriers } : Conf) =
-      (match wactDispatch world gt counter op
-          (args.map (PLeaTTa.subst binding)) with
-      | some (result, nextWorld, nextCounter) =>
-          ({ cur := some (Goal.eq res result :: rest, binding)
-             alts := alts
-             world := nextWorld
-             counter := max counter nextCounter
-             qterm := qterm
-             answers := answers
-             answerKeys := answerKeys
-             answerKeys_sound := answerKeys_sound
-             barriers := barriers } : Conf)
-      | none =>
-          pull
-            ({ cur := none
-               alts := alts
-               world := world
-               counter := counter
-               qterm := qterm
-               answers := answers
-               answerKeys := answerKeys
-               answerKeys_sound := answerKeys_sound
-               barriers := barriers } : Conf)) := by
-  simp only [stepWith]
-  rw [wactDispatchWithState_reference]
-  cases dispatched : wactDispatch world gt counter op
-      (args.map (PLeaTTa.subst binding)) <;> rfl
 
 inductive StepOutcomeWith (State : Type) where
   | progressed (conf : Conf State)
@@ -3143,13 +3156,49 @@ theorem erase_stepWith_of_run (engine : SubstEngine) (prog : Prog)
               simp [mapConf, List.map_append, altsEq, counterEq]
               rfl
           | wact op args res =>
-              have mapped := mapConf_wactDispatchWithState engine world gt
-                counter state op args res rest alts qterm answers answerKeys
-                answerKeys_sound barriers stateValid
-              simp only [erase, mapConf_fields, Option.map_some]
-              rw [stepWith_reference_wact]
-              simp only [stepWith]
-              exact mapped
+              cases recognized : retractPredicatePayload? op args with
+              | none =>
+                  have mapped := mapConf_wactDispatchWithState engine world gt
+                    counter state op args res rest alts qterm answers answerKeys
+                    answerKeys_sound barriers stateValid
+                  simp only [erase, mapConf_fields, Option.map_some, stepWith,
+                    recognized]
+                  rw [wactDispatchWithState_reference]
+                  cases raw : wactDispatch world gt counter op
+                      (args.map (PLeaTTa.subst (engine.denote state))) with
+                  | none =>
+                      simp only [raw, Option.map_none] at mapped ⊢
+                      exact mapped
+                  | some output =>
+                      rcases output with ⟨result, nextWorld, nextCounter⟩
+                      simp only [raw, Option.map_some] at mapped ⊢
+                      exact mapped
+              | some payload =>
+                  have dispatched :=
+                    retractPredicateDispatchWithState_erase engine world gt
+                      counter state payload stateValid
+                  simp only [erase, mapConf_fields, Option.map_some, stepWith,
+                    recognized]
+                  rw [retractPredicateDispatchWithState_reference]
+                  cases runtime : retractPredicateDispatchWithState engine
+                      world gt counter state payload with
+                  | none =>
+                      simp only [runtime, Option.map_none] at dispatched ⊢
+                      rw [← dispatched]
+                      rw [mapConf_pull]
+                      rfl
+                  | some outcome =>
+                      cases outcome with
+                      | missing nextCounter =>
+                          simp only [runtime, Option.map_some,
+                            RetractPredicateOutcome.map] at dispatched ⊢
+                          rw [← dispatched]
+                          apply Conf.ext <;> rfl
+                      | matched functor before selected after next nextCounter =>
+                          simp only [runtime, Option.map_some,
+                            RetractPredicateOutcome.map] at dispatched ⊢
+                          rw [← dispatched]
+                          apply Conf.ext <;> rfl
           | onceg tmpl sub res =>
               simp only [stepWith, erase]
               exact mapConf_oncePull engine.denote
@@ -4436,6 +4485,13 @@ theorem reference_run_step (prog : Prog) (gt : GroundingTable) :
                     finishFindall, finishTransaction, enqueueAnswers,
                     finishTable, finishResolution] <;>
                   repeat first | rfl | (split <;> simp_all)
+                all_goals
+                  first
+                  | (rcases ‹_ ∧ _› with ⟨dispatch, rfl⟩
+                     rw [dispatch]
+                     apply Conf.ext <;> rfl)
+                  | (apply congrArg pull
+                     apply Conf.ext <;> rfl)
   | succ fuel induction =>
       have runCurrent : ∀ (c : Conf) limit,
           runWith reference prog gt (fuel + 1) c limit =
@@ -4478,6 +4534,13 @@ theorem reference_run_step (prog : Prog) (gt : GroundingTable) :
                     finishFindall, finishTransaction, enqueueAnswers,
                     finishTable, finishResolution] <;>
                   repeat first | rfl | (split <;> simp_all)
+                all_goals
+                  first
+                  | (rcases ‹_ ∧ _› with ⟨dispatch, rfl⟩
+                     rw [dispatch]
+                     apply Conf.ext <;> rfl)
+                  | (apply congrArg pull
+                     apply Conf.ext <;> rfl)
 
 theorem runWith_reference (prog : Prog) (gt : GroundingTable) (fuel : Nat)
     (c : Conf) (limit : Option Nat) :

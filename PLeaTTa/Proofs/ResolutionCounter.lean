@@ -1549,6 +1549,8 @@ theorem Step.counter_mono {prog : Prog} {gt : GroundingTable}
     exact hcounter
   case findall =>
     exact Nat.le_trans (by omega) (copyFindallBag_counter_mono _ _)
+  case retract_matched =>
+    exact retractPredicateMatchedCounter_old_le _ _ _
   all_goals omega
 
 theorem StepStar.counter_mono {prog : Prog} {gt : GroundingTable}
@@ -1692,8 +1694,48 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
       below
     exact below.clearActive.pull
   case wact_fail =>
-    intro c op args res rest binding hcur hdispatch below
+    intro c op args res rest binding hcur _notRetract hdispatch below
     exact below.clearActive.pull
+  case retract_missing =>
+    intro c payload res rest binding counter' hcur _scan below
+    let counter := max c.counter counter'
+    have hcounter : c.counter ≤ counter := Nat.le_max_left _ _
+    have hnext := below.replaceActiveEq
+      (Goal.wact "retractPredicate" [payload] res :: rest) binding hcur
+      res (Atom.sym "False") rest c.world counter hcounter (by
+        intro name member
+        simp only [specializationGoalsVars, specializationGoalVars,
+          List.mem_append] at member ⊢
+        rcases member with (hres | hrest) | hbinding
+        · simp [hres]
+        · simp [hrest]
+        · simp [hbinding]) (by
+          simp [Atom.vars, resolutionSeedHighWaterNames])
+    simpa [counter] using hnext
+  case retract_malformed =>
+    intro c payload res rest binding hcur _scan below
+    exact below.clearActive.pull
+  case retract_matched =>
+    intro c payload res rest binding result functor before selected after
+      counter' hcur _scan below
+    let counter := retractPredicateMatchedCounter c.counter counter' result
+    have hcounter : c.counter ≤ counter := by
+      exact retractPredicateMatchedCounter_old_le c.counter counter' result
+    have hresult : resolutionSeedHighWaterNames
+        (resolutionSubstVars result) ≤ counter := by
+      exact retractPredicateMatchedCounter_binding_le c.counter counter'
+        result
+    have hactive := below.active
+      (Goal.wact "retractPredicate" [payload] res :: rest) binding hcur
+    have hempty : resolutionSeedHighWaterNames ([] : List String) = 0 := rfl
+    apply ConfBelowResolutionCounter.of_components
+    · simp only [resolutionCurVars, specializationGoalsVars,
+        specializationGoalVars, resolutionSeedHighWaterNames_append,
+        trueA, Atom.vars, hempty] at hactive ⊢
+      omega
+    · exact Nat.le_trans below.alts hcounter
+    · exact Nat.le_trans below.qterm hcounter
+    · exact Nat.le_trans below.answers hcounter
   case eq_ok =>
     intro c left right rest binding result hcur hunify below
     apply below.replaceActive (Goal.eq left right :: rest) binding hcur rest
@@ -2621,7 +2663,7 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
     · exact below.answers
   case wact_ok =>
     intro c operation args res result rest binding world counter' hcur
-      hdispatch below
+      _notRetract hdispatch below
     let counter := max c.counter counter'
     have hcounter : c.counter ≤ counter := by
       exact Nat.le_max_left _ _

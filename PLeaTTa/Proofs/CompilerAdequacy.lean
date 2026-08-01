@@ -675,6 +675,15 @@ inductive GoalAgrees : PeTTaSpec.PrologCore.Goal → PLeaTTa.Goal → Prop where
       GoalAgrees
         (.call "assertzPredicate" [referencePayload, referenceResult])
         (.wact "assertzPredicate" [executablePayload] executableResult)
+  /-- Locally owned `retractPredicate/2`; unlike either assertion, the sealed
+  action returns the ordered first-match MGU as part of its successor state. -/
+  | retractPredicate {referencePayload referenceResult : Term}
+      {executablePayload executableResult : Atom}
+      (payload : TermAgrees referencePayload executablePayload)
+      (result : TermAgrees referenceResult executableResult) :
+      GoalAgrees
+        (.call "retractPredicate" [referencePayload, referenceResult])
+        (.wact "retractPredicate" [executablePayload] executableResult)
   | softCutTruth {referenceCondition referenceElse :
         List PeTTaSpec.PrologCore.Goal}
       {executableCondition executableElse : List PLeaTTa.Goal}
@@ -905,21 +914,23 @@ inductive GoalsAgree : List PeTTaSpec.PrologCore.Goal → List PLeaTTa.Goal →
 
 end
 
-/-- Source-side decoder for the only two calls that the current certified
-agreement relation may lower to a world action. -/
-@[simp] def assertionOperation? : PeTTaSpec.PrologCore.Goal → Option String
+/-- Source-side decoder for exactly the locally owned calls that the current
+certified agreement relation may lower to sealed world actions. -/
+@[simp] def ownedWorldActionOperation? :
+    PeTTaSpec.PrologCore.Goal → Option String
   | .call "assertaPredicate" [_, _] => some "assertaPredicate"
   | .call "assertzPredicate" [_, _] => some "assertzPredicate"
+  | .call "retractPredicate" [_, _] => some "retractPredicate"
   | _ => none
 
 /-- Every executable world action admitted by `GoalAgrees` is forced by an
-owned source assertion call with the same operation tag.  A future generic
+owned source call with the same operation tag.  A future generic
 call-to-effect constructor would make this proof non-exhaustive or false. -/
-theorem GoalAgrees.wact_assertion_operation
+theorem GoalAgrees.wact_owned_operation
     {reference : PeTTaSpec.PrologCore.Goal}
     {operation : String} {arguments : List Atom} {result : Atom}
     (agreement : GoalAgrees reference (.wact operation arguments result)) :
-    assertionOperation? reference = some operation := by
+    ownedWorldActionOperation? reference = some operation := by
   cases agreement <;> rfl
 
 /-- In particular, front insertion cannot agree with a differently tagged
@@ -931,8 +942,8 @@ theorem GoalAgrees.assertaPredicate_operation_eq
       (.call "assertaPredicate" [referencePayload, referenceResult])
       (.wact operation [executablePayload] executableResult)) :
     operation = "assertaPredicate" := by
-  have matched := agreement.wact_assertion_operation
-  simpa [assertionOperation?] using matched.symm
+  have matched := agreement.wact_owned_operation
+  simpa [ownedWorldActionOperation?] using matched.symm
 
 /-- Back insertion has the same operation-tag discrimination. -/
 theorem GoalAgrees.assertzPredicate_operation_eq
@@ -942,8 +953,20 @@ theorem GoalAgrees.assertzPredicate_operation_eq
       (.call "assertzPredicate" [referencePayload, referenceResult])
       (.wact operation [executablePayload] executableResult)) :
     operation = "assertzPredicate" := by
-  have matched := agreement.wact_assertion_operation
-  simpa [assertionOperation?] using matched.symm
+  have matched := agreement.wact_owned_operation
+  simpa [ownedWorldActionOperation?] using matched.symm
+
+/-- Retraction cannot agree with an assertion or otherwise differently tagged
+world action. -/
+theorem GoalAgrees.retractPredicate_operation_eq
+    {referencePayload referenceResult : Term}
+    {executablePayload executableResult : Atom} {operation : String}
+    (agreement : GoalAgrees
+      (.call "retractPredicate" [referencePayload, referenceResult])
+      (.wact operation [executablePayload] executableResult)) :
+    operation = "retractPredicate" := by
+  have matched := agreement.wact_owned_operation
+  simpa [ownedWorldActionOperation?] using matched.symm
 
 /-- Ordered agreement specialized to compiler-only alias metadata.  Unlike
 `GoalsAgree`, this relation excludes the runtime `.eq` representation: its
@@ -2244,6 +2267,35 @@ theorem compileExprFuel_initial_sound {state : TranslatorState} (env : CEnv)
         · exact goalsAgreement.append
             (.cons
               (.assertzPredicate payloadAgreement outputAgreement)
+              .nil)
+  | @retractPredicate _ payloadCounter _ _ _ notShadowed
+      payloadTranslation =>
+      obtain ⟨payloadFuel, payloadPositive, payloadBound, payloadCompiles⟩ :=
+        compileExprFuel_initial_sound env agreement payloadTranslation
+      refine ⟨payloadFuel + 3, by omega, ?_, ?_⟩
+      · simp [Atom.size]
+        omega
+      · intro extraFuel
+        obtain ⟨executablePayload, executableGoals, compiled,
+            payloadAgreement, goalsAgreement⟩ :=
+          payloadCompiles extraFuel
+        let output := Atom.var s!"_q{payloadCounter}"
+        have outputAgreement :
+            TermAgrees (.variable (.generated payloadCounter)) output :=
+          .generatedVariable payloadCounter
+        refine ⟨output,
+          executableGoals ++
+            [PLeaTTa.Goal.wact "retractPredicate" [executablePayload] output],
+          ?_, outputAgreement, ?_⟩
+        · rw [show (payloadFuel + 3) + extraFuel =
+            (payloadFuel + extraFuel) + 3 by omega]
+          exact compileExprFuel_retractPredicate_eq
+            (payloadFuel + extraFuel) env counter _ executablePayload
+            executableGoals payloadCounter
+            (agreement.notContains notShadowed) compiled
+        · exact goalsAgreement.append
+            (.cons
+              (.retractPredicate payloadAgreement outputAgreement)
               .nil)
   | @collapse _ bodyCounter _ _ _ notShadowed body =>
       obtain ⟨bodyFuel, bodyPositive, bodyBound, bodyCompiles⟩ :=

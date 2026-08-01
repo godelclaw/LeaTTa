@@ -13,6 +13,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "diffbench" / "compiler-obligations.tsv"
 COMPILER = ROOT / "PLeaTTa" / "Compile.lean"
+PROLOG_CORE = ROOT / "PLeaTTa" / "PeTTaSpec" / "PrologCore.lean"
+COMPILER_ADEQUACY = ROOT / "PLeaTTa" / "Proofs" / "CompilerAdequacy.lean"
+COMPILER_TRANSLATION_SUPPORT_ADEQUACY = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "CompilerTranslationSupportAdequacy.lean"
+)
 PINNED_PETTA_REVISION = "6b7f52f064bdbc82fabd0a0998404121fb01d52e"
 FIELDS = ["id", "native_source", "class", "reference", "proof", "status", "finding"]
 CLASSES = {"X", "S", "L", "H", "P", "M"}
@@ -69,6 +75,10 @@ def check() -> list[str]:
     expected_metadata = {
         "pinned_petta_revision": PINNED_PETTA_REVISION,
         "compiler_sha256": digest(COMPILER),
+        "prolog_core_sha256": digest(PROLOG_CORE),
+        "compiler_adequacy_sha256": digest(COMPILER_ADEQUACY),
+        "compiler_translation_support_adequacy_sha256":
+            digest(COMPILER_TRANSLATION_SUPPORT_ADEQUACY),
     }
     for key, expected in expected_metadata.items():
         actual = metadata.get(key)

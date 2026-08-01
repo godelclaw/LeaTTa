@@ -600,9 +600,32 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
       · intro goals branchSubst hcur
         simp at hcur
       · exact htop.2
-  | wact_ok c op args res r rest b world' counter' h hw =>
+  | retract_matched c payload res rest b result functor before selected after
+      counter' h scan =>
+      have active := htop.active h
+      rcases active with ⟨topological⟩
+      rcases retractPredicateDispatch_matched_unify c.world gt c.counter b
+          payload functor before selected after result counter' scan with
+        ⟨left, right, unified⟩
+      have resultTopological : HasTopologicalSubst result :=
+        ⟨unifyB_topological b left right result topological unified⟩
+      constructor
+      · intro goals branchSubst hcur
+        simp only [Option.some.injEq, Prod.mk.injEq] at hcur
+        rcases hcur with ⟨rfl, rfl⟩
+        exact resultTopological
+      · exact htop.2
+  | retract_missing c payload res rest b counter' h scan =>
       apply ConfTopological.frame (htop.replaceActive h) <;> rfl
-  | wact_fail c op args res rest b h hw =>
+  | retract_malformed c payload res rest b h scan =>
+      apply ConfTopological.pull
+      constructor
+      · intro goals branchSubst hcur
+        simp at hcur
+      · exact htop.2
+  | wact_ok c op args res r rest b world' counter' h notRetract hw =>
+      apply ConfTopological.frame (htop.replaceActive h) <;> rfl
+  | wact_fail c op args res rest b h notRetract hw =>
       apply ConfTopological.pull
       constructor
       · intro goals branchSubst hcur

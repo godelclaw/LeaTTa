@@ -152,9 +152,51 @@ theorem step_spread (c : Conf) (v res : Atom) (rest : List Goal) (b : Subst)
     unfold step; rw [h]
   rw [hstep]; exact Step.spread c v res rest b _ h rfl
 
+theorem step_retract (c : Conf) (payload res : Atom)
+    (rest : List Goal) (b : Subst)
+    (h : c.cur =
+      some (Goal.wact "retractPredicate" [payload] res :: rest, b)) :
+    Step prog gt c (step prog gt fuel c) := by
+  cases scan : retractPredicateDispatch c.world gt c.counter b payload with
+  | none =>
+      have hstep : step prog gt fuel c = pull { c with cur := none } := by
+        unfold step
+        rw [h]
+        simp only [retractPredicatePayload?, scan]
+      rw [hstep]
+      exact Step.retract_malformed c payload res rest b h scan
+  | some outcome =>
+      cases outcome with
+      | missing counter' =>
+          have hstep : step prog gt fuel c =
+              { c with
+                cur := some
+                  (Goal.eq res (Atom.sym "False") :: rest, b)
+                counter := max c.counter counter' } := by
+            unfold step
+            rw [h]
+            simp only [retractPredicatePayload?, scan]
+          rw [hstep]
+          exact Step.retract_missing c payload res rest b counter' h scan
+      | matched functor before selected after result counter' =>
+          have hstep : step prog gt fuel c =
+              { c with
+                cur := some (Goal.eq res trueA :: rest, result)
+                world := retractPredicateMatchedWorld
+                  (c.world.invalidateSpecializations functor) before after
+                counter := retractPredicateMatchedCounter c.counter counter'
+                  result } := by
+            unfold step
+            rw [h]
+            simp only [retractPredicatePayload?, scan]
+          rw [hstep]
+          exact Step.retract_matched c payload res rest b result functor
+            before selected after counter' h scan
+
 theorem step_wact (c : Conf) (op : String) (args : List Atom) (res : Atom)
     (rest : List Goal) (b : Subst)
-    (h : c.cur = some (Goal.wact op args res :: rest, b)) :
+    (h : c.cur = some (Goal.wact op args res :: rest, b))
+    (notRetract : retractPredicatePayload? op args = none) :
     Step prog gt c (step prog gt fuel c) := by
   cases hw : wactDispatch c.world gt c.counter op (args.map (subst b)) with
   | some triple =>
@@ -162,12 +204,18 @@ theorem step_wact (c : Conf) (op : String) (args : List Atom) (res : Atom)
       have hstep : step prog gt fuel c
           = { c with cur := some (Goal.eq res r :: rest, b),
                      world := w', counter := max c.counter k' } := by
-        unfold step; rw [h]; simp only [hw]
-      rw [hstep]; exact Step.wact_ok c op args res r rest b w' k' h hw
+        unfold step
+        rw [h]
+        simp only [notRetract, hw]
+      rw [hstep]
+      exact Step.wact_ok c op args res r rest b w' k' h notRetract hw
   | none =>
       have hstep : step prog gt fuel c = pull { c with cur := none } := by
-        unfold step; rw [h]; simp only [hw]
-      rw [hstep]; exact Step.wact_fail c op args res rest b h hw
+        unfold step
+        rw [h]
+        simp only [notRetract, hw]
+      rw [hstep]
+      exact Step.wact_fail c op args res rest b h notRetract hw
 
 theorem step_evalg (c : Conf) (v res : Atom) (rest : List Goal) (b : Subst)
     (h : c.cur = some (Goal.evalg v res :: rest, b)) :
@@ -769,7 +817,17 @@ theorem machineMirrorsSpec_proved : machineMirrorsSpec := by
   | some (Goal.smatch pat :: rest, b) =>
       exact Or.inl (step_smatch prog gt fuel c pat rest b hcur)
   | some (Goal.wact op args res :: rest, b) =>
-      exact Or.inl (step_wact prog gt fuel c op args res rest b hcur)
+      cases recognized : retractPredicatePayload? op args with
+      | none =>
+          exact Or.inl
+            (step_wact prog gt fuel c op args res rest b hcur recognized)
+      | some payload =>
+          have shape :=
+            (retractPredicatePayload?_eq_some_iff op args payload).mp
+              recognized
+          rcases shape with ⟨rfl, rfl⟩
+          exact Or.inl
+            (step_retract prog gt fuel c payload res rest b hcur)
 
 /-! ### Clean-machine soundness
 
@@ -1274,9 +1332,21 @@ theorem clean_sound_fuel (prog : Prog) (gt : GroundingTable) :
                 | wact op args res =>
                     have hstepEq : step prog gt fuel c = c' := by
                       simpa [stepClean, hcur] using hprog
-                    have hs := step_wact prog gt fuel c op args res rest b hcur
-                    rw [hstepEq] at hs
-                    exact hs
+                    cases recognized : retractPredicatePayload? op args with
+                    | none =>
+                        have hs := step_wact prog gt fuel c op args res rest b
+                          hcur recognized
+                        rw [hstepEq] at hs
+                        exact hs
+                    | some payload =>
+                        have shape :=
+                          (retractPredicatePayload?_eq_some_iff op args payload).mp
+                            recognized
+                        rcases shape with ⟨rfl, rfl⟩
+                        have hs := step_retract prog gt fuel c payload res rest b
+                          hcur
+                        rw [hstepEq] at hs
+                        exact hs
       · intro c d err herror
         cases hcur : c.cur with
         | none => simp [stepClean, hcur] at herror

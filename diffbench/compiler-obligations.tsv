@@ -1,5 +1,8 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=79f0c578748d90e5d2b7c90d8a6368514965e1392517ed8fec86519ae31d301a
+# compiler_sha256=87681de95982ad1e549ef8439312bde07475d9556f542c100215989e50c99d0b
+# prolog_core_sha256=c971b21c94ec1c71a861ed4ce564d5a2b165c1ec7a3cc48929113b60927b77b0
+# compiler_adequacy_sha256=904f42d172e85e6474cd238eca65678e2f4e5877e838df8edb27e299d3da17e8
+# compiler_translation_support_adequacy_sha256=e660b57913f5c14e57b615661621cee8504cc7801374dcf8a71d5a3c81be4dfb
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -42,7 +45,7 @@ APP.translatePredicate	T271-275	H	-	N	BOUNDARY	ownership-dispatch
 APP.callPredicate	M276	H	-	N	BOUNDARY	ownership-dispatch
 APP.assertaPredicate	M278,T310-324,T335-346	S	TranslatesExpr.assertaPredicate	SH	GAP	source-anchored ordered compiler lowering and the owned local effect through an arbitrary active product/resource/payload context are proved under the existing context relation and a producer-supplied executable world-action head; directly constructing that contextual premise from TranslatesExpr remains open
 APP.assertzPredicate	M277,T310-324,T335-346	S	TranslatesExpr.assertzPredicate	SH	GAP	source-anchored ordered compiler lowering and the owned local effect through an arbitrary active product/resource/payload context are proved under the existing context relation and a producer-supplied executable world-action head; directly constructing that contextual premise from TranslatesExpr remains open
-APP.retractPredicate	M279-280	H	-	N	BOUNDARY	world-action
+APP.retractPredicate	M279-280,T310-324,T335-346	S	TranslatesExpr.retractPredicate	SH	GAP	source-anchored payload/result translation and ordered compiler soundness to the operation-specific sealed world action are proved; exact first-unifying runtime behavior is characterized in the owned core, while arbitrary contextual source-to-observation composition remains open
 APP.process_metta_string	F12-18	H	-	N	BOUNDARY	runtime-loader-world-action
 APP.unquote_quote	HE64-67	L	-	EQ	FAIL	hardcoded-without-library-and-cut
 APP.unquote_other	HE64-67	L	-	N	FAIL	library-presence-not-modeled

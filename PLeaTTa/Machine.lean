@@ -5205,6 +5205,531 @@ theorem installPredicateClause_coherent_of_no_descendants
   apply PWorld.replaceProgClauses_coherent
   exact coherent
 
+/-- Source-facing syntax for one executable goal during `retract/1`
+matching.  The two executable representations admitted by `GoalAgrees` for
+each independent source constructor deliberately share one tag: ordinary
+and grounded calls both denote `$goal.call`, while runtime equality and a
+leaked compile alias both denote `$goal.unify`.  Runtime-tagged cuts retain
+the source cut syntax because the barrier index is operational metadata, not
+part of the stored clause.
+
+Every other executable-only form is kept structurally disjoint below the
+`$goal.executable` tag.  That fallback makes this function total without
+claiming source adequacy for a construct outside the independently decoded
+dynamic-clause fragment. -/
+def retractGoalSyntaxAtom : Goal → Atom
+  | .call predicate arguments result =>
+      .expr [.sym "$goal.call", .sym predicate,
+        chainOf (arguments ++ [result])]
+  | .bin predicate arguments result =>
+      .expr [.sym "$goal.call", .sym predicate,
+        chainOf (arguments ++ [result])]
+  | .eq left right =>
+      .expr [.sym "$goal.unify", left, right]
+  | .compileAlias left right =>
+      .expr [.sym "$goal.unify", left, right]
+  | .cut => .expr [.sym "$goal.cut"]
+  | .cutAt _ => .expr [.sym "$goal.cut"]
+  | goal => .expr [.sym "$goal.executable", goalAlphaAtom goal]
+
+/-- Ordered source-facing syntax for an executable goal sequence. -/
+def retractGoalsSyntaxAtom (goals : List Goal) : Atom :=
+  chainOf (goals.map retractGoalSyntaxAtom)
+
+/-- Encode a complete output-last executable clause as the same first-order
+syntax shape used by the independent `clauseSyntaxTerm`.  The predicate name
+is explicit so clauses of different locally owned predicates cannot unify. -/
+def retractClauseSyntaxAtom (functor : String) (clause : Clause) : Atom :=
+  .expr [.sym "$clause", .sym functor,
+    chainOf (clause.params ++ [clause.result]),
+    retractGoalsSyntaxAtom clause.body]
+
+/-- One live executable clause paired with its aligned source-removal key.
+Keeping the key beside the clause throughout the scan makes removal preserve
+the exact key/occurrence alignment, including unrelated specialization keys. -/
+abbrev RetractClauseCandidate := (String × Clause) × String
+
+/-- The result of one deterministic, source-ordered executable retract scan.
+On success the retained partition and returned binding come from the same
+constructor, so a caller cannot bind against one candidate and remove a
+different occurrence. -/
+inductive RetractClauseScanOutcome (Binding : Type) where
+  | matched (before : List RetractClauseCandidate)
+      (selected : RetractClauseCandidate)
+      (after : List RetractClauseCandidate)
+      (binding : Binding) (nextCounter : Nat)
+  | missing (nextCounter : Nat)
+deriving Repr, BEq
+
+namespace RetractClauseScanOutcome
+
+/-- Change only the representation of a successful binding.  Clause
+selection, source order, and freshness accounting are representation-free. -/
+def map {Source Target : Type} (transform : Source → Target) :
+    RetractClauseScanOutcome Source → RetractClauseScanOutcome Target
+  | .matched before selected after binding nextCounter =>
+      .matched before selected after (transform binding) nextCounter
+  | .missing nextCounter => .missing nextCounter
+
+/-- Fresh-name high-water after all candidates inspected by the scan. -/
+def nextCounter {Binding : Type} :
+    RetractClauseScanOutcome Binding → Nat
+  | .matched _ _ _ _ nextCounter | .missing nextCounter => nextCounter
+
+/-- A successful scan retains an exact source-order partition of its input.
+The missing case selects no occurrence and therefore has no partition claim. -/
+def Partitions {Binding : Type}
+    (candidates : List RetractClauseCandidate) :
+    RetractClauseScanOutcome Binding → Prop
+  | .matched before selected after _ _ =>
+      candidates = before ++ selected :: after
+  | .missing _ => True
+
+/-- Exact number of candidate copies consumed by a scan result. -/
+def CounterExact {Binding : Type} (start : Nat)
+    (candidates : List RetractClauseCandidate) :
+    RetractClauseScanOutcome Binding → Prop
+  | .matched before _ _ _ nextCounter =>
+      nextCounter = start + before.length + 1
+  | .missing nextCounter => nextCounter = start + candidates.length
+
+end RetractClauseScanOutcome
+
+/-- Scan live clauses from left to right, standardizing every inspected
+candidate apart with the current monotone resolution suffix.  The scan stops
+at the first candidate accepted by `unify`; rejected candidates are retained
+in the returned prefix in their original order.
+
+The unifier is an explicit parameter so the reference substitution machine
+and the optimized persistent-substitution engine share this exact scheduling,
+freshening, and occurrence-selection algorithm. -/
+def retractClauseScanWith {Binding : Type}
+    (unify : Binding → Atom → Atom → Option Binding)
+    (pattern : Atom) : Nat → Binding → List RetractClauseCandidate →
+      RetractClauseScanOutcome Binding
+  | counter, _binding, [] => .missing counter
+  | counter, binding, candidate :: rest =>
+      let copied := renameAtomSuffix (resolutionCompactSuffix counter)
+        (retractClauseSyntaxAtom candidate.1.1 candidate.1.2)
+      let nextCounter := counter + 1
+      match unify binding pattern copied with
+      | some result => .matched [] candidate rest result nextCounter
+      | none =>
+          match retractClauseScanWith unify pattern nextCounter binding rest with
+          | .matched before selected after result finalCounter =>
+              .matched (candidate :: before) selected after result finalCounter
+          | .missing finalCounter => .missing finalCounter
+
+/-- The executable scan cannot return a selected occurrence from outside its
+input, reorder the rejected prefix, or change the retained suffix. -/
+theorem retractClauseScanWith_partitions {Binding : Type}
+    (unify : Binding → Atom → Atom → Option Binding)
+    (pattern : Atom) (counter : Nat) (binding : Binding)
+    (candidates : List RetractClauseCandidate) :
+    (retractClauseScanWith unify pattern counter binding candidates).Partitions
+      candidates := by
+  induction candidates generalizing counter with
+  | nil =>
+      simp [retractClauseScanWith, RetractClauseScanOutcome.Partitions]
+  | cons candidate rest inductionHypothesis =>
+      simp only [retractClauseScanWith]
+      split
+      next result selected =>
+        simp [RetractClauseScanOutcome.Partitions]
+      next rejected =>
+        have tail := inductionHypothesis (counter + 1)
+        cases tailEq :
+            retractClauseScanWith unify pattern (counter + 1) binding rest with
+        | missing finalCounter =>
+            simp [RetractClauseScanOutcome.Partitions]
+        | matched before selected after result finalCounter =>
+            rw [tailEq] at tail
+            simp only [RetractClauseScanOutcome.Partitions] at tail
+            simp only [RetractClauseScanOutcome.Partitions]
+            simpa [List.cons_append] using
+              congrArg (fun entries => candidate :: entries) tail
+
+/-- The resolution counter advances once for every inspected occurrence:
+through the selected candidate on success and through the entire list on
+failure. -/
+theorem retractClauseScanWith_counterExact {Binding : Type}
+    (unify : Binding → Atom → Atom → Option Binding)
+    (pattern : Atom) (counter : Nat) (binding : Binding)
+    (candidates : List RetractClauseCandidate) :
+    (retractClauseScanWith unify pattern counter binding candidates).CounterExact
+      counter candidates := by
+  induction candidates generalizing counter with
+  | nil =>
+      simp [retractClauseScanWith, RetractClauseScanOutcome.CounterExact]
+  | cons candidate rest inductionHypothesis =>
+      simp only [retractClauseScanWith]
+      split
+      next result selected =>
+        simp [RetractClauseScanOutcome.CounterExact]
+      next rejected =>
+        have tail := inductionHypothesis (counter + 1)
+        cases tailEq :
+            retractClauseScanWith unify pattern (counter + 1) binding rest with
+        | missing finalCounter =>
+            rw [tailEq] at tail
+            simp only [RetractClauseScanOutcome.CounterExact,
+              List.length_cons] at tail ⊢
+            omega
+        | matched before selected after result finalCounter =>
+            rw [tailEq] at tail
+            simp only [RetractClauseScanOutcome.CounterExact,
+              List.length_cons] at tail ⊢
+            omega
+
+/-- If two unifiers agree after mapping their binding representation, the
+entire ordered retract scan agrees after the same map.  This proves once that
+the reference list substitution and optimized persistent engine cannot drift
+in candidate order, standardization-apart, selected occurrence, or counter. -/
+theorem retractClauseScanWith_map {Source Target : Type}
+    (transform : Source → Target)
+    (sourceUnify : Source → Atom → Atom → Option Source)
+    (targetUnify : Target → Atom → Atom → Option Target)
+    (pattern : Atom) (counter : Nat) (state : Source)
+    (candidates : List RetractClauseCandidate)
+    (commutes : ∀ left right,
+      (sourceUnify state left right).map transform =
+        targetUnify (transform state) left right) :
+    (retractClauseScanWith sourceUnify pattern counter state candidates).map
+        transform =
+      retractClauseScanWith targetUnify pattern counter (transform state)
+        candidates := by
+  induction candidates generalizing counter with
+  | nil => rfl
+  | cons candidate rest inductionHypothesis =>
+      simp only [retractClauseScanWith]
+      let copied := renameAtomSuffix (resolutionCompactSuffix counter)
+        (retractClauseSyntaxAtom candidate.1.1 candidate.1.2)
+      have current := commutes pattern copied
+      cases sourceEq : sourceUnify state pattern copied with
+      | none =>
+          simp only [sourceEq, Option.map_none] at current
+          rw [← current]
+          have tail := inductionHypothesis (counter := counter + 1)
+          cases tailEq :
+              retractClauseScanWith sourceUnify pattern (counter + 1) state
+                rest with
+          | missing finalCounter =>
+              rw [tailEq] at tail
+              simp only [RetractClauseScanOutcome.map] at tail ⊢
+              rw [← tail]
+          | matched before selected after result finalCounter =>
+              rw [tailEq] at tail
+              simp only [RetractClauseScanOutcome.map] at tail ⊢
+              rw [← tail]
+      | some next =>
+          simp only [sourceEq, Option.map_some] at current
+          rw [← current]
+          rfl
+
+/-- A successful result is justified by the unifier applied to the selected
+occurrence standardized apart at exactly the counter following its rejected
+prefix.  This pins first-match order and binding origin in one equation. -/
+theorem retractClauseScanWith_matched_unifies {Binding : Type}
+    (unify : Binding → Atom → Atom → Option Binding)
+    (pattern : Atom) (counter : Nat) (binding : Binding)
+    (candidates before : List RetractClauseCandidate)
+    (selected : RetractClauseCandidate)
+    (after : List RetractClauseCandidate) (result : Binding)
+    (nextCounter : Nat)
+    (scan : retractClauseScanWith unify pattern counter binding candidates =
+      .matched before selected after result nextCounter) :
+    unify binding pattern
+        (renameAtomSuffix
+          (resolutionCompactSuffix (counter + before.length))
+          (retractClauseSyntaxAtom selected.1.1 selected.1.2)) =
+      some result := by
+  induction candidates generalizing counter before selected after result
+      nextCounter with
+  | nil =>
+      simp [retractClauseScanWith] at scan
+  | cons candidate rest inductionHypothesis =>
+      simp only [retractClauseScanWith] at scan
+      cases current : unify binding pattern
+          (renameAtomSuffix (resolutionCompactSuffix counter)
+            (retractClauseSyntaxAtom candidate.1.1 candidate.1.2)) with
+      | some currentResult =>
+          rw [current] at scan
+          injection scan with beforeEq selectedEq afterEq resultEq counterEq
+          subst before
+          subst selected
+          subst after
+          subst result
+          subst nextCounter
+          simpa using current
+      | none =>
+          rw [current] at scan
+          cases tailEq :
+              retractClauseScanWith unify pattern (counter + 1) binding rest with
+          | missing finalCounter =>
+              rw [tailEq] at scan
+              cases scan
+          | matched tailBefore tailSelected tailAfter tailResult finalCounter =>
+              rw [tailEq] at scan
+              injection scan with beforeEq selectedEq afterEq resultEq counterEq
+              subst before
+              subst selected
+              subst after
+              subst result
+              subst nextCounter
+              have tail := inductionHypothesis (counter := counter + 1)
+                (before := tailBefore) (selected := tailSelected)
+                (after := tailAfter) (result := tailResult)
+                (nextCounter := finalCounter) tailEq
+              have counterEq :
+                  counter + (candidate :: tailBefore).length =
+                    (counter + 1) + tailBefore.length := by
+                simp only [List.length_cons]
+                omega
+              rw [counterEq]
+              exact tail
+
+/-- Reference-substitution specialization of the shared retract scan. -/
+def retractClauseScan (patternFunctor : String) (patternClause : Clause)
+    (counter : Nat) (binding : Subst)
+    (candidates : List RetractClauseCandidate) :
+    RetractClauseScanOutcome Subst :=
+  retractClauseScanWith unifyB
+    (retractClauseSyntaxAtom patternFunctor patternClause)
+    counter binding candidates
+
+/-- Complete result of a decoded executable `retractPredicate/2` scan.  A
+match retains the exact selected occurrence and both sides of its partition;
+missing is distinct from malformed input (the outer `Option.none`). -/
+inductive RetractPredicateOutcome (Binding : Type) where
+  | matched (functor : String)
+      (before : List RetractClauseCandidate)
+      (selected : RetractClauseCandidate)
+      (after : List RetractClauseCandidate)
+      (binding : Binding) (nextCounter : Nat)
+  | missing (nextCounter : Nat)
+deriving Repr, BEq
+
+namespace RetractPredicateOutcome
+
+def map {Source Target : Type} (transform : Source → Target) :
+    RetractPredicateOutcome Source → RetractPredicateOutcome Target
+  | .matched functor before selected after binding nextCounter =>
+      .matched functor before selected after (transform binding) nextCounter
+  | .missing nextCounter => .missing nextCounter
+
+@[simp] theorem map_id {Binding : Type}
+    (outcome : RetractPredicateOutcome Binding) :
+    outcome.map id = outcome := by
+  cases outcome <;> rfl
+
+@[simp] theorem option_map_id {Binding : Type}
+    (outcome : Option (RetractPredicateOutcome Binding)) :
+    outcome.map (RetractPredicateOutcome.map id) = outcome := by
+  cases outcome <;> simp
+
+def nextCounter {Binding : Type} : RetractPredicateOutcome Binding → Nat
+  | .matched _ _ _ _ _ nextCounter | .missing nextCounter => nextCounter
+
+end RetractPredicateOutcome
+
+/-- Capture-safe successor counter for a successful predicate retraction.
+
+The ordered scan counter remains the exact number of standardized-apart
+occurrences inspected.  The machine counter additionally closes over the
+returned cumulative binding, the only new live-name source in the successor.
+On source-shaped reachable states this final maximum should be a no-op; that
+exactness is a separate decoder-origin obligation rather than an assumption
+of the executable safety boundary. -/
+def retractPredicateMatchedCounter (oldCounter scanCounter : Nat)
+    (binding : Subst) : Nat :=
+  max (max oldCounter scanCounter)
+    (resolutionSeedHighWaterNames (resolutionSubstVars binding))
+
+theorem retractPredicateMatchedCounter_old_le (oldCounter scanCounter : Nat)
+    (binding : Subst) :
+    oldCounter ≤
+      retractPredicateMatchedCounter oldCounter scanCounter binding := by
+  unfold retractPredicateMatchedCounter
+  omega
+
+theorem retractPredicateMatchedCounter_scan_le (oldCounter scanCounter : Nat)
+    (binding : Subst) :
+    scanCounter ≤
+      retractPredicateMatchedCounter oldCounter scanCounter binding := by
+  unfold retractPredicateMatchedCounter
+  omega
+
+theorem retractPredicateMatchedCounter_binding_le
+    (oldCounter scanCounter : Nat) (binding : Subst) :
+    resolutionSeedHighWaterNames (resolutionSubstVars binding) ≤
+      retractPredicateMatchedCounter oldCounter scanCounter binding := by
+  unfold retractPredicateMatchedCounter
+  omega
+
+/-- Rebuild the live executable database after removing the selected member
+of a scan partition.  `before` and `after` retain both clause and aligned
+source-key order exactly; a previously enabled derived clause index is rebuilt
+by `replaceProgClauses`. -/
+def retractPredicateMatchedWorld (base : PWorld)
+    (before after : List RetractClauseCandidate) : PWorld :=
+  let retained := before ++ after
+  let replaced := base.replaceProgClauses (retained.map (fun entry => entry.1))
+  { replaced with progClauseKeys := retained.map (fun entry => entry.2) }
+
+/-- Decode and scan one materialized predicate-clause payload.  Specialization
+descendants are invalidated only in the successful world projection; a
+missing scan leaves the caller's original world unchanged while still
+advancing the resolution counter through every inspected candidate.
+
+The unifier parameter is the only binding-specific operation.  Both the
+reference substitution and optimized persistent engine therefore share the
+same decoder, standardization-apart, clause order, and selected occurrence. -/
+def retractPredicateDispatchWith {Binding : Type}
+    (unify : Binding → Atom → Atom → Option Binding)
+    (world : PWorld) (gt : GroundingTable) (counter : Nat)
+    (binding : Binding) (materializedPayload : Atom) :
+    Option (RetractPredicateOutcome Binding) := do
+  let (functor, pattern) ← predicateClause? gt materializedPayload
+  let base := world.invalidateSpecializations functor
+  let candidates := base.progClauses.zip base.effectiveProgClauseKeys
+  match retractClauseScanWith unify
+      (retractClauseSyntaxAtom functor pattern) counter binding candidates with
+  | .matched before selected after result nextCounter =>
+      some (.matched functor before selected after result nextCounter)
+  | .missing nextCounter => some (.missing nextCounter)
+
+/-- Decoding and specialization invalidation are binding-representation
+independent.  Therefore a pointwise unifier erasure law lifts through the
+complete predicate dispatcher, retaining the exact selected occurrence. -/
+theorem retractPredicateDispatchWith_map {Source Target : Type}
+    (transform : Source → Target)
+    (sourceUnify : Source → Atom → Atom → Option Source)
+    (targetUnify : Target → Atom → Atom → Option Target)
+    (world : PWorld) (gt : GroundingTable) (counter : Nat)
+    (state : Source) (materializedPayload : Atom)
+    (commutes : ∀ left right,
+      (sourceUnify state left right).map transform =
+        targetUnify (transform state) left right) :
+    (retractPredicateDispatchWith sourceUnify world gt counter state
+        materializedPayload).map (RetractPredicateOutcome.map transform) =
+      retractPredicateDispatchWith targetUnify world gt counter
+        (transform state) materializedPayload := by
+  unfold retractPredicateDispatchWith
+  cases decoded : predicateClause? gt materializedPayload with
+  | none => simp
+  | some pair =>
+      rcases pair with ⟨functor, pattern⟩
+      simp only [Option.bind_eq_bind, Option.bind_some]
+      let base := world.invalidateSpecializations functor
+      let candidates := base.progClauses.zip base.effectiveProgClauseKeys
+      let encoded := retractClauseSyntaxAtom functor pattern
+      have scanMap := retractClauseScanWith_map transform sourceUnify
+        targetUnify encoded counter state candidates commutes
+      cases scanEq :
+          retractClauseScanWith sourceUnify encoded counter state candidates with
+      | missing nextCounter =>
+          rw [scanEq] at scanMap
+          simp only [RetractClauseScanOutcome.map] at scanMap
+          rw [← scanMap]
+          simp [RetractPredicateOutcome.map]
+      | matched before selected after result nextCounter =>
+          rw [scanEq] at scanMap
+          simp only [RetractClauseScanOutcome.map] at scanMap
+          rw [← scanMap]
+          simp [RetractPredicateOutcome.map]
+
+/-- Reference-substitution specialization, including materialization under
+the caller's current bindings before the source clause is decoded. -/
+def retractPredicateDispatch (world : PWorld) (gt : GroundingTable)
+    (counter : Nat) (binding : Subst) (payload : Atom) :
+    Option (RetractPredicateOutcome Subst) :=
+  retractPredicateDispatchWith unifyB world gt counter binding
+    (subst binding payload)
+
+/-- Every binding returned by the reference predicate dispatcher comes from
+one concrete successful `unifyB` invocation in its ordered scan. -/
+theorem retractPredicateDispatch_matched_unify
+    (world : PWorld) (gt : GroundingTable) (counter : Nat)
+    (binding : Subst) (payload : Atom) (functor : String)
+    (before : List RetractClauseCandidate)
+    (selected : RetractClauseCandidate)
+    (after : List RetractClauseCandidate) (result : Subst)
+    (nextCounter : Nat)
+    (dispatch : retractPredicateDispatch world gt counter binding payload =
+      some (.matched functor before selected after result nextCounter)) :
+    ∃ left right, unifyB binding left right = some result := by
+  unfold retractPredicateDispatch retractPredicateDispatchWith at dispatch
+  cases decoded : predicateClause? gt (subst binding payload) with
+  | none =>
+      rw [decoded] at dispatch
+      cases dispatch
+  | some pair =>
+      rw [decoded] at dispatch
+      rcases pair with ⟨decodedFunctor, pattern⟩
+      simp only [Option.bind_eq_bind, Option.bind_some] at dispatch
+      cases scanEq :
+          retractClauseScanWith unifyB
+            (retractClauseSyntaxAtom decodedFunctor pattern) counter binding
+            ((world.invalidateSpecializations decodedFunctor).progClauses.zip
+              (world.invalidateSpecializations decodedFunctor
+                ).effectiveProgClauseKeys) with
+      | missing finalCounter =>
+          rw [scanEq] at dispatch
+          have outcomeEq := Option.some.inj dispatch
+          cases outcomeEq
+      | matched scanBefore scanSelected scanAfter scanResult finalCounter =>
+          rw [scanEq] at dispatch
+          have outcomeEq := Option.some.inj dispatch
+          injection outcomeEq with functorEq beforeEq selectedEq afterEq
+            resultEq counterEq
+          subst functor
+          subst before
+          subst selected
+          subst after
+          subst result
+          subst nextCounter
+          refine ⟨retractClauseSyntaxAtom decodedFunctor pattern,
+            renameAtomSuffix
+              (resolutionCompactSuffix (counter + scanBefore.length))
+              (retractClauseSyntaxAtom scanSelected.1.1 scanSelected.1.2), ?_⟩
+          exact retractClauseScanWith_matched_unifies unifyB
+            (retractClauseSyntaxAtom decodedFunctor pattern) counter binding
+            ((world.invalidateSpecializations decodedFunctor).progClauses.zip
+              (world.invalidateSpecializations decodedFunctor
+                ).effectiveProgClauseKeys)
+            scanBefore scanSelected scanAfter scanResult finalCounter scanEq
+
+/-- Extract the exact goal payload owned by the binding-producing retract
+transition.  `none` includes malformed arities and every other world action. -/
+def retractPredicatePayload? : String → List Atom → Option Atom
+  | "retractPredicate", [payload] => some payload
+  | _, _ => none
+
+/-- Successful recognition determines both the operation and exact arity. -/
+theorem retractPredicatePayload?_eq_some_iff
+    (operation : String) (arguments : List Atom) (payload : Atom) :
+    retractPredicatePayload? operation arguments = some payload ↔
+      operation = "retractPredicate" ∧ arguments = [payload] := by
+  constructor
+  · intro recognized
+    by_cases operationEq : operation = "retractPredicate"
+    · subst operation
+      cases arguments with
+      | nil => simp [retractPredicatePayload?] at recognized
+      | cons head tail =>
+          cases tail with
+          | nil =>
+              simp only [retractPredicatePayload?, Option.some.injEq] at recognized
+              exact ⟨rfl, by simp [recognized]⟩
+          | cons second rest =>
+              simp [retractPredicatePayload?] at recognized
+    · simp [retractPredicatePayload?, operationEq] at recognized
+  · rintro ⟨rfl, rfl⟩
+    rfl
+
+def retractPredicateHead (operation : String) (arguments : List Atom) : Bool :=
+  (retractPredicatePayload? operation arguments).isSome
+
 /-- Retract the first alpha-equivalent clause of the named predicate.
 
 This is the historical executable matcher.  The exact first-unifying,
@@ -5299,11 +5824,11 @@ private def processMettaString? (w : PWorld) (gt : GroundingTable)
   let world ← installDynamicSource w atoms compiled
   pure (world, max counter nextCounter)
 
-/-- The COMPLETE world-effect dispatch, SHARED verbatim by the executable
-    and the Step relation (the same by-construction gate as `resolveAlts`).
-    Rule-form add/remove-atom assert/retract compiled clauses (Prolog
-    discipline); other ops go through `wactRun`; `none` = branch failure.
-    Returns (result atom, new world, new counter). -/
+/-- Binding-free world-effect dispatch, shared verbatim by the executable and
+the Step relation.  Binding-producing `retractPredicate/2` is deliberately
+absent: its dedicated dispatcher returns the MGU and selected occurrence as
+one value.  Assertions, rule-form add/remove-atom, and plain `wactRun` ops
+remain here; `none` means branch failure. -/
 private def wactDispatchRaw (w : PWorld) (gt : GroundingTable) (counter : Nat)
     (op : String) (av : List Atom) : Option (Atom × PWorld × Nat) :=
   let predicateAction : Option (Atom × PWorld × Nat) :=
@@ -5314,11 +5839,6 @@ private def wactDispatchRaw (w : PWorld) (gt : GroundingTable) (counter : Nat)
     | "assertzPredicate", [value] => do
         let (functor, clause) ← predicateClause? gt value
         pure (trueA, installPredicateClause w false functor clause, counter + 1)
-    | "retractPredicate", [value] => do
-        let (functor, clause) ← predicateClause? gt value
-        match retractPredicateClause w functor clause with
-        | some world => pure (trueA, world, counter)
-        | none => pure (Atom.sym "False", w, counter)
     | "process_metta_string", [.gnd (.str source)] => do
         let (world, nextCounter) ← processMettaString? w gt counter source
         pure (nilA, world, nextCounter)
@@ -5456,21 +5976,13 @@ theorem wactDispatch_assertzPredicate
     resolutionSeedHighWaterAtom, resolutionSeedHighWaterNames, trueA,
     Atom.vars]
 
-/-- A decoded retract pattern with no historical alpha-key match takes
-PeTTa's explicit `false` fallback, leaves the world unchanged, and remains a
-successful world-action dispatch.  This is the second pinned clause at
-`metta.pl:280`; it is deliberately distinct from malformed payload failure. -/
-theorem wactDispatch_retractPredicate_missing
-    (w : PWorld) (gt : GroundingTable) (counter : Nat) (value : Atom)
-    (functor : String) (clause : Clause)
-    (decoded : predicateClause? gt value = some (functor, clause))
-    (missing : retractPredicateClause w functor clause = none) :
-    wactDispatch w gt counter "retractPredicate" [value] =
-      some (Atom.sym "False", w, counter) := by
-  unfold wactDispatch wactDispatchRaw
-  simp [decoded, missing, advanceCounterPastAtoms,
-    resolutionSeedHighWaterAtoms, resolutionSeedHighWaterAtom,
-    resolutionSeedHighWaterNames, Atom.vars]
+/-- Exact retract is structurally unreachable through the binding-free world
+action dispatcher.  Its dedicated transition owns matching, the false
+fallback, and malformed failure. -/
+@[simp] theorem wactDispatch_retractPredicate
+    (w : PWorld) (gt : GroundingTable) (counter : Nat) (value : Atom) :
+    wactDispatch w gt counter "retractPredicate" [value] = none := by
+  simp [wactDispatch, wactDispatchRaw, wactRun]
 
 /-- Prepared fast path for ordinary `add-atom`.  Rule-shaped atoms retain the
 full compiler dispatch; data atoms reuse insertion metadata while producing
@@ -5991,13 +6503,32 @@ def step (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf) : Conf :=
                       counter := counter',
                       alts := alts ++ c.alts }
     | .wact op args res =>
-        -- the complete dispatch is the SHARED wactDispatch (correspondence
-        -- by construction, like resolveAlts)
-        (match wactDispatch c.world gt c.counter op (args.map (subst b)) with
-         | some (r, w', k') =>
-             { c with cur := some (Goal.eq res r :: rest, b),
-                      world := w', counter := max c.counter k' }
-         | none => pull { c with cur := none })
+        match retractPredicatePayload? op args with
+        | some payload =>
+            -- Retraction is the one binding-producing world action.  Its
+            -- ordered scan returns the cumulative MGU and exact removed
+            -- occurrence in one constructor, so the two cannot drift apart.
+            (match retractPredicateDispatch c.world gt c.counter b payload with
+             | some (.matched functor before _selected after result counter') =>
+                 { c with
+                   cur := some (Goal.eq res trueA :: rest, result)
+                   world := retractPredicateMatchedWorld
+                     (c.world.invalidateSpecializations functor) before after
+                   counter := retractPredicateMatchedCounter c.counter
+                     counter' result }
+             | some (.missing counter') =>
+                 { c with
+                   cur := some (Goal.eq res (Atom.sym "False") :: rest, b)
+                   counter := max c.counter counter' }
+             | none => pull { c with cur := none })
+        | none =>
+            -- All remaining binding-free actions use the shared dispatch.
+            (match wactDispatch c.world gt c.counter op
+                (args.map (subst b)) with
+             | some (r, w', k') =>
+                 { c with cur := some (Goal.eq res r :: rest, b),
+                          world := w', counter := max c.counter k' }
+             | none => pull { c with cur := none })
     | .findall tmpl sub res =>
         let subConf : Conf :=
           { cur := some (sub, b), alts := [], world := c.world,

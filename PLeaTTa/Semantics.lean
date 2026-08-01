@@ -508,12 +508,46 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (hdone : Terminal d) (he : d.answers = []) :
       Step prog gt c
         (pull { c with cur := none, world := c.world, counter := d.counter })
-  -- world effects go through the SHARED wactDispatch (assert/retract of
-  -- compiled rule forms + the plain wactRun ops) — correspondence by
-  -- construction, like resolveAlts
+  -- Locally owned retract is binding-producing: the exact same ordered scan
+  -- witness supplies both the cumulative MGU and the removed occurrence.
+  | retract_matched (c : Conf) (payload res : Atom) (rest : List Goal)
+      (b result : Subst) (functor : String)
+      (before : List RetractClauseCandidate)
+      (selected : RetractClauseCandidate)
+      (after : List RetractClauseCandidate) (k' : Nat)
+      (h : c.cur =
+        some (Goal.wact "retractPredicate" [payload] res :: rest, b))
+      (scan : retractPredicateDispatch c.world gt c.counter b payload =
+        some (.matched functor before selected after result k')) :
+      Step prog gt c
+        { c with
+          cur := some (Goal.eq res trueA :: rest, result)
+          world := retractPredicateMatchedWorld
+            (c.world.invalidateSpecializations functor) before after
+          counter := retractPredicateMatchedCounter c.counter k' result }
+  | retract_missing (c : Conf) (payload res : Atom) (rest : List Goal)
+      (b : Subst) (k' : Nat)
+      (h : c.cur =
+        some (Goal.wact "retractPredicate" [payload] res :: rest, b))
+      (scan : retractPredicateDispatch c.world gt c.counter b payload =
+        some (.missing k')) :
+      Step prog gt c
+        { c with
+          cur := some (Goal.eq res (Atom.sym "False") :: rest, b)
+          counter := max c.counter k' }
+  | retract_malformed (c : Conf) (payload res : Atom) (rest : List Goal)
+      (b : Subst)
+      (h : c.cur =
+        some (Goal.wact "retractPredicate" [payload] res :: rest, b))
+      (scan : retractPredicateDispatch c.world gt c.counter b payload = none) :
+      Step prog gt c (pull { c with cur := none })
+  -- Every remaining binding-free world effect goes through shared
+  -- `wactDispatch`; the explicit head exclusion prevents exact retract from
+  -- acquiring a second, binding-discarding semantic route.
   | wact_ok (c : Conf) (op : String) (args : List Atom) (res r : Atom)
       (rest : List Goal) (b : Subst) (w' : PWorld) (k' : Nat)
       (h : c.cur = some (Goal.wact op args res :: rest, b))
+      (notRetract : retractPredicatePayload? op args = none)
       (hw : wactDispatch c.world gt c.counter op (args.map (subst b))
         = some (r, w', k')) :
       Step prog gt c
@@ -522,6 +556,7 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
   | wact_fail (c : Conf) (op : String) (args : List Atom) (res : Atom)
       (rest : List Goal) (b : Subst)
       (h : c.cur = some (Goal.wact op args res :: rest, b))
+      (notRetract : retractPredicatePayload? op args = none)
       (hw : wactDispatch c.world gt c.counter op (args.map (subst b)) = none) :
       Step prog gt c (pull { c with cur := none })
   | onceg (c : Conf) (tmpl : Atom) (sub : List Goal) (res : Atom)

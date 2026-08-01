@@ -1,0 +1,201 @@
+-- SPDX-License-Identifier: Apache-2.0
+
+import PLeaTTa.Builtins
+import PLeaTTa.SubstMachine
+
+namespace PLeaTTa.PrologRetractRegression
+
+open Metta (Atom Subst)
+
+/-- [SPEC metta.pl:279-280] Concrete executable facts used to discriminate
+ordered `retract/1` unification from the former alpha-key deletion shortcut. -/
+def factClause (value : Atom) : Clause :=
+  { params := [], result := value, body := [] }
+
+def firstClause : Clause := factClause (.sym "first")
+def secondClause : Clause := factClause (.sym "second")
+def variableClause : Clause := factClause (.var "stored")
+def unrelatedClause : Clause := factClause (.sym "unrelated")
+
+def firstCandidate : RetractClauseCandidate :=
+  (("probe-retract", firstClause), clauseAlphaKey firstClause)
+
+def secondCandidate : RetractClauseCandidate :=
+  (("probe-retract", secondClause), clauseAlphaKey secondClause)
+
+def variableCandidate : RetractClauseCandidate :=
+  (("probe-retract", variableClause), clauseAlphaKey variableClause)
+
+def unrelatedCandidate : RetractClauseCandidate :=
+  (("other", unrelatedClause), clauseAlphaKey unrelatedClause)
+
+def fixtureWorld : PWorld :=
+  installPredicateClause
+    (installPredicateClause (({} : PWorld).reindexClauses) false
+      "probe-retract" firstClause)
+    false "probe-retract" secondClause
+
+def variableClauseWorld : PWorld :=
+  installPredicateClause (({} : PWorld).reindexClauses) false
+    "probe-retract" variableClause
+
+def variablePattern : Clause := factClause (.var "removed")
+
+def nestedPattern : Clause := factClause
+  (.expr [.sym "pair", .var "left",
+    .expr [.sym "inner", .var "right"]])
+
+def nestedClause : Clause := factClause
+  (.expr [.sym "pair", .sym "first",
+    .expr [.sym "inner", .sym "second"]])
+
+def nestedCandidate : RetractClauseCandidate :=
+  (("probe-retract", nestedClause), clauseAlphaKey nestedClause)
+
+def variablePayload : Atom :=
+  chainify (.expr [.sym "Predicate",
+    .expr [.sym "probe-retract", .var "removed"]])
+
+-- One unrelated occurrence is rejected before the first matching clause;
+-- the selected occurrence, residual order, MGU, and consumed counter are exact.
+#guard retractClauseScan "probe-retract" variablePattern 7 []
+    [unrelatedCandidate, firstCandidate, secondCandidate] ==
+  (RetractClauseScanOutcome.matched [unrelatedCandidate] firstCandidate
+    [secondCandidate] [("removed", .sym "first")] 9 :
+      RetractClauseScanOutcome Subst)
+
+-- Recursive first-order structure is matched by the same ordered MGU, not
+-- by a top-level key comparison.
+#guard retractClauseScan "probe-retract" nestedPattern 11 []
+    [nestedCandidate] ==
+  (RetractClauseScanOutcome.matched [] nestedCandidate []
+    [("right", .sym "second"), ("left", .sym "first")] 12 :
+      RetractClauseScanOutcome Subst)
+
+-- Exhausting every non-matching occurrence returns the explicit missing
+-- case and consumes exactly one fresh copy per inspected occurrence.
+#guard retractClauseScan "absent" variablePattern 7 []
+    [firstCandidate, secondCandidate] ==
+  (RetractClauseScanOutcome.missing 9 : RetractClauseScanOutcome Subst)
+
+-- The complete decoder/dispatcher selects the first live occurrence and
+-- returns its binding in the same constructor.
+#guard retractPredicateDispatch fixtureWorld pleattaTable 7 []
+    variablePayload ==
+  some (RetractPredicateOutcome.matched "probe-retract" [] firstCandidate
+    [secondCandidate] [("removed", .sym "first")] 8)
+
+-- Malformed syntax is branch failure, distinct from a decoded missing
+-- pattern's successful `false` fallback [SPEC metta.pl:280].
+#guard (retractPredicateDispatch fixtureWorld pleattaTable 7 []
+    (.sym "bad")).isNone
+
+-- The matched world removes exactly the selected aligned clause/key pair;
+-- the later duplicate-sensitive suffix retains its original order.
+def matchedWorld : PWorld := retractPredicateMatchedWorld
+  (fixtureWorld.invalidateSpecializations "probe-retract") []
+  [secondCandidate]
+
+#guard matchedWorld.progClauses == [secondCandidate.1] &&
+  matchedWorld.effectiveProgClauseKeys == [secondCandidate.2]
+
+-- A newly opened call sees the successor database and therefore selects the
+-- formerly second occurrence. Any already-materialized old candidate list is
+-- an immutable value, giving the executable side of logical-update separation.
+#guard retractPredicateDispatch matchedWorld pleattaTable 8 []
+    variablePayload ==
+  some (RetractPredicateOutcome.matched "probe-retract" [] secondCandidate
+    [] [("removed", .sym "second")] 9)
+
+-- Standardizing a selected variable-valued clause apart makes the returned
+-- binding carry that clause's fresh name. This is the concrete capture case
+-- the protective successor counter must cover.
+#guard retractPredicateDispatch variableClauseWorld pleattaTable 7 []
+    variablePayload ==
+  some (RetractPredicateOutcome.matched "probe-retract" [] variableCandidate
+    [] [("removed", .var ("stored" ++ resolutionCompactSuffix 7))] 8)
+
+/-- In the supported source-shaped case, the returned binding's generated
+high-water is already exactly the scan counter. -/
+theorem variable_binding_high_water_exact :
+    resolutionSeedHighWaterNames
+        (resolutionSubstVars
+          [("removed", .var ("stored" ++ resolutionCompactSuffix 7))]) = 8 := by
+  have parsed := terminalResolutionSeed?_append "stored" 7
+  have plain : terminalResolutionSeed? "removed" = none := by rfl
+  simp [resolutionSubstVars, resolutionSeedHighWaterNames,
+    resolutionSeedHighWaterName, Atom.vars, parsed, plain]
+
+/-- Consequently the capture-safe closure is a no-op on the concrete
+variable-bearing successful retract rather than a hidden name change. -/
+theorem variable_matched_counter_noop :
+    retractPredicateMatchedCounter 7 8
+      [("removed", .var ("stored" ++ resolutionCompactSuffix 7))] = 8 := by
+  simp [retractPredicateMatchedCounter, variable_binding_high_water_exact]
+
+def persistentDispatchErased :
+    Option (RetractPredicateOutcome Subst) :=
+  let engine := SubstEngine.executablePersistent
+  (SubstEngine.retractPredicateDispatchWithState engine fixtureWorld
+      pleattaTable 7
+      (engine.ofDenote []) variablePayload).map
+    (RetractPredicateOutcome.map engine.denote)
+
+-- The proof-carrying persistent engine chooses the identical occurrence,
+-- MGU, suffix, and counter after erasure.
+#guard persistentDispatchErased ==
+  some (RetractPredicateOutcome.matched "probe-retract" [] firstCandidate
+    [secondCandidate] [("removed", .sym "first")] 8)
+
+def emptyProg : Prog := { clauses := [], facts := [], typeDecls := [] }
+
+def retractConf : Conf := {
+  cur := some ([Goal.wact "retractPredicate" [variablePayload]
+    (.var "effectResult")], [])
+  alts := []
+  world := fixtureWorld
+  counter := 7
+  qterm := .var "removed"
+  barriers := some 0 }
+
+def retractSuccessor : Conf := {
+  retractConf with
+  cur := some ([Goal.eq (.var "effectResult") trueA],
+    [("removed", .sym "first")])
+  world := retractPredicateMatchedWorld
+    (fixtureWorld.invalidateSpecializations "probe-retract") []
+    [secondCandidate]
+  counter := 8 }
+
+-- The executable reference step realizes the exact dispatcher result in one
+-- transition, including the returned binding, selected deletion, and counter.
+#guard (let next := step emptyProg pleattaTable 20 retractConf;
+  next.cur == retractSuccessor.cur &&
+    next.alts.isEmpty && retractSuccessor.alts.isEmpty &&
+    next.world.progClauses == retractSuccessor.world.progClauses &&
+    next.world.effectiveProgClauseKeys ==
+      retractSuccessor.world.effectiveProgClauseKeys &&
+    next.counter == retractSuccessor.counter &&
+    next.qterm == retractSuccessor.qterm &&
+    next.answers == retractSuccessor.answers &&
+    next.barriers == retractSuccessor.barriers)
+
+/-- The optimized executable step erases to the identical sealed successor;
+the theorem is about the actual `executablePersistent` engine used by CLI. -/
+theorem persistent_step_erases_exact :
+    let engine := SubstEngine.executablePersistent
+    SubstEngine.erase engine
+        (SubstEngine.stepWith engine emptyProg pleattaTable 20
+          (SubstEngine.lift engine retractConf)) =
+      step emptyProg pleattaTable 20 retractConf := by
+  have simulated :=
+    (SubstEngine.checked_run_step_simulation
+      (SubstEngine.preparedChecked SubstEngine.persistent)
+      emptyProg pleattaTable 20).2
+      (SubstEngine.lift SubstEngine.executablePersistent retractConf)
+  have referenceExact :=
+    (SubstEngine.reference_run_step emptyProg pleattaTable 20).2 retractConf
+  simpa [SubstEngine.executablePersistent] using
+    simulated.trans referenceExact
+
+end PLeaTTa.PrologRetractRegression

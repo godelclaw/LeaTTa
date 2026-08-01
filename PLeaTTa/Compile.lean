@@ -2785,6 +2785,32 @@ theorem compileExprFuel_assertzPredicate_eq (payloadFuel : Nat) (env : CEnv)
   rfl
 
 set_option maxHeartbeats 2000000 in
+/-- Locally owned `retractPredicate` has the same ordered payload/result
+lowering, with the actual first-unifying removal kept inside the sealed world
+action. [SPEC metta.pl:279-280; translator.pl:310-324,335-346] -/
+theorem compileExprFuel_retractPredicate_eq (payloadFuel : Nat) (env : CEnv)
+    (counter : Nat) (source payload : Atom) (goals : List Goal)
+    (nextCounter : Nat)
+    (noHook : env.translatorRules.contains "retractPredicate" = false)
+    (compiled : compileExprFuel payloadFuel env counter source =
+      .ok (payload, goals, nextCounter)) :
+    compileExprFuel (payloadFuel + 3) env counter
+        (.expr [.sym "retractPredicate", source]) =
+      .ok (.var s!"_q{nextCounter}",
+        goals ++
+          [Goal.wact "retractPredicate" [payload]
+            (.var s!"_q{nextCounter}")],
+        nextCounter + 1) := by
+  rw [show payloadFuel + 3 = (payloadFuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
+  rw [show payloadFuel + 2 = (payloadFuel + 1) + 1 by omega]
+  rw [compileAppFuel.eq_2]
+  simp only [noHook, Bool.false_eq_true, ↓reduceIte]
+  rw [compileAppCoreFuel.eq_8, compiled]
+  all_goals try simp only [classifyAppCoreHead]
+  rfl
+
+set_option maxHeartbeats 2000000 in
 /-- Executable `once` shape: compile the body, allocate a fresh result, and
 capture the first body answer through `onceg`. Native translation instead
 retains the body term; their observational correspondence is a separate

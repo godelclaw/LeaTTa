@@ -401,6 +401,24 @@ inductive TranslatesExpr : TranslatorState → Nat → Atom → Term → List Go
           [.call "assertzPredicate"
             [payload, .variable (.generated payloadCounter)]])
         (payloadCounter + 1)
+  /-- Source-level counterpart of `retractPredicate`: translate the clause
+  pattern, call the pinned binding-producing `retract/1` wrapper, and allocate
+  its Boolean result in source order.
+  [SPEC metta.pl:279-280,322; translator.pl:310-324,335-346] -/
+  | retractPredicate {state : TranslatorState}
+      {counter payloadCounter : Nat}
+      {source : Atom} {payload : Term} {payloadGoals : List Goal}
+      (notShadowed : ¬ state.hasRule "retractPredicate")
+      (translated :
+        TranslatesExpr state counter source payload payloadGoals
+          payloadCounter) :
+      TranslatesExpr state counter
+        (.expr [.sym "retractPredicate", source])
+        (.variable (.generated payloadCounter))
+        (payloadGoals ++
+          [.call "retractPredicate"
+            [payload, .variable (.generated payloadCounter)]])
+        (payloadCounter + 1)
   | collapse {state : TranslatorState} {counter bodyCounter : Nat}
       {source : Atom} {template : Term} {bodyGoals : List Goal}
       (notShadowed : ¬ state.hasRule "collapse")
