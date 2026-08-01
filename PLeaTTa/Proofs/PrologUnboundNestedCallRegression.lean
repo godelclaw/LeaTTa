@@ -750,7 +750,7 @@ The source cursor for that call is the singleton occurrence reserved in the
 disjoint interval `[1, 2)`.  The root source and fine prefixes end at this
 same carrier, so no shape-compatible state can be substituted between the
 first and second activations. -/
-private theorem qMaterializedReadyAfterP
+theorem qMaterializedReadyAfterP
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
     ∃ state : RepresentativeActivePayloadState,
       ∃ head : NestedCallHead state.carrier,
