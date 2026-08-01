@@ -214,6 +214,35 @@ theorem arity {state : ActivePayloadState} (head : NestedCallHead state) :
   rw [referenceShape, List.length_append, List.length_singleton,
     argumentsLength]
 
+/-- A zero-argument executable local call exposes its unique source payload
+as the alpha-related result leaf.
+
+This is an inversion of the certified output-last call spelling, not a new
+agreement premise.  It lets later transitions use the literal result atom
+without learning or reconstructing its generated runtime variable name. -/
+theorem resultAgrees_of_singletonPayload {state : ActivePayloadState}
+    (head : NestedCallHead state) {referenceResult : Term}
+    (payloadExact : head.referencePayload = [referenceResult])
+    (argumentsExact : head.arguments = []) :
+    AlphaTermAgrees state.index.alpha referenceResult head.result := by
+  obtain
+    ⟨referenceArguments, actualResult, referenceShape, arguments,
+      result, _tail⟩ :=
+    NormalizedAlphaGoalsAgree.localCallHead head.payload.control
+  have referenceArgumentsLength : referenceArguments.length = 0 := by
+    have lengths :=
+      PLeaTTa.PrologPrefilterBridge.AlphaTermsAgree.length_eq arguments
+    simpa [argumentsExact] using lengths
+  have referenceArgumentsExact : referenceArguments = [] :=
+    List.eq_nil_of_length_eq_zero referenceArgumentsLength
+  subst referenceArguments
+  simp only [List.nil_append] at referenceShape
+  have actualResultExact : actualResult = referenceResult := by
+    rw [payloadExact] at referenceShape
+    exact (List.cons.inj referenceShape).1.symm
+  subst actualResult
+  exact result
+
 /-- The executable call head and its complete flattened continuation are
 forced by the carrier's literal control spine. -/
 theorem executableStateHead {state : ActivePayloadState}

@@ -1237,6 +1237,43 @@ structure SelectedUnifyTopExact
   generatedTopological : Nonempty (PLeaTTa.SubstTopological generated)
   runtimeTopological : Nonempty (PLeaTTa.SubstTopological runtime)
 
+/-- The freshly generated executable MGU cannot capture any carried runtime
+domain entry.  This is derived from the exact selected operands, not added as
+an independent installation assumption. -/
+theorem SelectedUnifyTopExact.generatedAvoidsRuntime
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    {result : Substitution}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated : Metta.Subst}
+    (exact :
+      SelectedUnifyTopExact alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated) :
+    PLeaTTa.SubstEntriesAvoid runtime generated := by
+  obtain ⟨runtimeTopological⟩ := exact.runtimeTopological
+  have leftAvoids :
+      PLeaTTa.AtomAvoids runtime
+        (PLeaTTa.subst runtime executableLeft) := by
+    intro name member
+    exact runtimeTopological.subst_resolvesDomain
+      runtime executableLeft name member
+  have rightAvoids :
+      PLeaTTa.AtomAvoids runtime
+        (PLeaTTa.subst runtime executableRight) := by
+    intro name member
+    exact runtimeTopological.subst_resolvesDomain
+      runtime executableRight name member
+  exact
+    PLeaTTa.unifyTopExact_avoidsExternal runtime
+      (PLeaTTa.subst runtime executableLeft)
+      (PLeaTTa.subst runtime executableRight) generated leftAvoids rightAvoids
+      exact.generatedExact
+
 /-- The empty executable residual substitution preserves every alpha-linked
 variable literally.  This is the identity element used by reflexive
 primitive unification; it is not a vacuous valuation because every link in
@@ -1667,11 +1704,105 @@ theorem taskData
   ⟨shared, success.nextCanonicalWellFormed, success.nextBindingShape,
     success.nextCumulative.weak⟩
 
+/-- The selected successor stores exactly the executable installation policy,
+even though its public structure records the result through `unifyB`. -/
+theorem installed_eq_installGenerated
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    {result : Substitution}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installed : Metta.Subst}
+    (success :
+      SelectedUnifySuccessData alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated installed) :
+    installed = PrologMguComposition.installGenerated generated runtime := by
+  cases generated with
+  | nil =>
+      have same : some installed = some runtime := by
+        calc
+          some installed =
+              PLeaTTa.unifyB runtime executableLeft executableRight :=
+            success.installedExact.symm
+          _ = some runtime := by
+            simp [PLeaTTa.unifyB, success.topExact.generatedExact]
+      exact Option.some.inj same
+  | cons head tail =>
+      have same :
+          some installed =
+            some (Metta.Subst.compose (head :: tail) runtime) := by
+        calc
+          some installed =
+              PLeaTTa.unifyB runtime executableLeft executableRight :=
+            success.installedExact.symm
+          _ = some (Metta.Subst.compose (head :: tail) runtime) := by
+            simp [PLeaTTa.unifyB, success.topExact.generatedExact]
+      simpa [PrologMguComposition.installGenerated] using
+        Option.some.inj same
+
+/-- Applying the selected installed runtime is exactly sequential semantic
+application of the carried runtime followed by the generated residual. -/
+theorem subst_installed_eq_generated_after_runtime
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    {result : Substitution}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installed : Metta.Subst}
+    (success :
+      SelectedUnifySuccessData alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated installed)
+    (atom : Metta.Atom) :
+    PLeaTTa.subst installed atom =
+      PLeaTTa.subst generated (PLeaTTa.subst runtime atom) := by
+  rw [success.installed_eq_installGenerated]
+  obtain ⟨runtimeTopological⟩ := success.topExact.runtimeTopological
+  obtain ⟨generatedTopological⟩ := success.topExact.generatedTopological
+  exact
+    PrologMguComposition.subst_installGenerated_eq_generated_after_base
+      runtimeTopological generatedTopological
+      success.topExact.generatedAvoidsRuntime atom
+
+/-- The literal selected installation remains topological. -/
+theorem installedTopological
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    {result : Substitution}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installed : Metta.Subst}
+    (success :
+      SelectedUnifySuccessData alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated installed) :
+    Nonempty (PLeaTTa.SubstTopological installed) := by
+  rw [success.installed_eq_installGenerated]
+  obtain ⟨runtimeTopological⟩ := success.topExact.runtimeTopological
+  obtain ⟨generatedTopological⟩ := success.topExact.generatedTopological
+  exact ⟨
+    PrologMguComposition.installGeneratedTopological runtimeTopological
+      generatedTopological success.topExact.generatedAvoidsRuntime⟩
+
 end SelectedUnifySuccessData
 
 /-- Install one already selected executable MGU while retaining its literal
-canonical orientation in the successor valuation. -/
-theorem SelectedUnifyTopExact.afterUnifySuccessData
+canonical orientation in the successor valuation.
+
+Previously supported runtime names may already be bound.  Their old
+valuation is composed with the generated MGU semantically; no domain-
+avoidance premise is needed. -/
+theorem SelectedUnifyTopExact.afterUnifySuccessDataGeneral
     {alpha support : List (LogicVar × String)}
     {canonical representative : TreeSubstitution}
     {referenceBase current : Substitution} {runtime : Metta.Subst}
@@ -1686,10 +1817,7 @@ theorem SelectedUnifyTopExact.afterUnifySuccessData
       SelectedUnifyTopExact alpha support canonical representative
         referenceBase current runtime sourceLeft sourceRight runtimeLeft
         runtimeRight executableLeft executableRight result sourceExtension
-        executableExtension generated)
-    (supportIncluded :
-      ∀ pair, pair ∈ support → pair ∈ alpha)
-    (runtimeAvoids : AlphaRuntimeNamesAvoid support runtime) :
+        executableExtension generated) :
     SelectedUnifySuccessData alpha support canonical representative
       referenceBase current runtime sourceLeft sourceRight runtimeLeft
       runtimeRight executableLeft executableRight result sourceExtension
@@ -1786,10 +1914,9 @@ theorem SelectedUnifyTopExact.afterUnifySuccessData
           (executableExtension ++
             (representative ++ Substitution.denote referenceBase))
           (PrologMguComposition.installGenerated generated runtime) :=
-      PLeaTTa.PrologMguComposition.AlphaValuationAgreesOn.installGenerated_extension
-        agreement.alphaShared supportIncluded exact.oldValuation
-        runtimeTopological generatedTopological generatedAvoidsRuntime
-        runtimeAvoids exact.generatedValuation
+      PLeaTTa.PrologMguComposition.AlphaValuationAgreesOn.installGenerated_compose
+        exact.oldValuation runtimeTopological generatedTopological
+        generatedAvoidsRuntime exact.generatedValuation
     intro identity name linked
     simpa [List.append_assoc] using lifted linked
   have successorRepresentativeCovered :
@@ -1827,9 +1954,77 @@ theorem SelectedUnifyTopExact.afterUnifySuccessData
       rw [TreeSubstitution.reify_append]
       simp only [List.append_assoc]
 
+/-- Compatibility wrapper for older callers which already establish the
+conservative unbound-support premises.  The stronger composition theorem
+above shows that neither premise is needed for semantic installation. -/
+theorem SelectedUnifyTopExact.afterUnifySuccessData
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    {result : Substitution}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated : Metta.Subst}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (exact :
+      SelectedUnifyTopExact alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated)
+    (_supportIncluded :
+      ∀ pair, pair ∈ support → pair ∈ alpha)
+    (_runtimeAvoids : AlphaRuntimeNamesAvoid support runtime) :
+    SelectedUnifySuccessData alpha support canonical representative
+      referenceBase current runtime sourceLeft sourceRight runtimeLeft
+      runtimeRight executableLeft executableRight result sourceExtension
+      executableExtension generated
+      (PrologMguComposition.installGenerated generated runtime) :=
+  exact.afterUnifySuccessDataGeneral agreement
+
 /-- Strong selected-representative producer for one successful primitive
-equality.  All chosen extensions remain explicit indices of the returned
-certificate. -/
+equality over an arbitrary carried runtime.  All chosen extensions remain
+explicit indices of the returned certificate. -/
+theorem TaskDataAgrees.afterUnifySuccessDataWith_of_equivalentGeneral
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (selected :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase runtime representative)
+    (equivalent :
+      TreeUnificationEquivalent
+        [(Term.denote sourceLeft, Term.denote sourceRight)]
+        [(Term.denote runtimeLeft, Term.denote runtimeRight)])
+    (leftAgreement :
+      AlphaTermAgrees alpha runtimeLeft executableLeft)
+    (rightAgreement :
+      AlphaTermAgrees alpha runtimeRight executableRight)
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote runtimeLeft))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote runtimeRight))
+    {result : Substitution}
+    (resolved : UnifyResolution current sourceLeft sourceRight result) :
+    ∃ sourceExtension executableExtension generated,
+      SelectedUnifySuccessData alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated
+        (PrologMguComposition.installGenerated generated runtime) := by
+  obtain ⟨sourceExtension, executableExtension, generated, exact⟩ :=
+    agreement.selectedUnifyTopExact_of_equivalent selected equivalent
+      leftAgreement rightAgreement leftSupported rightSupported resolved
+  exact
+    ⟨sourceExtension, executableExtension, generated,
+      exact.afterUnifySuccessDataGeneral agreement⟩
+
+/-- Compatibility form retaining the older conservative support premises. -/
 theorem TaskDataAgrees.afterUnifySuccessDataWith_of_equivalent
     {alpha support : List (LogicVar × String)}
     {canonical representative : TreeSubstitution}
@@ -1853,9 +2048,9 @@ theorem TaskDataAgrees.afterUnifySuccessDataWith_of_equivalent
       AlphaTreeSupported alpha support (Term.denote runtimeLeft))
     (rightSupported :
       AlphaTreeSupported alpha support (Term.denote runtimeRight))
-    (supportIncluded :
+    (_supportIncluded :
       ∀ pair, pair ∈ support → pair ∈ alpha)
-    (runtimeAvoids : AlphaRuntimeNamesAvoid support runtime)
+    (_runtimeAvoids : AlphaRuntimeNamesAvoid support runtime)
     {result : Substitution}
     (resolved : UnifyResolution current sourceLeft sourceRight result) :
     ∃ sourceExtension executableExtension generated,
@@ -1863,13 +2058,9 @@ theorem TaskDataAgrees.afterUnifySuccessDataWith_of_equivalent
         referenceBase current runtime sourceLeft sourceRight runtimeLeft
         runtimeRight executableLeft executableRight result sourceExtension
         executableExtension generated
-        (PrologMguComposition.installGenerated generated runtime) := by
-  obtain ⟨sourceExtension, executableExtension, generated, exact⟩ :=
-    agreement.selectedUnifyTopExact_of_equivalent selected equivalent
-      leftAgreement rightAgreement leftSupported rightSupported resolved
-  exact
-    ⟨sourceExtension, executableExtension, generated,
-      exact.afterUnifySuccessData agreement supportIncluded runtimeAvoids⟩
+        (PrologMguComposition.installGenerated generated runtime) :=
+  agreement.afterUnifySuccessDataWith_of_equivalentGeneral selected equivalent
+    leftAgreement rightAgreement leftSupported rightSupported resolved
 
 /-- One successful primitive equality installs the actual executable MGU and
 preserves the continuation-independent task data relation.
@@ -2041,6 +2232,29 @@ def ReadyUnifyContinuationSafe
     state.control.cur = some (head :: rest, runtime) →
       AlphaRuntimeNamesAvoid support runtime ∧
       AlphaRuntimeNamesLive support rest state.control.qterm
+
+/-- Exact continuation-liveness obligation for primitive unification over an
+arbitrary carried runtime.
+
+Unlike `ReadyUnifyContinuationSafe`, this does not require observable runtime
+names to be absent from the carried substitution.  Arbitrary-base MGU
+composition interprets such bindings semantically; only their survival in the
+post-equality continuation is needed for `trimFor`. -/
+def ReadyUnifyContinuationLive
+    (support : List (LogicVar × String)) (state : OpenConf) : Prop :=
+  ∀ {head : PLeaTTa.Goal} {rest : List PLeaTTa.Goal}
+      {runtime : Metta.Subst},
+    state.control.cur = some (head :: rest, runtime) →
+      AlphaRuntimeNamesLive support rest state.control.qterm
+
+/-- The conservative predecessor predicate projects to the exact liveness
+condition used by the arbitrary-base producer. -/
+theorem ReadyUnifyContinuationSafe.live
+    {support : List (LogicVar × String)} {state : OpenConf}
+    (safe : ReadyUnifyContinuationSafe support state) :
+    ReadyUnifyContinuationLive support state := by
+  intro head rest runtime current
+  exact (safe current).2
 
 /-- Strict, invertible readings for whichever executable equality spelling
 is actually at the ready state's head.  Quantifying over head decomposition
@@ -2352,6 +2566,36 @@ def unifySuccessor (state : OpenConf) (rest : List PLeaTTa.Goal)
   rfl
 
 /-- Either sealed equality spelling takes exactly one transition in the
+sealed machine and reaches the shared trimmed successor. -/
+theorem executable_unify_sealed_step
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (state : OpenConf)
+    (spelling : NormalizedAlphaGoalsAgree.ExecutableUnifySpelling)
+    (left right : Metta.Atom) (rest : List PLeaTTa.Goal)
+    (runtime installed : Metta.Subst)
+    (head :
+      state.control.cur =
+        some (spelling.goal left right :: rest, runtime))
+    (unified : PLeaTTa.unifyB runtime left right = some installed) :
+    PLeaTTa.Step prog gt state.toConf
+      (unifySuccessor state rest installed).toConf := by
+  have sealedHead :
+      state.toConf.cur =
+        some (spelling.goal left right :: rest, runtime) := by
+    simpa [OpenConf.toConf, Control.toConf] using head
+  cases spelling with
+  | equality =>
+      simpa [unifySuccessor,
+        NormalizedAlphaGoalsAgree.ExecutableUnifySpelling.goal] using
+        (PLeaTTa.Step.eq_ok state.toConf left right rest runtime installed
+          sealedHead unified)
+  | compilerAlias =>
+      simpa [unifySuccessor,
+        NormalizedAlphaGoalsAgree.ExecutableUnifySpelling.goal] using
+        (PLeaTTa.Step.compileAlias_ok state.toConf left right rest runtime
+          installed sealedHead unified)
+
+/-- Either sealed equality spelling takes exactly one transition in the
 findall/call-fine lane.  The spelling is retained through head inversion, but
 both cases execute the same proved `unifyB` result and exact successor. -/
 theorem executable_unify_step
@@ -2385,17 +2629,8 @@ theorem executable_unify_step
     (unifySuccessor state rest installed) notLocalCall
   apply DemandDrivenStep.Step.ordinary state
     (unifySuccessor state rest installed).toConf notFindall
-  cases spelling with
-  | equality =>
-      simpa [unifySuccessor,
-        NormalizedAlphaGoalsAgree.ExecutableUnifySpelling.goal] using
-        (PLeaTTa.Step.eq_ok state.toConf left right rest runtime installed
-          sealedHead unified)
-  | compilerAlias =>
-      simpa [unifySuccessor,
-        NormalizedAlphaGoalsAgree.ExecutableUnifySpelling.goal] using
-        (PLeaTTa.Step.compileAlias_ok state.toConf left right rest runtime
-          installed sealedHead unified)
+  exact executable_unify_sealed_step state spelling left right rest runtime
+    installed head unified
 
 /-- Paired successful primitive-unification transition on the actual task
 states.

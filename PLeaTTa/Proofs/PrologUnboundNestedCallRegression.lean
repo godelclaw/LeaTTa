@@ -241,7 +241,7 @@ private theorem pResolutionCandidates :
   simp [executableWorld, PWorld.reindexClauses, PWorld.appendProgClause,
     PWorld.clausesOf, pExecutableClause, emptyClauses]
 
-private theorem qResolutionCandidates :
+theorem qResolutionCandidates :
     executableWorld.resolutionCandidates "q" 0 = [qExecutableClause] := by
   rw [PWorld.resolutionCandidates_eq _ _ _ executableWorldCoherent]
   have emptyClauses : (default : PWorld).progClauses = [] := rfl
@@ -253,7 +253,7 @@ private theorem pVisibleClauses :
       [Database.empty.allocate pReferenceClause] := by
   rfl
 
-private theorem qVisibleClauses :
+theorem qVisibleClauses :
     referenceDatabase.visibleClausesAt referenceDatabase.generation "q" 1 =
       [(Database.empty.assertz pReferenceClause).allocate qReferenceClause] := by
   rfl
@@ -288,7 +288,7 @@ private theorem pCandidateBank :
   refine ⟨List.Forall₂.cons head .nil, ?_⟩
   exact .cons (head := head) encoding body .nil
 
-private theorem qCandidateBank :
+theorem qCandidateBank :
     SupportedCandidateBank "q"
       (referenceDatabase.visibleClausesAt referenceDatabase.generation "q" 1)
       (executableWorld.resolutionCandidates "q" 0) := by
@@ -761,7 +761,14 @@ theorem qMaterializedReadyAfterP
         head.arguments = [] ∧
         head.result = pCopied.result ∧
         head.executableRest = [] ∧
+        head.executableTail = [] ∧
         state.carrier.index.current = pSourceExtension ∧
+        state.carrier.index.support = rootAlpha ∧
+        AlphaTermAgrees state.carrier.index.alpha queryTerm queryAtom ∧
+        AlphaTreeSupported state.carrier.index.alpha
+          state.carrier.index.support (Term.denote queryTerm) ∧
+        state.carrier.index.qterm = queryAtom ∧
+        state.carrier.index.openConf.control.qterm = queryAtom ∧
         state.carrier.index.session.resolver.database = referenceDatabase ∧
         state.carrier.index.openConf.persistent.world = executableWorld ∧
         (openedFor state.carrier.index.session head.predicate
@@ -862,8 +869,49 @@ theorem qMaterializedReadyAfterP
     rfl
   have currentExact : state.carrier.index.current = pSourceExtension := by
     rfl
+  have queryReading :
+      AlphaTermAgrees state.carrier.index.alpha queryTerm queryAtom := by
+    change AlphaTermAgrees nextAlpha queryTerm queryAtom
+    exact
+      AlphaTermAgrees.variable
+        (activation.alphaIncluded (queryIdentity, "z")
+          (by simp [rootAlpha, queryIdentity]))
+  have querySupported :
+      AlphaTreeSupported state.carrier.index.alpha
+        state.carrier.index.support (Term.denote queryTerm) := by
+    change AlphaTreeSupported nextAlpha rootAlpha (Term.denote queryTerm)
+    change
+      ∀ name, (queryIdentity, name) ∈ nextAlpha →
+        (queryIdentity, name) ∈ rootAlpha
+    intro name member
+    rcases activation.alphaExtension with
+      ⟨suffix, nextAlphaExact, generated, _referenceAbove,
+        _executableAbove⟩
+    rw [nextAlphaExact, List.mem_append] at member
+    rcases member with old | fresh
+    · exact old
+    · obtain ⟨index, identityExact⟩ :=
+        generated queryIdentity name fresh
+      simp [queryIdentity] at identityExact
   have qtermExact : state.carrier.index.qterm = queryAtom := by
     rfl
+  have openQtermExact :
+      state.carrier.index.openConf.control.qterm = queryAtom := by
+    change
+      (PrologRepresentativeStepActivationBridge.activatedExecutableSuccessor
+        pPending pCopied [] queryAtom installed).qterm = queryAtom
+    calc
+      _ = pPending.pulled.toConf.qterm := by
+        exact
+          PrologRepresentativeStepActivationBridge.activatedExecutableSuccessor_qterm
+            pPending pCopied [] queryAtom installed
+      _ = pPending.installed.toConf.qterm := by
+        rw [frontier.pulledExact]
+      _ = pPending.outer.qterm := rfl
+      _ = initialOpenConf.control.qterm := by
+        rw [pEntry.entry.outer]
+      _ = initialOpenConf.toConf.qterm := rfl
+      _ = queryAtom := frontier.queryTerm.symm
   have worldExact :
       state.carrier.index.openConf.persistent.world = executableWorld := by
     change
@@ -1035,8 +1083,9 @@ theorem qMaterializedReadyAfterP
         (flattened ++ representative) []
     exact materialized
   refine
-    ⟨state, head, ready, rfl, rfl, rfl, rfl, rfl, rfl, currentExact,
-      databaseExact, worldExact, ?_, nextFreshOne, counterOne, ?_, ?_⟩
+    ⟨state, head, ready, rfl, rfl, rfl, rfl, rfl, rfl, rfl, currentExact,
+      supportExact, queryReading, querySupported, qtermExact, openQtermExact, databaseExact,
+      worldExact, ?_, nextFreshOne, counterOne, ?_, ?_⟩
   · simpa [head] using openedSingleton
   · rw [sourceExact]
     exact rootSourceSteps
@@ -1087,9 +1136,11 @@ theorem reachable_unbound_p_q_exact_prefix
           before after := by
   obtain
     ⟨before, head, ready, qPredicate, qPayload, qReferenceRest, qArguments,
-      qResult, qExecutableRest, beforeCurrent, beforeDatabase, _beforeWorld,
-      openedSingleton, beforeNextFresh, beforeCounter, rootSourceSteps,
-      rootFineSteps⟩ :=
+      qResult, qExecutableRest, _qExecutableTail, beforeCurrent, _beforeSupport,
+      _beforeQueryReading, _beforeQuerySupported, _beforeQterm,
+      _beforeOpenQterm,
+      beforeDatabase, _beforeWorld, openedSingleton, beforeNextFresh,
+      beforeCounter, rootSourceSteps, rootFineSteps⟩ :=
     qMaterializedReadyAfterP (prog := prog) (gt := gt)
   obtain
     ⟨count, skippedBranches, skippedClauses, finish, branch, clause,

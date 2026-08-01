@@ -508,6 +508,30 @@ theorem apply_has_mutualInstanceRenaming
       (firstFactors tree) (secondFactors tree)
   exact ⟨forward, backward, pairs, witness⟩
 
+/-- A residual variant of a variable image is itself a variable image.
+
+This is a structural consequence of mutual instantiation, not a choice of
+association-list orientation.  It is the stable interface for later
+sequential-MGU proofs: a selected representative may rename an unresolved
+variable, but it cannot silently ground it or replace it by a rigid tree. -/
+theorem apply_variable_exists_of_first
+    {first second : TreeSubstitution}
+    (variants : TreeSubstitutionVariants first second)
+    (tree : Tree) {source : LogicVar}
+    (firstExact :
+      TreeSubstitution.apply first tree = .variable source) :
+    ∃ target,
+      TreeSubstitution.apply second tree = .variable target := by
+  obtain ⟨forward, backward, pairs, witness⟩ :=
+    PLeaTTa.PrologMguVariantRenaming.TreeSubstitutionVariants.apply_has_mutualInstanceRenaming
+      variants tree
+  generalize secondExact :
+      TreeSubstitution.apply second tree = secondImage at witness
+  rw [firstExact] at witness
+  cases witness.derivation with
+  | «variable» leftIdentity rightIdentity =>
+      exact ⟨rightIdentity, rfl⟩
+
 end TreeSubstitutionVariants
 
 /-! ## Anti-vacuity: both factorization directions are load-bearing -/

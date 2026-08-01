@@ -897,38 +897,54 @@ end RepresentativeActivePayloadState
 
 namespace RepresentativeActivePayloadState
 
-/-- Source predecessor obtained by prepending one reflexive primitive
-equality to the active clause body. -/
-def reflexiveUnifyPredecessorSource
-    (state : RepresentativeActivePayloadState) (term : Term) : Search :=
+/-- Source predecessor obtained by prepending one primitive equality to the
+active clause body. -/
+def unifyPredecessorSource
+    (state : RepresentativeActivePayloadState) (left right : Term) : Search :=
   ActiveProductContext.plug state.carrier.index.context
     (activeSourceProduct state.carrier.index.callerScope
       state.carrier.index.opened state.carrier.index.finish
       state.carrier.index.branch state.carrier.index.branchTail
       state.carrier.index.current
-      (.unify term term :: state.carrier.index.bodyReferences)
+      (.unify left right :: state.carrier.index.bodyReferences)
       state.carrier.index.callerReferences)
+
+/-- Reflexive source predecessor retained as a compatibility specialization. -/
+def reflexiveUnifyPredecessorSource
+    (state : RepresentativeActivePayloadState) (term : Term) : Search :=
+  unifyPredecessorSource state term term
 
 /-- Fine predecessor with the matching executable equality at the literal
 leftmost control position. -/
-def reflexiveUnifyPredecessorOpenConf
-    (state : RepresentativeActivePayloadState) (atom : Atom) : OpenConf :=
+def unifyPredecessorOpenConf
+    (state : RepresentativeActivePayloadState)
+    (left right : Atom) : OpenConf :=
   { state.carrier.index.openConf with
     control :=
       { state.carrier.index.openConf.control with
         cur :=
           some
-            (.eq atom atom ::
+            (.eq left right ::
               (state.carrier.index.bodyExecutables ++
                 (state.carrier.index.callerExecutables ++
                   flattenExecutables state.carrier.index.outer)),
               state.carrier.index.runtime) } }
 
-/-- Prepend a reflexive equality to both exact lanes without changing the
-selected representative or any persistent/resource/payload datum. -/
-def beforeReflexiveUnify
-    (state : RepresentativeActivePayloadState) (term : Term) (atom : Atom)
-    (reading : AlphaTermAgrees state.carrier.index.alpha term atom) :
+/-- Reflexive fine predecessor retained as a compatibility specialization. -/
+def reflexiveUnifyPredecessorOpenConf
+    (state : RepresentativeActivePayloadState) (atom : Atom) : OpenConf :=
+  unifyPredecessorOpenConf state atom atom
+
+/-- Prepend one source/executable primitive equality to both exact lanes
+without changing the selected representative or any
+persistent/resource/payload datum. -/
+def beforeUnify
+    (state : RepresentativeActivePayloadState)
+    (left right : Term) (executableLeft executableRight : Atom)
+    (leftReading :
+      AlphaTermAgrees state.carrier.index.alpha left executableLeft)
+    (rightReading :
+      AlphaTermAgrees state.carrier.index.alpha right executableRight) :
     RepresentativeActivePayloadState :=
   let oldAgreement := state.carrier.agreement
   let oldControl := oldAgreement.core.control
@@ -940,9 +956,10 @@ def beforeReflexiveUnify
         state.carrier.index.referenceBase state.carrier.index.current
         state.carrier.index.runtime
         ({ barrier := state.carrier.index.bodyBarrier
-           references := .unify term term :: state.carrier.index.bodyReferences
+           references := .unify left right :: state.carrier.index.bodyReferences
            executables :=
-             .eq atom atom :: state.carrier.index.bodyExecutables } ::
+             .eq executableLeft executableRight ::
+               state.carrier.index.bodyExecutables } ::
          { barrier := state.carrier.index.callerBarrier
            references := state.carrier.index.callerReferences
            executables := state.carrier.index.callerExecutables } ::
@@ -950,9 +967,10 @@ def beforeReflexiveUnify
     { data := oldPayload.data
       control :=
         .cons
-          (.cons (.unify reading reading) oldPayload.control.head)
+          (.cons (.unify leftReading rightReading) oldPayload.control.head)
           oldPayload.control.tail }
-  let nextOpen := reflexiveUnifyPredecessorOpenConf state atom
+  let nextOpen :=
+    unifyPredecessorOpenConf state executableLeft executableRight
   let nextReady :
       SpinedReadyTaskRelates state.carrier.index.freshFrontier
         state.carrier.index.alpha state.carrier.index.support
@@ -960,20 +978,21 @@ def beforeReflexiveUnify
         state.carrier.index.session state.carrier.index.current
         state.carrier.index.runtime state.carrier.index.qterm
         ({ barrier := state.carrier.index.bodyBarrier
-           references := .unify term term :: state.carrier.index.bodyReferences
+           references := .unify left right :: state.carrier.index.bodyReferences
            executables :=
-             .eq atom atom :: state.carrier.index.bodyExecutables } ::
+             .eq executableLeft executableRight ::
+               state.carrier.index.bodyExecutables } ::
          { barrier := state.carrier.index.callerBarrier
            references := state.carrier.index.callerReferences
            executables := state.carrier.index.callerExecutables } ::
          state.carrier.index.outer)
         nextOpen :=
     ⟨by
-      simpa [nextOpen, reflexiveUnifyPredecessorOpenConf] using oldReady.1,
-      by simp [nextOpen, reflexiveUnifyPredecessorOpenConf,
+      simpa [nextOpen, unifyPredecessorOpenConf] using oldReady.1,
+      by simp [nextOpen, unifyPredecessorOpenConf,
         flattenExecutables, ControlSegment.executableGoals],
       by
-        simpa [nextOpen, reflexiveUnifyPredecessorOpenConf] using
+        simpa [nextOpen, unifyPredecessorOpenConf] using
           oldReady.2.2.1,
       nextPayload⟩
   let nextControl :
@@ -985,8 +1004,9 @@ def beforeReflexiveUnify
         state.carrier.index.branch state.carrier.index.branchTail
         state.carrier.index.altTail state.carrier.index.bodyBarrier
         state.carrier.index.callerBarrier
-        (.unify term term :: state.carrier.index.bodyReferences)
-        (.eq atom atom :: state.carrier.index.bodyExecutables)
+        (.unify left right :: state.carrier.index.bodyReferences)
+        (.eq executableLeft executableRight ::
+          state.carrier.index.bodyExecutables)
         state.carrier.index.callerReferences
         state.carrier.index.callerExecutables state.carrier.index.outer
         state.carrier.index.current state.carrier.index.runtime
@@ -994,15 +1014,15 @@ def beforeReflexiveUnify
     { ready := nextReady
       sessionAdvanced := oldControl.sessionAdvanced
       retainedAlts := by
-        simpa [nextOpen, reflexiveUnifyPredecessorOpenConf] using
+        simpa [nextOpen, unifyPredecessorOpenConf] using
           oldControl.retainedAlts
       retainedAltsZero := oldControl.retainedAltsZero
       retainedBarriers := by
-        simpa [nextOpen, reflexiveUnifyPredecessorOpenConf] using
+        simpa [nextOpen, unifyPredecessorOpenConf] using
           oldControl.retainedBarriers
       bodyBarrierTag := oldControl.bodyBarrierTag
       frames := by
-        simpa [nextOpen, reflexiveUnifyPredecessorOpenConf] using
+        simpa [nextOpen, unifyPredecessorOpenConf] using
           oldControl.frames }
   let nextCore :
       SpinedActiveProductResourceRelatesAt
@@ -1013,8 +1033,9 @@ def beforeReflexiveUnify
         state.carrier.index.finish state.carrier.index.branch
         state.carrier.index.branchTail state.carrier.index.altTail
         state.carrier.index.bodyBarrier state.carrier.index.callerBarrier
-        (.unify term term :: state.carrier.index.bodyReferences)
-        (.eq atom atom :: state.carrier.index.bodyExecutables)
+        (.unify left right :: state.carrier.index.bodyReferences)
+        (.eq executableLeft executableRight ::
+          state.carrier.index.bodyExecutables)
         state.carrier.index.callerReferences
         state.carrier.index.callerExecutables state.carrier.index.outer
         state.carrier.index.current state.carrier.index.runtime
@@ -1022,7 +1043,7 @@ def beforeReflexiveUnify
         state.carrier.index.resources state.carrier.index.callerScope
         state.carrier.index.outerScope state.carrier.index.context
         state.carrier.index.baseAlts
-        (reflexiveUnifyPredecessorSource state term) nextOpen :=
+        (unifyPredecessorSource state left right) nextOpen :=
     { control := nextControl
       resourceStack := by
         rcases oldAgreement.core.resourceStack with
@@ -1033,7 +1054,7 @@ def beforeReflexiveUnify
           ⟨activeRest, activeQuery, activeBarrier, activeAlts,
             activeFinalCounter, activeOwnership, outerAlignment,
             suspendedOuterAlts, by
-              simpa [nextOpen, reflexiveUnifyPredecessorOpenConf] using
+              simpa [nextOpen, unifyPredecessorOpenConf] using
                 actualAlts⟩
       sourceShape := rfl }
   let nextAgreement :
@@ -1045,8 +1066,9 @@ def beforeReflexiveUnify
         state.carrier.index.finish state.carrier.index.branch
         state.carrier.index.branchTail state.carrier.index.altTail
         state.carrier.index.bodyBarrier state.carrier.index.callerBarrier
-        (.unify term term :: state.carrier.index.bodyReferences)
-        (.eq atom atom :: state.carrier.index.bodyExecutables)
+        (.unify left right :: state.carrier.index.bodyReferences)
+        (.eq executableLeft executableRight ::
+          state.carrier.index.bodyExecutables)
         state.carrier.index.callerReferences
         state.carrier.index.callerExecutables state.carrier.index.outer
         state.carrier.index.current state.carrier.index.runtime
@@ -1054,11 +1076,11 @@ def beforeReflexiveUnify
         state.carrier.index.resources state.carrier.index.callerScope
         state.carrier.index.outerScope state.carrier.index.context
         state.carrier.index.baseAlts
-        (reflexiveUnifyPredecessorSource state term) nextOpen
+        (unifyPredecessorSource state left right) nextOpen
         state.carrier.payloadContext :=
     { core := nextCore
       endpointsCurrent := by
-        simpa [nextOpen, reflexiveUnifyPredecessorOpenConf] using
+        simpa [nextOpen, unifyPredecessorOpenConf] using
           oldAgreement.endpointsCurrent
       activationOrdered := oldAgreement.activationOrdered }
   let nextCarrier := ActivePayloadState.ofAgreement nextAgreement
@@ -1067,6 +1089,14 @@ def beforeReflexiveUnify
     cumulative := by
       simpa [nextCarrier, ActivePayloadState.ofAgreement] using
         state.cumulative }
+
+/-- Prepend a reflexive equality to both exact lanes without changing the
+selected representative or any persistent/resource/payload datum. -/
+def beforeReflexiveUnify
+    (state : RepresentativeActivePayloadState) (term : Term) (atom : Atom)
+    (reading : AlphaTermAgrees state.carrier.index.alpha term atom) :
+    RepresentativeActivePayloadState :=
+  beforeUnify state term term atom atom reading reading
 
 /-- Exact flattened continuation after consuming the active primitive
 equality. -/
@@ -1153,9 +1183,9 @@ theorem unifyIndex_beforeReflexiveUnify
         (bodyExecutables ++ (callerExecutables ++ flattenExecutables outer),
           runtime) at currentControl
   change openConf.control.qterm = qterm at queryTerm
-  simp [unifyIndex, beforeReflexiveUnify, unifyExecutableTail, unifySource,
-    unifyOpenConf, reflexiveUnifyPredecessorSource,
-    reflexiveUnifyPredecessorOpenConf, unifySuccessor,
+  simp [unifyIndex, beforeReflexiveUnify, beforeUnify, unifyExecutableTail,
+    unifySource, unifyOpenConf, unifyPredecessorSource,
+    unifyPredecessorOpenConf, unifySuccessor,
     ActivePayloadState.ofAgreement, sourceShape.symm, trimmed]
   apply OpenConf.eq_of_toConf_eq_of_frames_eq_of_scopes_eq
   · rw [OpenConf.stepOpen_toConf]
@@ -1266,6 +1296,90 @@ theorem representative_ne_of_executableExtension_ne_nil
     after.representative ≠ before.representative := by
   intro same
   exact nonempty (facts.executableExtension_eq_nil_of_representative_eq same)
+
+/-- A selected successor that changes the denotation of any tree under one
+fixed carried base must have a nonempty executable residual extension.
+
+Unlike a length-only endpoint test, this discriminator can be discharged by
+an independently transported materialized value.  It therefore exposes the
+semantic work performed by the residual without fixing its concrete fresh
+variable spelling. -/
+theorem executableExtension_ne_nil_of_apply_ne
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : RepresentativeActivePayloadState}
+    {left right : Term} {result : Substitution}
+    {bodyRest : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutableTail : List PLeaTTa.Goal}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installed : Subst}
+    (facts :
+      RepresentativeUnifySuccessorFacts prog gt before after left right result
+        bodyRest bodyExecutableTail sourceExtension executableExtension
+        generated installed)
+    {base : TreeSubstitution} {tree : Tree}
+    (changed :
+      TreeSubstitution.apply (after.representative ++ base) tree ≠
+        TreeSubstitution.apply (before.representative ++ base) tree) :
+    executableExtension ≠ [] := by
+  intro empty
+  apply changed
+  rw [facts.representativeExact, empty]
+  rfl
+
+/-- Transport one already-materialized call head through the selected
+primitive-unification successor and its executable trimming step.
+
+The exact call must occur in the retained body tail.  This premise is what
+licenses trim preservation; the literal successor representative is taken
+from `representativeExact`, never reselected through a variants relation. -/
+theorem materializedCallAgreesWith
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : RepresentativeActivePayloadState}
+    {left right : Term} {result : Substitution}
+    {bodyRest : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutableTail : List PLeaTTa.Goal}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installed : Subst}
+    (facts :
+      RepresentativeUnifySuccessorFacts prog gt before after left right result
+        bodyRest bodyExecutableTail sourceExtension executableExtension
+        generated installed)
+    {referencePayload : List Term} {executableArguments : List Atom}
+    {executableResult : Atom} {predicate : String}
+    (materialized :
+      PrologRecursiveCallPayloadBridge.MaterializedCallAgreesWith
+        before.carrier.index.alpha before.carrier.index.current
+        referencePayload
+        (executableArguments.map
+          (PLeaTTa.subst before.carrier.index.runtime))
+        (PLeaTTa.subst before.carrier.index.runtime executableResult)
+        before.representative before.carrier.index.referenceBase)
+    (callMember :
+      PLeaTTa.Goal.call predicate executableArguments executableResult ∈
+        bodyExecutableTail) :
+    PrologRecursiveCallPayloadBridge.MaterializedCallAgreesWith
+      after.carrier.index.alpha after.carrier.index.current referencePayload
+      (executableArguments.map
+        (PLeaTTa.subst after.carrier.index.runtime))
+      (PLeaTTa.subst after.carrier.index.runtime executableResult)
+      after.representative after.carrier.index.referenceBase := by
+  obtain
+    ⟨_spelling, _executableLeft, _executableRight, _leftAgreement,
+      _rightAgreement, _executableHead, selected⟩ :=
+    facts.selectedExecution
+  have untrimmed :=
+    PrologRecursiveCallPayloadBridge.MaterializedCallAgreesWith.afterSelectedUnify
+      materialized selected
+  have trimmed :=
+    PrologRecursiveCallPayloadBridge.MaterializedCallAgreesWith.trimFor
+      untrimmed
+      (RepresentativeActivePayloadState.unifyExecutableTail before
+        bodyExecutableTail)
+      before.carrier.index.qterm selected.installedTopological predicate
+      (by
+        exact List.mem_append.mpr (Or.inl callMember))
+  rw [facts.afterIndexExact, facts.representativeExact]
+  simpa [RepresentativeActivePayloadState.unifyIndex] using trimmed
 
 end RepresentativeUnifySuccessorFacts
 
@@ -1387,7 +1501,8 @@ theorem reflexiveUnifyFacts
             RepresentativeActivePayloadState.unifyExecutableTail before
               state.carrier.index.bodyExecutables,
             before.carrier.index.runtime) := by
-    simp [before, beforeReflexiveUnify, reflexiveUnifyPredecessorOpenConf,
+    simp [before, beforeReflexiveUnify, beforeUnify,
+      unifyPredecessorOpenConf,
       RepresentativeActivePayloadState.unifyExecutableTail,
       ActivePayloadState.ofAgreement]
   have afterIndexExact :=
@@ -1421,17 +1536,20 @@ theorem reflexiveUnifyFacts
       fineStep := fineStep
       representativeExact := ?_
       payloadCellsExact := ?_ }
-  · simpa [before, beforeReflexiveUnify, ActivePayloadState.ofAgreement] using
+  · simpa [before, beforeReflexiveUnify, beforeUnify,
+      ActivePayloadState.ofAgreement] using
       reading
-  · simpa [before, beforeReflexiveUnify, ActivePayloadState.ofAgreement] using
+  · simpa [before, beforeReflexiveUnify, beforeUnify,
+      ActivePayloadState.ofAgreement] using
       reading
-  · simp [beforeReflexiveUnify, ActivePayloadState.ofAgreement]
+  · simp [beforeReflexiveUnify, beforeUnify,
+      ActivePayloadState.ofAgreement]
   · rfl
 
 /-- Produce the literal active successor while retaining the selected old and
 new residual orientations.  Existential elimination stays inside `Prop`; the
 returned Type carrier itself stores every chosen datum in its indices. -/
-theorem exists_afterUnifySuccess
+theorem exists_afterUnifySuccessLive
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     (before : RepresentativeActivePayloadState)
     {left right : Term} {result : Substitution}
@@ -1444,11 +1562,8 @@ theorem exists_afterUnifySuccess
     (rightSupported :
       AlphaTreeSupported before.carrier.index.alpha
         before.carrier.index.support (Term.denote right))
-    (supportIncluded :
-      ∀ pair, pair ∈ before.carrier.index.support →
-        pair ∈ before.carrier.index.alpha)
-    (safe :
-      ReadyUnifyContinuationSafe before.carrier.index.support
+    (continuationLive :
+      ReadyUnifyContinuationLive before.carrier.index.support
         before.carrier.index.openConf)
     (resolved :
       UnifyResolution before.carrier.index.current left right result) :
@@ -1484,9 +1599,9 @@ theorem exists_afterUnifySuccess
       sourceExtension, executableExtension, generated, installed,
       leftAgreement, rightAgreement, executableHead, selectedSuccess,
       sourceStep, fineStep, nextAgreement, nextSelected⟩ :=
-    PLeaTTa.PrologCurrentSessionUnifyTransitionBridge.SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccessWith
+    PLeaTTa.PrologCurrentSessionUnifyTransitionBridge.SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccessWithLive
       activeAgreement before.cumulative leftSupported rightSupported
-      supportIncluded safe resolved
+      continuationLive resolved
   let nextCarrier := ActivePayloadState.ofAgreement nextAgreement
   let after : RepresentativeActivePayloadState :=
     { carrier := nextCarrier
@@ -1509,6 +1624,39 @@ theorem exists_afterUnifySuccess
   · rfl
   · simpa [after, nextCarrier, ActivePayloadState.ofAgreement] using sourceStep
   · simpa [after, nextCarrier, ActivePayloadState.ofAgreement] using fineStep
+
+/-- Compatibility producer for callers carrying the older conservative
+runtime-avoidance and support-inclusion premises. -/
+theorem exists_afterUnifySuccess
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativeActivePayloadState)
+    {left right : Term} {result : Substitution}
+    {bodyRest : List PeTTaSpec.PrologCore.Goal}
+    (referenceHead :
+      before.carrier.index.bodyReferences = .unify left right :: bodyRest)
+    (leftSupported :
+      AlphaTreeSupported before.carrier.index.alpha
+        before.carrier.index.support (Term.denote left))
+    (rightSupported :
+      AlphaTreeSupported before.carrier.index.alpha
+        before.carrier.index.support (Term.denote right))
+    (_supportIncluded :
+      ∀ pair, pair ∈ before.carrier.index.support →
+        pair ∈ before.carrier.index.alpha)
+    (safe :
+      ReadyUnifyContinuationSafe before.carrier.index.support
+        before.carrier.index.openConf)
+    (resolved :
+      UnifyResolution before.carrier.index.current left right result) :
+    ∃ bodyExecutableTail : List PLeaTTa.Goal,
+      ∃ sourceExtension executableExtension : TreeSubstitution,
+      ∃ generated installed : Subst,
+      ∃ after : RepresentativeActivePayloadState,
+        RepresentativeUnifySuccessorFacts prog gt before after left right
+          result bodyRest bodyExecutableTail sourceExtension
+          executableExtension generated installed :=
+  PLeaTTa.PrologHeterogeneousPrefixBridge.RepresentativeActivePayloadState.exists_afterUnifySuccessLive
+    before referenceHead leftSupported rightSupported safe.live resolved
 
 end RepresentativeActivePayloadState
 

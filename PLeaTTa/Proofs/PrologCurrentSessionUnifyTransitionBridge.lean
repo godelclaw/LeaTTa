@@ -25,6 +25,7 @@ open PrologControlSegmentSpineBridge
 open PrologCurrentSessionPayloadBridge
 open PrologCurrentSessionPayloadTransitionBridge
 open PrologGoalAlpha
+open PrologMguBridge
 open PrologMguComposition
 open PrologOrdinaryStepBridge
 open PrologProductResourceContextBridge
@@ -55,7 +56,7 @@ The support and liveness premises are the same explicit obligations as the
 leaf theorem.  They prevent a successful executable unifier or its subsequent
 `trimFor` from losing an alpha link that remains observable in the flattened
 body/caller/outer continuation. -/
-theorem SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccessWith
+theorem SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccessWithLive
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {freshFrontier : FreshFrontierRelation}
     {alpha support : List (LogicVar × String)}
@@ -98,9 +99,7 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccessWith
       AlphaTreeSupported alpha support (Term.denote left))
     (rightSupported :
       AlphaTreeSupported alpha support (Term.denote right))
-    (supportIncluded :
-      ∀ pair, pair ∈ support → pair ∈ alpha)
-    (safe : ReadyUnifyContinuationSafe support state)
+    (continuationLive : ReadyUnifyContinuationLive support state)
     (resolved : UnifyResolution current left right result) :
     ∃ (spelling :
           NormalizedAlphaGoalsAgree.ExecutableUnifySpelling)
@@ -178,12 +177,17 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccessWith
               (bodyExecutableTail ++
                 (callerExecutables ++ flattenExecutables outer)),
               runtime) := by rfl
-  obtain ⟨runtimeAvoids, live⟩ := safe executableHead
+  have live :
+      AlphaRuntimeNamesLive support
+        (bodyExecutableTail ++
+          (callerExecutables ++ flattenExecutables outer))
+        state.control.qterm :=
+    continuationLive executableHead
   obtain
     ⟨sourceExtension, executableExtension, generated, selectedSuccess⟩ :=
-    bodyPayload.data.afterUnifySuccessDataWith_of_equivalent selected
+    bodyPayload.data.afterUnifySuccessDataWith_of_equivalentGeneral selected
       (by intro binding; rfl) leftAgreement rightAgreement leftSupported
-      rightSupported supportIncluded runtimeAvoids resolved
+      rightSupported resolved
   let installed :=
     PrologMguComposition.installGenerated generated runtime
   have installedExact :
@@ -343,6 +347,100 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccessWith
       sourceStep, executableStep,
       ⟨nextCore, nextEndpoints, agreement.activationOrdered⟩,
       by simpa [executableTail] using nextSelected⟩
+
+/-- Compatibility entry point for callers carrying the older conservative
+runtime-avoidance invariant.  Only its liveness projection is needed by the
+arbitrary-base proof. -/
+theorem SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccessWith
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase : Substitution}
+    {opened : OpenedCall} {session : Session}
+    {pending : DemandDrivenCallStep.PendingCall}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {left right : Term} {result : Substitution}
+    {bodyRest : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {state : OpenConf}
+    {payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context}
+    (agreement :
+      SpinedActiveProductPayloadResourceRelatesAt freshFrontier alpha support
+        canonical referenceBase opened session pending finish branch branchTail
+        altTail bodyBarrier callerBarrier
+        (.unify left right :: bodyRest) bodyExecutables callerReferences
+        callerExecutables outer current runtime qterm active resources
+        callerScope outerScope context baseAlts source state payloadContext)
+    (selected :
+      AlphaCumulativeResidualVariantAgreesOnWith alpha support canonical
+        referenceBase runtime representative)
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote left))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote right))
+    (_supportIncluded :
+      ∀ pair, pair ∈ support → pair ∈ alpha)
+    (safe : ReadyUnifyContinuationSafe support state)
+    (resolved : UnifyResolution current left right result) :
+    ∃ (spelling :
+          NormalizedAlphaGoalsAgree.ExecutableUnifySpelling)
+        (executableLeft executableRight : Atom)
+        (bodyExecutableTail : List PLeaTTa.Goal)
+        (sourceExtension executableExtension : TreeSubstitution)
+        (generated installed : Subst),
+      let executableTail :=
+        bodyExecutableTail ++
+          (callerExecutables ++ flattenExecutables outer)
+      let executableAfter :=
+        unifySuccessor state executableTail installed
+      let nextSource :=
+        ActiveProductContext.plug context
+          (activeSourceProduct callerScope opened finish branch branchTail
+            result bodyRest callerReferences)
+      AlphaTermAgrees alpha left executableLeft ∧
+        AlphaTermAgrees alpha right executableRight ∧
+        state.control.cur =
+          some
+            (spelling.goal executableLeft executableRight ::
+              executableTail,
+              runtime) ∧
+        SelectedUnifySuccessData alpha support canonical representative
+          referenceBase current runtime left right left right executableLeft
+          executableRight result sourceExtension executableExtension generated
+          installed ∧
+        RawStep session source [] .none session
+          (.running nextSource) ∧
+        DemandDrivenCallStep.Step prog gt (.ready state)
+          (.ready executableAfter) ∧
+        SpinedActiveProductPayloadResourceRelatesAt freshFrontier alpha support
+          (sourceExtension ++ canonical) referenceBase opened session pending
+          finish branch branchTail altTail bodyBarrier callerBarrier bodyRest
+          bodyExecutableTail callerReferences callerExecutables outer result
+          (PLeaTTa.trimFor executableTail qterm installed) qterm active
+          resources callerScope outerScope context baseAlts nextSource
+          executableAfter payloadContext ∧
+        AlphaCumulativeResidualVariantAgreesOnWith alpha support
+          (sourceExtension ++ canonical) referenceBase
+          (PLeaTTa.trimFor executableTail qterm installed)
+          (executableExtension ++ representative) :=
+  PLeaTTa.PrologCurrentSessionUnifyTransitionBridge.SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccessWithLive
+    agreement selected leftSupported rightSupported safe.live resolved
 
 /-- Compatibility view which forgets the selected predecessor and successor
 representatives.  Its proof is only a projection of

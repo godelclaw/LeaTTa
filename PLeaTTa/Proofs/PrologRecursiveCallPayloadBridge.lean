@@ -374,6 +374,130 @@ structure MaterializedCallAgreesWith
           atom)
       referencePayload (materializedArguments ++ [materializedResult])
 
+/-- A selected primitive-unification residual transports an already
+materialized recursive-call head without reintroducing raw source support.
+
+The executable residual is applied through its unrestricted alpha valuation;
+the literal representative orientation is extended syntactically, while the
+source side uses the exact selected result substitution. -/
+theorem MaterializedCallAgreesWith.afterSelectedUnify
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Subst}
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Atom}
+    {result : Substitution}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installed : Subst}
+    {referencePayload : List Term} {executableArguments : List Atom}
+    {executableResult : Atom}
+    (materialized :
+      MaterializedCallAgreesWith alpha current referencePayload
+        (executableArguments.map (PLeaTTa.subst runtime))
+        (PLeaTTa.subst runtime executableResult) representative referenceBase)
+    (selected :
+      SelectedUnifySuccessData alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated installed) :
+    MaterializedCallAgreesWith alpha result referencePayload
+      (executableArguments.map (PLeaTTa.subst installed))
+      (PLeaTTa.subst installed executableResult)
+      (executableExtension ++ representative) referenceBase := by
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · simpa only [List.append_assoc] using
+      selected.topExact.successorVariants
+  · exact treeSubstitutionVariablesSatisfy_append
+      selected.topExact.executableExtensionCovered
+      materialized.residualCovered
+  · intro entry member
+    rw [selected.topExact.sourceConcreteResultShape]
+    exact List.mem_append.mpr
+      (Or.inr (materialized.olderBaseIncluded entry member))
+  · have transported :
+        List.Forall₂
+          (fun term atom =>
+            CanonicalRuntimeAgrees alpha
+              (TreeSubstitution.apply
+                ((executableExtension ++ representative) ++
+                  Substitution.denote referenceBase)
+                (Term.denote term))
+              (PLeaTTa.subst generated atom))
+          referencePayload
+          (executableArguments.map (PLeaTTa.subst runtime) ++
+            [PLeaTTa.subst runtime executableResult]) := by
+      exact materialized.arguments.imp (by
+        intro term atom agreement
+        have lifted := canonicalRuntimeAgrees_apply agreement
+          selected.topExact.generatedValuation
+        simpa only [List.append_assoc,
+          TreeSubstitution.apply_append] using lifted)
+    have mapped := List.forall₂_map_right_iff.mpr transported
+    have installedArguments :
+        executableArguments.map (PLeaTTa.subst installed) =
+          executableArguments.map
+            (fun atom =>
+              PLeaTTa.subst generated (PLeaTTa.subst runtime atom)) := by
+      apply List.map_congr_left
+      intro atom _member
+      exact selected.subst_installed_eq_generated_after_runtime atom
+    rw [installedArguments,
+      selected.subst_installed_eq_generated_after_runtime executableResult]
+    simpa only [List.map_append, List.map_singleton, List.map_map,
+      Function.comp_def] using mapped
+
+/-- Trimming an installed runtime around an executable call leaves that
+call's materialized arguments and result unchanged.
+
+The exact call occurrence is load-bearing: it supplies every trim-root fact
+used below, so an unrelated runtime atom cannot be smuggled through. -/
+theorem MaterializedCallAgreesWith.trimFor
+    {alpha : List (LogicVar × String)}
+    {referenceBindings : Substitution} {referencePayload : List Term}
+    {executableArguments : List Atom} {executableResult : Atom}
+    {residualRepresentative : TreeSubstitution}
+    {olderBase : Substitution} {runtime : Subst}
+    (materialized :
+      MaterializedCallAgreesWith alpha referenceBindings referencePayload
+        (executableArguments.map (PLeaTTa.subst runtime))
+        (PLeaTTa.subst runtime executableResult) residualRepresentative
+        olderBase)
+    (goals : List PLeaTTa.Goal) (qterm : Atom)
+    (topological : Nonempty (PLeaTTa.SubstTopological runtime))
+    (predicate : String)
+    (callMember :
+      PLeaTTa.Goal.call predicate executableArguments executableResult ∈
+        goals) :
+    MaterializedCallAgreesWith alpha referenceBindings referencePayload
+      (executableArguments.map
+        (PLeaTTa.subst (PLeaTTa.trimFor goals qterm runtime)))
+      (PLeaTTa.subst (PLeaTTa.trimFor goals qterm runtime) executableResult)
+      residualRepresentative olderBase := by
+  obtain ⟨topological⟩ := topological
+  have preserved (atom : Atom)
+      (atomMember : atom ∈ executableResult :: executableArguments) :
+      PLeaTTa.subst (PLeaTTa.trimFor goals qterm runtime) atom =
+        PLeaTTa.subst runtime atom := by
+    exact PLeaTTa.subst_trimFor_eq_of_topological goals qterm runtime
+      topological atom (by
+        intro name nameMember
+        exact PLeaTTa.isTrimRoot_call_atom_of_mem goals qterm predicate
+          executableArguments executableResult atom name callMember atomMember
+          nameMember)
+  have argumentsPreserved :
+      executableArguments.map
+          (PLeaTTa.subst (PLeaTTa.trimFor goals qterm runtime)) =
+        executableArguments.map (PLeaTTa.subst runtime) := by
+    apply List.map_congr_left
+    intro atom member
+    exact preserved atom (by simp [member])
+  have resultPreserved :
+      PLeaTTa.subst (PLeaTTa.trimFor goals qterm runtime) executableResult =
+        PLeaTTa.subst runtime executableResult :=
+    preserved executableResult (by simp)
+  rw [argumentsPreserved, resultPreserved]
+  exact materialized
+
 /-- Every local-call head exposed by one activated source/executable body is
 materialized through the same explicit residual representative.
 

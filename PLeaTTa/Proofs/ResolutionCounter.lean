@@ -272,6 +272,28 @@ theorem ConfBelowResolutionCounter.replaceActive {conf : Conf}
   · exact below.qterm
   · exact below.answers
 
+/-- Prepending one primitive equality preserves the live-name bound when
+both new operands are already below the current allocation counter.  Unlike
+`replaceActiveEq`, this form does not require the operands to originate in
+the old active goals; a query term already bounded elsewhere in the
+configuration is a legitimate equality operand. -/
+theorem ConfBelowResolutionCounter.prependEq {conf : Conf}
+    (below : ConfBelowResolutionCounter conf) (goals : List Goal)
+    (binding : Subst) (hcur : conf.cur = some (goals, binding))
+    (left right : Atom)
+    (leftBelow : resolutionSeedHighWaterNames left.vars ≤ conf.counter)
+    (rightBelow : resolutionSeedHighWaterNames right.vars ≤ conf.counter) :
+    ConfBelowResolutionCounter
+      { conf with cur := some (Goal.eq left right :: goals, binding) } := by
+  apply ConfBelowResolutionCounter.of_components
+  · have oldBelow := below.active goals binding hcur
+    simp only [resolutionCurVars, specializationGoalsVars,
+      specializationGoalVars, resolutionSeedHighWaterNames_append] at oldBelow ⊢
+    omega
+  · exact below.alts
+  · exact below.qterm
+  · exact below.answers
+
 @[simp] theorem resolutionSeedHighWaterName_append_compact
     (name : String) (seed : Nat) :
     resolutionSeedHighWaterName (name ++ resolutionCompactSuffix seed) =

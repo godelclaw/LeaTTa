@@ -64,6 +64,18 @@ inductive CanonicalRuntimeAgrees
       CanonicalRuntimeAgrees alpha
         (.node .cons [headTree, tailTree]) (consC headAtom tailAtom)
 
+/-- A canonical integer tree has exactly one executable reading.  This is
+the rigid-observation eliminator dual to the `integer` constructor and avoids
+dependent destruction at callers whose runtime atom is itself indexed by a
+substitution computation. -/
+theorem CanonicalRuntimeAgrees.integer_atom
+    {alpha : List (LogicVar × String)} {value : Int} {atom : Atom}
+    (agreement :
+      CanonicalRuntimeAgrees alpha (.node (.integer value) []) atom) :
+    atom = .gnd (.int value) := by
+  cases agreement
+  rfl
+
 mutual
 
 /-- Alpha agreement implies the normalized canonical-tree/runtime relation. -/
