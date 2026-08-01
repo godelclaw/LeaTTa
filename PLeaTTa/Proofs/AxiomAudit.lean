@@ -2320,6 +2320,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.installPredicateClause_coherent_of_no_descendants
 #print axioms PLeaTTa.wactDispatch_assertaPredicate
 #print axioms PLeaTTa.wactDispatch_assertzPredicate
+#print axioms PLeaTTa.wactDispatch_retractPredicate_missing
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.asserta_of_projection
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.assertz_of_projection
 #print axioms PLeaTTa.PrologDatabaseActionStepBridge.AssertionOperation.mutation

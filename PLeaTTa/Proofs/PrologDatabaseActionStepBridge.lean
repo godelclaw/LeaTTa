@@ -31,10 +31,11 @@ does not call those traces equal.  `SourceDatabaseEffectErasure` names the
 projection explicitly: erasure is licensed only by the exact declarative
 mutation and by related persistent states on both sides.
 
-Retraction is absent deliberately.  The current executable uses alpha-key
-matching, drops the pattern binding, and fails without the pinned `false`
-fallback.  Those measured divergences remain FAIL rows; premises excluding
-them would not constitute a retract correspondence.
+Retraction is absent deliberately.  The executable now preserves the pinned
+`false` fallback for a decoded missing pattern, but its successful path still
+uses alpha-key matching and drops the pattern binding.  That remaining
+measured divergence stays a FAIL row; premises excluding it would not
+constitute a retract correspondence.
 -/
 
 /-- The two assertion operations whose current source and executable

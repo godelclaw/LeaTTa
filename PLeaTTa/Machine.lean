@@ -5205,8 +5205,13 @@ theorem installPredicateClause_coherent_of_no_descendants
   apply PWorld.replaceProgClauses_coherent
   exact coherent
 
-/-- Retract the first alpha-equivalent clause of the named predicate. -/
-private def retractPredicateClause (w : PWorld) (functor : String)
+/-- Retract the first alpha-equivalent clause of the named predicate.
+
+This is the historical executable matcher.  The exact first-unifying,
+binding-producing PeTTa matcher is specified separately; keeping this helper
+public makes the remaining semantic mismatch visible to proof clients rather
+than hiding it behind `wactDispatch`. -/
+def retractPredicateClause (w : PWorld) (functor : String)
     (clause : Clause) : Option PWorld :=
   let key := clauseAlphaKey clause
   let base := w.invalidateSpecializations functor
@@ -5311,8 +5316,9 @@ private def wactDispatchRaw (w : PWorld) (gt : GroundingTable) (counter : Nat)
         pure (trueA, installPredicateClause w false functor clause, counter + 1)
     | "retractPredicate", [value] => do
         let (functor, clause) ← predicateClause? gt value
-        let world ← retractPredicateClause w functor clause
-        pure (trueA, world, counter)
+        match retractPredicateClause w functor clause with
+        | some world => pure (trueA, world, counter)
+        | none => pure (Atom.sym "False", w, counter)
     | "process_metta_string", [.gnd (.str source)] => do
         let (world, nextCounter) ← processMettaString? w gt counter source
         pure (nilA, world, nextCounter)
@@ -5449,6 +5455,22 @@ theorem wactDispatch_assertzPredicate
   simp [decoded, advanceCounterPastAtoms, resolutionSeedHighWaterAtoms,
     resolutionSeedHighWaterAtom, resolutionSeedHighWaterNames, trueA,
     Atom.vars]
+
+/-- A decoded retract pattern with no historical alpha-key match takes
+PeTTa's explicit `false` fallback, leaves the world unchanged, and remains a
+successful world-action dispatch.  This is the second pinned clause at
+`metta.pl:280`; it is deliberately distinct from malformed payload failure. -/
+theorem wactDispatch_retractPredicate_missing
+    (w : PWorld) (gt : GroundingTable) (counter : Nat) (value : Atom)
+    (functor : String) (clause : Clause)
+    (decoded : predicateClause? gt value = some (functor, clause))
+    (missing : retractPredicateClause w functor clause = none) :
+    wactDispatch w gt counter "retractPredicate" [value] =
+      some (Atom.sym "False", w, counter) := by
+  unfold wactDispatch wactDispatchRaw
+  simp [decoded, missing, advanceCounterPastAtoms,
+    resolutionSeedHighWaterAtoms, resolutionSeedHighWaterAtom,
+    resolutionSeedHighWaterNames, Atom.vars]
 
 /-- Prepared fast path for ordinary `add-atom`.  Rule-shaped atoms retain the
 full compiler dispatch; data atoms reuse insertion metadata while producing
