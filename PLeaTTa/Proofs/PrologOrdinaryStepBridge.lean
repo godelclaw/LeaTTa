@@ -1174,6 +1174,295 @@ the old source and hidden-runtime canonical states are variant bases; the
 source and executable residual MGUs therefore produce variant cumulative
 successors even when the compiler reverses the equation operands and both
 residual orientations differ. -/
+structure SelectedUnifyTopExact
+    (alpha support : List (LogicVar × String))
+    (canonical representative : TreeSubstitution)
+    (referenceBase current : Substitution) (runtime : Metta.Subst)
+    (sourceLeft sourceRight runtimeLeft runtimeRight : Term)
+    (executableLeft executableRight : Metta.Atom)
+    (result : Substitution)
+    (sourceExtension executableExtension : TreeSubstitution)
+    (generated : Metta.Subst) : Prop where
+  bases :
+    TreeSubstitutionVariants
+      (canonical ++ Substitution.denote referenceBase)
+      (representative ++ Substitution.denote referenceBase)
+  canonicalTopological : TreeSubstitutionTopological canonical
+  representativeCovered :
+    TreeSubstitutionVariablesSatisfy
+      (AlphaCovers alpha) representative
+  oldValuation :
+    AlphaValuationAgreesOn alpha support
+      (representative ++ Substitution.denote referenceBase) runtime
+  sourceExtensionOrdered :
+    OrderedTreeMgu
+      (carriedUnifyEquation
+        (canonical ++ Substitution.denote referenceBase)
+        sourceLeft sourceRight)
+      sourceExtension
+  sourceExtensionMgu :
+    TreeIsMgu sourceExtension
+      (TreeSubstitution.applyEquations
+        (canonical ++ Substitution.denote referenceBase)
+        [(Term.denote sourceLeft, Term.denote sourceRight)])
+  sourceExtensionWellFormed : sourceExtension.WellFormed
+  sourceConcreteResultShape :
+    result = TreeSubstitution.reify sourceExtension ++ current
+  executableMgu :
+    TreeIsMgu executableExtension
+      (TreeSubstitution.applyEquations
+        (representative ++ Substitution.denote referenceBase)
+        [(Term.denote runtimeLeft, Term.denote runtimeRight)])
+  sourceResultShape :
+    Substitution.denote result =
+      sourceExtension ++
+        (canonical ++ Substitution.denote referenceBase)
+  successorVariants :
+    TreeSubstitutionVariants
+      (Substitution.denote result)
+      (executableExtension ++
+        (representative ++ Substitution.denote referenceBase))
+  generatedExact :
+    PLeaTTa.unifyTopExact
+        (PLeaTTa.subst runtime executableLeft)
+        (PLeaTTa.subst runtime executableRight) =
+      some generated
+  generatedValuation :
+    AlphaValuationAgrees alpha executableExtension generated
+  executableExtensionCovered :
+    TreeSubstitutionVariablesSatisfy
+      (AlphaCovers alpha) executableExtension
+  executableTopological :
+    TreeSubstitutionTopological executableExtension
+  generatedTopological : Nonempty (PLeaTTa.SubstTopological generated)
+  runtimeTopological : Nonempty (PLeaTTa.SubstTopological runtime)
+
+/-- The empty executable residual substitution preserves every alpha-linked
+variable literally.  This is the identity element used by reflexive
+primitive unification; it is not a vacuous valuation because every link in
+`alpha` is still checked. -/
+theorem alphaValuationAgrees_nil
+    (alpha : List (LogicVar × String)) :
+    AlphaValuationAgrees alpha [] [] := by
+  intro identity name linked
+  simpa [TreeSubstitution.apply, PLeaTTa.subst_nil] using
+    (PLeaTTa.PrologPrefilterBridge.CanonicalRuntimeAgrees.variable linked)
+
+/-- Reflexive primitive equality has the literal identity MGU on both source
+and executable sides for any already-selected cumulative representative.
+
+All three residual outputs are indexed as `[]`; no existential orientation
+can be reselected between this theorem and a successor transition. -/
+theorem TaskDataAgrees.selectedUnifyTopExact_reflexive
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (selected :
+      AlphaCumulativeResidualVariantAgreesOnWith alpha support canonical
+        referenceBase runtime representative)
+    (term : Term) (atom : Metta.Atom) :
+    SelectedUnifyTopExact alpha support canonical representative
+      referenceBase current runtime term term term term atom atom current
+      [] [] [] := by
+  let sourceTree :=
+    TreeSubstitution.apply
+      (canonical ++ Substitution.denote referenceBase) (Term.denote term)
+  let executableTree :=
+    TreeSubstitution.apply
+      (representative ++ Substitution.denote referenceBase) (Term.denote term)
+  have sourceOrdered :
+      OrderedTreeMgu
+        (carriedUnifyEquation
+          (canonical ++ Substitution.denote referenceBase) term term) [] := by
+    simpa [carriedUnifyEquation, sourceTree] using
+      (OrderedTreeMgu.cons sourceTree sourceTree [] [] []
+        (.reflexive sourceTree) OrderedTreeMgu.nil)
+  have sourceMgu :
+      TreeIsMgu []
+        (TreeSubstitution.applyEquations
+          (canonical ++ Substitution.denote referenceBase)
+          [(Term.denote term, Term.denote term)]) := by
+    simpa [TreeSubstitution.applyEquations, sourceTree] using
+      (tree_reflexive_is_mgu sourceTree)
+  have executableMgu :
+      TreeIsMgu []
+        (TreeSubstitution.applyEquations
+          (representative ++ Substitution.denote referenceBase)
+          [(Term.denote term, Term.denote term)]) := by
+    simpa [TreeSubstitution.applyEquations, executableTree] using
+      (tree_reflexive_is_mgu executableTree)
+  have currentDenote :
+      Substitution.denote current =
+        canonical ++ Substitution.denote referenceBase := by
+    rw [agreement.bindingShape, Substitution.denote_append,
+      TreeSubstitution.denote_reify agreement.canonicalWellFormed]
+  exact
+    { bases := selected.variants
+      canonicalTopological := selected.canonicalTopological
+      representativeCovered := selected.representativeCovered
+      oldValuation := selected.valuation
+      sourceExtensionOrdered := sourceOrdered
+      sourceExtensionMgu := sourceMgu
+      sourceExtensionWellFormed := TreeSubstitution.wellFormed_nil
+      sourceConcreteResultShape := by rfl
+      executableMgu := executableMgu
+      sourceResultShape := by simpa using currentDenote
+      successorVariants := by simpa [currentDenote] using selected.variants
+      generatedExact := by
+        simpa using
+          (PLeaTTa.unifyTopExact_self (PLeaTTa.subst runtime atom))
+      generatedValuation := alphaValuationAgrees_nil alpha
+      executableExtensionCovered := by intro entry member; simp at member
+      executableTopological := TreeSubstitutionTopological.nil
+      generatedTopological := ⟨PLeaTTa.emptySubstTopological⟩
+      runtimeTopological := selected.runtimeTopological }
+
+/-- Strong form of executable-unification adequacy relative to one selected
+cumulative representative.
+
+The representative is an input index, not an existential eliminated inside
+the proof.  The returned source and executable extensions are therefore tied
+to that literal orientation.  This is the producer used by the heterogeneous
+prefix zipper; the older existential theorem below is only its weak wrapper.
+-/
+theorem TaskDataAgrees.selectedUnifyTopExact_of_equivalent
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution}
+    {runtime : Metta.Subst}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (selected :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase runtime representative)
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    (equivalent :
+      TreeUnificationEquivalent
+        [(Term.denote sourceLeft, Term.denote sourceRight)]
+        [(Term.denote runtimeLeft, Term.denote runtimeRight)])
+    (leftAgreement :
+      AlphaTermAgrees alpha runtimeLeft executableLeft)
+    (rightAgreement :
+      AlphaTermAgrees alpha runtimeRight executableRight)
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote runtimeLeft))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote runtimeRight))
+    {result : Substitution}
+    (resolved : UnifyResolution current sourceLeft sourceRight result) :
+    ∃ sourceExtension executableExtension generated,
+      SelectedUnifyTopExact alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated := by
+  rcases agreement.sourceUnifyExtension resolved with
+    ⟨sourceExtension, sourceExtensionOrdered, sourceExtensionWellFormed,
+      sourceConcreteResultShape, sourceResultShape⟩
+  have sourceExtensionMgu := sourceExtensionOrdered.isMostGeneral
+  have sourceExtensionApplied :
+      TreeIsMgu sourceExtension
+        (TreeSubstitution.applyEquations
+          (canonical ++ Substitution.denote referenceBase)
+          [(Term.denote sourceLeft, Term.denote sourceRight)]) := by
+    simpa [carriedUnifyEquation,
+      TreeSubstitution.applyEquations] using sourceExtensionMgu
+  have leftAfter :
+      CanonicalRuntimeAgrees alpha
+        (TreeSubstitution.apply
+          (representative ++ Substitution.denote referenceBase)
+          (Term.denote runtimeLeft))
+        (PLeaTTa.subst runtime executableLeft) :=
+    canonicalRuntimeAgrees_apply_on
+      (PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.canonicalRuntimeAgrees
+        leftAgreement)
+      selected.valuation leftSupported
+  have rightAfter :
+      CanonicalRuntimeAgrees alpha
+        (TreeSubstitution.apply
+          (representative ++ Substitution.denote referenceBase)
+          (Term.denote runtimeRight))
+        (PLeaTTa.subst runtime executableRight) :=
+    canonicalRuntimeAgrees_apply_on
+      (PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.canonicalRuntimeAgrees
+        rightAgreement)
+      selected.valuation rightSupported
+  have sourceRelativeOriginal :
+      TreeIsRelativeMgu
+        (sourceExtension ++
+          (canonical ++ Substitution.denote referenceBase))
+        (canonical ++ Substitution.denote referenceBase)
+        [(Term.denote sourceLeft, Term.denote sourceRight)] :=
+    TreeIsMgu.relativeCompose sourceExtensionApplied
+  have sourceRelative :
+      TreeIsRelativeMgu
+        (sourceExtension ++
+          (canonical ++ Substitution.denote referenceBase))
+        (canonical ++ Substitution.denote referenceBase)
+        [(Term.denote runtimeLeft, Term.denote runtimeRight)] :=
+    sourceRelativeOriginal.of_equivalent equivalent
+  have sourceFactorsRepresentative :
+      TreeFactorsThrough
+        (sourceExtension ++
+          (canonical ++ Substitution.denote referenceBase))
+        (representative ++ Substitution.denote referenceBase) :=
+    TreeFactorsThrough.trans sourceRelative.1 selected.variants.1
+  rcases sourceFactorsRepresentative with
+    ⟨candidate, candidateFactors⟩
+  have candidateUnifies :
+      TreeUnifiesEquations candidate
+        (TreeSubstitution.applyEquations
+          (representative ++ Substitution.denote referenceBase)
+          [(Term.denote runtimeLeft, Term.denote runtimeRight)]) := by
+    intro normalized normalizedMember
+    simp only [TreeSubstitution.applyEquations, List.mem_map]
+      at normalizedMember
+    obtain ⟨equation, member, rfl⟩ := normalizedMember
+    rw [← candidateFactors equation.1, ← candidateFactors equation.2]
+    exact sourceRelative.2.1 equation member
+  obtain ⟨runtimeOrdered, runtimeDerivation⟩ :=
+    OrderedTreeMgu.complete candidate candidateUnifies
+  obtain
+    ⟨executableExtension, generated, generatedExact,
+      generatedAgreement, executableTopological, generatedTopological,
+      generatedValuation, executableMgu,
+      _executableFactorsOrdered, _orderedFactorsExecutable⟩ :=
+    PLeaTTa.PrologCanonicalMguSimulation.OrderedTreeMgu.unifyTopExact_exists_canonical_alpha_mgu
+      agreement.alphaShared leftAfter rightAfter runtimeDerivation
+  have executableMguApplied :
+      TreeIsMgu executableExtension
+        (TreeSubstitution.applyEquations
+          (representative ++ Substitution.denote referenceBase)
+          [(Term.denote runtimeLeft, Term.denote runtimeRight)]) := by
+    simpa [TreeSubstitution.applyEquations] using executableMgu
+  have successors :=
+    sequential_mgu_composites_are_variants_of_equivalent
+      selected.variants equivalent sourceExtensionApplied
+        executableMguApplied
+  exact
+    ⟨sourceExtension, executableExtension, generated,
+      { bases := selected.variants
+        canonicalTopological := selected.canonicalTopological
+        representativeCovered := selected.representativeCovered
+        oldValuation := selected.valuation
+        sourceExtensionOrdered := sourceExtensionOrdered
+        sourceExtensionMgu := sourceExtensionApplied
+        sourceExtensionWellFormed := sourceExtensionWellFormed
+        sourceConcreteResultShape := sourceConcreteResultShape
+        executableMgu := executableMguApplied
+        sourceResultShape := sourceResultShape
+        successorVariants := by
+          rw [sourceResultShape]
+          exact successors
+        generatedExact := generatedExact
+        generatedValuation := generatedValuation
+        executableExtensionCovered := generatedAgreement.variablesSatisfy
+        executableTopological := executableTopological
+        generatedTopological := generatedTopological
+        runtimeTopological := selected.runtimeTopological }⟩
+
 theorem TaskDataAgrees.executableUnifyTopExact_of_equivalent
     {alpha support : List (LogicVar × String)}
     {canonical : TreeSubstitution} {referenceBase current : Substitution}
@@ -1237,102 +1526,21 @@ theorem TaskDataAgrees.executableUnifyTopExact_of_equivalent
       TreeSubstitutionTopological executableCanonical ∧
       Nonempty (PLeaTTa.SubstTopological generated) ∧
       Nonempty (PLeaTTa.SubstTopological runtime) := by
-  rcases agreement.sourceUnifyExtension resolved with
-    ⟨sourceExtension, sourceExtensionOrdered, sourceExtensionWellFormed,
-      sourceConcreteResultShape, sourceResultShape⟩
-  have sourceExtensionMgu := sourceExtensionOrdered.isMostGeneral
-  have sourceExtensionApplied :
-      TreeIsMgu sourceExtension
-        (TreeSubstitution.applyEquations
-          (canonical ++ Substitution.denote referenceBase)
-          [(Term.denote sourceLeft, Term.denote sourceRight)]) := by
-    simpa [carriedUnifyEquation,
-      TreeSubstitution.applyEquations] using sourceExtensionMgu
-  rcases agreement.cumulativeVariants with
-    ⟨representative, bases, canonicalTopological,
-      representativeCovered, runtimeTopological, valuationOn⟩
-  have leftAfter :
-      CanonicalRuntimeAgrees alpha
-        (TreeSubstitution.apply
-          (representative ++ Substitution.denote referenceBase)
-          (Term.denote runtimeLeft))
-        (PLeaTTa.subst runtime executableLeft) :=
-    canonicalRuntimeAgrees_apply_on
-      (PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.canonicalRuntimeAgrees
-        leftAgreement)
-      valuationOn leftSupported
-  have rightAfter :
-      CanonicalRuntimeAgrees alpha
-        (TreeSubstitution.apply
-          (representative ++ Substitution.denote referenceBase)
-          (Term.denote runtimeRight))
-        (PLeaTTa.subst runtime executableRight) :=
-    canonicalRuntimeAgrees_apply_on
-      (PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.canonicalRuntimeAgrees
-        rightAgreement)
-      valuationOn rightSupported
-  have sourceRelativeOriginal :
-      TreeIsRelativeMgu
-        (sourceExtension ++
-          (canonical ++ Substitution.denote referenceBase))
-        (canonical ++ Substitution.denote referenceBase)
-        [(Term.denote sourceLeft, Term.denote sourceRight)] :=
-    TreeIsMgu.relativeCompose sourceExtensionApplied
-  have sourceRelative :
-      TreeIsRelativeMgu
-        (sourceExtension ++
-          (canonical ++ Substitution.denote referenceBase))
-        (canonical ++ Substitution.denote referenceBase)
-        [(Term.denote runtimeLeft, Term.denote runtimeRight)] :=
-    sourceRelativeOriginal.of_equivalent equivalent
-  have sourceFactorsRepresentative :
-      TreeFactorsThrough
-        (sourceExtension ++
-          (canonical ++ Substitution.denote referenceBase))
-        (representative ++ Substitution.denote referenceBase) :=
-    TreeFactorsThrough.trans sourceRelative.1 bases.1
-  rcases sourceFactorsRepresentative with
-    ⟨candidate, candidateFactors⟩
-  have candidateUnifies :
-      TreeUnifiesEquations candidate
-        (TreeSubstitution.applyEquations
-          (representative ++ Substitution.denote referenceBase)
-          [(Term.denote runtimeLeft, Term.denote runtimeRight)]) := by
-    intro normalized normalizedMember
-    simp only [TreeSubstitution.applyEquations, List.mem_map]
-      at normalizedMember
-    obtain ⟨equation, member, rfl⟩ := normalizedMember
-    rw [← candidateFactors equation.1, ← candidateFactors equation.2]
-    exact sourceRelative.2.1 equation member
-  obtain ⟨runtimeOrdered, runtimeDerivation⟩ :=
-    OrderedTreeMgu.complete candidate candidateUnifies
-  obtain
-    ⟨executableCanonical, generated, generatedExact,
-      generatedAgreement, executableTopological, generatedTopological,
-      generatedValuation, executableMgu,
-      _executableFactorsOrdered, _orderedFactorsExecutable⟩ :=
-    PLeaTTa.PrologCanonicalMguSimulation.OrderedTreeMgu.unifyTopExact_exists_canonical_alpha_mgu
-      agreement.alphaShared leftAfter rightAfter runtimeDerivation
-  have executableMguApplied :
-      TreeIsMgu executableCanonical
-        (TreeSubstitution.applyEquations
-          (representative ++ Substitution.denote referenceBase)
-          [(Term.denote runtimeLeft, Term.denote runtimeRight)]) := by
-    simpa [TreeSubstitution.applyEquations] using executableMgu
-  have successors :=
-    sequential_mgu_composites_are_variants_of_equivalent
-      bases equivalent sourceExtensionApplied executableMguApplied
-  refine
+  obtain ⟨representative, selected⟩ := agreement.valuation.existsWith
+  obtain ⟨sourceExtension, executableCanonical, generated, exact⟩ :=
+    agreement.selectedUnifyTopExact_of_equivalent selected equivalent
+      leftAgreement rightAgreement leftSupported rightSupported resolved
+  exact
     ⟨representative, sourceExtension, executableCanonical, generated,
-      bases, canonicalTopological, representativeCovered, valuationOn,
-      sourceExtensionOrdered, sourceExtensionApplied,
-      sourceExtensionWellFormed, sourceConcreteResultShape,
-      executableMguApplied, sourceResultShape, ?_,
-      generatedExact, generatedValuation,
-      generatedAgreement.variablesSatisfy,
-      executableTopological, generatedTopological, runtimeTopological⟩
-  rw [sourceResultShape]
-  exact successors
+      exact.bases, exact.canonicalTopological,
+      exact.representativeCovered, exact.oldValuation,
+      exact.sourceExtensionOrdered, exact.sourceExtensionMgu,
+      exact.sourceExtensionWellFormed, exact.sourceConcreteResultShape,
+      exact.executableMgu, exact.sourceResultShape,
+      exact.successorVariants, exact.generatedExact,
+      exact.generatedValuation, exact.executableExtensionCovered,
+      exact.executableTopological, exact.generatedTopological,
+      exact.runtimeTopological⟩
 
 /-- Strict ordinary-task specialization: both sides read the same oriented
 source equation.  Existing consumers keep this API while the amb bridge uses
@@ -1403,6 +1611,266 @@ theorem TaskPayloadAgrees.executableUnifyTopExact
     (by intro binding; rfl)
     leftAgreement rightAgreement leftSupported rightSupported resolved
 
+/-- Installation certificate for one explicitly selected primitive-unifier
+orientation.
+
+Unlike `TaskDataAgrees`, the successor valuation names its literal residual
+representative.  The generated executable extension is prepended to the
+predecessor representative; no existential can replace it with a merely
+variant orientation between two prefix transitions. -/
+structure SelectedUnifySuccessData
+    (alpha support : List (LogicVar × String))
+    (canonical representative : TreeSubstitution)
+    (referenceBase current : Substitution) (runtime : Metta.Subst)
+    (sourceLeft sourceRight runtimeLeft runtimeRight : Term)
+    (executableLeft executableRight : Metta.Atom)
+    (result : Substitution)
+    (sourceExtension executableExtension : TreeSubstitution)
+    (generated installed : Metta.Subst) : Prop where
+  topExact :
+    SelectedUnifyTopExact alpha support canonical representative
+      referenceBase current runtime sourceLeft sourceRight runtimeLeft
+      runtimeRight executableLeft executableRight result sourceExtension
+      executableExtension generated
+  installedExact :
+    PLeaTTa.unifyB runtime executableLeft executableRight = some installed
+  nextCanonicalWellFormed : (sourceExtension ++ canonical).WellFormed
+  nextBindingShape :
+    result =
+      TreeSubstitution.reify (sourceExtension ++ canonical) ++ referenceBase
+  nextCumulative :
+    AlphaCumulativeResidualVariantAgreesOnWith alpha support
+      (sourceExtension ++ canonical) referenceBase installed
+      (executableExtension ++ representative)
+
+namespace SelectedUnifySuccessData
+
+/-- Forget only the selected successor representative.  The weak payload is
+derived from the strong certificate rather than proved independently. -/
+theorem taskData
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    {result : Substitution}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installed : Metta.Subst}
+    (success :
+      SelectedUnifySuccessData alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated installed)
+    (shared : SharedRuntimeAlpha alpha) :
+    TaskDataAgrees alpha support (sourceExtension ++ canonical)
+      referenceBase result installed :=
+  ⟨shared, success.nextCanonicalWellFormed, success.nextBindingShape,
+    success.nextCumulative.weak⟩
+
+end SelectedUnifySuccessData
+
+/-- Install one already selected executable MGU while retaining its literal
+canonical orientation in the successor valuation. -/
+theorem SelectedUnifyTopExact.afterUnifySuccessData
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    {result : Substitution}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated : Metta.Subst}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (exact :
+      SelectedUnifyTopExact alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated)
+    (supportIncluded :
+      ∀ pair, pair ∈ support → pair ∈ alpha)
+    (runtimeAvoids : AlphaRuntimeNamesAvoid support runtime) :
+    SelectedUnifySuccessData alpha support canonical representative
+      referenceBase current runtime sourceLeft sourceRight runtimeLeft
+      runtimeRight executableLeft executableRight result sourceExtension
+      executableExtension generated
+      (PrologMguComposition.installGenerated generated runtime) := by
+  have installedExact :
+      PLeaTTa.unifyB runtime executableLeft executableRight =
+        some (PrologMguComposition.installGenerated generated runtime) := by
+    cases generated with
+    | nil =>
+        simp [PLeaTTa.unifyB,
+          PrologMguComposition.installGenerated, exact.generatedExact]
+    | cons head tail =>
+        simp [PLeaTTa.unifyB,
+          PrologMguComposition.installGenerated, exact.generatedExact]
+  obtain ⟨runtimeTopological⟩ := exact.runtimeTopological
+  obtain ⟨generatedTopological⟩ := exact.generatedTopological
+  have leftAvoids :
+      PLeaTTa.AtomAvoids runtime
+        (PLeaTTa.subst runtime executableLeft) := by
+    intro name member
+    exact runtimeTopological.subst_resolvesDomain
+      runtime executableLeft name member
+  have rightAvoids :
+      PLeaTTa.AtomAvoids runtime
+        (PLeaTTa.subst runtime executableRight) := by
+    intro name member
+    exact runtimeTopological.subst_resolvesDomain
+      runtime executableRight name member
+  have generatedAvoidsRuntime :
+      PLeaTTa.SubstEntriesAvoid runtime generated :=
+    PLeaTTa.unifyTopExact_avoidsExternal runtime
+      (PLeaTTa.subst runtime executableLeft)
+      (PLeaTTa.subst runtime executableRight)
+      generated leftAvoids rightAvoids exact.generatedExact
+  have installedTopological :
+      PLeaTTa.SubstTopological
+        (PrologMguComposition.installGenerated generated runtime) :=
+    PrologMguComposition.installGeneratedTopological
+      runtimeTopological generatedTopological generatedAvoidsRuntime
+  have sourceEquationsAvoidCanonical :
+      TreeEquationsVariablesSatisfy
+        (fun identity =>
+          identity ∉ TreeSubstitution.keys canonical)
+        (carriedUnifyEquation
+          (canonical ++ Substitution.denote referenceBase)
+          sourceLeft sourceRight) := by
+    intro equation member
+    simp only [carriedUnifyEquation, List.mem_singleton] at member
+    rcases member with rfl
+    have leftOutside :
+        TreeVariablesSatisfy
+          (fun identity =>
+            identity ∉ TreeSubstitution.keys canonical)
+          (TreeSubstitution.apply
+            (canonical ++ Substitution.denote referenceBase)
+            (Term.denote sourceLeft)) := by
+      rw [TreeSubstitution.apply_append]
+      exact exact.canonicalTopological.apply_avoids
+        (TreeSubstitution.apply
+          (Substitution.denote referenceBase) (Term.denote sourceLeft))
+    have rightOutside :
+        TreeVariablesSatisfy
+          (fun identity =>
+            identity ∉ TreeSubstitution.keys canonical)
+          (TreeSubstitution.apply
+            (canonical ++ Substitution.denote referenceBase)
+            (Term.denote sourceRight)) := by
+      rw [TreeSubstitution.apply_append]
+      exact exact.canonicalTopological.apply_avoids
+        (TreeSubstitution.apply
+          (Substitution.denote referenceBase) (Term.denote sourceRight))
+    exact ⟨leftOutside, rightOutside⟩
+  have sourceCompositeTopological :
+      TreeSubstitutionTopological (sourceExtension ++ canonical) :=
+    PrologSequentialMgu.OrderedTreeMgu.prepend_topological_of_equations_avoid
+      exact.canonicalTopological exact.sourceExtensionOrdered
+      sourceEquationsAvoidCanonical
+  have cumulativeVariants :
+      TreeSubstitutionVariants
+        ((sourceExtension ++ canonical) ++
+          Substitution.denote referenceBase)
+        ((executableExtension ++ representative) ++
+          Substitution.denote referenceBase) := by
+    simpa [exact.sourceResultShape, List.append_assoc] using
+      exact.successorVariants
+  have installedValuation :
+      AlphaValuationAgreesOn alpha support
+        ((executableExtension ++ representative) ++
+          Substitution.denote referenceBase)
+        (PrologMguComposition.installGenerated generated runtime) := by
+    have lifted :
+        AlphaValuationAgreesOn alpha support
+          (executableExtension ++
+            (representative ++ Substitution.denote referenceBase))
+          (PrologMguComposition.installGenerated generated runtime) :=
+      PLeaTTa.PrologMguComposition.AlphaValuationAgreesOn.installGenerated_extension
+        agreement.alphaShared supportIncluded exact.oldValuation
+        runtimeTopological generatedTopological generatedAvoidsRuntime
+        runtimeAvoids exact.generatedValuation
+    intro identity name linked
+    simpa [List.append_assoc] using lifted linked
+  have successorRepresentativeCovered :
+      TreeSubstitutionVariablesSatisfy
+        (AlphaCovers alpha)
+        (executableExtension ++ representative) :=
+    treeSubstitutionVariablesSatisfy_append
+      exact.executableExtensionCovered exact.representativeCovered
+  have nextCumulative :
+      AlphaCumulativeResidualVariantAgreesOnWith alpha support
+        (sourceExtension ++ canonical) referenceBase
+        (PrologMguComposition.installGenerated generated runtime)
+        (executableExtension ++ representative) :=
+    ⟨cumulativeVariants, sourceCompositeTopological,
+      successorRepresentativeCovered, ⟨installedTopological⟩,
+      installedValuation⟩
+  refine
+    { topExact := exact
+      installedExact := installedExact
+      nextCanonicalWellFormed :=
+        exact.sourceExtensionWellFormed.append agreement.canonicalWellFormed
+      nextBindingShape := ?_
+      nextCumulative := nextCumulative }
+  calc
+    result =
+        TreeSubstitution.reify sourceExtension ++ current :=
+      exact.sourceConcreteResultShape
+    _ =
+        TreeSubstitution.reify sourceExtension ++
+          (TreeSubstitution.reify canonical ++ referenceBase) := by
+      rw [agreement.bindingShape]
+    _ =
+        TreeSubstitution.reify (sourceExtension ++ canonical) ++
+          referenceBase := by
+      rw [TreeSubstitution.reify_append]
+      simp only [List.append_assoc]
+
+/-- Strong selected-representative producer for one successful primitive
+equality.  All chosen extensions remain explicit indices of the returned
+certificate. -/
+theorem TaskDataAgrees.afterUnifySuccessDataWith_of_equivalent
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (selected :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase runtime representative)
+    (equivalent :
+      TreeUnificationEquivalent
+        [(Term.denote sourceLeft, Term.denote sourceRight)]
+        [(Term.denote runtimeLeft, Term.denote runtimeRight)])
+    (leftAgreement :
+      AlphaTermAgrees alpha runtimeLeft executableLeft)
+    (rightAgreement :
+      AlphaTermAgrees alpha runtimeRight executableRight)
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote runtimeLeft))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote runtimeRight))
+    (supportIncluded :
+      ∀ pair, pair ∈ support → pair ∈ alpha)
+    (runtimeAvoids : AlphaRuntimeNamesAvoid support runtime)
+    {result : Substitution}
+    (resolved : UnifyResolution current sourceLeft sourceRight result) :
+    ∃ sourceExtension executableExtension generated,
+      SelectedUnifySuccessData alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated
+        (PrologMguComposition.installGenerated generated runtime) := by
+  obtain ⟨sourceExtension, executableExtension, generated, exact⟩ :=
+    agreement.selectedUnifyTopExact_of_equivalent selected equivalent
+      leftAgreement rightAgreement leftSupported rightSupported resolved
+  exact
+    ⟨sourceExtension, executableExtension, generated,
+      exact.afterUnifySuccessData agreement supportIncluded runtimeAvoids⟩
+
 /-- One successful primitive equality installs the actual executable MGU and
 preserves the continuation-independent task data relation.
 
@@ -1445,146 +1913,16 @@ theorem TaskDataAgrees.afterUnifySuccessData_of_equivalent
         some installed ∧
       TaskDataAgrees alpha support (sourceExtension ++ canonical)
         referenceBase result installed := by
-  obtain
-    ⟨representative, sourceExtension, executableCanonical, generated,
-      bases, oldCanonicalTopological, representativeCovered, oldValuation,
-      sourceExtensionOrdered, _sourceExtensionMgu,
-      sourceExtensionWellFormed, sourceConcreteResultShape,
-      _executableMgu, sourceResultShape, successorVariants,
-      generatedExact, generatedValuation, executableCanonicalCovered,
-      executableTopological,
-      ⟨generatedTopological⟩, ⟨runtimeTopological⟩⟩ :=
-    agreement.executableUnifyTopExact_of_equivalent equivalent
-      leftAgreement rightAgreement leftSupported rightSupported resolved
-  let installed :=
-    PrologMguComposition.installGenerated generated runtime
-  have installedExact :
-      PLeaTTa.unifyB runtime executableLeft executableRight =
-        some installed := by
-    cases generated with
-    | nil =>
-        simp [PLeaTTa.unifyB, installed,
-          PrologMguComposition.installGenerated, generatedExact]
-    | cons head tail =>
-        simp [PLeaTTa.unifyB, installed,
-          PrologMguComposition.installGenerated, generatedExact]
-  have leftAvoids :
-      PLeaTTa.AtomAvoids runtime
-        (PLeaTTa.subst runtime executableLeft) := by
-    intro name member
-    exact runtimeTopological.subst_resolvesDomain
-      runtime executableLeft name member
-  have rightAvoids :
-      PLeaTTa.AtomAvoids runtime
-        (PLeaTTa.subst runtime executableRight) := by
-    intro name member
-    exact runtimeTopological.subst_resolvesDomain
-      runtime executableRight name member
-  have generatedAvoidsRuntime :
-      PLeaTTa.SubstEntriesAvoid runtime generated :=
-    PLeaTTa.unifyTopExact_avoidsExternal runtime
-      (PLeaTTa.subst runtime executableLeft)
-      (PLeaTTa.subst runtime executableRight)
-      generated leftAvoids rightAvoids generatedExact
-  have installedTopological :
-      PLeaTTa.SubstTopological installed := by
-    simpa [installed] using
-      PrologMguComposition.installGeneratedTopological
-        runtimeTopological generatedTopological generatedAvoidsRuntime
-  have sourceEquationsAvoidCanonical :
-      TreeEquationsVariablesSatisfy
-        (fun identity =>
-          identity ∉ TreeSubstitution.keys canonical)
-        (carriedUnifyEquation
-          (canonical ++ Substitution.denote referenceBase)
-          sourceLeft sourceRight) := by
-    intro equation member
-    simp only [carriedUnifyEquation, List.mem_singleton] at member
-    rcases member with rfl
-    have leftOutside :
-        TreeVariablesSatisfy
-          (fun identity =>
-            identity ∉ TreeSubstitution.keys canonical)
-          (TreeSubstitution.apply
-            (canonical ++ Substitution.denote referenceBase)
-            (Term.denote sourceLeft)) := by
-      rw [TreeSubstitution.apply_append]
-      exact oldCanonicalTopological.apply_avoids
-        (TreeSubstitution.apply
-          (Substitution.denote referenceBase) (Term.denote sourceLeft))
-    have rightOutside :
-        TreeVariablesSatisfy
-          (fun identity =>
-            identity ∉ TreeSubstitution.keys canonical)
-          (TreeSubstitution.apply
-            (canonical ++ Substitution.denote referenceBase)
-            (Term.denote sourceRight)) := by
-      rw [TreeSubstitution.apply_append]
-      exact oldCanonicalTopological.apply_avoids
-        (TreeSubstitution.apply
-          (Substitution.denote referenceBase) (Term.denote sourceRight))
-    exact ⟨leftOutside, rightOutside⟩
-  have sourceCompositeTopological :
-      TreeSubstitutionTopological (sourceExtension ++ canonical) :=
-    PrologSequentialMgu.OrderedTreeMgu.prepend_topological_of_equations_avoid
-      oldCanonicalTopological sourceExtensionOrdered
-      sourceEquationsAvoidCanonical
-  have cumulativeVariants :
-      TreeSubstitutionVariants
-        ((sourceExtension ++ canonical) ++
-          Substitution.denote referenceBase)
-        ((executableCanonical ++ representative) ++
-          Substitution.denote referenceBase) := by
-    simpa [sourceResultShape, List.append_assoc] using successorVariants
-  have installedValuation :
-      AlphaValuationAgreesOn alpha support
-        ((executableCanonical ++ representative) ++
-          Substitution.denote referenceBase)
-        installed := by
-    have lifted :
-        AlphaValuationAgreesOn alpha support
-          (executableCanonical ++
-            (representative ++ Substitution.denote referenceBase))
-          (PrologMguComposition.installGenerated generated runtime) :=
-      PLeaTTa.PrologMguComposition.AlphaValuationAgreesOn.installGenerated_extension
-        agreement.alphaShared supportIncluded oldValuation
-        runtimeTopological generatedTopological generatedAvoidsRuntime
-        runtimeAvoids generatedValuation
-    intro identity name linked
-    simpa [installed, List.append_assoc] using lifted linked
-  have installedCumulative :
-      AlphaCumulativeResidualVariantAgreesOn
-        alpha support (sourceExtension ++ canonical)
-        referenceBase installed :=
-    have successorRepresentativeCovered :
-        TreeSubstitutionVariablesSatisfy
-          (AlphaCovers alpha)
-          (executableCanonical ++ representative) :=
-      treeSubstitutionVariablesSatisfy_append
-        executableCanonicalCovered representativeCovered
-    ⟨executableCanonical ++ representative, cumulativeVariants,
-      sourceCompositeTopological, successorRepresentativeCovered,
-      ⟨installedTopological⟩,
-      installedValuation⟩
-  refine
-    ⟨sourceExtension, installed, installedExact, ?_⟩
-  refine
-    ⟨agreement.alphaShared,
-      sourceExtensionWellFormed.append agreement.canonicalWellFormed,
-      ?_, installedCumulative⟩
-  calc
-    result =
-        TreeSubstitution.reify sourceExtension ++ current :=
-      sourceConcreteResultShape
-    _ =
-        TreeSubstitution.reify sourceExtension ++
-          (TreeSubstitution.reify canonical ++ referenceBase) := by
-      rw [agreement.bindingShape]
-    _ =
-        TreeSubstitution.reify (sourceExtension ++ canonical) ++
-          referenceBase := by
-      rw [TreeSubstitution.reify_append]
-      simp only [List.append_assoc]
+  obtain ⟨representative, selected⟩ := agreement.valuation.existsWith
+  obtain ⟨sourceExtension, executableExtension, generated, success⟩ :=
+    agreement.afterUnifySuccessDataWith_of_equivalent selected equivalent
+      leftAgreement rightAgreement leftSupported rightSupported
+      supportIncluded runtimeAvoids resolved
+  exact
+    ⟨sourceExtension,
+      PrologMguComposition.installGenerated generated runtime,
+      success.installedExact,
+      success.taskData agreement.alphaShared⟩
 
 /-- Strict ordinary-task specialization retained for existing callers. -/
 theorem TaskPayloadAgrees.afterUnifySuccessData

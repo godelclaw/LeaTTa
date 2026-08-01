@@ -84,7 +84,7 @@ theorem refl (alpha : List (LogicVar × String))
 
 /-- A suffix allocated above two frontiers is also allocated above any older
 pair of frontiers.  Both inequalities point toward the certified allocation
-floors; reversing either one would admit a stale high-water. -/
+floors; reversing either one would allow a stale high-water. -/
 theorem weaken
     {smaller larger : List (LogicVar × String)}
     {referenceFloor executableFloor

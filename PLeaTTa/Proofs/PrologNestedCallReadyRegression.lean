@@ -483,6 +483,16 @@ private theorem pScanExact :
     initialOpenConf, OpenConf.toConf, Control.toConf, barrierDepth,
     argumentsMatch, resultMatch]
 
+private theorem pPendingPulledCur :
+    pPending.pulled.toConf.cur =
+      some
+        (.eq (.expr [resultAtom])
+            (.expr (pCopied.params ++ [pCopied.result])) ::
+          pCopied.body,
+          []) := by
+  rw [pPending, pScanExact]
+  rfl
+
 private theorem pScanNonempty : pPending.branches ≠ [] := by
   rw [pPending, pScanExact]
   exact List.cons_ne_nil _ _
@@ -587,6 +597,7 @@ private theorem pActive
       state.index.freshFrontier = AlphaFreshFrontier state.index.alpha ∧
       state.index.support = [] ∧
       state.index.current = [] ∧
+      state.index.runtime = [] ∧
       state.index.qterm = resultAtom ∧
       state.index.session.resolver.database = referenceDatabase ∧
       state.index.session.resolver.nextFresh = 0 ∧
@@ -598,7 +609,13 @@ private theorem pActive
         [.opened (requestFor "p" [resultTerm] [])]
         state.sourceState ∧
       DemandDrivenCallStep.StepsN prog gt 3
-        (.ready initialOpenConf) state.fineState := by
+        (.ready initialOpenConf) state.fineState ∧
+      ∃ representative : RepresentativeActivePayloadState,
+        representative.carrier = state ∧
+          MaterializedLocalCallHeadsAgreeWith state.index.alpha
+            state.index.current state.index.bodyReferences
+            state.index.bodyExecutables state.index.runtime
+            representative.representative state.index.referenceBase := by
   have beforeSession :
       SessionRelatesOpenConf (AlphaFreshFrontier []) ExactControlFrontiers
         initialSession initialOpenConf := by
@@ -711,10 +728,57 @@ private theorem pActive
     have exact :=
       facts.alphaExtension.eq_of_generatedBelow nextAlphaBelowFirst
     simpa using exact
+  have runtimeExact : after.carrier.index.runtime = [] := by
+    obtain
+      ⟨base, args, headResult, pulledExact, generated, generatedExact,
+        generatedAgrees⟩ := facts.activation.headMgu
+    change pPending.pulled.toConf.cur = _ at pulledExact
+    have pairExact :=
+      Option.some.inj (pPendingPulledCur.symm.trans pulledExact)
+    have baseNil : base = [] := (congrArg Prod.snd pairExact).symm
+    have goalsExact := congrArg Prod.fst pairExact
+    rw [copiedExact] at goalsExact
+    simp only [List.nil_append] at goalsExact
+    have firstGoalExact := (List.cons.inj goalsExact).1
+    have expressionExact :
+        (.expr [resultAtom] : Atom) = .expr (args ++ [headResult]) := by
+      injection firstGoalExact
+    subst base
+    have generatedNil : generated = [] := by
+      have exact := generatedExact
+      have mapSubstNil (atoms : List Atom) :
+          atoms.map (PLeaTTa.subst []) = atoms := by
+        induction atoms with
+        | nil => rfl
+        | cons atom atoms ih => simp [PLeaTTa.subst_nil, ih]
+      rw [mapSubstNil, mapSubstNil] at exact
+      rw [← expressionExact, copiedExact] at exact
+      simpa [pCopied, pExecutableClause, initialOpenConf, resultAtom,
+        PLeaTTa.freshenResolutionClause, PLeaTTa.renameAtomSuffix_gnd,
+        PLeaTTa.unifyTopExact_self] using exact
+    have installedNil : installed = [] := by
+      rw [generatedAgrees.installedShape, generatedNil]
+      rfl
+    have openConfExact :
+        after.carrier.index.openConf =
+          PrologRepresentativeStepActivationBridge.activatedOpenSuccessor
+            pPending copied [] initialOpenConf.control.qterm installed := by
+      exact DemandDrivenCallStep.FineConf.ready.inj facts.fineStateExact
+    have currentControl :=
+      after.carrier.agreement.core.control.ready.2.1
+    rw [openConfExact] at currentControl
+    have runtimeTrim :
+        after.carrier.index.runtime =
+          PLeaTTa.trimFor copied.body initialOpenConf.control.qterm installed := by
+      simpa [facts.bodyExecutables, facts.callerExecutablesEmpty,
+        facts.outerEmpty] using (Option.some.inj currentControl).symm
+    rw [runtimeTrim, installedNil, copiedExact]
+    simp [PLeaTTa.trimFor, PLeaTTa.trimSubst, PLeaTTa.filterLiveSubst]
   refine
     ⟨after.carrier, ?_, ?_, alphaExact, facts.freshFrontierExact,
-      facts.supportPreserved, currentExact, facts.qtermPreserved, ?_, ?_, ?_,
-      facts.below, ?_, facts.fineSteps⟩
+      facts.supportPreserved, currentExact, runtimeExact, facts.qtermPreserved,
+      ?_, ?_, ?_, facts.below, ?_, facts.fineSteps,
+      ⟨after, rfl, facts.materializedBodyHeads⟩⟩
   · rw [facts.bodyReferences, branchExact]
     rfl
   · rw [facts.bodyExecutables, copiedExact]
@@ -733,7 +797,7 @@ private theorem pActive
 /-- The literal successor of the ground `p/1` activation is ready to enter
 and select the unique ground `q/1` occurrence.  No payload, session, frontier,
 or endpoint is supplied independently of that successor. -/
-private theorem qReadyAfterP
+theorem qReadyAfterP
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
     ∃ state : ActivePayloadState, ∃ head : NestedCallHead state,
       NestedCallReady state head ∧
@@ -746,6 +810,7 @@ private theorem qReadyAfterP
       state.index.alpha = [] ∧
       state.index.support = [] ∧
       state.index.current = [] ∧
+      state.index.runtime = [] ∧
       state.index.qterm = resultAtom ∧
       state.index.session.resolver.database = referenceDatabase ∧
       state.index.session.resolver.nextFresh = 0 ∧
@@ -756,11 +821,22 @@ private theorem qReadyAfterP
         [.opened (requestFor "p" [resultTerm] [])]
         state.sourceState ∧
       DemandDrivenCallStep.StepsN prog gt 3
-        (.ready initialOpenConf) state.fineState := by
+        (.ready initialOpenConf) state.fineState ∧
+      (∃ representative : RepresentativeActivePayloadState,
+        representative.carrier = state ∧
+          MaterializedCallAgreesWith state.index.alpha state.index.current
+            head.referencePayload
+            (head.arguments.map (PLeaTTa.subst state.index.runtime))
+            (PLeaTTa.subst state.index.runtime head.result)
+            representative.representative state.index.referenceBase) ∧
+      ∃ only : ClauseBranch,
+        (openedFor state.index.session "q" [resultTerm]
+          state.index.current).cursor.remaining = [only] := by
   obtain
     ⟨state, referenceHead, executableHead, alphaNil, freshExact, supportNil,
-      currentNil, qtermExact, databaseExact, nextFreshZero, worldExact,
-      below, rootSourceSteps, rootFineSteps⟩ :=
+      currentNil, runtimeNil, qtermExact, databaseExact, nextFreshZero,
+      worldExact, below, rootSourceSteps, rootFineSteps, representative,
+      representativeCarrier, materializedHeads⟩ :=
     pActive (prog := prog) (gt := gt)
   let head : NestedCallHead state :=
     { predicate := "q"
@@ -771,6 +847,13 @@ private theorem qReadyAfterP
       executableRest := []
       referenceHead := referenceHead
       executableHead := executableHead }
+  have headMaterialized :
+      MaterializedCallAgreesWith state.index.alpha state.index.current
+        head.referencePayload
+        (head.arguments.map (PLeaTTa.subst state.index.runtime))
+        (PLeaTTa.subst state.index.runtime head.result)
+        representative.representative state.index.referenceBase :=
+    materializedHeads referenceHead executableHead
   have openedSingleton :
       (openedFor state.index.session "q" [resultTerm]
         state.index.current).cursor.remaining = [qPreparedBranch] := by
@@ -788,8 +871,10 @@ private theorem qReadyAfterP
     rfl
   refine
     ⟨state, head, ?_, rfl, rfl, rfl, rfl, rfl, rfl, alphaNil, supportNil,
-      currentNil, qtermExact, databaseExact, nextFreshZero, worldExact,
-      rootSourceSteps, rootFineSteps⟩
+      currentNil, runtimeNil, qtermExact, databaseExact, nextFreshZero,
+      worldExact, rootSourceSteps, rootFineSteps,
+      ⟨representative, representativeCarrier, headMaterialized⟩,
+      ⟨qPreparedBranch, openedSingleton⟩⟩
   refine
     { toNestedCallOperationalReady :=
         { exactFresh := freshExact
@@ -998,8 +1083,9 @@ theorem ground_p_q_r_two_nested_pushes
   obtain
     ⟨before, qHead, qReady, qPredicate, qPayload, qReferenceRest,
       qArguments, qResult, qExecutableRest, beforeAlphaNil,
-      beforeSupportNil, beforeCurrentNil, beforeQterm, beforeDatabase,
-      beforeNextFresh, beforeWorld, rootSourceSteps, rootFineSteps⟩ :=
+      beforeSupportNil, beforeCurrentNil, _beforeRuntimeNil, beforeQterm,
+      beforeDatabase, beforeNextFresh, beforeWorld, rootSourceSteps,
+      rootFineSteps, _beforeRepresentative, _beforeSingleton⟩ :=
     qReadyAfterP (prog := prog) (gt := gt)
   obtain
     ⟨count, skippedBranches, skippedClauses, finish, branch, clause,

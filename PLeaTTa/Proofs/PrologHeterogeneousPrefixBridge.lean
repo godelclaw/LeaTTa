@@ -14,6 +14,7 @@ Main exports:
 import PLeaTTa.Proofs.PrologNestedCallPrefixInductionBridge
 import PLeaTTa.Proofs.PrologCurrentSessionAdministrativeTransitionBridge
 import PLeaTTa.Proofs.PrologCurrentSessionPayloadTransitionBridge
+import PLeaTTa.Proofs.PrologCurrentSessionUnifyTransitionBridge
 
 namespace PLeaTTa.PrologHeterogeneousPrefixBridge
 
@@ -30,6 +31,7 @@ open PrologControlSegmentSpineBridge
 open PrologCurrentSessionAdministrativeTransitionBridge
 open PrologCurrentSessionPayloadBridge
 open PrologCurrentSessionPayloadTransitionBridge
+open PrologCurrentSessionUnifyTransitionBridge
 open PrologMguComposition
 open PrologNestedCallChainBridge
 open PrologNestedCallPrefixInductionBridge
@@ -891,6 +893,625 @@ def afterCut
 
 end RepresentativeActivePayloadState
 
+/-! ## Selected primitive-unification successor -/
+
+namespace RepresentativeActivePayloadState
+
+/-- Source predecessor obtained by prepending one reflexive primitive
+equality to the active clause body. -/
+def reflexiveUnifyPredecessorSource
+    (state : RepresentativeActivePayloadState) (term : Term) : Search :=
+  ActiveProductContext.plug state.carrier.index.context
+    (activeSourceProduct state.carrier.index.callerScope
+      state.carrier.index.opened state.carrier.index.finish
+      state.carrier.index.branch state.carrier.index.branchTail
+      state.carrier.index.current
+      (.unify term term :: state.carrier.index.bodyReferences)
+      state.carrier.index.callerReferences)
+
+/-- Fine predecessor with the matching executable equality at the literal
+leftmost control position. -/
+def reflexiveUnifyPredecessorOpenConf
+    (state : RepresentativeActivePayloadState) (atom : Atom) : OpenConf :=
+  { state.carrier.index.openConf with
+    control :=
+      { state.carrier.index.openConf.control with
+        cur :=
+          some
+            (.eq atom atom ::
+              (state.carrier.index.bodyExecutables ++
+                (state.carrier.index.callerExecutables ++
+                  flattenExecutables state.carrier.index.outer)),
+              state.carrier.index.runtime) } }
+
+/-- Prepend a reflexive equality to both exact lanes without changing the
+selected representative or any persistent/resource/payload datum. -/
+def beforeReflexiveUnify
+    (state : RepresentativeActivePayloadState) (term : Term) (atom : Atom)
+    (reading : AlphaTermAgrees state.carrier.index.alpha term atom) :
+    RepresentativeActivePayloadState :=
+  let oldAgreement := state.carrier.agreement
+  let oldControl := oldAgreement.core.control
+  let oldReady := oldControl.ready
+  let oldPayload := oldReady.2.2.2
+  let nextPayload :
+      TaskSpinePayloadAgrees state.carrier.index.alpha
+        state.carrier.index.support state.carrier.index.canonical
+        state.carrier.index.referenceBase state.carrier.index.current
+        state.carrier.index.runtime
+        ({ barrier := state.carrier.index.bodyBarrier
+           references := .unify term term :: state.carrier.index.bodyReferences
+           executables :=
+             .eq atom atom :: state.carrier.index.bodyExecutables } ::
+         { barrier := state.carrier.index.callerBarrier
+           references := state.carrier.index.callerReferences
+           executables := state.carrier.index.callerExecutables } ::
+         state.carrier.index.outer) :=
+    { data := oldPayload.data
+      control :=
+        .cons
+          (.cons (.unify reading reading) oldPayload.control.head)
+          oldPayload.control.tail }
+  let nextOpen := reflexiveUnifyPredecessorOpenConf state atom
+  let nextReady :
+      SpinedReadyTaskRelates state.carrier.index.freshFrontier
+        state.carrier.index.alpha state.carrier.index.support
+        state.carrier.index.canonical state.carrier.index.referenceBase
+        state.carrier.index.session state.carrier.index.current
+        state.carrier.index.runtime state.carrier.index.qterm
+        ({ barrier := state.carrier.index.bodyBarrier
+           references := .unify term term :: state.carrier.index.bodyReferences
+           executables :=
+             .eq atom atom :: state.carrier.index.bodyExecutables } ::
+         { barrier := state.carrier.index.callerBarrier
+           references := state.carrier.index.callerReferences
+           executables := state.carrier.index.callerExecutables } ::
+         state.carrier.index.outer)
+        nextOpen :=
+    ⟨by
+      simpa [nextOpen, reflexiveUnifyPredecessorOpenConf] using oldReady.1,
+      by simp [nextOpen, reflexiveUnifyPredecessorOpenConf,
+        flattenExecutables, ControlSegment.executableGoals],
+      by
+        simpa [nextOpen, reflexiveUnifyPredecessorOpenConf] using
+          oldReady.2.2.1,
+      nextPayload⟩
+  let nextControl :
+      SpinedActiveProductRelatesAt state.carrier.index.freshFrontier
+        state.carrier.index.alpha state.carrier.index.support
+        state.carrier.index.canonical state.carrier.index.referenceBase
+        state.carrier.index.opened state.carrier.index.session
+        state.carrier.index.pending state.carrier.index.finish
+        state.carrier.index.branch state.carrier.index.branchTail
+        state.carrier.index.altTail state.carrier.index.bodyBarrier
+        state.carrier.index.callerBarrier
+        (.unify term term :: state.carrier.index.bodyReferences)
+        (.eq atom atom :: state.carrier.index.bodyExecutables)
+        state.carrier.index.callerReferences
+        state.carrier.index.callerExecutables state.carrier.index.outer
+        state.carrier.index.current state.carrier.index.runtime
+        state.carrier.index.qterm nextOpen :=
+    { ready := nextReady
+      sessionAdvanced := oldControl.sessionAdvanced
+      retainedAlts := by
+        simpa [nextOpen, reflexiveUnifyPredecessorOpenConf] using
+          oldControl.retainedAlts
+      retainedAltsZero := oldControl.retainedAltsZero
+      retainedBarriers := by
+        simpa [nextOpen, reflexiveUnifyPredecessorOpenConf] using
+          oldControl.retainedBarriers
+      bodyBarrierTag := oldControl.bodyBarrierTag
+      frames := by
+        simpa [nextOpen, reflexiveUnifyPredecessorOpenConf] using
+          oldControl.frames }
+  let nextCore :
+      SpinedActiveProductResourceRelatesAt
+        state.carrier.index.freshFrontier state.carrier.index.alpha
+        state.carrier.index.support state.carrier.index.canonical
+        state.carrier.index.referenceBase state.carrier.index.opened
+        state.carrier.index.session state.carrier.index.pending
+        state.carrier.index.finish state.carrier.index.branch
+        state.carrier.index.branchTail state.carrier.index.altTail
+        state.carrier.index.bodyBarrier state.carrier.index.callerBarrier
+        (.unify term term :: state.carrier.index.bodyReferences)
+        (.eq atom atom :: state.carrier.index.bodyExecutables)
+        state.carrier.index.callerReferences
+        state.carrier.index.callerExecutables state.carrier.index.outer
+        state.carrier.index.current state.carrier.index.runtime
+        state.carrier.index.qterm state.carrier.index.active
+        state.carrier.index.resources state.carrier.index.callerScope
+        state.carrier.index.outerScope state.carrier.index.context
+        state.carrier.index.baseAlts
+        (reflexiveUnifyPredecessorSource state term) nextOpen :=
+    { control := nextControl
+      resourceStack := by
+        rcases oldAgreement.core.resourceStack with
+          ⟨activeRest, activeQuery, activeBarrier, activeAlts,
+            activeFinalCounter, activeOwnership, outerAlignment,
+            suspendedOuterAlts, actualAlts⟩
+        exact
+          ⟨activeRest, activeQuery, activeBarrier, activeAlts,
+            activeFinalCounter, activeOwnership, outerAlignment,
+            suspendedOuterAlts, by
+              simpa [nextOpen, reflexiveUnifyPredecessorOpenConf] using
+                actualAlts⟩
+      sourceShape := rfl }
+  let nextAgreement :
+      SpinedActiveProductPayloadResourceRelatesAt
+        state.carrier.index.freshFrontier state.carrier.index.alpha
+        state.carrier.index.support state.carrier.index.canonical
+        state.carrier.index.referenceBase state.carrier.index.opened
+        state.carrier.index.session state.carrier.index.pending
+        state.carrier.index.finish state.carrier.index.branch
+        state.carrier.index.branchTail state.carrier.index.altTail
+        state.carrier.index.bodyBarrier state.carrier.index.callerBarrier
+        (.unify term term :: state.carrier.index.bodyReferences)
+        (.eq atom atom :: state.carrier.index.bodyExecutables)
+        state.carrier.index.callerReferences
+        state.carrier.index.callerExecutables state.carrier.index.outer
+        state.carrier.index.current state.carrier.index.runtime
+        state.carrier.index.qterm state.carrier.index.active
+        state.carrier.index.resources state.carrier.index.callerScope
+        state.carrier.index.outerScope state.carrier.index.context
+        state.carrier.index.baseAlts
+        (reflexiveUnifyPredecessorSource state term) nextOpen
+        state.carrier.payloadContext :=
+    { core := nextCore
+      endpointsCurrent := by
+        simpa [nextOpen, reflexiveUnifyPredecessorOpenConf] using
+          oldAgreement.endpointsCurrent
+      activationOrdered := oldAgreement.activationOrdered }
+  let nextCarrier := ActivePayloadState.ofAgreement nextAgreement
+  { carrier := nextCarrier
+    representative := state.representative
+    cumulative := by
+      simpa [nextCarrier, ActivePayloadState.ofAgreement] using
+        state.cumulative }
+
+/-- Exact flattened continuation after consuming the active primitive
+equality. -/
+def unifyExecutableTail (state : RepresentativeActivePayloadState)
+    (bodyExecutableTail : List PLeaTTa.Goal) : List PLeaTTa.Goal :=
+  bodyExecutableTail ++
+    (state.carrier.index.callerExecutables ++
+      flattenExecutables state.carrier.index.outer)
+
+/-- Exact independent source focus after the primitive equality succeeds. -/
+def unifySource (state : RepresentativeActivePayloadState)
+    (result : Substitution)
+    (bodyRest : List PeTTaSpec.PrologCore.Goal) : Search :=
+  ActiveProductContext.plug state.carrier.index.context
+    (activeSourceProduct state.carrier.index.callerScope
+      state.carrier.index.opened state.carrier.index.finish
+      state.carrier.index.branch state.carrier.index.branchTail result bodyRest
+      state.carrier.index.callerReferences)
+
+/-- Exact fine successor after installing the selected executable MGU. -/
+def unifyOpenConf (state : RepresentativeActivePayloadState)
+    (bodyExecutableTail : List PLeaTTa.Goal) (installed : Subst) : OpenConf :=
+  unifySuccessor state.carrier.index.openConf
+    (unifyExecutableTail state bodyExecutableTail) installed
+
+/-- Every data index of the active successor.  Chosen MGU data are explicit
+arguments; all persistent, scope, resource, and payload indices are inherited
+by record update and therefore cannot be silently reselected. -/
+def unifyIndex (state : RepresentativeActivePayloadState)
+    (bodyRest : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutableTail : List PLeaTTa.Goal)
+    (result : Substitution) (sourceExtension : TreeSubstitution)
+    (installed : Subst) : ActivePayloadIndex :=
+  { state.carrier.index with
+    canonical := sourceExtension ++ state.carrier.index.canonical
+    bodyReferences := bodyRest
+    bodyExecutables := bodyExecutableTail
+    current := result
+    runtime :=
+      PLeaTTa.trimFor (unifyExecutableTail state bodyExecutableTail)
+        state.carrier.index.qterm installed
+    source := unifySource state result bodyRest
+    openConf := unifyOpenConf state bodyExecutableTail installed }
+
+/-- A reflexive equality over an already-trimmed active payload returns the
+literal predecessor target index, not merely an extensionally related state. -/
+theorem unifyIndex_beforeReflexiveUnify
+    (state : RepresentativeActivePayloadState) (term : Term) (atom : Atom)
+    (reading : AlphaTermAgrees state.carrier.index.alpha term atom)
+    (trimmed :
+      PLeaTTa.trimFor
+          (unifyExecutableTail state state.carrier.index.bodyExecutables)
+          state.carrier.index.qterm state.carrier.index.runtime =
+        state.carrier.index.runtime) :
+    unifyIndex (beforeReflexiveUnify state term atom reading)
+        state.carrier.index.bodyReferences
+        state.carrier.index.bodyExecutables state.carrier.index.current []
+        state.carrier.index.runtime =
+      state.carrier.index := by
+  have sourceShape := state.carrier.agreement.core.sourceShape
+  have currentControl :=
+    state.carrier.agreement.core.control.ready.2.1
+  have queryTerm :=
+    state.carrier.agreement.core.control.ready.2.2.1
+  rcases state with
+    ⟨⟨⟨freshFrontier, alpha, support, canonical, referenceBase, opened,
+          session, pending, finish, branch, branchTail, altTail, bodyBarrier,
+          callerBarrier, bodyReferences, bodyExecutables, callerReferences,
+          callerExecutables, outer, current, runtime, qterm, active, resources,
+          callerScope, outerScope, context, baseAlts, source, openConf⟩,
+        payloadContext, agreement⟩,
+      representative, cumulative⟩
+  change
+    trimFor (bodyExecutables ++ (callerExecutables ++ flattenExecutables outer))
+        qterm runtime = runtime at trimmed
+  change
+    source =
+      context.plug
+        (activeSourceProduct callerScope opened finish branch branchTail current
+          bodyReferences callerReferences) at sourceShape
+  change
+    openConf.control.cur =
+      some
+        (bodyExecutables ++ (callerExecutables ++ flattenExecutables outer),
+          runtime) at currentControl
+  change openConf.control.qterm = qterm at queryTerm
+  simp [unifyIndex, beforeReflexiveUnify, unifyExecutableTail, unifySource,
+    unifyOpenConf, reflexiveUnifyPredecessorSource,
+    reflexiveUnifyPredecessorOpenConf, unifySuccessor,
+    ActivePayloadState.ofAgreement, sourceShape.symm, trimmed]
+  apply OpenConf.eq_of_toConf_eq_of_frames_eq_of_scopes_eq
+  · rw [OpenConf.stepOpen_toConf]
+    apply PLeaTTa.Conf.ext <;>
+      simp [OpenConf.toConf, Control.toConf, currentControl, queryTerm, trimmed]
+  · rfl
+  · rfl
+
+end RepresentativeActivePayloadState
+
+/-- Closed producer facts for one selected primitive-unification successor.
+
+The exact successor index, selected installation certificate, source step,
+fine step, representative equation, and payload identity all belong to one
+package.  A caller cannot pair an unrelated source and executable transition
+under the public `.unify` label. -/
+structure RepresentativeUnifySuccessorFacts
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (before after : RepresentativeActivePayloadState)
+    (left right : Term) (result : Substitution)
+    (bodyRest : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutableTail : List PLeaTTa.Goal)
+    (sourceExtension executableExtension : TreeSubstitution)
+    (generated installed : Subst) : Prop where
+  referenceHead :
+    before.carrier.index.bodyReferences = .unify left right :: bodyRest
+  afterIndexExact :
+    after.carrier.index =
+      RepresentativeActivePayloadState.unifyIndex before bodyRest
+        bodyExecutableTail result sourceExtension installed
+  selectedExecution :
+    ∃ (spelling : NormalizedAlphaGoalsAgree.ExecutableUnifySpelling)
+        (executableLeft executableRight : Atom),
+      AlphaTermAgrees before.carrier.index.alpha left executableLeft ∧
+        AlphaTermAgrees before.carrier.index.alpha right executableRight ∧
+        before.carrier.index.openConf.control.cur =
+          some
+            (spelling.goal executableLeft executableRight ::
+              RepresentativeActivePayloadState.unifyExecutableTail before
+                bodyExecutableTail,
+              before.carrier.index.runtime) ∧
+        SelectedUnifySuccessData before.carrier.index.alpha
+          before.carrier.index.support before.carrier.index.canonical
+          before.representative before.carrier.index.referenceBase
+          before.carrier.index.current before.carrier.index.runtime left right
+          left right executableLeft executableRight result sourceExtension
+          executableExtension generated installed
+  sourceStep :
+    RawStep before.carrier.index.session before.carrier.index.source [] .none
+      before.carrier.index.session (.running after.carrier.index.source)
+  fineStep :
+    DemandDrivenCallStep.Step prog gt
+      (.ready before.carrier.index.openConf)
+      (.ready after.carrier.index.openConf)
+  /-- Deliberately literal list equality.  The anti-laundering theorems below
+  use syntactic prefix length; replacing this with denotational or variant
+  equality would remove their force even if their surface statements still
+  looked similar. -/
+  representativeExact :
+    after.representative = executableExtension ++ before.representative
+  payloadCellsExact :
+    after.carrier.cellIdentities = before.carrier.cellIdentities
+
+namespace RepresentativeUnifySuccessorFacts
+
+/-- A certified primitive-unification successor that returns to the literal
+same representative must have installed the empty executable extension.
+
+This is a structural anti-laundering guard: a nonempty residual orientation
+cannot be hidden behind endpoint compatibility when the heterogeneous zipper
+claims exact representative identity. -/
+theorem executableExtension_eq_nil_of_representative_eq
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : RepresentativeActivePayloadState}
+    {left right : Term} {result : Substitution}
+    {bodyRest : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutableTail : List PLeaTTa.Goal}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installed : Subst}
+    (facts :
+      RepresentativeUnifySuccessorFacts prog gt before after left right result
+        bodyRest bodyExecutableTail sourceExtension executableExtension
+        generated installed)
+    (same : after.representative = before.representative) :
+    executableExtension = [] := by
+  have lengths := congrArg List.length facts.representativeExact
+  rw [same] at lengths
+  simp only [List.length_append] at lengths
+  apply List.eq_nil_of_length_eq_zero
+  omega
+
+/-- Equivalently, every nonempty executable residual extension changes the
+literal representative.  A wrong orientation therefore cannot inhabit the
+exact reflexive middle used by a certified prefix. -/
+theorem representative_ne_of_executableExtension_ne_nil
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : RepresentativeActivePayloadState}
+    {left right : Term} {result : Substitution}
+    {bodyRest : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutableTail : List PLeaTTa.Goal}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installed : Subst}
+    (facts :
+      RepresentativeUnifySuccessorFacts prog gt before after left right result
+        bodyRest bodyExecutableTail sourceExtension executableExtension
+        generated installed)
+    (nonempty : executableExtension ≠ []) :
+    after.representative ≠ before.representative := by
+  intro same
+  exact nonempty (facts.executableExtension_eq_nil_of_representative_eq same)
+
+end RepresentativeUnifySuccessorFacts
+
+namespace RepresentativeActivePayloadState
+
+/-- A reflexive equality prepended to an already-trimmed active payload is an
+exact closed `.unify` transition back to that payload.
+
+Both ordered MGU extensions and the executable generated block are literally
+empty, so the representative, cumulative valuation, persistent state, and
+payload cells are preserved by construction rather than only up to variants. -/
+theorem reflexiveUnifyFacts
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (state : RepresentativeActivePayloadState) (term : Term) (atom : Atom)
+    (reading : AlphaTermAgrees state.carrier.index.alpha term atom)
+    (trimmed :
+      PLeaTTa.trimFor
+          (RepresentativeActivePayloadState.unifyExecutableTail state
+            state.carrier.index.bodyExecutables)
+          state.carrier.index.qterm state.carrier.index.runtime =
+        state.carrier.index.runtime) :
+    RepresentativeUnifySuccessorFacts prog gt
+      (beforeReflexiveUnify state term atom reading) state term term
+      state.carrier.index.current state.carrier.index.bodyReferences
+      state.carrier.index.bodyExecutables [] [] []
+      state.carrier.index.runtime := by
+  let before := beforeReflexiveUnify state term atom reading
+  have bodyPayload :
+      TaskPayloadAgrees before.carrier.index.alpha
+        before.carrier.index.support before.carrier.index.bodyBarrier
+        before.carrier.index.canonical before.carrier.index.referenceBase
+        before.carrier.index.current before.carrier.index.runtime
+        before.carrier.index.bodyReferences
+        before.carrier.index.bodyExecutables :=
+    before.carrier.agreement.core.control.ready.2.2.2.headPayload
+  have topExact :
+      SelectedUnifyTopExact before.carrier.index.alpha
+        before.carrier.index.support before.carrier.index.canonical
+        before.representative before.carrier.index.referenceBase
+        before.carrier.index.current before.carrier.index.runtime term term
+        term term atom atom before.carrier.index.current [] [] [] :=
+    bodyPayload.data.selectedUnifyTopExact_reflexive before.cumulative term atom
+  have selectedSuccess :
+      SelectedUnifySuccessData before.carrier.index.alpha
+        before.carrier.index.support before.carrier.index.canonical
+        before.representative before.carrier.index.referenceBase
+        before.carrier.index.current before.carrier.index.runtime term term
+        term term atom atom before.carrier.index.current [] [] []
+        before.carrier.index.runtime := by
+    refine
+      { topExact := topExact
+        installedExact := ?_
+        nextCanonicalWellFormed := ?_
+        nextBindingShape := ?_
+        nextCumulative := ?_ }
+    · simp [PLeaTTa.unifyB, PLeaTTa.unifyTopExact_self]
+    · simpa using bodyPayload.data.canonicalWellFormed
+    · simpa using bodyPayload.data.bindingShape
+    · simpa [before, beforeReflexiveUnify] using before.cumulative
+  have resolved :
+      UnifyResolution state.carrier.index.current term term
+        state.carrier.index.current := by
+    refine ⟨[], ?_, by rfl⟩
+    refine ⟨[], ?_, rfl⟩
+    let tree := Term.denote (state.carrier.index.current.applyTerm term)
+    simpa [denoteEquations, tree] using
+      (OrderedTreeMgu.cons tree tree [] [] [] (.reflexive tree)
+        OrderedTreeMgu.nil)
+  have child :
+      RawStep state.carrier.index.session
+        (.task state.carrier.index.opened.scope
+          (.unify term term :: state.carrier.index.bodyReferences)
+          state.carrier.index.current)
+        [] .none state.carrier.index.session
+        (.running
+          (.task state.carrier.index.opened.scope
+            state.carrier.index.bodyReferences
+            state.carrier.index.current)) :=
+    .taskUnifySuccess state.carrier.index.opened.scope term term
+      state.carrier.index.bodyReferences state.carrier.index.current
+      state.carrier.index.current state.carrier.index.session resolved
+  have activeSourceStep :
+      RawStep state.carrier.index.session
+        (activeSourceProduct state.carrier.index.callerScope
+          state.carrier.index.opened state.carrier.index.finish
+          state.carrier.index.branch state.carrier.index.branchTail
+          state.carrier.index.current
+          (.unify term term :: state.carrier.index.bodyReferences)
+          state.carrier.index.callerReferences)
+        [] .none state.carrier.index.session
+        (.running
+          (activeSourceProduct state.carrier.index.callerScope
+            state.carrier.index.opened state.carrier.index.finish
+            state.carrier.index.branch state.carrier.index.branchTail
+            state.carrier.index.current state.carrier.index.bodyReferences
+            state.carrier.index.callerReferences)) := by
+    simpa using
+      ActiveProductFrame.liftProgress
+        (ActiveProductFrame.ofActiveProduct state.carrier.index.callerScope
+          state.carrier.index.opened state.carrier.index.finish
+          state.carrier.index.branch state.carrier.index.branchTail
+          state.carrier.index.callerReferences)
+        child (by simp [Trace.AnswerFree])
+  have sourceStep :
+      RawStep state.carrier.index.session before.carrier.index.source [] .none
+        state.carrier.index.session (.running state.carrier.index.source) := by
+    change
+      RawStep state.carrier.index.session
+        (reflexiveUnifyPredecessorSource state term) [] .none
+        state.carrier.index.session (.running state.carrier.index.source)
+    rw [state.carrier.agreement.core.sourceShape]
+    exact
+      ActiveProductContext.liftProgress state.carrier.index.context
+        activeSourceStep (by simp [Trace.AnswerFree])
+  have executableHead :
+      before.carrier.index.openConf.control.cur =
+        some
+          (.eq atom atom ::
+            RepresentativeActivePayloadState.unifyExecutableTail before
+              state.carrier.index.bodyExecutables,
+            before.carrier.index.runtime) := by
+    simp [before, beforeReflexiveUnify, reflexiveUnifyPredecessorOpenConf,
+      RepresentativeActivePayloadState.unifyExecutableTail,
+      ActivePayloadState.ofAgreement]
+  have afterIndexExact :=
+    unifyIndex_beforeReflexiveUnify state term atom reading trimmed
+  have executableAfter :
+      RepresentativeActivePayloadState.unifyOpenConf before
+          state.carrier.index.bodyExecutables state.carrier.index.runtime =
+        state.carrier.index.openConf := by
+    exact congrArg ActivePayloadIndex.openConf afterIndexExact
+  have fineStep :
+      DemandDrivenCallStep.Step prog gt
+        (.ready before.carrier.index.openConf)
+        (.ready state.carrier.index.openConf) := by
+    have step :=
+      executable_unify_step (prog := prog) (gt := gt)
+        before.carrier.index.openConf
+        NormalizedAlphaGoalsAgree.ExecutableUnifySpelling.equality atom atom
+        (RepresentativeActivePayloadState.unifyExecutableTail before
+          state.carrier.index.bodyExecutables)
+        before.carrier.index.runtime state.carrier.index.runtime
+        executableHead selectedSuccess.installedExact
+    simpa [RepresentativeActivePayloadState.unifyOpenConf] using
+      (executableAfter ▸ step)
+  refine
+    { referenceHead := rfl
+      afterIndexExact := afterIndexExact.symm
+      selectedExecution :=
+        ⟨NormalizedAlphaGoalsAgree.ExecutableUnifySpelling.equality,
+          atom, atom, ?_, ?_, executableHead, selectedSuccess⟩
+      sourceStep := sourceStep
+      fineStep := fineStep
+      representativeExact := ?_
+      payloadCellsExact := ?_ }
+  · simpa [before, beforeReflexiveUnify, ActivePayloadState.ofAgreement] using
+      reading
+  · simpa [before, beforeReflexiveUnify, ActivePayloadState.ofAgreement] using
+      reading
+  · simp [beforeReflexiveUnify, ActivePayloadState.ofAgreement]
+  · rfl
+
+/-- Produce the literal active successor while retaining the selected old and
+new residual orientations.  Existential elimination stays inside `Prop`; the
+returned Type carrier itself stores every chosen datum in its indices. -/
+theorem exists_afterUnifySuccess
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativeActivePayloadState)
+    {left right : Term} {result : Substitution}
+    {bodyRest : List PeTTaSpec.PrologCore.Goal}
+    (referenceHead :
+      before.carrier.index.bodyReferences = .unify left right :: bodyRest)
+    (leftSupported :
+      AlphaTreeSupported before.carrier.index.alpha
+        before.carrier.index.support (Term.denote left))
+    (rightSupported :
+      AlphaTreeSupported before.carrier.index.alpha
+        before.carrier.index.support (Term.denote right))
+    (supportIncluded :
+      ∀ pair, pair ∈ before.carrier.index.support →
+        pair ∈ before.carrier.index.alpha)
+    (safe :
+      ReadyUnifyContinuationSafe before.carrier.index.support
+        before.carrier.index.openConf)
+    (resolved :
+      UnifyResolution before.carrier.index.current left right result) :
+    ∃ bodyExecutableTail : List PLeaTTa.Goal,
+      ∃ sourceExtension executableExtension : TreeSubstitution,
+      ∃ generated installed : Subst,
+      ∃ after : RepresentativeActivePayloadState,
+        RepresentativeUnifySuccessorFacts prog gt before after left right
+          result bodyRest bodyExecutableTail sourceExtension
+          executableExtension generated installed := by
+  have activeAgreement :
+      SpinedActiveProductPayloadResourceRelatesAt
+        before.carrier.index.freshFrontier before.carrier.index.alpha
+        before.carrier.index.support before.carrier.index.canonical
+        before.carrier.index.referenceBase before.carrier.index.opened
+        before.carrier.index.session before.carrier.index.pending
+        before.carrier.index.finish before.carrier.index.branch
+        before.carrier.index.branchTail before.carrier.index.altTail
+        before.carrier.index.bodyBarrier before.carrier.index.callerBarrier
+        (.unify left right :: bodyRest) before.carrier.index.bodyExecutables
+        before.carrier.index.callerReferences
+        before.carrier.index.callerExecutables before.carrier.index.outer
+        before.carrier.index.current before.carrier.index.runtime
+        before.carrier.index.qterm before.carrier.index.active
+        before.carrier.index.resources before.carrier.index.callerScope
+        before.carrier.index.outerScope before.carrier.index.context
+        before.carrier.index.baseAlts before.carrier.index.source
+        before.carrier.index.openConf before.carrier.payloadContext := by
+    simpa only [ActivePayloadIndex.Relates, referenceHead] using
+      before.carrier.agreement
+  obtain
+    ⟨spelling, executableLeft, executableRight, bodyExecutableTail,
+      sourceExtension, executableExtension, generated, installed,
+      leftAgreement, rightAgreement, executableHead, selectedSuccess,
+      sourceStep, fineStep, nextAgreement, nextSelected⟩ :=
+    PLeaTTa.PrologCurrentSessionUnifyTransitionBridge.SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccessWith
+      activeAgreement before.cumulative leftSupported rightSupported
+      supportIncluded safe resolved
+  let nextCarrier := ActivePayloadState.ofAgreement nextAgreement
+  let after : RepresentativeActivePayloadState :=
+    { carrier := nextCarrier
+      representative := executableExtension ++ before.representative
+      cumulative := by
+        simpa [nextCarrier, ActivePayloadState.ofAgreement] using nextSelected }
+  refine
+    ⟨bodyExecutableTail, sourceExtension, executableExtension, generated,
+      installed, after, ?_⟩
+  refine
+    { referenceHead := referenceHead
+      afterIndexExact := ?_
+      selectedExecution :=
+        ⟨spelling, executableLeft, executableRight, leftAgreement,
+          rightAgreement, executableHead, selectedSuccess⟩
+      sourceStep := ?_
+      fineStep := ?_
+      representativeExact := rfl
+      payloadCellsExact := rfl }
+  · rfl
+  · simpa [after, nextCarrier, ActivePayloadState.ofAgreement] using sourceStep
+  · simpa [after, nextCarrier, ActivePayloadState.ofAgreement] using fineStep
+
+end RepresentativeActivePayloadState
+
 /-! ## Closed transition vocabulary -/
 
 /-- Public transition identity.  Costs and observations are functions of
@@ -898,6 +1519,7 @@ this closed vocabulary; a caller cannot attach an arbitrary execution trace
 to a transition label. -/
 inductive TransitionKind where
   | administrative (count : Nat)
+  | unify
   | localCall (rejected : Nat) (request : CallRequest)
   | bodyAnswer
   | cut (token : CursorToken)
@@ -907,18 +1529,21 @@ namespace TransitionKind
 
 def sourceCost : TransitionKind → Nat
   | .administrative count => count
+  | .unify => 1
   | .localCall rejected _ => rejected + 2
   | .bodyAnswer => 1
   | .cut _ => 1
 
 def sourceEvents : TransitionKind → List Observation
   | .administrative _ => []
+  | .unify => []
   | .localCall _ request => [.opened request]
   | .bodyAnswer => []
   | .cut token => [.pruned token]
 
 def fineCost : TransitionKind → Nat
   | .administrative _ => 0
+  | .unify => 1
   | .localCall _ _ => 3
   | .bodyAnswer => 0
   | .cut _ => 1
@@ -931,6 +1556,7 @@ def PayloadEvolution (kind : TransitionKind)
     (before after : List PayloadCellIdentity) : Prop :=
   match kind with
   | .administrative _ => after = before
+  | .unify => after = before
   | .localCall _ _ => ∃ head, after = head :: before
   | .bodyAnswer => after = before
   | .cut _ => ∃ head, before = head :: after
@@ -955,6 +1581,18 @@ inductive CertifiedTransition (prog : PLeaTTa.Prog)
         (.active
           (RepresentativeActivePayloadState.afterAdministrative
             prog gt before steps))
+  | unify
+      {before after : RepresentativeActivePayloadState}
+      {left right : Term} {result : Substitution}
+      {bodyRest : List PeTTaSpec.PrologCore.Goal}
+      {bodyExecutableTail : List PLeaTTa.Goal}
+      {sourceExtension executableExtension : TreeSubstitution}
+      {generated installed : Subst}
+      (facts :
+        RepresentativeUnifySuccessorFacts prog gt before after left right
+          result bodyRest bodyExecutableTail sourceExtension
+          executableExtension generated installed) :
+      CertifiedTransition prog gt .unify (.active before) (.active after)
   | localCall
       {before after : RepresentativeActivePayloadState}
       {head : NestedCallHead before.carrier}
@@ -1043,6 +1681,17 @@ theorem sourceSteps
         RepresentativeActivePayloadState.administrativeSource] using
         (PrologCurrentSessionAdministrativeTransitionBridge.SpinedActiveProductPayloadResourceRelatesAt.afterAdministrativeSteps
           (prog := prog) (gt := gt) before.carrier.agreement steps).1
+  | @unify before after left right result bodyRest bodyExecutableTail
+      sourceExtension executableExtension generated installed facts =>
+      have sessionEq :
+          after.carrier.index.session = before.carrier.index.session := by
+        have projected :=
+          congrArg ActivePayloadIndex.session facts.afterIndexExact
+        simpa [RepresentativeActivePayloadState.unifyIndex] using projected
+      simpa [TransitionKind.sourceCost, TransitionKind.sourceEvents,
+        ProductPhaseState.sourceState, ActivePayloadState.sourceState,
+        sessionEq] using
+        oneSourceStep facts.sourceStep
   | localCall facts =>
       simpa [TransitionKind.sourceCost, TransitionKind.sourceEvents,
         ProductPhaseState.sourceState, ActivePayloadState.sourceState] using
@@ -1120,6 +1769,10 @@ theorem fineSteps
       exact
         (PrologCurrentSessionAdministrativeTransitionBridge.SpinedActiveProductPayloadResourceRelatesAt.afterAdministrativeSteps
           (prog := prog) (gt := gt) before.carrier.agreement steps).2.1
+  | @unify before after left right result bodyRest bodyExecutableTail
+      sourceExtension executableExtension generated installed facts =>
+      simpa [TransitionKind.fineCost, ProductPhaseState.fineState,
+        ActivePayloadState.fineState] using oneFineStep facts.fineStep
   | localCall facts =>
       simpa [TransitionKind.fineCost, ProductPhaseState.fineState,
         ActivePayloadState.fineState] using
@@ -1173,6 +1826,13 @@ theorem sessionHighWaters
   cases transition with
   | administrative before steps =>
       exact SessionHighWatersExtend.refl before.carrier.index.session
+  | @unify before after left right result bodyRest bodyExecutableTail
+      sourceExtension executableExtension generated installed facts =>
+      change
+        SessionHighWatersExtend before.carrier.index.session
+          after.carrier.index.session
+      rw [facts.afterIndexExact]
+      exact SessionHighWatersExtend.refl before.carrier.index.session
   | localCall facts =>
       simpa [ProductPhaseState.session] using
         (RepresentativeNestedCallSuccessorFacts.sessionHighWaters facts)
@@ -1191,6 +1851,14 @@ theorem executableCounter_mono
     before.openConf.persistent.counter ≤ after.openConf.persistent.counter := by
   cases transition with
   | administrative before steps => exact Nat.le_refl _
+  | @unify before after left right result bodyRest bodyExecutableTail
+      sourceExtension executableExtension generated installed facts =>
+      change
+        before.carrier.index.openConf.persistent.counter ≤
+          after.carrier.index.openConf.persistent.counter
+      rw [facts.afterIndexExact]
+      simp [RepresentativeActivePayloadState.unifyIndex,
+        RepresentativeActivePayloadState.unifyOpenConf]
   | localCall facts =>
       simpa [ProductPhaseState.openConf] using
         (RepresentativeNestedCallSuccessorFacts.executableCounter_mono facts)
@@ -1211,6 +1879,15 @@ theorem alphaExtension
       before.session.resolver.nextFresh before.openConf.persistent.counter := by
   cases transition with
   | administrative before steps =>
+      exact AlphaExtendsAbove.refl before.carrier.index.alpha _ _
+  | @unify before after left right result bodyRest bodyExecutableTail
+      sourceExtension executableExtension generated installed facts =>
+      change
+        AlphaExtendsAbove before.carrier.index.alpha
+          after.carrier.index.alpha
+          before.carrier.index.session.resolver.nextFresh
+          before.carrier.index.openConf.persistent.counter
+      rw [facts.afterIndexExact]
       exact AlphaExtendsAbove.refl before.carrier.index.alpha _ _
   | localCall facts =>
       simpa [ProductPhaseState.alpha, ProductPhaseState.session,
@@ -1234,6 +1911,9 @@ theorem representativeExtension
       after.representative = extension ++ before.representative := by
   cases transition with
   | administrative before steps => exact ⟨[], rfl⟩
+  | @unify before after left right result bodyRest bodyExecutableTail
+      sourceExtension executableExtension generated installed facts =>
+      exact ⟨executableExtension, facts.representativeExact⟩
   | localCall facts =>
       simpa [ProductPhaseState.representative] using
         facts.representativeExtension
@@ -1252,6 +1932,10 @@ theorem payloadEvolution
     kind.PayloadEvolution before.cellIdentities after.cellIdentities := by
   cases transition with
   | administrative before steps => rfl
+  | @unify before after left right result bodyRest bodyExecutableTail
+      sourceExtension executableExtension generated installed facts =>
+      simpa [TransitionKind.PayloadEvolution,
+        ProductPhaseState.cellIdentities] using facts.payloadCellsExact
   | localCall facts =>
       simpa [TransitionKind.PayloadEvolution,
         ProductPhaseState.cellIdentities] using facts.certificate.payloadCells
