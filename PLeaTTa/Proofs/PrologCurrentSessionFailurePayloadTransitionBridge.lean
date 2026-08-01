@@ -172,7 +172,7 @@ theorem owns_wellFormed
     {resource : RetainedAlternativeSegment}
     (ownership : resource.Owns alpha cursor) :
     cursor.WellFormed := by
-  rcases ownership with
+  rcases ownership.scan with
     ⟨_candidates, wellFormed, _query, _substitutedArgs, _supported, _arities,
       _scan⟩
   exact wellFormed

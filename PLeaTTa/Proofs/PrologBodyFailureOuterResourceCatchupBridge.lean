@@ -185,7 +185,13 @@ theorem pullAuxTracked_flattenOwnedAlts_all_empty
 /-! ## Executable anti-vacuity witnesses -/
 
 private def trackedEmptyWitnessResource : RetainedAlternativeSegment :=
-  { argsv := []
+  { callIdentity :=
+      { callGeneration := 0
+        predicate := "tracked-empty-witness"
+        arguments := []
+        bindings := []
+        reservedUntil := 0 }
+    argsv := []
     args := []
     res := .sym "result"
     rest := []
@@ -399,7 +405,8 @@ private def crossedRejectedFinish : PreparedCursor :=
   crossedRejectedCursor.advance crossedRejectedBranch []
 
 private def crossedRejectedResource : RetainedAlternativeSegment :=
-  { argsv := []
+  { callIdentity := PreparedCallIdentity.ofCursor crossedRejectedCursor
+    argsv := []
     args := []
     res := .gnd (.int 1)
     rest := []
@@ -500,7 +507,7 @@ private theorem crossedRejectedClash :
 
 private theorem crossedRejectedOwnership :
     crossedRejectedResource.Owns [] crossedRejectedCursor := by
-  refine ⟨[crossedRejectedExecutable], crossedRejectedWellFormed,
+  refine ⟨rfl, [crossedRejectedExecutable], crossedRejectedWellFormed,
     ?_, rfl, ?_, ?_, ?_⟩
   · simpa [crossedRejectedResource] using crossedRejectedQuery
   · exact .cons crossedRejectedSupported .nil
@@ -580,7 +587,8 @@ private theorem partitionLiveAlt_shape :
   rfl
 
 private def partitionLiveResource : RetainedAlternativeSegment :=
-  { argsv := []
+  { callIdentity := PreparedCallIdentity.ofCursor partitionLiveCursor
+    argsv := []
     args := []
     res := .gnd (.int 2)
     rest := []
@@ -646,7 +654,7 @@ private theorem partitionLiveQuery :
 
 private theorem partitionLiveOwnership :
     partitionLiveResource.Owns [] partitionLiveCursor := by
-  refine ⟨[crossedRejectedExecutable], partitionLiveWellFormed,
+  refine ⟨rfl, [crossedRejectedExecutable], partitionLiveWellFormed,
     ?_, rfl, ?_, ?_, ?_⟩
   · simpa [partitionLiveResource] using partitionLiveQuery
   · exact .cons partitionLiveSupported .nil
@@ -795,8 +803,9 @@ private def chronologyAlt
     crossedRejectedExecutable
 
 private def chronologyResource
-    (barrier counter : Nat) : RetainedAlternativeSegment :=
-  { argsv := []
+    (seed barrier counter : Nat) : RetainedAlternativeSegment :=
+  { callIdentity := PreparedCallIdentity.ofCursor (chronologyCursor seed)
+    argsv := []
     args := []
     res := .gnd (.int 2)
     rest := []
@@ -884,9 +893,9 @@ private theorem chronologyQuery (seed : Nat) :
 
 private theorem chronologyOwnership
     (seed barrier counter : Nat) :
-    (chronologyResource barrier counter).Owns []
+    (chronologyResource seed barrier counter).Owns []
       (chronologyCursor seed) := by
-  refine ⟨[crossedRejectedExecutable], chronologyWellFormed seed,
+  refine ⟨rfl, [crossedRejectedExecutable], chronologyWellFormed seed,
     ?_, rfl, ?_, ?_, ?_⟩
   · simpa [chronologyResource] using chronologyQuery seed
   · exact .cons (chronologySupported seed) .nil
@@ -951,7 +960,7 @@ private def chronologySnapshot
     (outerControl : ControlSpineAgrees [] outer)
     (outerExecutables : flattenExecutables outer = []) :
     RetainedCallPayloadSnapshot [] []
-      (chronologyResource resourceBarrier counter)
+      (chronologyResource seed resourceBarrier counter)
       (chronologyCursor seed) (chronologySegment callerBarrier) outer := by
   have supported :
       AlphaTermsSupported [] [] [.integer 2] := by
@@ -1019,16 +1028,16 @@ private def chronologySnapshot
 private def chronologyOrderedZipper :
     SourceControlResourcePayloadContextAgrees [] [] (.sym "query") 30
       [chronologySegment 20, chronologySegment 10, chronologySegment 0]
-      [chronologyResource 30 6, chronologyResource 20 4,
-        chronologyResource 10 2]
+      [chronologyResource 6 30 6, chronologyResource 4 20 4,
+        chronologyResource 2 10 2]
       3
       [chronologyFrame 3 2 6, chronologyFrame 2 1 4,
         chronologyFrame 1 0 2]
       0 :=
   .cons 30 3 2 0 (chronologySegment 20)
     [chronologySegment 10, chronologySegment 0]
-    (chronologyResource 30 6)
-    [chronologyResource 20 4, chronologyResource 10 2]
+    (chronologyResource 6 30 6)
+    [chronologyResource 4 20 4, chronologyResource 2 10 2]
     (chronologyCursor 6)
     [chronologyFrame 2 1 4, chronologyFrame 1 0 2]
     (chronologyCallerAgrees 20) (by rfl) (by rfl) (by rfl)
@@ -1040,14 +1049,14 @@ private def chronologyOrderedZipper :
       rfl)
     (.cons 20 2 1 0 (chronologySegment 10)
       [chronologySegment 0]
-      (chronologyResource 20 4) [chronologyResource 10 2]
+      (chronologyResource 4 20 4) [chronologyResource 2 10 2]
       (chronologyCursor 4) [chronologyFrame 1 0 2]
       (chronologyCallerAgrees 10) (by rfl) (by rfl) (by rfl)
       (chronologyOwnership 4 20 4)
       (chronologySnapshot 4 20 4 10 [chronologySegment 0]
         (.cons (chronologyCallerAgrees 0) .nil) rfl)
       (.cons 10 1 0 0 (chronologySegment 0) []
-        (chronologyResource 10 2) [] (chronologyCursor 2) []
+        (chronologyResource 2 10 2) [] (chronologyCursor 2) []
         (chronologyCallerAgrees 0) (by rfl) (by rfl) (by rfl)
         (chronologyOwnership 2 10 2)
         (chronologySnapshot 2 10 2 0 [] .nil rfl)
@@ -1056,16 +1065,16 @@ private def chronologyOrderedZipper :
 private def chronologySwappedZipper :
     SourceControlResourcePayloadContextAgrees [] [] (.sym "query") 30
       [chronologySegment 20, chronologySegment 10, chronologySegment 0]
-      [chronologyResource 30 6, chronologyResource 20 2,
-        chronologyResource 10 4]
+      [chronologyResource 6 30 6, chronologyResource 2 20 2,
+        chronologyResource 4 10 4]
       3
       [chronologyFrame 3 2 6, chronologyFrame 2 1 2,
         chronologyFrame 1 0 4]
       0 :=
   .cons 30 3 2 0 (chronologySegment 20)
     [chronologySegment 10, chronologySegment 0]
-    (chronologyResource 30 6)
-    [chronologyResource 20 2, chronologyResource 10 4]
+    (chronologyResource 6 30 6)
+    [chronologyResource 2 20 2, chronologyResource 4 10 4]
     (chronologyCursor 6)
     [chronologyFrame 2 1 2, chronologyFrame 1 0 4]
     (chronologyCallerAgrees 20) (by rfl) (by rfl) (by rfl)
@@ -1077,14 +1086,14 @@ private def chronologySwappedZipper :
       rfl)
     (.cons 20 2 1 0 (chronologySegment 10)
       [chronologySegment 0]
-      (chronologyResource 20 2) [chronologyResource 10 4]
+      (chronologyResource 2 20 2) [chronologyResource 4 10 4]
       (chronologyCursor 2) [chronologyFrame 1 0 4]
       (chronologyCallerAgrees 10) (by rfl) (by rfl) (by rfl)
       (chronologyOwnership 2 20 2)
       (chronologySnapshot 2 20 2 10 [chronologySegment 0]
         (.cons (chronologyCallerAgrees 0) .nil) rfl)
       (.cons 10 1 0 0 (chronologySegment 0) []
-        (chronologyResource 10 4) [] (chronologyCursor 4) []
+        (chronologyResource 4 10 4) [] (chronologyCursor 4) []
         (chronologyCallerAgrees 0) (by rfl) (by rfl) (by rfl)
         (chronologyOwnership 4 10 4)
         (chronologySnapshot 4 10 4 0 [] .nil rfl)

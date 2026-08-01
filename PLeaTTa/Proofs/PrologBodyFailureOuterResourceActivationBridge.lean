@@ -202,7 +202,7 @@ theorem
         qterm outerScope suffixBarrier segments resources context baseAlts
         predecessor partition count finish branch clause branchTail copied
         (firstLiveReadySourceFrontier partition finish) successor := by
-  rcases partition.firstOwnership with
+  rcases partition.firstOwnership.scan with
     ⟨candidates, cursorWellFormed, query, substitutedArgs,
       supportedCandidates, candidateArities, candidateScan⟩
   obtain
@@ -290,8 +290,23 @@ theorem
   have tailOwnership :
       (afterPulledHead partition.first altTail).Owns alpha
         (finish.advance branch branchTail) :=
-    ⟨clauseTail, advancedWellFormed, queryAtAdvanced, substitutedArgs,
-      tailSupportedAtAdvanced, tailArities, tailScan⟩
+    by
+      have advancedIdentity :
+          PreparedCallIdentity.ofCursor (finish.advance branch branchTail) =
+            PreparedCallIdentity.ofCursor partition.firstCursor := by
+        apply PreparedCallIdentity.ofCursor_eq_of_callContext advancedContext
+        simpa [PreparedCursor.advance] using
+          (PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_reservedUntil
+            pulls)
+      refine ⟨?_, clauseTail, advancedWellFormed, queryAtAdvanced,
+        substitutedArgs, tailSupportedAtAdvanced, tailArities, tailScan⟩
+      calc
+        (afterPulledHead partition.first altTail).callIdentity =
+            partition.first.callIdentity := rfl
+        _ = PreparedCallIdentity.ofCursor partition.firstCursor :=
+          partition.firstOwnership.1
+        _ = PreparedCallIdentity.ofCursor
+            (finish.advance branch branchTail) := advancedIdentity.symm
   have offsetAtAltTail :
       PulledHeadOffsetAgrees alpha finish branch clause branchTail copied
         partition.first altTail :=
@@ -428,7 +443,8 @@ private def prefixFinish : PreparedCursor :=
   prefixCursor.advance prefixRejectedBranch [prefixRetainedBranch]
 
 private def prefixResource : RetainedAlternativeSegment :=
-  { argsv := []
+  { callIdentity := PreparedCallIdentity.ofCursor prefixCursor
+    argsv := []
     args := []
     res := .gnd (.int 1)
     rest := []
@@ -579,7 +595,7 @@ private theorem prefixPull :
 
 private theorem prefixOwnership : prefixResource.Owns [] prefixCursor := by
   refine
-    ⟨[prefixRejectedExecutable, prefixRetainedExecutable],
+    ⟨rfl, [prefixRejectedExecutable, prefixRetainedExecutable],
       prefixCursorWellFormed, ?_, rfl,
       .cons prefixRejectedSupported (.cons prefixRetainedSupported .nil),
       ?_, ?_⟩
@@ -646,7 +662,7 @@ private theorem prefixOffset :
   have tailOwnership :
       (afterPulledHead prefixResource []).Owns []
         (prefixFinish.advance prefixRetainedBranch []) := by
-    refine ⟨[], ?_, ?_, rfl, .nil, ?_, ?_⟩
+    refine ⟨rfl, [], ?_, ?_, rfl, .nil, ?_, ?_⟩
     · exact prefixFinish.advance_wellFormed finishWellFormed (by rfl)
     · have advancedContext :=
         finishContext.advance prefixRetainedBranch []
@@ -679,5 +695,26 @@ theorem one_rejected_before_retained_offset_is_inhabited :
     ⟨prefixCursor, prefixFinish, prefixRetainedBranch,
       prefixRetainedExecutable, prefixCopied, prefixResource,
       rfl, rfl, rfl, ⟨prefixPull, prefixOffset⟩⟩
+
+/-- The absolute source coordinate cannot be reconstructed from the
+executable resolution counter.  In this real scan the first occurrence is
+rejected silently, so the retained head is at source position one while the
+counter feeding its executable alternative is still zero. -/
+theorem one_rejected_source_position_one_counter_zero :
+    ∃ (before finish : PreparedCursor)
+        (resource : RetainedAlternativeSegment),
+      RejectedPullsN 1 before finish /\
+      CallScopedCursorPosition before finish 1 /\
+      finish.remaining.length = 1 /\
+      resource.Owns [] before /\
+      resource.counter = 0 /\
+      resource.alts.length = 1 := by
+  have positioned : CallScopedCursorPosition prefixCursor prefixFinish 1 := by
+    simpa using
+      (CallScopedCursorPosition.afterRejected prefixPull
+        (CallScopedCursorPosition.refl prefixCursor))
+  exact
+    ⟨prefixCursor, prefixFinish, prefixResource, prefixPull, positioned,
+      rfl, prefixOwnership, rfl, rfl⟩
 
 end PLeaTTa.PrologBodyFailureOuterResourceActivationBridge

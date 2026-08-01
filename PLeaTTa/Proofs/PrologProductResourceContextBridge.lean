@@ -26,6 +26,7 @@ open PrologStateBridge
 open PrologControlSegmentSpineBridge
 open PrologRepresentativeProductActivationBridge
 open PrologRepresentativeStepActivationBridge
+open PrologPrefilterScanBridge
 open PrologRetainedCursorOwnershipBridge
 open PrologSourceProductContextBridge
 open PrologSpinedSourceActivationBridge
@@ -47,12 +48,263 @@ compiled at that segment's stored barrier.  Its alternatives bake the whole
 remaining executable continuation, not only the head segment.
 -/
 
+/-- Immutable identity of one prepared local-call activation.
+
+`remaining` and `reservationStart` are deliberately absent: they advance
+together as frozen occurrences are consumed.  Every field retained here is
+fixed for the lifetime of the call.  Recording this projection prevents an
+empty resolution bank from erasing which call occurrence it belonged to
+without duplicating the candidate list or asserting whole-cursor equality. -/
+structure PreparedCallIdentity where
+  callGeneration : Generation
+  predicate : String
+  arguments : List Term
+  bindings : Substitution
+  reservedUntil : Nat
+deriving Repr
+
+namespace PreparedCallIdentity
+
+def ofCursor (cursor : PreparedCursor) : PreparedCallIdentity :=
+  { callGeneration := cursor.callGeneration
+    predicate := cursor.predicate
+    arguments := cursor.arguments
+    bindings := cursor.bindings
+    reservedUntil := cursor.reservedUntil }
+
+@[simp] theorem ofCursor_advance
+    (cursor : PreparedCursor) (branch : ClauseBranch)
+    (remaining : List ClauseBranch) :
+    ofCursor (cursor.advance branch remaining) = ofCursor cursor := by
+  rfl
+
+/-- The existing call-context zipper plus the frozen reservation ceiling is
+exactly the information represented by `PreparedCallIdentity`. -/
+theorem ofCursor_eq_of_callContext
+    {source target : PreparedCursor}
+    (context :
+      PrologSupportedCursorAlternativeBridge.CursorCallContext target
+        source.callGeneration source.predicate source.arguments
+        source.bindings)
+    (reservedUntil : target.reservedUntil = source.reservedUntil) :
+    ofCursor target = ofCursor source := by
+  cases source with
+  | mk sourceGeneration sourcePredicate sourceArguments sourceBindings
+      sourceStart sourceRemaining sourceUntil =>
+      cases target with
+      | mk targetGeneration targetPredicate targetArguments targetBindings
+          targetStart targetRemaining targetUntil =>
+          rcases context with
+            ⟨generationEq, predicateEq, argumentsEq, bindingsEq⟩
+          simp only at generationEq predicateEq argumentsEq bindingsEq
+          simp only at reservedUntil
+          subst targetGeneration
+          subst targetPredicate
+          subst targetArguments
+          subst targetBindings
+          subst targetUntil
+          rfl
+
+/-- Equal activation identities plus equal retained banks determine the whole
+prepared cursor.  This is the non-tautological bridge used at exhaustion:
+identity deliberately excludes `remaining`, so that equality must still be
+supplied by the cursor phase. -/
+theorem cursor_eq_of_eq_of_remaining_eq
+    {left right : PreparedCursor}
+    (identity : ofCursor left = ofCursor right)
+    (reservationStart : left.reservationStart = right.reservationStart)
+    (remaining : left.remaining = right.remaining) :
+    left = right := by
+  cases left with
+  | mk leftGeneration leftPredicate leftArguments leftBindings
+      leftStart leftRemaining leftUntil =>
+      cases right with
+      | mk rightGeneration rightPredicate rightArguments rightBindings
+          rightStart rightRemaining rightUntil =>
+          simp only [ofCursor] at identity
+          injection identity with generationEq predicateEq argumentsEq
+            bindingsEq untilEq
+          simp only at reservationStart
+          simp only at remaining
+          subst rightGeneration
+          subst rightPredicate
+          subst rightArguments
+          subst rightBindings
+          subst rightStart
+          subst rightRemaining
+          subst rightUntil
+          rfl
+
+private theorem freshReservation_nil_eq
+    {start finish : Nat}
+    (reserved : FreshReservation start [] finish) :
+    start = finish := by
+  cases reserved
+  rfl
+
+/-- A well-formed exhausted cursor has consumed its whole reserved interval,
+so its moving lower frontier has reached the fixed upper frontier. -/
+theorem reservationStart_eq_reservedUntil_of_remaining_nil
+    {cursor : PreparedCursor}
+    (wellFormed : cursor.WellFormed)
+    (empty : cursor.remaining = []) :
+    cursor.reservationStart = cursor.reservedUntil := by
+  have reserved :
+      FreshReservation cursor.reservationStart [] cursor.reservedUntil := by
+    simpa [PreparedCursor.WellFormed, PreparedCursor.WellReserved, empty]
+      using wellFormed.1
+  exact freshReservation_nil_eq reserved
+
+end PreparedCallIdentity
+
+/-- Absolute position of one current cursor suffix inside the immutable
+call-start occurrence bank.
+
+`position` indexes the occurrence at the head of `current.remaining`; when
+that list is empty it is the one-past-the-end position.  The consumed prefix
+is source-owned proof data, not a runtime token.  It counts every frozen
+occurrence, including conservative rejections which emit no executable
+alternative.  Consequently this coordinate must not be reconstructed from
+the executable resolution counter.
+
+The relation is call-scoped: `original` is the materialized cursor snapshot
+for this activation.  Database updates may change later calls, but cannot
+change this frozen bank. -/
+def CallScopedCursorPosition
+    (original current : PreparedCursor) (position : Nat) : Prop :=
+  PreparedCallIdentity.ofCursor current =
+      PreparedCallIdentity.ofCursor original /\
+    exists consumedPrefix : List ClauseBranch,
+      original.remaining = consumedPrefix ++ current.remaining /\
+        consumedPrefix.length = position
+
+namespace CallScopedCursorPosition
+
+/-- At call entry the first candidate is at position zero. -/
+theorem refl (cursor : PreparedCursor) :
+    CallScopedCursorPosition cursor cursor 0 :=
+  ⟨rfl, [], by simp, rfl⟩
+
+/-- Consuming the current head advances the absolute occurrence position by
+exactly one, independently of whether the occurrence was retained or
+rejected by the executable prefilter. -/
+theorem advance
+    {original current : PreparedCursor} {position : Nat}
+    {branch : ClauseBranch} {remaining : List ClauseBranch}
+    (positionProof : CallScopedCursorPosition original current position)
+    (currentHead : current.remaining = branch :: remaining) :
+    CallScopedCursorPosition original
+      (current.advance branch remaining) (position + 1) := by
+  rcases positionProof with
+    ⟨callIdentity, consumedPrefix, suffixExact, positionExact⟩
+  refine
+    ⟨(PreparedCallIdentity.ofCursor_advance current branch remaining).trans
+        callIdentity,
+      consumedPrefix ++ [branch], ?_, ?_⟩
+  · rw [suffixExact, currentHead]
+    simp [PreparedCursor.advance, List.append_assoc]
+  · simp [positionExact]
+
+/-- A real rejected-prefix derivation advances the same absolute coordinate
+by its exact transition count.  `RejectedPullsN` remains responsible only for
+the local clash-justified prefix; the cumulative coordinate comes from the
+plain frozen-bank suffix equation above. -/
+theorem afterRejected
+    {count : Nat} {before after original : PreparedCursor}
+    {position : Nat}
+    (pulls : RejectedPullsN count before after)
+    (positionProof : CallScopedCursorPosition original before position) :
+    CallScopedCursorPosition original after (position + count) := by
+  induction pulls generalizing position with
+  | zero cursor =>
+      simpa using positionProof
+  | succ count cursor branch branches finish remaining clash tail
+      inductionHypothesis =>
+      have one :
+          CallScopedCursorPosition original
+            (cursor.advance branch branches) (position + 1) :=
+        positionProof.advance remaining
+      have many := inductionHypothesis one
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using many
+
+/-- The definition's head-index convention is exposed directly: if the
+current suffix begins with `branch`, the original bank has exactly `position`
+occurrences before that selected occurrence. -/
+theorem selectedOccurrence
+    {original current : PreparedCursor} {position : Nat}
+    {branch : ClauseBranch} {remaining : List ClauseBranch}
+    (positionProof : CallScopedCursorPosition original current position)
+    (currentHead : current.remaining = branch :: remaining) :
+    exists consumed,
+      original.remaining = consumed ++ (branch :: remaining) /\
+        consumed.length = position := by
+  rcases positionProof with
+    ⟨_callIdentity, consumedPrefix, suffixExact, positionExact⟩
+  exact
+    ⟨consumedPrefix, by simpa [currentHead] using suffixExact,
+      positionExact⟩
+
+/-- The coordinate is exactly the length difference between the immutable
+call-start bank and the current suffix. -/
+theorem remaining_length_eq
+    {original current : PreparedCursor} {position : Nat}
+    (positionProof : CallScopedCursorPosition original current position) :
+    original.remaining.length = position + current.remaining.length := by
+  rcases positionProof with
+    ⟨_callIdentity, consumedPrefix, suffixExact, positionExact⟩
+  have lengths := congrArg List.length suffixExact
+  simpa [positionExact] using lengths
+
+/-- An exhausted current suffix is indexed one past the final call-start
+occurrence, not at the final occurrence itself. -/
+theorem onePastEnd
+    {original current : PreparedCursor} {position : Nat}
+    (positionProof : CallScopedCursorPosition original current position)
+    (empty : current.remaining = []) :
+    position = original.remaining.length := by
+  have lengths := positionProof.remaining_length_eq
+  simp [empty] at lengths
+  omega
+
+/-- A nonempty current suffix makes `position` a valid index of its head in
+the immutable call-start bank. -/
+theorem headPosition_lt
+    {original current : PreparedCursor} {position : Nat}
+    {branch : ClauseBranch} {remaining : List ClauseBranch}
+    (positionProof : CallScopedCursorPosition original current position)
+    (currentHead : current.remaining = branch :: remaining) :
+    position < original.remaining.length := by
+  have lengths := positionProof.remaining_length_eq
+  simp [currentHead] at lengths
+  omega
+
+/-- For fixed original and current cursors, the absolute position is unique;
+no proof can choose a cheaper or later prefix with the same endpoints. -/
+theorem position_unique
+    {original current : PreparedCursor} {left right : Nat}
+    (leftAt : CallScopedCursorPosition original current left)
+    (rightAt : CallScopedCursorPosition original current right) :
+    left = right := by
+  rcases leftAt with
+    ⟨_leftIdentity, leftPrefix, leftSuffix, leftPosition⟩
+  rcases rightAt with
+    ⟨_rightIdentity, rightPrefix, rightSuffix, rightPosition⟩
+  have leftLength := congrArg List.length leftSuffix
+  have rightLength := congrArg List.length rightSuffix
+  simp only [List.length_append] at leftLength rightLength
+  rw [leftPosition] at leftLength
+  rw [rightPosition] at rightLength
+  omega
+
+end CallScopedCursorPosition
+
 /-- Every observable input and output of one retained resolution scan.
 
 This is proof data rather than runtime state.  Keeping the fields explicit
 prevents an arbitrary-depth relation from existentially changing the caller
 continuation, binding, query term, or cut tag already embedded in `alts`. -/
 structure RetainedAlternativeSegment where
+  callIdentity : PreparedCallIdentity
   argsv : List Atom
   args : List Atom
   res : Atom
@@ -73,9 +325,66 @@ def Owns
     (alpha : List (LogicVar × String))
     (cursor : PreparedCursor)
     (resource : RetainedAlternativeSegment) : Prop :=
-  RetainedCursorAlternativeOwnership alpha cursor resource.argsv
-    resource.args resource.res resource.rest resource.binding resource.qterm
-    resource.barrier resource.counter resource.alts resource.finalCounter
+  resource.callIdentity = PreparedCallIdentity.ofCursor cursor ∧
+    RetainedCursorAlternativeOwnership alpha cursor resource.argsv
+      resource.args resource.res resource.rest resource.binding resource.qterm
+      resource.barrier resource.counter resource.alts resource.finalCounter
+
+/-- Exact ownership exposes the pre-existing ordered-scan certificate after
+the activation identity has been checked. -/
+theorem Owns.scan
+    {alpha : List (LogicVar × String)}
+    {cursor : PreparedCursor} {resource : RetainedAlternativeSegment}
+    (ownership : resource.Owns alpha cursor) :
+    RetainedCursorAlternativeOwnership alpha cursor resource.argsv
+      resource.args resource.res resource.rest resource.binding resource.qterm
+      resource.barrier resource.counter resource.alts resource.finalCounter :=
+  ownership.2
+
+/-- Enlarging the alpha graph changes only the semantic scan certificate;
+the exact call identity and every executable resource field remain fixed. -/
+theorem Owns.mono
+    {smaller larger : List (LogicVar × String)}
+    (included : ∀ pair, pair ∈ smaller → pair ∈ larger)
+    {cursor : PreparedCursor} {resource : RetainedAlternativeSegment}
+    (ownership : resource.Owns smaller cursor) :
+    resource.Owns larger cursor :=
+  ⟨ownership.1,
+    RetainedCursorAlternativeOwnership.mono included ownership.scan⟩
+
+/-- One resource cannot own two different exhausted cursors.  At exhaustion
+both retained banks are literally empty, while `Owns` fixes every immutable
+call-entry field through `PreparedCallIdentity`; cursor extensionality then
+closes the formerly ambiguous occurrence. -/
+theorem Owns.exhausted_cursor_injective
+    {alpha : List (LogicVar × String)}
+    {left right : PreparedCursor}
+    {resource : RetainedAlternativeSegment}
+    (leftOwnership : resource.Owns alpha left)
+    (rightOwnership : resource.Owns alpha right)
+    (leftEmpty : left.remaining = [])
+    (rightEmpty : right.remaining = []) :
+    left = right := by
+  have identity := leftOwnership.1.symm.trans rightOwnership.1
+  have leftWellFormed : left.WellFormed := by
+    rcases leftOwnership.scan with
+      ⟨_candidates, wellFormed, _query, _args, _supported, _arities, _scan⟩
+    exact wellFormed
+  have rightWellFormed : right.WellFormed := by
+    rcases rightOwnership.scan with
+      ⟨_candidates, wellFormed, _query, _args, _supported, _arities, _scan⟩
+    exact wellFormed
+  have leftStart : left.reservationStart = left.reservedUntil :=
+    PreparedCallIdentity.reservationStart_eq_reservedUntil_of_remaining_nil
+      leftWellFormed leftEmpty
+  have rightStart : right.reservationStart = right.reservedUntil :=
+    PreparedCallIdentity.reservationStart_eq_reservedUntil_of_remaining_nil
+      rightWellFormed rightEmpty
+  have untilEq : left.reservedUntil = right.reservedUntil :=
+    congrArg PreparedCallIdentity.reservedUntil identity
+  apply PreparedCallIdentity.cursor_eq_of_eq_of_remaining_eq identity
+  · exact leftStart.trans (untilEq.trans rightStart.symm)
+  · exact leftEmpty.trans rightEmpty.symm
 
 /-- Owned frame alternatives never contain an anonymous predicate marker;
 that marker is inserted once by `flattenOwnedAlts`. -/
@@ -84,7 +393,7 @@ theorem barrierCount_zero
     {cursor : PreparedCursor} {resource : RetainedAlternativeSegment}
     (ownership : resource.Owns alpha cursor) :
     PLeaTTa.barrierCount resource.alts = 0 :=
-  RetainedCursorAlternativeOwnership.barrierCount_zero ownership
+  RetainedCursorAlternativeOwnership.barrierCount_zero ownership.scan
 
 /-- Conservative prefiltering can only reduce executable alternative count,
 never create more alternatives than frozen source occurrences. -/
@@ -93,7 +402,7 @@ theorem alts_length_le
     {cursor : PreparedCursor} {resource : RetainedAlternativeSegment}
     (ownership : resource.Owns alpha cursor) :
     resource.alts.length ≤ cursor.remaining.length :=
-  RetainedCursorAlternativeOwnership.alts_length_le ownership
+  RetainedCursorAlternativeOwnership.alts_length_le ownership.scan
 
 end RetainedAlternativeSegment
 
@@ -140,7 +449,8 @@ theorem pendingOwnership_exists_segment
     ⟨argsv, args, res, binding, counter, callHead, queryTerm, barrierExact,
       cursorOwnership⟩
   let resource : RetainedAlternativeSegment :=
-    { argsv := argsv
+    { callIdentity := PreparedCallIdentity.ofCursor cursor
+      argsv := argsv
       args := args
       res := res
       rest := rest
@@ -151,7 +461,7 @@ theorem pendingOwnership_exists_segment
       alts := alts
       finalCounter := pending.persistent.counter }
   exact
-    ⟨resource, rfl, rfl, rfl, rfl, rfl, cursorOwnership⟩
+    ⟨resource, rfl, rfl, rfl, rfl, rfl, rfl, cursorOwnership⟩
 
 /-- Arbitrary-depth alignment of:
 
@@ -267,7 +577,7 @@ theorem flattenOwnedAlts_barrierCount
       resourceQuery resourceBarrier resourceOwnership outerAgrees
       inductionHypothesis =>
       rw [flattenOwnedAlts_cons, PLeaTTa.barrierCount_append,
-        resourceOwnership.barrierCount_zero,
+        RetainedAlternativeSegment.barrierCount_zero resourceOwnership,
         PLeaTTa.barrierCount_cons_barrier, inductionHypothesis]
       simp only [List.length_cons]
       omega
@@ -310,9 +620,10 @@ theorem two_resource_frames_are_inhabited
       reservationStart := 0
       remaining := []
       reservedUntil := 0 }
-  let resourceFor (rest : List PLeaTTa.Goal)
+  let resourceFor (predicate : String) (rest : List PLeaTTa.Goal)
       (barrier : Nat) : RetainedAlternativeSegment :=
-    { argsv := []
+    { callIdentity := PreparedCallIdentity.ofCursor (cursorFor predicate)
+      argsv := []
       args := []
       res := .sym "owned-output"
       rest := rest
@@ -324,8 +635,9 @@ theorem two_resource_frames_are_inhabited
       finalCounter := 0 }
   have owns (predicate : String) (rest : List PLeaTTa.Goal)
       (barrier : Nat) :
-      (resourceFor rest barrier).Owns alpha (cursorFor predicate) := by
-    refine ⟨[], ?_, ?_, rfl, .nil, ?_, ?_⟩
+      (resourceFor predicate rest barrier).Owns alpha
+        (cursorFor predicate) := by
+    refine ⟨rfl, [], ?_, ?_, rfl, .nil, ?_, ?_⟩
     · refine ⟨.nil 0, ?_, ?_, ?_⟩
       · intro index member
         simp [cursorFor, termsVariables, termVariables,
@@ -347,9 +659,10 @@ theorem two_resource_frames_are_inhabited
   let firstCursor := cursorFor "owned-first"
   let secondCursor := cursorFor "owned-second"
   let firstResource :=
-    resourceFor
+    resourceFor "owned-first"
       (first.executables ++ flattenExecutables [second]) currentBarrier
-  let secondResource := resourceFor second.executables first.barrier
+  let secondResource :=
+    resourceFor "owned-second" second.executables first.barrier
   refine ⟨firstCursor, secondCursor, firstResource, secondResource, ?_⟩
   exact
     .cons currentBarrier inner middle outer first [second] firstResource
@@ -361,7 +674,7 @@ theorem two_resource_frames_are_inhabited
       firstAgrees rfl rfl rfl
       (owns "owned-first"
         (first.executables ++ flattenExecutables [second]) currentBarrier)
-      (.cons first.barrier middle outer outer second [] secondResource []
+        (.cons first.barrier middle outer outer second [] secondResource []
         secondCursor [] secondAgrees (by simp [secondResource, resourceFor])
         rfl rfl
         (owns "owned-second" second.executables first.barrier)
@@ -382,7 +695,7 @@ theorem dropped_owned_barrier_is_rejected
   intro equality
   have counts := congrArg PLeaTTa.barrierCount equality
   simp only [flattenOwnedAlts_cons, PLeaTTa.barrierCount_append,
-    ownership.barrierCount_zero, Nat.zero_add,
+    RetainedAlternativeSegment.barrierCount_zero ownership, Nat.zero_add,
     PLeaTTa.barrierCount_cons_barrier] at counts
   omega
 
@@ -403,7 +716,7 @@ theorem extra_owned_barrier_is_rejected
   intro equality
   have counts := congrArg PLeaTTa.barrierCount equality
   simp only [flattenOwnedAlts_cons, PLeaTTa.barrierCount_append,
-    ownership.barrierCount_zero, Nat.zero_add,
+    RetainedAlternativeSegment.barrierCount_zero ownership, Nat.zero_add,
     PLeaTTa.barrierCount_cons_barrier] at counts
   omega
 
@@ -490,7 +803,8 @@ theorem
             qterm installed).alts =
         (resources.length + 1) + PLeaTTa.barrierCount baseAlts := by
     rw [actualAlts, flattenOwnedAlts_cons,
-      PLeaTTa.barrierCount_append, activeOwnership.barrierCount_zero,
+      PLeaTTa.barrierCount_append,
+      RetainedAlternativeSegment.barrierCount_zero activeOwnership,
       PLeaTTa.barrierCount_cons_barrier,
       alignment.flattenOwnedAlts_barrierCount]
     omega

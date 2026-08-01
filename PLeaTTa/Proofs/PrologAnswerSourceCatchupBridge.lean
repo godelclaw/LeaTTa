@@ -369,29 +369,67 @@ theorem head_exact
       candidatesEq, altsEq, frontier.selected, supported, arity, kept,
       tailSupported, tailScan⟩
 
+/-- A positioned ready frontier identifies the exact supported source clause
+occurrence at the absolute index in the immutable call-start bank.  This is
+stronger than identifying the clause payload: duplicate payloads remain
+distinguished by their consumed-prefix lengths. -/
+theorem source_occurrence_at
+    {alpha : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {selectedTail : List PLeaTTa.Alt}
+    {callStart original finish : PreparedCursor} {position : Nat}
+    {candidates : List PLeaTTa.Clause}
+    (positioned : CallScopedCursorPosition callStart finish position)
+    (frontier :
+      SelectedReadyFrontier alpha resource selectedGoals selectedBinding
+        selectedTail original finish candidates) :
+    exists consumed branch clause branchTail clauseTail,
+      callStart.remaining = consumed ++ (branch :: branchTail) /\
+      consumed.length = position /\
+      finish.remaining = branch :: branchTail /\
+      candidates = clause :: clauseTail /\
+      SupportedPreparedCandidateAgrees original.callGeneration
+        original.predicate original.arguments original.bindings branch clause := by
+  obtain
+    ⟨branch, clause, branchTail, clauseTail, _altTail, remaining,
+      candidatesEq, _altsEq, _selected, supported, _arity, _kept,
+      _tailSupported, _tailScan⟩ := frontier.head_exact
+  obtain ⟨consumed, callStartEq, positionEq⟩ :=
+    positioned.selectedOccurrence remaining
+  exact
+    ⟨consumed, branch, clause, branchTail, clauseTail, callStartEq,
+      positionEq, remaining, candidatesEq, supported⟩
+
 end SelectedReadyFrontier
 
 namespace RetainedAlternativeSegment
 
 /-- A selected marker-free resource advances the source cursor through its
 maximal definitely rejected prefix and lands at the exact supported
-occurrence selected by the executable bank. -/
-theorem catchupSelected
+occurrence selected by the executable bank.  The returned call-scoped
+coordinate counts every rejected source occurrence, even though those
+occurrences contributed no executable alternative and did not advance the
+resolution counter. -/
+theorem catchupSelectedAt
     {alpha : List (LogicVar × String)}
-    {resource : RetainedAlternativeSegment} {cursor : PreparedCursor}
+    {resource : RetainedAlternativeSegment}
+    {callStart cursor : PreparedCursor} {position : Nat}
     {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
     {selectedTail : List PLeaTTa.Alt}
     (ownership : resource.Owns alpha cursor)
     (selected :
       resource.alts = .br selectedGoals selectedBinding :: selectedTail)
+    (positioned : CallScopedCursorPosition callStart cursor position)
     (scope : CutScopeId) (session : Session) :
     exists count finish,
       exists readyClauses,
         SilentStepsN session count (.clauses scope cursor)
           (.clauses scope finish) /\
-        SelectedReadyFrontier alpha resource selectedGoals selectedBinding
-          selectedTail cursor finish readyClauses := by
-  rcases ownership with
+        CallScopedCursorPosition callStart finish (position + count) /\
+          SelectedReadyFrontier alpha resource selectedGoals selectedBinding
+            selectedTail cursor finish readyClauses := by
+  rcases ownership.scan with
     ⟨candidates, wellFormed, query, substitutedArgs, supported, arities,
       scan⟩
   obtain
@@ -413,8 +451,8 @@ theorem catchupSelected
     ⟨count, finish, readyClauses,
       PLeaTTa.PrologAnswerSourceCatchupBridge.RejectedPullsN.toSilentStepsN
         pulls scope session,
-      { ownership := ⟨candidates, wellFormed, query, substitutedArgs,
-          supported, arities, scan⟩
+      CallScopedCursorPosition.afterRejected pulls positioned,
+      { ownership := ownership
         selected := selected
         context := finishContext
         ready := readyAtFinish }⟩
@@ -430,7 +468,7 @@ theorem catchupEmpty
     (scope : CutScopeId) (session : Session) :
     exists count,
       CompletesN session count (.clauses scope cursor) := by
-  rcases ownership with
+  rcases ownership.scan with
     ⟨candidates, wellFormed, query, substitutedArgs, supported, arities,
       scan⟩
   obtain
@@ -472,15 +510,17 @@ end RetainedAlternativeSegment
 /-- A source search focused at the exact conservative occurrence selected by
 the executable pull.  Wrapper constructors retain every source-control node
 which remains active at the landing; a consumed choice is intentionally
-absent.  The local constructor carries the branch-indexed supported frontier,
-so later head success/failure can attach without rediscovering occurrence
-identity. -/
+absent.  The local constructor carries the branch-indexed supported frontier
+and its absolute call-start position, so later head success/failure can attach
+without rediscovering or conflating a duplicate occurrence. -/
 inductive ConservativeReadyTarget
     (alpha : List (LogicVar × String))
     (selectedGoals : List PLeaTTa.Goal) (selectedBinding : Subst) :
     List PLeaTTa.Alt -> Search -> Prop where
   | clauses (scope : CutScopeId)
-      (original finish : PreparedCursor)
+      (callStart original finish : PreparedCursor)
+      (position : Nat)
+      (positioned : CallScopedCursorPosition callStart finish position)
       (resource : RetainedAlternativeSegment)
       (selectedTail : List PLeaTTa.Alt)
       (candidates : List PLeaTTa.Clause)
@@ -730,7 +770,9 @@ private def OriginFallsRealizes
 
 private theorem realizeRightClauses
     {alpha : List (LogicVar × String)} (session : Session)
-    (scope : CutScopeId) (cursor : PreparedCursor)
+    (scope : CutScopeId) (callStart cursor : PreparedCursor)
+    (position : Nat)
+    (positioned : CallScopedCursorPosition callStart cursor position)
     (resource : RetainedAlternativeSegment)
     (ownership : resource.Owns alpha cursor)
     (goals : List PLeaTTa.Goal) (binding : Subst)
@@ -738,15 +780,16 @@ private theorem realizeRightClauses
     (head : resource.alts = .br goals binding :: tail)
     (pullExact : PLeaTTa.pullAux resource.alts = some ((goals, binding), tail)) :
     RightLandingRealizes session
-      (.clauses scope cursor resource ownership goals binding tail head
-        pullExact) := by
-  obtain ⟨count, finish, candidates, steps, frontier⟩ :=
-    PLeaTTa.PrologAnswerSourceCatchupBridge.RetainedAlternativeSegment.catchupSelected
-      ownership head scope session
+      (.clauses scope callStart cursor position positioned resource ownership
+        goals binding tail head pullExact) := by
+  obtain ⟨count, finish, candidates, steps, finishPosition, frontier⟩ :=
+    PLeaTTa.PrologAnswerSourceCatchupBridge.RetainedAlternativeSegment.catchupSelectedAt
+      ownership head positioned scope session
   exact
     ⟨count, .clauses scope finish, steps,
       ConservativeReadyPullTarget.exact
-        (.clauses scope cursor finish resource tail candidates frontier)⟩
+        (.clauses scope callStart cursor finish (position + count)
+          finishPosition resource tail candidates frontier)⟩
 
 private theorem realizeRightScheduled
     {alpha : List (LogicVar × String)} (session : Session)
@@ -800,13 +843,16 @@ private theorem realizeRightTaskChoices
 
 private theorem realizeRightEmptyClauses
     {alpha : List (LogicVar × String)} (session : Session)
-    (scope : CutScopeId) (cursor : PreparedCursor)
+    (scope : CutScopeId) (_callStart cursor : PreparedCursor)
+    (_position : Nat)
+    (_positioned : CallScopedCursorPosition _callStart cursor _position)
     (resource : RetainedAlternativeSegment)
     (ownership : resource.Owns alpha cursor)
     (empty : resource.alts = [])
     (pullNone : PLeaTTa.pullAux resource.alts = none) :
     RightEmptyRealizes session
-      (.clauses scope cursor resource ownership empty pullNone) := by
+      (.clauses scope _callStart cursor _position _positioned resource ownership
+        empty pullNone) := by
   exact
     PLeaTTa.PrologAnswerSourceCatchupBridge.RetainedAlternativeSegment.catchupEmpty
       ownership empty scope session

@@ -18,6 +18,7 @@ open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.Canonical
 open PeTTaSpec.PrologCore.GoalSemantics
 open PeTTaSpec.PrologCore.OpenSubstitution
+open PeTTaSpec.PrologCore.Resolver
 open PrologAnswerOriginBridge
 open PrologControlSegmentSpineBridge
 open PrologGoalAlpha
@@ -431,7 +432,9 @@ mutual
       (alpha : List (LogicVar × String)) :
       Search → List RetainedAlternativeSegment → List PLeaTTa.Alt → Prop where
     | clauses (scope : CutScopeId)
-        (cursor : PeTTaSpec.PrologCore.Resolver.PreparedCursor)
+        (original cursor : PeTTaSpec.PrologCore.Resolver.PreparedCursor)
+        (position : Nat)
+        (positioned : CallScopedCursorPosition original cursor position)
         (resource : RetainedAlternativeSegment)
         (ownership : resource.Owns alpha cursor) :
         RightAlternativeRegionAgrees alpha (.clauses scope cursor)
@@ -560,8 +563,27 @@ theorem clauses_exact
         [resource] segment) :
     segment = resource.alts ∧ resource.Owns alpha cursor := by
   cases agreement with
-  | clauses _ _ _ ownership =>
+  | clauses _ _ _ _ _ _ ownership =>
       exact ⟨rfl, ownership⟩
+
+/-- A clause region retains the immutable call-start cursor and the absolute
+position of its current suffix head.  The position is source-derived and
+call-scoped; it is not reconstructed from the executable alternative counter,
+which omits conservatively rejected occurrences. -/
+theorem clauses_position_exact
+    {alpha : List (LogicVar × String)} {scope : CutScopeId}
+    {cursor : PeTTaSpec.PrologCore.Resolver.PreparedCursor}
+    {resource : RetainedAlternativeSegment} {segment : List PLeaTTa.Alt}
+    (agreement :
+      RightAlternativeRegionAgrees alpha (.clauses scope cursor)
+        [resource] segment) :
+    exists original position,
+      CallScopedCursorPosition original cursor position /\
+        segment = resource.alts /\
+        resource.Owns alpha cursor := by
+  cases agreement with
+  | clauses _ original _ position positioned _ ownership =>
+      exact ⟨original, position, positioned, rfl, ownership⟩
 
 /-- Shape inversion for a clause region without presupposing the singleton
 resource.  This is the robust form used by order-rejection proofs: the
@@ -578,7 +600,7 @@ theorem clauses_shape
       resources = [resource] ∧ segment = resource.alts ∧
         resource.Owns alpha cursor := by
   cases agreement with
-  | clauses _ _ resource ownership =>
+  | clauses _ _ _ _ _ resource ownership =>
       exact ⟨resource, rfl, rfl, ownership⟩
   | taskChoices => contradiction
 
@@ -753,7 +775,7 @@ mutual
         RightAlternativeRegionAgrees alpha right resources segment) :
       ResourcesBarrierFree resources := by
     cases agreement with
-    | clauses _ _ resource ownership =>
+    | clauses _ _ _ _ _ resource ownership =>
         intro candidate member
         simp only [List.mem_singleton] at member
         subst candidate
@@ -921,7 +943,7 @@ private theorem endpoints_suffix
     (motive_2 := fun _ beforeResources afterResources beforeAlts afterAlts _ =>
       (∃ consumed, beforeResources = consumed ++ afterResources) ∧
         ∃ consumed, beforeAlts = consumed ++ afterAlts)
-    (fun _ _ _ _ => True.intro)
+    (by intros; trivial)
     (by intros; trivial)
     (by intros; trivial)
     (fun _ _ _ _ => ⟨⟨[], rfl⟩, ⟨[], rfl⟩⟩)
@@ -983,10 +1005,13 @@ theorem alts_suffix
 
 /-- The active-call shape consumes the retained clause alternatives at its
 choice and the activation's one marker at its enclosing cut boundary. -/
-theorem active_call_exact
+theorem active_call_exact_at
     {alpha : List (LogicVar × String)}
     (predicateScope : CutScopeId) (bindings : Substitution)
+    (original : PeTTaSpec.PrologCore.Resolver.PreparedCursor)
     (cursor : PeTTaSpec.PrologCore.Resolver.PreparedCursor)
+    (position : Nat)
+    (positioned : CallScopedCursorPosition original cursor position)
     (resource : RetainedAlternativeSegment)
     (resources : List RetainedAlternativeSegment)
     (base : List PLeaTTa.Alt)
@@ -1002,7 +1027,8 @@ theorem active_call_exact
   apply AnswerOriginResourceAgrees.choice
     (regionResources := [resource]) (regionAlts := resource.alts)
   · exact AnswerOriginResourceAgrees.task _ _ _ _
-  · exact RightAlternativeRegionAgrees.clauses _ _ _ ownership
+  · exact RightAlternativeRegionAgrees.clauses _ original cursor position
+      positioned resource ownership
 
 /-- A one-level scheduled right branch is the historical product successor of
 the exact active-call answer path.  This is a corollary of the general
@@ -1033,7 +1059,8 @@ theorem one_level_scheduled_region_exact
       AnswerOriginResourceAgrees alpha origin [resource] []
         (flattenOwnedAlts [resource] []) [] := by
     simpa [flattenOwnedAlts] using
-      (active_call_exact predicateScope bindings cursor resource [] [] ownership)
+      (active_call_exact_at predicateScope bindings cursor cursor 0
+        (CallScopedCursorPosition.refl cursor) resource [] [] ownership)
   simpa [flattenOwnedAlts] using
     (RightAlternativeRegionAgrees.scheduled callerScope callerTail origin
       [resource] (by simp) history)
@@ -1233,8 +1260,8 @@ theorem active_under_scheduled_exact
           (PLeaTTa.Alt.barrier ::
             ((outerResource.alts ++ [PLeaTTa.Alt.barrier]) ++ base)))
         ((outerResource.alts ++ [PLeaTTa.Alt.barrier]) ++ base) :=
-    active_call_exact innerPredicateScope bindings innerCursor innerResource
-      [outerResource]
+    active_call_exact_at innerPredicateScope bindings innerCursor innerCursor 0
+      (CallScopedCursorPosition.refl innerCursor) innerResource [outerResource]
       ((outerResource.alts ++ [PLeaTTa.Alt.barrier]) ++ base)
       innerOwnership
   have regionAgrees :
@@ -1514,8 +1541,8 @@ theorem scheduled_double_marker_rejected
 
 /-- If upstream ownership distinguishes an empty-bank cursor, the origin
 zipper cannot replace it merely because the executable segment is empty.
-The separate counterexample below records that `Owns` itself does not yet
-distinguish every exhausted call identity. -/
+`PreparedCallIdentity` below discharges that premise for distinct exhausted
+calls; nonempty duplicate occurrences remain a deliberately separate case. -/
 theorem empty_bank_wrong_cursor_rejected_of_notOwned
     {alpha : List (LogicVar × String)}
     {predicateScope : CutScopeId} {bindings : Substitution}
@@ -1547,8 +1574,11 @@ private def exhaustedIdentityCursor
     remaining := []
     reservedUntil := 0 }
 
-private def exhaustedIdentityResource : RetainedAlternativeSegment :=
-  { argsv := []
+private def exhaustedIdentityResource
+    (predicate : String) : RetainedAlternativeSegment :=
+  { callIdentity :=
+      PreparedCallIdentity.ofCursor (exhaustedIdentityCursor predicate)
+    argsv := []
     args := []
     res := .sym "owned-output"
     rest := []
@@ -1561,9 +1591,10 @@ private def exhaustedIdentityResource : RetainedAlternativeSegment :=
 
 private theorem exhaustedIdentityResource_owns
     (predicate : String) :
-    exhaustedIdentityResource.Owns ([] : List (LogicVar × String))
+    (exhaustedIdentityResource predicate).Owns
+      ([] : List (LogicVar × String))
       (exhaustedIdentityCursor predicate) := by
-  refine ⟨[], ?_, ?_, rfl, .nil, ?_, ?_⟩
+  refine ⟨rfl, [], ?_, ?_, rfl, .nil, ?_, ?_⟩
   · refine ⟨.nil 0, ?_, ?_, ?_⟩
     · intro index member
       simp [exhaustedIdentityCursor,
@@ -1587,27 +1618,213 @@ private theorem exhaustedIdentityResource_owns
     simp at member
   · exact PrologActivationMacro.ResolutionScan.nil 0
 
-/-- Upstream exhausted-resource ownership is not injective on call identity:
-one literal empty descriptor owns two cursors with different predicate names.
-The origin zipper remains exact conditional proof data, but unconditional
-occurrence recovery requires strengthening the resource certificate (or an
-explicit observational quotient) rather than pretending this seam is closed. -/
-theorem exhausted_resource_ownership_not_cursor_injective :
+/-- The repaired exhausted-resource certificate discriminates distinct call
+occurrences even though both executable alternative banks are empty.  This is
+the concrete anti-vacuity counterpart of `Owns.exhausted_cursor_injective`:
+the formerly admitted predicate substitution is now rejected. -/
+theorem exhausted_resource_wrong_predicate_rejected :
     let leftCursor := exhaustedIdentityCursor "owned-left"
     let rightCursor := exhaustedIdentityCursor "owned-right"
+    let resource := exhaustedIdentityResource "owned-left"
     leftCursor ≠ rightCursor ∧
-      exhaustedIdentityResource.alts = [] ∧
-      exhaustedIdentityResource.Owns [] leftCursor ∧
-      exhaustedIdentityResource.Owns [] rightCursor := by
+      resource.alts = [] ∧
+      resource.Owns [] leftCursor ∧
+      ¬ resource.Owns [] rightCursor := by
   dsimp only
-  constructor
-  · intro cursorsEq
+  have cursorsDifferent :
+      exhaustedIdentityCursor "owned-left" ≠
+        exhaustedIdentityCursor "owned-right" := by
+    intro cursorsEq
     have predicatesEq := congrArg
       PeTTaSpec.PrologCore.Resolver.PreparedCursor.predicate cursorsEq
     simp [exhaustedIdentityCursor] at predicatesEq
+  have leftOwnership := exhaustedIdentityResource_owns "owned-left"
+  refine ⟨cursorsDifferent, rfl, leftOwnership, ?_⟩
+  intro rightOwnership
+  exact cursorsDifferent
+    (RetainedAlternativeSegment.Owns.exhausted_cursor_injective
+      leftOwnership rightOwnership (by rfl) (by rfl))
+
+private def duplicateOccurrenceReference
+    (id : ClauseId) : VersionedClause :=
+  { id := id
+    clause :=
+      { predicate := "duplicate-occurrence"
+        arguments := [.integer 1]
+        body := [] }
+    created := 0 }
+
+private def duplicateOccurrenceExecutable : PLeaTTa.Clause :=
+  { params := []
+    result := .gnd (.int 1)
+    body := [] }
+
+private def duplicateOccurrenceBranch (id : ClauseId) : ClauseBranch :=
+  PrologCallEntryBridge.preparedBranchOf 0 [.integer 1] [] 0
+    (duplicateOccurrenceReference id)
+
+private def duplicateOccurrenceCursor (id : ClauseId) : PreparedCursor :=
+  { callGeneration := 0
+    predicate := "duplicate-occurrence"
+    arguments := [.integer 1]
+    bindings := []
+    reservationStart := 0
+    remaining := [duplicateOccurrenceBranch id]
+    reservedUntil := (duplicateOccurrenceBranch id).nextFresh }
+
+private def duplicateOccurrenceResource : RetainedAlternativeSegment :=
+  { callIdentity :=
+      PreparedCallIdentity.ofCursor (duplicateOccurrenceCursor 0)
+    argsv := []
+    args := []
+    res := .gnd (.int 1)
+    rest := []
+    binding := []
+    qterm := .sym "duplicate-query"
+    barrier := 0
+    counter := 0
+    alts :=
+      [PrologActivationMacro.resolutionAlt [] [] (.gnd (.int 1)) [] []
+        (.sym "duplicate-query") 0 0 duplicateOccurrenceExecutable]
+    finalCounter := 1 }
+
+private theorem duplicateOccurrenceCandidateAgreement
+    (id : ClauseId) :
+    PrologCallEntryBridge.CandidateClauseAgrees "duplicate-occurrence"
+      (duplicateOccurrenceReference id) duplicateOccurrenceExecutable := by
+  refine
+    { predicate := rfl
+      outputLast := ?_
+      body := .nil
+      support := ?_ }
+  · exact ⟨[], .integer 1, rfl, .nil, .integer 1⟩
+  · intro name
+    simp [duplicateOccurrenceReference, duplicateOccurrenceExecutable,
+      LocalClause.variables, PLeaTTa.resolutionClauseVars,
+      Metta.Atom.vars, PLeaTTa.specializationGoalsVars,
+      Resolver.termsVariables, Resolver.termVariables, Resolver.goalsVariables]
+
+private theorem duplicateOccurrenceSupported (id : ClauseId) :
+    PrologCallPayloadBridge.SupportedPreparedCandidateAgrees 0
+      "duplicate-occurrence" [.integer 1] []
+      (duplicateOccurrenceBranch id) duplicateOccurrenceExecutable := by
+  refine .intro (duplicateOccurrenceReference id) 0
+    duplicateOccurrenceExecutable (duplicateOccurrenceCandidateAgreement id)
+    ?_ ?_
+  · intro left right leftMember rightMember
+    simp [duplicateOccurrenceReference, LocalClause.variables,
+      Resolver.termsVariables, Resolver.termVariables,
+      Resolver.goalsVariables] at leftMember
+  · change
+      CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported [] []
+        (duplicateOccurrenceCandidateAgreement id).body
+    have proofEq :
+        (duplicateOccurrenceCandidateAgreement id).body =
+          (CompilerAdequacy.GoalsAgree.nil :
+            CompilerAdequacy.GoalsAgree [] []) :=
+      Subsingleton.elim _ _
+    rw [proofEq]
+    exact .nil
+
+private theorem duplicateOccurrenceWellFormed (id : ClauseId) :
+    (duplicateOccurrenceCursor id).WellFormed := by
+  refine ⟨?_, ?_, ?_, ?_⟩
   · exact
-      ⟨rfl, exhaustedIdentityResource_owns "owned-left",
-        exhaustedIdentityResource_owns "owned-right"⟩
+      .cons 0 (duplicateOccurrenceBranch id) []
+        (duplicateOccurrenceBranch id).nextFresh
+        (by
+          change
+            0 ≤
+              ((duplicateOccurrenceReference id).clause.freshCopy 0).firstFresh
+          exact
+            (duplicateOccurrenceReference id).clause.freshCopy_first_ge_seed 0)
+        (by
+          change
+            ((duplicateOccurrenceReference id).clause.freshCopy 0).firstFresh ≤
+              ((duplicateOccurrenceReference id).clause.freshCopy 0).nextFresh
+          rw [LocalClause.freshCopy_next]
+          omega)
+        (.nil (duplicateOccurrenceBranch id).nextFresh)
+  · intro index member
+    simp [duplicateOccurrenceCursor, Resolver.termsVariables,
+      Resolver.termVariables, Resolver.substitutionVariables] at member
+  · intro branch member
+    simp [duplicateOccurrenceCursor] at member
+    subst branch
+    rfl
+  · intro branch member
+    simp [duplicateOccurrenceCursor] at member
+    subst branch
+    intro source index targetMember
+    simpa [duplicateOccurrenceBranch,
+      PrologCallEntryBridge.preparedBranchOf] using
+      (duplicateOccurrenceReference id).clause.freshCopy_target_range 0
+        targetMember
+
+private theorem duplicateOccurrenceQuery (id : ClauseId) :
+    PrologRecursiveCallPayloadBridge.RepresentativeNormalizedCallAgrees []
+      (duplicateOccurrenceCursor id) [] (.gnd (.int 1)) := by
+  apply
+    PrologRecursiveCallPayloadBridge.NormalizedCallAgrees.representative
+  constructor
+  simpa [duplicateOccurrenceCursor] using
+    (AlphaTermsAgree.cons
+      (AlphaTermAgrees.integer (alpha := []) 1)
+      AlphaTermsAgree.nil)
+
+private theorem duplicateOccurrenceResource_owns (id : ClauseId) :
+    duplicateOccurrenceResource.Owns
+      ([] : List (LogicVar × String)) (duplicateOccurrenceCursor id) := by
+  refine
+    ⟨rfl, [duplicateOccurrenceExecutable],
+      duplicateOccurrenceWellFormed id, ?_, rfl,
+      .cons (duplicateOccurrenceSupported id) .nil, ?_, ?_⟩
+  · simpa [duplicateOccurrenceResource] using duplicateOccurrenceQuery id
+  · intro clause member
+    simp [duplicateOccurrenceExecutable] at member
+    subst clause
+    rfl
+  · simpa [duplicateOccurrenceResource] using
+      (PrologActivationMacro.ResolutionScan.retained
+        duplicateOccurrenceExecutable [] 0 1 []
+        (by
+          have retained :
+              PrologActivationMacro.resolutionClauseRetained []
+                  (.gnd (.int 1)) duplicateOccurrenceExecutable = true := by
+            rfl
+          simpa using retained)
+        (PrologActivationMacro.ResolutionScan.nil 1))
+
+/-- Exact call-level identity intentionally does not identify a live duplicate
+source occurrence.  Two clauses with different stable `ClauseId`s but equal
+source content own the same executable alternative bank.  Thus the repaired
+exhausted theorem must not be generalized to arbitrary cursors without an
+activation/occurrence key or an explicit observational quotient. -/
+theorem nonempty_duplicate_occurrence_ownership_not_cursor_injective :
+    let leftCursor := duplicateOccurrenceCursor 0
+    let rightCursor := duplicateOccurrenceCursor 1
+    let resource := duplicateOccurrenceResource
+    leftCursor ≠ rightCursor ∧
+      leftCursor.remaining ≠ [] ∧
+      rightCursor.remaining ≠ [] ∧
+      resource.Owns [] leftCursor ∧
+      resource.Owns [] rightCursor := by
+  dsimp only
+  have cursorsDifferent :
+      duplicateOccurrenceCursor 0 ≠ duplicateOccurrenceCursor 1 := by
+    intro cursorsEq
+    have idsEq := congrArg
+      (fun cursor : PreparedCursor =>
+        cursor.remaining.map ClauseBranch.sourceId)
+      cursorsEq
+    simp [duplicateOccurrenceCursor, duplicateOccurrenceBranch,
+      PrologCallEntryBridge.preparedBranchOf,
+      duplicateOccurrenceReference] at idsEq
+  exact
+    ⟨cursorsDifferent, by simp [duplicateOccurrenceCursor],
+      by simp [duplicateOccurrenceCursor],
+      duplicateOccurrenceResource_owns 0,
+      duplicateOccurrenceResource_owns 1⟩
 
 /-- Swapping inner and outer resource cells is rejected as soon as the outer
 cell does not own the literal inner cursor.  This is the LIFO-order guard. -/

@@ -233,7 +233,7 @@ theorem activateSelectedHead
       _ ≤ session.resolver.nextFresh := cursorDominated
   have seedReserved :
       resource.counter + 1 ≤ resource.finalCounter := by
-    rcases agreement.core.resourceStack.offset.tailOwnership with
+    rcases agreement.core.resourceStack.offset.tailOwnership.scan with
       ⟨_candidates, _wellFormed, _query, _substitutedArgs, _supported,
         _arities, scan⟩
     have scanExact := scan.counter_exact
@@ -392,7 +392,8 @@ theorem activateSelectedHead
         sessionAdvanced := agreement.core.control.sessionAdvanced
         retainedAlts := ?_
         retainedAltsZero :=
-          agreement.core.resourceStack.offset.tailOwnership.barrierCount_zero
+          RetainedAlternativeSegment.barrierCount_zero
+            agreement.core.resourceStack.offset.tailOwnership
         retainedBarriers := ?_
         bodyBarrierTag := agreement.core.control.bodyBarrierTag
         frames := ?_ }

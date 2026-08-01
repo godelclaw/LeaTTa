@@ -255,7 +255,13 @@ theorem dropping_first_nonempty_marker_is_rejected
 /-! ## Inhabitation guard -/
 
 private def emptyPullWitnessResource : RetainedAlternativeSegment :=
-  { argsv := []
+  { callIdentity :=
+      { callGeneration := 0
+        predicate := "empty-pull-witness"
+        arguments := []
+        bindings := []
+        reservedUntil := 0 }
+    argsv := []
     args := []
     res := .sym "result"
     rest := []
@@ -485,7 +491,7 @@ theorem SpinedActiveProductResourceRelates.afterUnifyFailureExhausted
   let advanced := finish.advance selected selectedTail
   have advancedRemaining : advanced.remaining = selectedTail := by
     simp [advanced, PreparedCursor.advance]
-  rcases agreement.resourceStack.activeOwnership with
+  rcases agreement.resourceStack.activeOwnership.scan with
     ⟨candidates, advancedWellFormed, advancedQuery, substitutedArgs,
       supportedCandidates, candidateArities, candidateScan⟩
   obtain
@@ -713,8 +719,16 @@ theorem SpinedActiveProductResourceRelates.afterUnifyFailureExhausted
   have nextRemainingEmpty : next.remaining = [] :=
     nextRemaining.trans readyBranchesEmpty
   have nextOwnership : active.Owns alpha next := by
-    refine
-      ⟨[], nextWellFormed, queryAtNext, substitutedArgs, ?_, ?_, ?_⟩
+    have nextIdentity :
+        PreparedCallIdentity.ofCursor next =
+          PreparedCallIdentity.ofCursor advanced := by
+      apply PreparedCallIdentity.ofCursor_eq_of_callContext nextContext
+      exact
+        PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_reservedUntil
+          pulls
+    refine ⟨?_, [], nextWellFormed, queryAtNext, substitutedArgs, ?_, ?_, ?_⟩
+    · exact agreement.resourceStack.activeOwnership.1.trans
+        nextIdentity.symm
     · rw [nextRemainingEmpty]
       exact .nil
     · intro clause member
@@ -1005,7 +1019,7 @@ theorem RetainedAlternativeSegment.exhaustionWitness
     (ownership : resource.Owns alpha cursor)
     (empty : resource.alts = []) :
     ExhaustedOwnedResource alpha resource cursor := by
-  rcases ownership with
+  rcases ownership.scan with
     ⟨candidates, wellFormed, query, substitutedArgs, supportedCandidates,
       candidateArities, candidateScan⟩
   obtain
@@ -1199,7 +1213,9 @@ theorem SourceControlResourceContextAgrees.classifyLocal
       | cons head tail =>
           cases head with
           | barrier =>
-              have markerFree := resourceOwnership.barrierCount_zero
+              have markerFree :=
+                RetainedAlternativeSegment.barrierCount_zero
+                  resourceOwnership
               rw [altsEq] at markerFree
               simp at markerFree
           | br goals binding =>

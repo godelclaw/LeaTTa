@@ -844,7 +844,8 @@ theorem barrierCount_exact
       (resources.length + 1) + PLeaTTa.barrierCount baseAlts := by
   rw [agreement.actualAlts, flattenOwnedAlts_cons,
     PLeaTTa.barrierCount_append,
-    agreement.activeOwnership.barrierCount_zero,
+      RetainedAlternativeSegment.barrierCount_zero
+        agreement.activeOwnership,
     PLeaTTa.barrierCount_cons_barrier,
     agreement.outerAlignment.flattenOwnedAlts_barrierCount]
   omega
@@ -873,7 +874,8 @@ theorem surviving_bank_ne_active_bank
   have counts := congrArg PLeaTTa.barrierCount equality
   rw [agreement.outerAlignment.flattenOwnedAlts_barrierCount,
     flattenOwnedAlts_cons, PLeaTTa.barrierCount_append,
-    agreement.activeOwnership.barrierCount_zero,
+      RetainedAlternativeSegment.barrierCount_zero
+        agreement.activeOwnership,
     PLeaTTa.barrierCount_cons_barrier,
     agreement.outerAlignment.flattenOwnedAlts_barrierCount] at counts
   omega

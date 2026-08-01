@@ -615,7 +615,8 @@ theorem nested_wrapped_local_live_source_run_is_inhabited :
   have emptyRegion :
       RightAlternativeRegionAgrees [] (.clauses 1 emptyCursor)
         [emptyResource] emptyResource.alts :=
-    .clauses 1 emptyCursor emptyResource emptyOwnership
+    .clauses 1 emptyCursor emptyCursor 0
+      (CallScopedCursorPosition.refl emptyCursor) emptyResource emptyOwnership
   have innerAgreement :
       AnswerOriginResourceAgrees [] innerOrigin [emptyResource, liveResource]
         [liveResource]
@@ -629,7 +630,8 @@ theorem nested_wrapped_local_live_source_run_is_inhabited :
   have liveRegion :
       RightAlternativeRegionAgrees [] (.clauses 2 liveCursor)
         [liveResource] liveResource.alts :=
-    .clauses 2 liveCursor liveResource liveOwnership
+    .clauses 2 liveCursor liveCursor 0
+      (CallScopedCursorPosition.refl liveCursor) liveResource liveOwnership
   have originAgreement :
       AnswerOriginResourceAgrees [] origin [emptyResource, liveResource] []
         (emptyResource.alts ++ liveResource.alts) [] := by

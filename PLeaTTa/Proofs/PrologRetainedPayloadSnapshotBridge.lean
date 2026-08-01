@@ -1271,7 +1271,8 @@ theorem
       frontier.substitutedArgs frontier.tailSupported frontier.tailArities
       frontier.tailScan
   let active : RetainedAlternativeSegment :=
-    { argsv := argsv
+    { callIdentity := PreparedCallIdentity.ofCursor advanced
+      argsv := argsv
       args := args
       res := res
       rest := segmentExecutableRest ++ flattenExecutables outer
@@ -1282,7 +1283,9 @@ theorem
       alts := altTail
       finalCounter := pending.persistent.counter }
   have activeOwnership : active.Owns nextAlpha advanced :=
-    RetainedCursorAlternativeOwnership.mono activation.alphaIncluded ownership
+    ⟨rfl,
+      RetainedCursorAlternativeOwnership.mono activation.alphaIncluded
+        ownership⟩
   have alignment :
       SourceControlResourceContextAgrees nextAlpha qterm callerBarrier outer
         resources callerScope context outerScope :=

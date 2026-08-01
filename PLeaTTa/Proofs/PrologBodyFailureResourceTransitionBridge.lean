@@ -676,7 +676,7 @@ theorem SpinedActiveProductResourceRelatesAt.afterUnifyFailureRetained
   let advanced := finish.advance selected selectedTail
   have advancedRemaining : advanced.remaining = selectedTail := by
     simp [advanced, PreparedCursor.advance]
-  rcases agreement.resourceStack.activeOwnership with
+  rcases agreement.resourceStack.activeOwnership.scan with
     ⟨candidates, advancedWellFormed, advancedQuery, substitutedArgs,
       supportedCandidates, candidateArities, candidateScan⟩
   obtain
@@ -929,6 +929,15 @@ theorem SpinedActiveProductResourceRelatesAt.afterUnifyFailureRetained
   have tailOwnership :
       (afterPulledHead active nextAltTail).Owns alpha
         (next.advance nextBranch nextBranchTail) := by
+    have nextAdvancedIdentity :
+        PreparedCallIdentity.ofCursor
+            (next.advance nextBranch nextBranchTail) =
+          PreparedCallIdentity.ofCursor advanced := by
+      apply PreparedCallIdentity.ofCursor_eq_of_callContext
+        nextAdvancedContext
+      simpa [PreparedCursor.advance] using
+        (PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_reservedUntil
+          pulls)
     have tailSupportedAtAdvanced :
         List.Forall₂
           (SupportedPreparedCandidateAgrees
@@ -950,9 +959,17 @@ theorem SpinedActiveProductResourceRelatesAt.afterUnifyFailureRetained
           (fun _branch _clause supported =>
             nextAdvancedContext.supportedPreparedCandidate supported)
       simpa [PreparedCursor.advance] using transported
-    exact
-      ⟨nextClauseTail, nextAdvancedWellFormed, queryAtNextAdvanced,
-        substitutedArgs, tailSupportedAtAdvanced, tailArities, tailScan⟩
+    refine ⟨?_, nextClauseTail, nextAdvancedWellFormed,
+      queryAtNextAdvanced, substitutedArgs, tailSupportedAtAdvanced,
+      tailArities, tailScan⟩
+    calc
+      (afterPulledHead active nextAltTail).callIdentity =
+          active.callIdentity := rfl
+      _ = PreparedCallIdentity.ofCursor advanced :=
+        agreement.resourceStack.activeOwnership.1
+      _ = PreparedCallIdentity.ofCursor
+          (next.advance nextBranch nextBranchTail) :=
+        nextAdvancedIdentity.symm
   have nextSupportedAtCursor :
       SupportedPreparedCandidateAgrees next.callGeneration next.predicate
         next.arguments next.bindings nextBranch nextClause :=
