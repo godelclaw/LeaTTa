@@ -2154,6 +2154,20 @@ def fineCost : List TransitionKind → Nat
   | cons kind kinds ih =>
       simp only [List.cons_append, fineCost, ih, Nat.add_assoc]
 
+/-- Exact ordered payload-cell evolution for a heterogeneous schedule.
+
+The intermediate cell spine is existential only at this schedule-only view.
+`CertifiedPrefix.payloadEvolution` derives every witness from the literal
+Type-valued intermediate state, so callers cannot independently choose a
+compatible-looking payload path. -/
+def PayloadEvolution :
+    List TransitionKind → List PayloadCellIdentity →
+      List PayloadCellIdentity → Prop
+  | [], before, after => after = before
+  | kind :: kinds, before, after =>
+      ∃ middle, kind.PayloadEvolution before middle ∧
+        PayloadEvolution kinds middle after
+
 end TransitionSchedule
 
 /-- A proof-relevant heterogeneous prefix.  The shared `middle` is a literal
@@ -2217,6 +2231,79 @@ def states
   | cons head tail ih =>
       simp only [states, List.length_cons, List.length, ih]
 
+/-- Every source allocator high-water advances monotonically through an
+arbitrary exact heterogeneous prefix. -/
+theorem sessionHighWaters
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {kinds : List TransitionKind} {before after : ProductPhaseState}
+    (run : CertifiedPrefix prog gt kinds before after) :
+    SessionHighWatersExtend before.session after.session := by
+  induction run with
+  | nil state => exact SessionHighWatersExtend.refl state.session
+  | cons head tail ih =>
+      exact SessionHighWatersExtend.trans head.sessionHighWaters ih
+
+/-- The executable allocation counter cannot roll back anywhere in an
+arbitrary exact heterogeneous prefix. -/
+theorem executableCounter_mono
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {kinds : List TransitionKind} {before after : ProductPhaseState}
+    (run : CertifiedPrefix prog gt kinds before after) :
+    before.openConf.persistent.counter ≤ after.openConf.persistent.counter := by
+  induction run with
+  | nil state => exact Nat.le_refl _
+  | cons head tail ih =>
+      exact Nat.le_trans head.executableCounter_mono ih
+
+/-- The exact chronological alpha suffix composes through arbitrary mixed
+transition kinds.  Each later suffix is weakened only to the literal earlier
+state's certified allocator floors before concatenation. -/
+theorem alphaExtension
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {kinds : List TransitionKind} {before after : ProductPhaseState}
+    (run : CertifiedPrefix prog gt kinds before after) :
+    AlphaExtendsAbove before.alpha after.alpha
+      before.session.resolver.nextFresh
+      before.openConf.persistent.counter := by
+  induction run with
+  | nil state =>
+      exact AlphaExtendsAbove.refl state.alpha
+        state.session.resolver.nextFresh state.openConf.persistent.counter
+  | cons head tail ih =>
+      exact head.alphaExtension.trans
+        (ih.weaken head.sessionHighWaters.fresh
+          head.executableCounter_mono)
+
+/-- Every cumulative residual representative is an exact chronological
+extension of the prefix origin.  No association-list orientation is selected
+between steps; each transition contributes its already-certified suffix. -/
+theorem representativeExtension
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {kinds : List TransitionKind} {before after : ProductPhaseState}
+    (run : CertifiedPrefix prog gt kinds before after) :
+    ∃ extension : TreeSubstitution,
+      after.representative = extension ++ before.representative := by
+  induction run with
+  | nil state => exact ⟨[], rfl⟩
+  | cons head tail ih =>
+      obtain ⟨headExtension, headExact⟩ := head.representativeExtension
+      obtain ⟨tailExtension, tailExact⟩ := ih
+      refine ⟨tailExtension ++ headExtension, ?_⟩
+      rw [tailExact, headExact, List.append_assoc]
+
+/-- Exact payload push/preserve/pop behavior composes through the same
+literal state-indexed prefix used for source and fine execution. -/
+theorem payloadEvolution
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {kinds : List TransitionKind} {before after : ProductPhaseState}
+    (run : CertifiedPrefix prog gt kinds before after) :
+    TransitionSchedule.PayloadEvolution kinds before.cellIdentities
+      after.cellIdentities := by
+  induction run with
+  | nil state => rfl
+  | @cons kind kinds before middle after head tail ih =>
+      exact ⟨middle.cellIdentities, head.payloadEvolution, ih⟩
+
 /-- Concatenate two prefixes only when they share the same literal middle
 state. -/
 def append
@@ -2266,5 +2353,80 @@ theorem exists_split_of_append
   exact ⟨result.1, ⟨result.2.1⟩, ⟨result.2.2⟩⟩
 
 end CertifiedPrefix
+
+namespace RepresentativeUnifySuccessorFacts
+
+/-- Compose one selected primitive-unification successor with the immediately
+following materialized local call while retaining the complete call-successor
+packet.
+
+The unification successor `middle` is the literal Type index shared by both
+transition constructors.  Thus the returned two-edge zipper cannot pair a
+materialization derived from one residual orientation with a call activated
+from another compatible-looking state.  The detailed call facts remain
+available to construct the next recursive head. -/
+theorem thenMaterializedLocalCallDetailed
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before middle : RepresentativeActivePayloadState}
+    {left right : Term} {result : Substitution}
+    {bodyRest : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutableTail : List PLeaTTa.Goal}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installedUnify : Subst}
+    (unifyFacts :
+      RepresentativeUnifySuccessorFacts prog gt before middle left right result
+        bodyRest bodyExecutableTail sourceExtension executableExtension
+        generated installedUnify)
+    {head : NestedCallHead middle.carrier}
+    (ready : MaterializedNestedCallReady middle head) :
+    ∃ rejected : Nat, ∃ skippedBranches : List ClauseBranch,
+      ∃ skippedClauses : List PLeaTTa.Clause,
+      ∃ finish : PreparedCursor, ∃ branch : ClauseBranch,
+      ∃ clause : PLeaTTa.Clause, ∃ branchTail : List ClauseBranch,
+      ∃ clauseTail : List PLeaTTa.Clause, ∃ altTail : List PLeaTTa.Alt,
+      ∃ copied : PLeaTTa.Clause, ∃ installedCall : Subst,
+      ∃ after : RepresentativeActivePayloadState,
+        RepresentativeNestedCallSuccessorFacts prog gt middle head rejected
+            skippedBranches skippedClauses finish branch clause branchTail
+            clauseTail altTail copied installedCall after ∧
+          ∃ run : CertifiedPrefix prog gt
+              [.unify,
+                .localCall rejected
+                  (requestFor head.predicate head.referencePayload
+                    middle.carrier.index.current)]
+              (.active before) (.active after),
+            run.states = [.active before, .active middle, .active after] ∧
+              (CertifiedPrefix.split [.unify]
+                [.localCall rejected
+                  (requestFor head.predicate head.referencePayload
+                    middle.carrier.index.current)] run).1 =
+                .active middle := by
+  obtain
+    ⟨rejected, skippedBranches, skippedClauses, finish, branch, clause,
+      branchTail, clauseTail, altTail, copied, installedCall, after,
+      callFacts⟩ :=
+    ready.pushDetailed (prog := prog) (gt := gt)
+  let callTransition :
+      CertifiedTransition prog gt
+        (.localCall rejected
+          (requestFor head.predicate head.referencePayload
+            middle.carrier.index.current))
+        (.active middle) (.active after) :=
+    .localCall callFacts
+  let run :
+      CertifiedPrefix prog gt
+        [.unify,
+          .localCall rejected
+            (requestFor head.predicate head.referencePayload
+              middle.carrier.index.current)]
+        (.active before) (.active after) :=
+    .cons (.unify unifyFacts)
+      (.cons callTransition (.nil (.active after)))
+  exact
+    ⟨rejected, skippedBranches, skippedClauses, finish, branch, clause,
+      branchTail, clauseTail, altTail, copied, installedCall, after, callFacts,
+      run, rfl, rfl⟩
+
+end RepresentativeUnifySuccessorFacts
 
 end PLeaTTa.PrologHeterogeneousPrefixBridge

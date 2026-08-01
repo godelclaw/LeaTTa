@@ -920,8 +920,8 @@ theorem truth_then_query_unify_seven_then_q_call_exact_literal_states
   obtain
     ⟨count, skippedBranches, skippedClauses, finish, branch, clause,
       branchTail, clauseTail, altTail, copied, installed, afterState,
-      callFacts⟩ :=
-    ready.pushDetailed (prog := prog) (gt := gt)
+      callFacts, segmentPackage⟩ :=
+    unifyFacts.thenMaterializedLocalCallDetailed ready
   have finishNonempty : finish.remaining ≠ [] := by
     rw [callFacts.frontier.finishRemaining]
     simp
@@ -948,6 +948,23 @@ theorem truth_then_query_unify_seven_then_q_call_exact_literal_states
   subst count
   let request :=
     requestFor "q" [(.variable (.generated 0) : Term)] querySevenResult
+  have requestExact :
+      requestFor head.predicate head.referencePayload
+          middleState.carrier.index.current = request := by
+    simp [request, qPredicate, qPayload, middleCurrent]
+  rw [requestExact] at segmentPackage
+  have segmentPackageExact :
+      ∃ segmentExact :
+          CertifiedPrefix prog gt [.unify, .localCall 0 request]
+            (.active preUnifyState) (.active afterState),
+        segmentExact.states =
+            [.active preUnifyState, .active middleState, .active afterState] ∧
+          (CertifiedPrefix.split [.unify] [.localCall 0 request]
+            segmentExact).1 = .active middleState := by
+    exact segmentPackage
+  obtain
+    ⟨segmentExact, segmentStatesExact, segmentMiddleExact⟩ :=
+    segmentPackageExact
   let beforeState := beforeTruth (beforeTruth preUnifyState)
   have administrative :
       CertifiedTransition prog gt (.administrative 2)
@@ -956,27 +973,18 @@ theorem truth_then_query_unify_seven_then_q_call_exact_literal_states
       CertifiedTransition.administrative (prog := prog) (gt := gt)
         beforeState (beforeTruthTwiceSteps preUnifyState)
     simpa [beforeState, afterAdministrative_beforeTruth_twice] using raw
-  have unified :
-      CertifiedTransition prog gt .unify
-        (.active preUnifyState) (.active middleState) :=
-    .unify unifyFacts
-  have nested :
-      CertifiedTransition prog gt (.localCall 0 request)
-        (.active middleState) (.active afterState) := by
-    simpa [request, qPredicate, qPayload, middleCurrent] using
-      (CertifiedTransition.localCall (prog := prog) (gt := gt) callFacts)
   let run :
       CertifiedPrefix prog gt
         [.administrative 2, .unify, .localCall 0 request]
         (.active beforeState) (.active afterState) :=
-    .cons administrative
-      (.cons unified (.cons nested (.nil (.active afterState))))
+    .cons administrative segmentExact
   refine
     ⟨beforeState, preUnifyState, middleState, afterState, run, ?_, ?_, ?_,
       ?_, preCurrent, middleCurrent, afterCurrent, currentChanged, ?_, ?_, ?_,
       ?_⟩
-  · rfl
-  · rfl
+  · simpa [run, CertifiedPrefix.states] using
+      congrArg (List.cons (.active beforeState)) segmentStatesExact
+  · simpa [run, CertifiedPrefix.split] using segmentMiddleExact
   · simpa [run, request, TransitionSchedule.sourceCost,
       TransitionSchedule.sourceEvents, TransitionKind.sourceCost,
       TransitionKind.sourceEvents, ProductPhaseState.sourceState] using
@@ -988,8 +996,58 @@ theorem truth_then_query_unify_seven_then_q_call_exact_literal_states
       unifyFacts.representative_ne_of_executableExtension_ne_nil
         executableNonempty
   · simpa using unifyFacts.payloadCellsExact.symm
-  · simpa [TransitionKind.PayloadEvolution,
-      ProductPhaseState.cellIdentities] using nested.payloadEvolution
+  · simpa [ProductPhaseState.cellIdentities] using
+      callFacts.certificate.payloadCells
+
+/-- The arbitrary-prefix induction is inhabited by the real non-reflexive
+three-edge path.  It retains the four literal states and the unification
+edge's exact cell-identity preservation while folding every global invariant.
+
+The final one-cell equation is deliberately only a normalization of the
+derived schedule-level payload relation: the preceding literal-middle
+equations, not that endpoint corollary alone, carry cell identity. -/
+theorem truth_then_query_unify_seven_recursive_prefix_invariants
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    let request :=
+      requestFor "q" [(.variable (.generated 0) : Term)] querySevenResult
+    ∃ before preUnify middle after : ProductPhaseState,
+      ∃ run : CertifiedPrefix prog gt
+          [.administrative 2, .unify, .localCall 0 request] before after,
+        run.states = [before, preUnify, middle, after] ∧
+          preUnify.cellIdentities = middle.cellIdentities ∧
+          SessionHighWatersExtend before.session after.session ∧
+          before.openConf.persistent.counter ≤
+            after.openConf.persistent.counter ∧
+          AlphaExtendsAbove before.alpha after.alpha
+            before.session.resolver.nextFresh
+            before.openConf.persistent.counter ∧
+          (∃ extension : TreeSubstitution,
+            after.representative = extension ++ before.representative) ∧
+          TransitionSchedule.PayloadEvolution
+            [.administrative 2, .unify, .localCall 0 request]
+            before.cellIdentities after.cellIdentities ∧
+          ∃ cell, after.cellIdentities = cell :: before.cellIdentities := by
+  dsimp only
+  obtain
+    ⟨beforeState, preUnifyState, middleState, afterState, run, states,
+      _middle, _source, _fine, _preCurrent, _middleCurrent, _afterCurrent,
+      _currentChanged, _middleRepresentativeExtension,
+      _middleRepresentativeChanged, unifyCells, _callCells⟩ :=
+    truth_then_query_unify_seven_then_q_call_exact_literal_states
+      (prog := prog) (gt := gt)
+  have payload := run.payloadEvolution
+  have endpointPush :
+      ∃ cell,
+        (ProductPhaseState.active afterState).cellIdentities =
+          cell :: (ProductPhaseState.active beforeState).cellIdentities := by
+    simpa [TransitionSchedule.PayloadEvolution,
+      TransitionKind.PayloadEvolution] using payload
+  exact
+    ⟨.active beforeState, .active preUnifyState, .active middleState,
+      .active afterState, run, states,
+      by simpa [ProductPhaseState.cellIdentities] using unifyCells,
+      run.sessionHighWaters, run.executableCounter_mono, run.alphaExtension,
+      run.representativeExtension, payload, endpointPush⟩
 
 /-- Two source-only administrative steps, one certified primitive equality,
 and the reachable ground `q(7)` activation compose through three literal
