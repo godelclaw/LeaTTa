@@ -517,6 +517,24 @@ theorem selectedExecutableFloor_le_current
     Nat.le_trans (Nat.le_trans (Nat.le_succ _) seedReserved)
       resourceDominated
 
+/-- Retrying a retained occurrence advances inside the same immutable
+call-start bank.  The selected occurrence is at `position`; the resource
+left after entering it owns the advanced cursor at exactly `position + 1`.
+
+This is the occurrence-identity guard for rollback composition.  In
+particular, reactivation cannot reset the retained cursor to position zero or
+silently manufacture a new call-start coordinate while preserving only the
+same clause text. -/
+theorem selectedOccurrence_advances_tail_position_exact
+    (before : PostFailurePayloadState) :
+    ∃ callStart position,
+      CallScopedCursorPosition callStart before.index.cursor position ∧
+        (afterPulledHead before.index.resource
+            before.index.remainingAlts).Owns before.index.alpha callStart
+          (before.index.cursor.advance before.index.branch
+            before.index.branchTail) (position + 1) :=
+  before.agreement.core.resourceStack.offset.positionedTailOwnership
+
 end PostFailurePayloadState
 
 /-- One selected-head activation whose successor representative is indexed
@@ -953,6 +971,62 @@ def fineCost : List ResolverTransitionKind → Nat
   | [] => 0
   | kind :: kinds => kind.fineCost + fineCost kinds
 
+@[simp] theorem sourceCost_append
+    (left right : List ResolverTransitionKind) :
+    sourceCost (left ++ right) = sourceCost left + sourceCost right := by
+  induction left with
+  | nil => simp [sourceCost]
+  | cons kind kinds ih =>
+      simp only [List.cons_append, sourceCost, ih, Nat.add_assoc]
+
+@[simp] theorem sourceEvents_append
+    (left right : List ResolverTransitionKind) :
+    sourceEvents (left ++ right) =
+      sourceEvents left ++ sourceEvents right := by
+  induction left with
+  | nil => rfl
+  | cons kind kinds ih =>
+      simp only [List.cons_append, sourceEvents, ih, List.append_assoc]
+
+@[simp] theorem fineCost_append
+    (left right : List ResolverTransitionKind) :
+    fineCost (left ++ right) = fineCost left + fineCost right := by
+  induction left with
+  | nil => simp [fineCost]
+  | cons kind kinds ih =>
+      simp only [List.cons_append, fineCost, ih, Nat.add_assoc]
+
+/-- Embedding the old forward vocabulary preserves its exact source cost. -/
+@[simp] theorem sourceCost_forward_map (kinds : List TransitionKind) :
+    sourceCost (kinds.map ResolverTransitionKind.forward) =
+      TransitionSchedule.sourceCost kinds := by
+  induction kinds with
+  | nil => rfl
+  | cons kind kinds ih =>
+      simp [sourceCost, ResolverTransitionKind.sourceCost,
+        TransitionSchedule.sourceCost, ih]
+
+/-- Embedding the old forward vocabulary preserves its exact chronological
+source observations. -/
+@[simp] theorem sourceEvents_forward_map (kinds : List TransitionKind) :
+    sourceEvents (kinds.map ResolverTransitionKind.forward) =
+      TransitionSchedule.sourceEvents kinds := by
+  induction kinds with
+  | nil => rfl
+  | cons kind kinds ih =>
+      simp [sourceEvents, ResolverTransitionKind.sourceEvents,
+        TransitionSchedule.sourceEvents, ih]
+
+/-- Embedding the old forward vocabulary preserves its exact fine cost. -/
+@[simp] theorem fineCost_forward_map (kinds : List TransitionKind) :
+    fineCost (kinds.map ResolverTransitionKind.forward) =
+      TransitionSchedule.fineCost kinds := by
+  induction kinds with
+  | nil => rfl
+  | cons kind kinds ih =>
+      simp [fineCost, ResolverTransitionKind.fineCost,
+        TransitionSchedule.fineCost, ih]
+
 /-- Exact chronological representative evolution, retaining every literal
 midpoint at which extension or rollback was certified. -/
 def RepresentativeEvolution :
@@ -996,6 +1070,56 @@ inductive ResolverCertifiedPrefix
       ResolverCertifiedPrefix prog gt (kind :: kinds) before after
 
 namespace ResolverCertifiedPrefix
+
+/-- Lift any exact old-prefix derivation into the additive resolver
+vocabulary.  Every dependent carrier is preserved literally; only the phase
+and transition constructors are injected. -/
+def ofForward
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {kinds : List TransitionKind}
+    {before after : ProductPhaseState}
+    (run : CertifiedPrefix prog gt kinds before after) :
+    ResolverCertifiedPrefix prog gt
+      (kinds.map ResolverTransitionKind.forward)
+      (.ordinary before) (.ordinary after) :=
+  match run with
+  | .nil state => .nil (.ordinary state)
+  | .cons head tail => .cons (.forward head) (ofForward tail)
+
+/-- Concatenate resolver prefixes only through one literally shared dependent
+phase state.  A merely endpoint-compatible rollback snapshot cannot inhabit
+the middle index. -/
+def append
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {leftKinds rightKinds : List ResolverTransitionKind}
+    {before middle after : ResolverPhaseState}
+    (left : ResolverCertifiedPrefix prog gt leftKinds before middle)
+    (right : ResolverCertifiedPrefix prog gt rightKinds middle after) :
+    ResolverCertifiedPrefix prog gt (leftKinds ++ rightKinds) before after :=
+  match left with
+  | .nil _ => right
+  | .cons head tail => .cons head (append tail right)
+
+/-- Split one resolver prefix at a requested kind boundary and return the
+literal shared phase state as Type data. -/
+def split
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (leftKinds rightKinds : List ResolverTransitionKind)
+    {before after : ResolverPhaseState}
+    (run :
+      ResolverCertifiedPrefix prog gt (leftKinds ++ rightKinds)
+        before after) :
+    Σ middle : ResolverPhaseState,
+      ResolverCertifiedPrefix prog gt leftKinds before middle ×
+        ResolverCertifiedPrefix prog gt rightKinds middle after := by
+  induction leftKinds generalizing before with
+  | nil =>
+      exact ⟨before, .nil before, run⟩
+  | cons kind kinds ih =>
+      cases run with
+      | cons head tail =>
+          obtain ⟨middle, left, right⟩ := ih tail
+          exact ⟨middle, .cons head left, right⟩
 
 /-- Exact independent source execution of the resolver prefix. -/
 theorem sourceSteps
@@ -1113,6 +1237,36 @@ def states
   | cons head tail ih =>
       simp only [states, List.length_cons, List.length, ih]
 
+/-- The forward lift preserves every literal old phase state in order. -/
+@[simp] theorem states_ofForward
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {kinds : List TransitionKind}
+    {before after : ProductPhaseState}
+    (run : CertifiedPrefix prog gt kinds before after) :
+    (ofForward run).states =
+      run.states.map ResolverPhaseState.ordinary := by
+  induction run with
+  | nil state => rfl
+  | @cons kind kinds before middle after head tail ih =>
+      simp only [ofForward, states, CertifiedPrefix.states, List.map_cons]
+      exact congrArg (ResolverPhaseState.ordinary before :: ·) ih
+
+/-- Every literal state of the right prefix remains present after dependent
+concatenation. -/
+theorem mem_states_append_right
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {leftKinds rightKinds : List ResolverTransitionKind}
+    {before middle after state : ResolverPhaseState}
+    (left : ResolverCertifiedPrefix prog gt leftKinds before middle)
+    (right : ResolverCertifiedPrefix prog gt rightKinds middle after)
+    (present : state ∈ right.states) :
+    state ∈ (append left right).states := by
+  induction left with
+  | nil current =>
+      exact present
+  | cons head tail ih =>
+      exact List.mem_cons_of_mem _ (ih right present)
+
 /-- The canonical retry segment shares the literal post-failure midpoint.
 The activation package is indexed by `failure.after`, so a snapshot from a
 different cursor cannot be inserted between these constructors. -/
@@ -1128,6 +1282,132 @@ def failureThenActivation
   .cons (.retainedFailure failure)
     (.cons (.retainedActivation activation)
       (.nil (.ordinary (.active activation.after))))
+
+/-- Exact kind schedule for an arbitrary old prefix, one rollback/retry pair,
+and an arbitrary old suffix.  The parenthesization exposes the failure
+boundary as a literal split point. -/
+def sandwichKinds
+    (leftKinds rightKinds : List TransitionKind) (rejected : Nat) :
+    List ResolverTransitionKind :=
+  (leftKinds.map ResolverTransitionKind.forward ++
+      [.retainedFailure rejected]) ++
+    (.retainedActivation ::
+      rightKinds.map ResolverTransitionKind.forward)
+
+/-- Decompose a rollback sandwich at the literal post-failure midpoint.
+
+The first component ends in `failure.after`; the second begins from that same
+dependent object.  No endpoint equality or separately supplied compatible
+snapshot appears in the type. -/
+def sandwichSplitAtFailure
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {leftKinds rightKinds : List TransitionKind}
+    {start finish : ProductPhaseState}
+    {before : RepresentativeActivePayloadState}
+    (left : CertifiedPrefix prog gt leftKinds start (.active before))
+    (failure : RetainedFailureSuccessor prog gt before)
+    (activation : RetainedActivationSuccessor prog gt failure.after)
+    (right :
+      CertifiedPrefix prog gt rightKinds (.active activation.after) finish) :
+    Σ middle : ResolverPhaseState,
+      ResolverCertifiedPrefix prog gt
+          (leftKinds.map ResolverTransitionKind.forward ++
+            [.retainedFailure failure.count])
+          (.ordinary start) middle ×
+        ResolverCertifiedPrefix prog gt
+          (.retainedActivation ::
+            rightKinds.map ResolverTransitionKind.forward)
+          middle (.ordinary finish) :=
+  ⟨.postFailure failure.after,
+    append (ofForward left)
+      (.cons (.retainedFailure failure)
+        (.nil (.postFailure failure.after))),
+    .cons (.retainedActivation activation) (ofForward right)⟩
+
+@[simp] theorem sandwichSplitAtFailure_middle
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {leftKinds rightKinds : List TransitionKind}
+    {start finish : ProductPhaseState}
+    {before : RepresentativeActivePayloadState}
+    (left : CertifiedPrefix prog gt leftKinds start (.active before))
+    (failure : RetainedFailureSuccessor prog gt before)
+    (activation : RetainedActivationSuccessor prog gt failure.after)
+    (right :
+      CertifiedPrefix prog gt rightKinds (.active activation.after) finish) :
+    (sandwichSplitAtFailure left failure activation right).1 =
+      .postFailure failure.after := rfl
+
+/-- Compose arbitrary forward work around a genuine rollback/retry pair.
+This is the first single global prefix vocabulary that can cross the logical
+rebase phase without erasing it. -/
+def sandwich
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {leftKinds rightKinds : List TransitionKind}
+    {start finish : ProductPhaseState}
+    {before : RepresentativeActivePayloadState}
+    (left : CertifiedPrefix prog gt leftKinds start (.active before))
+    (failure : RetainedFailureSuccessor prog gt before)
+    (activation : RetainedActivationSuccessor prog gt failure.after)
+    (right :
+      CertifiedPrefix prog gt rightKinds (.active activation.after) finish) :
+    ResolverCertifiedPrefix prog gt
+      (sandwichKinds leftKinds rightKinds failure.count)
+      (.ordinary start) (.ordinary finish) :=
+  let pieces := sandwichSplitAtFailure left failure activation right
+  append pieces.2.1 pieces.2.2
+
+/-- The literal rollback midpoint survives inside every sandwich state list. -/
+theorem postFailure_mem_sandwich_states
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {leftKinds rightKinds : List TransitionKind}
+    {start finish : ProductPhaseState}
+    {before : RepresentativeActivePayloadState}
+    (left : CertifiedPrefix prog gt leftKinds start (.active before))
+    (failure : RetainedFailureSuccessor prog gt before)
+    (activation : RetainedActivationSuccessor prog gt failure.after)
+    (right :
+      CertifiedPrefix prog gt rightKinds (.active activation.after) finish) :
+    .postFailure failure.after ∈
+      (sandwich left failure activation right).states := by
+  let pieces := sandwichSplitAtFailure left failure activation right
+  change
+    pieces.1 ∈ (append pieces.2.1 pieces.2.2).states
+  apply mem_states_append_right pieces.2.1 pieces.2.2
+  simp only [pieces]
+  exact List.mem_cons_self
+
+/-- Exact independent cost of a rollback sandwich. -/
+theorem sandwich_sourceCost
+    (leftKinds rightKinds : List TransitionKind) (rejected : Nat) :
+    ResolverTransitionSchedule.sourceCost
+        (sandwichKinds leftKinds rightKinds rejected) =
+      TransitionSchedule.sourceCost leftKinds + (rejected + 2) +
+        TransitionSchedule.sourceCost rightKinds := by
+  simp [sandwichKinds, ResolverTransitionSchedule.sourceCost,
+    ResolverTransitionKind.sourceCost]
+  omega
+
+/-- Rollback and reactivation are source-silent, so the sandwich retains the
+exact chronological observations of its forward sides. -/
+theorem sandwich_sourceEvents
+    (leftKinds rightKinds : List TransitionKind) (rejected : Nat) :
+    ResolverTransitionSchedule.sourceEvents
+        (sandwichKinds leftKinds rightKinds rejected) =
+      TransitionSchedule.sourceEvents leftKinds ++
+        TransitionSchedule.sourceEvents rightKinds := by
+  simp [sandwichKinds, ResolverTransitionSchedule.sourceEvents,
+    ResolverTransitionKind.sourceEvents]
+
+/-- Exact fine-executable cost of a rollback sandwich. -/
+theorem sandwich_fineCost
+    (leftKinds rightKinds : List TransitionKind) (rejected : Nat) :
+    ResolverTransitionSchedule.fineCost
+        (sandwichKinds leftKinds rightKinds rejected) =
+      TransitionSchedule.fineCost leftKinds + 2 +
+        TransitionSchedule.fineCost rightKinds := by
+  simp [sandwichKinds, ResolverTransitionSchedule.fineCost,
+    ResolverTransitionKind.fineCost]
+  omega
 
 @[simp] theorem failureThenActivation_states
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}

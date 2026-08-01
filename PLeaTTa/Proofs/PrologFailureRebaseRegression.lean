@@ -998,4 +998,175 @@ theorem concrete_nonempty_failure_rebases_and_retries
       selected.1, snapshotEmpty, retainedSource, retainedBody,
       retryRepresentative, by rfl, notExtension⟩
 
+/-- The concrete nonempty rollback inhabits the single global resolver-prefix
+vocabulary with genuine forward work on both sides, not merely the isolated
+two-edge producer or the identity cases of prefix composition.
+
+Splitting the sandwich at its failure boundary returns the literal dependent
+`failure.after` object.  Its retained resource continues in the same
+call-start coordinate at exactly the successor occurrence position, and the
+known representative rollback remains impossible to describe as a forward
+extension.  Two source-only truth steps inhabit the left flank and the empty
+retained body contributes a body-answer transition on the right.  The exact
+full-sandwich source/fine costs are therefore five and two, respectively, and
+the source observation list remains empty.
+[SPEC metta.pl:251-256; translator.pl:117; ISO:unification] -/
+theorem concrete_nonempty_failure_inhabits_resolver_sandwich
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ∃ before : RepresentativeActivePayloadState,
+      ∃ failure : RetainedFailureSuccessor prog gt before,
+        ∃ activation : RetainedActivationSuccessor prog gt failure.after,
+          ∃ leftStart : RepresentativeActivePayloadState,
+            ∃ finish : RepresentativeScheduledPayloadState,
+              ∃ left :
+                  CertifiedPrefix prog gt [.administrative 2]
+                    (.active leftStart) (.active before),
+                ∃ right :
+                    CertifiedPrefix prog gt [.bodyAnswer]
+                      (.active activation.after) (.scheduled finish),
+                  let run :=
+                    ResolverCertifiedPrefix.sandwich
+                      left failure activation right
+                  leftStart =
+                      RepresentativeActivePayloadState.beforeTruth
+                        (RepresentativeActivePayloadState.beforeTruth before) ∧
+                    failure.count = 0 ∧
+                    ResolverTransitionSchedule.sourceCost
+                        (ResolverCertifiedPrefix.sandwichKinds
+                          [.administrative 2] [.bodyAnswer]
+                          failure.count) =
+                      5 ∧
+                    ResolverTransitionSchedule.sourceEvents
+                        (ResolverCertifiedPrefix.sandwichKinds
+                          [.administrative 2] [.bodyAnswer]
+                          failure.count) =
+                      [] ∧
+                    ResolverTransitionSchedule.fineCost
+                        (ResolverCertifiedPrefix.sandwichKinds
+                          [.administrative 2] [.bodyAnswer]
+                          failure.count) =
+                      2 ∧
+                    StepsN 5 leftStart.carrier.sourceState []
+                      finish.carrier.sourceState ∧
+                    DemandDrivenCallStep.StepsN prog gt 2
+                      leftStart.carrier.fineState finish.carrier.fineState ∧
+                    run.states =
+                      [.ordinary (.active leftStart),
+                        .ordinary (.active before),
+                        .postFailure failure.after,
+                        .ordinary (.active activation.after),
+                        .ordinary (.scheduled finish)] ∧
+                    .postFailure failure.after ∈ run.states ∧
+                    (ResolverCertifiedPrefix.sandwichSplitAtFailure
+                        left failure activation right).1 =
+                      .postFailure failure.after ∧
+                    (∃ callStart position,
+                      CallScopedCursorPosition callStart
+                          failure.after.index.cursor position ∧
+                        (PrologBodyFailureResourceTransitionBridge.afterPulledHead
+                            failure.after.index.resource
+                            failure.after.index.remainingAlts).Owns
+                          failure.after.index.alpha callStart
+                          (failure.after.index.cursor.advance
+                            failure.after.index.branch
+                            failure.after.index.branchTail)
+                          (position + 1)) ∧
+                    ¬ ∃ extension : TreeSubstitution,
+                        failure.after.representative =
+                          extension ++ before.representative := by
+  obtain
+      ⟨before, failure, activation, _sourceRoot, _fineRoot,
+        _beforeNonempty, countExact, _snapshotEmpty, _retainedSource,
+        retainedBody, _retryRepresentative, _retryStates,
+        notExtension⟩ :=
+    concrete_nonempty_failure_rebases_and_retries
+      (prog := prog) (gt := gt)
+  have referenceEmpty :
+      activation.after.carrier.index.bodyReferences = [] := by
+    change failure.after.index.branch.body = []
+    exact retainedBody
+  have executableEmpty :
+      activation.after.carrier.index.bodyExecutables = [] := by
+    have bodyPayload :=
+      activation.after.carrier.agreement.core.control.ready.2.2.2.headPayload
+    rw [referenceEmpty] at bodyPayload
+    generalize executableEquation :
+        activation.after.carrier.index.bodyExecutables = executables at bodyPayload
+    cases bodyPayload.control
+    rfl
+  let leftStart :=
+    RepresentativeActivePayloadState.beforeTruth
+      (RepresentativeActivePayloadState.beforeTruth before)
+  have administrative :
+      CertifiedTransition prog gt (.administrative 2)
+        (.active leftStart) (.active before) := by
+    have raw :=
+      CertifiedTransition.administrative (prog := prog) (gt := gt)
+        leftStart
+        (RepresentativeActivePayloadState.beforeTruthTwiceSteps before)
+    simpa [leftStart,
+      RepresentativeActivePayloadState.afterAdministrative_beforeTruth_twice]
+      using raw
+  let left :
+      CertifiedPrefix prog gt [.administrative 2]
+        (.active leftStart) (.active before) :=
+    .cons administrative (.nil (.active before))
+  let finish :=
+    RepresentativeActivePayloadState.afterBodyAnswer
+      prog gt activation.after referenceEmpty executableEmpty
+  have answered :
+      CertifiedTransition prog gt .bodyAnswer
+        (.active activation.after) (.scheduled finish) := by
+    exact .bodyAnswer activation.after referenceEmpty executableEmpty
+  let right :
+      CertifiedPrefix prog gt [.bodyAnswer]
+        (.active activation.after) (.scheduled finish) :=
+    .cons answered (.nil (.scheduled finish))
+  let run :=
+    ResolverCertifiedPrefix.sandwich left failure activation right
+  have sourceSegment :
+      StepsN 5 leftStart.carrier.sourceState []
+        finish.carrier.sourceState := by
+    have exact := run.sourceSteps
+    simpa [run, left, right, countExact,
+      ResolverCertifiedPrefix.sandwich_sourceCost,
+      ResolverCertifiedPrefix.sandwich_sourceEvents,
+      TransitionSchedule.sourceCost, TransitionSchedule.sourceEvents,
+      TransitionKind.sourceCost, TransitionKind.sourceEvents,
+      ResolverPhaseState.sourceState, ProductPhaseState.sourceState] using
+      exact
+  have fineSegment :
+      DemandDrivenCallStep.StepsN prog gt 2 leftStart.carrier.fineState
+        finish.carrier.fineState := by
+    have exact := run.fineSteps
+    simpa [run, left, right, countExact,
+      ResolverCertifiedPrefix.sandwich_fineCost,
+      TransitionSchedule.fineCost, TransitionKind.fineCost,
+      ResolverPhaseState.fineState, ProductPhaseState.fineState] using exact
+  have statesExact :
+      run.states =
+        [.ordinary (.active leftStart), .ordinary (.active before),
+          .postFailure failure.after,
+          .ordinary (.active activation.after),
+          .ordinary (.scheduled finish)] := by
+    rfl
+  refine ⟨before, failure, activation, leftStart, finish, left, right, ?_⟩
+  dsimp only
+  refine ⟨rfl, countExact, ?_, ?_, ?_, sourceSegment, fineSegment,
+    statesExact, ?_, rfl, ?_, notExtension⟩
+  · simpa [countExact, TransitionSchedule.sourceCost,
+      TransitionKind.sourceCost] using
+      ResolverCertifiedPrefix.sandwich_sourceCost
+        [.administrative 2] [.bodyAnswer] failure.count
+  · simpa [TransitionSchedule.sourceEvents, TransitionKind.sourceEvents] using
+      ResolverCertifiedPrefix.sandwich_sourceEvents
+        [.administrative 2] [.bodyAnswer] failure.count
+  · simpa [TransitionSchedule.fineCost, TransitionKind.fineCost] using
+      ResolverCertifiedPrefix.sandwich_fineCost
+        [.administrative 2] [.bodyAnswer] failure.count
+  · exact
+      ResolverCertifiedPrefix.postFailure_mem_sandwich_states
+        left failure activation right
+  · exact failure.after.selectedOccurrence_advances_tail_position_exact
+
 end PLeaTTa.PrologFailureRebaseRegression
