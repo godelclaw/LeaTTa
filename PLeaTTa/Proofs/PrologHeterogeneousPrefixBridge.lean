@@ -2618,35 +2618,444 @@ end CertifiedPrefix
 
 /-! ## Producer readiness and arbitrary finite progress -/
 
-/-- Producer premises for the next certified active-state transition.
+/-- Producer premises for one covered transition out of an active state.
 
 This is deliberately not phrased as "some transition exists": that would
-make progress preservation circular.  The constructor carries the semantic
-and operational readiness of one literal materialized local-call head.  It
+make progress preservation circular.  Every constructor contains only the
+semantic and operational premises consumed by its independent producer.  It
 contains no successor, transition, step count, or observation claim; those
-must be produced by the resolver bridge.  Later constructors may extend the
-same sum for other active transition kinds without changing
-`CertifiedPrefix`. -/
-inductive ActiveStepReady : ProductPhaseState → Prop where
+are reconstructed by `ActiveStepReady.produces` below.
+
+The relation covers the complete current `CertifiedTransition` vocabulary.
+It is still only a *one-step* readiness relation: body completion and cut
+leave the active phase, so an invariant used with `ProgressPreservesReady`
+must separately establish readiness of the reached scheduled or committed
+phase once those outgoing transition kinds are added. -/
+inductive ActiveStepReady : ProductPhaseState → Type where
+  | administrative (state : RepresentativeActivePayloadState)
+      {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+      (positive : 0 < count)
+      (steps :
+        AdministrativeStepsN count state.carrier.index.bodyReferences
+          afterBody) :
+      ActiveStepReady (.active state)
+  | unify (state : RepresentativeActivePayloadState)
+      {left right : Term} {result : Substitution}
+      {bodyRest : List PeTTaSpec.PrologCore.Goal}
+      (referenceHead :
+        state.carrier.index.bodyReferences = .unify left right :: bodyRest)
+      (leftSupported :
+        AlphaTreeSupported state.carrier.index.alpha
+          state.carrier.index.support (Term.denote left))
+      (rightSupported :
+        AlphaTreeSupported state.carrier.index.alpha
+          state.carrier.index.support (Term.denote right))
+      (continuationLive :
+        ReadyUnifyContinuationLive state.carrier.index.support
+          state.carrier.index.openConf)
+      (resolved :
+        UnifyResolution state.carrier.index.current left right result) :
+      ActiveStepReady (.active state)
   | localCall (state : RepresentativeActivePayloadState)
       (head : NestedCallHead state.carrier)
       (ready : MaterializedNestedCallReady state head) :
       ActiveStepReady (.active state)
+  | bodyAnswer (state : RepresentativeActivePayloadState)
+      (referenceEmpty : state.carrier.index.bodyReferences = [])
+      (executableEmpty : state.carrier.index.bodyExecutables = []) :
+      ActiveStepReady (.active state)
+  | cut (state : RepresentativeActivePayloadState)
+      (bodyRest : List PeTTaSpec.PrologCore.Goal)
+      (bodyExecutableTail : List PLeaTTa.Goal)
+      (referenceHead :
+        state.carrier.index.bodyReferences = .cut :: bodyRest)
+      (executableHead :
+        state.carrier.index.bodyExecutables =
+          .cutAt state.carrier.index.bodyBarrier :: bodyExecutableTail)
+      (coherent :
+        PLeaTTa.BarrierCacheCoherent state.carrier.index.openConf.toConf) :
+      ActiveStepReady (.active state)
 
-/-- One coupled progress-and-preservation obligation.
+/-- The unindexed coupled-step relation obtained by hiding only the closed
+transition label.  The source and fine endpoints remain the literal fields of
+the same `ProductPhaseState`s, and the Type-valued transition is retained
+under `Nonempty`; this is not an endpoint-compatibility quotient.  The
+positive combined cost rejects the otherwise-admissible zero-length
+administrative constructor, so relation length cannot be inflated by
+semantic stutters.  No endpoint-inequality premise is imposed: a labelled
+small-step semantics must retain positive-cost self-loops, whose infinite
+iteration is genuine divergence rather than termination progress. -/
+def CertifiedCoupledStep (prog : PLeaTTa.Prog)
+    (gt : Metta.GroundingTable)
+    (before after : ProductPhaseState) : Prop :=
+  ∃ kind : TransitionKind,
+    0 < kind.sourceCost + kind.fineCost ∧
+      Nonempty (CertifiedTransition prog gt kind before after)
 
-The returned transition and readiness certificate share the same literal
-`next` index.  Splitting these into independent existentials would permit a
-shape-compatible but unrelated ready carrier to be paired with the produced
-transition. -/
+namespace CertifiedCoupledStep
+
+/-- Every currently covered coupled step performs at least one independent
+source transition.  Fine-only administrative suppression is allowed, but a
+schedule edge can never be a zero/zero stutter. -/
+theorem sourceCost_positive
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : ProductPhaseState}
+    (step : CertifiedCoupledStep prog gt before after) :
+    ∃ kind : TransitionKind, 0 < kind.sourceCost := by
+  obtain ⟨kind, positive, _transition⟩ := step
+  refine ⟨kind, ?_⟩
+  cases kind <;>
+    simp_all [TransitionKind.sourceCost, TransitionKind.fineCost]
+
+/-- A coupled step exposes one exact source run and one exact fine run under
+the same hidden closed label. -/
+theorem exactExecutions
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : ProductPhaseState}
+    (step : CertifiedCoupledStep prog gt before after) :
+    ∃ kind : TransitionKind,
+      StepsN kind.sourceCost before.sourceState kind.sourceEvents
+          after.sourceState ∧
+        DemandDrivenCallStep.StepsN prog gt kind.fineCost before.fineState
+          after.fineState := by
+  obtain ⟨kind, _positive, ⟨transition⟩⟩ := step
+  exact ⟨kind, transition.sourceSteps, transition.fineSteps⟩
+
+/-- Hiding the transition label does not hide persistent allocator
+chronology. -/
+theorem sessionHighWaters
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : ProductPhaseState}
+    (step : CertifiedCoupledStep prog gt before after) :
+    SessionHighWatersExtend before.session after.session := by
+  obtain ⟨_kind, _positive, ⟨transition⟩⟩ := step
+  exact transition.sessionHighWaters
+
+/-- Hiding the transition label does not hide executable fresh-counter
+chronology. -/
+theorem executableCounter_mono
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : ProductPhaseState}
+    (step : CertifiedCoupledStep prog gt before after) :
+    before.openConf.persistent.counter ≤ after.openConf.persistent.counter := by
+  obtain ⟨_kind, _positive, ⟨transition⟩⟩ := step
+  exact transition.executableCounter_mono
+
+/-- The hidden-label relation retains the source/executable alpha chronology
+above the literal incoming high-waters. -/
+theorem alphaExtension
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : ProductPhaseState}
+    (step : CertifiedCoupledStep prog gt before after) :
+    AlphaExtendsAbove before.alpha after.alpha
+      before.session.resolver.nextFresh
+      before.openConf.persistent.counter := by
+  obtain ⟨_kind, _positive, ⟨transition⟩⟩ := step
+  exact transition.alphaExtension
+
+/-- The cumulative representative still changes only by one certified
+prefix extension after the transition label is hidden. -/
+theorem representativeExtension
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : ProductPhaseState}
+    (step : CertifiedCoupledStep prog gt before after) :
+    ∃ extension : TreeSubstitution,
+      after.representative = extension ++ before.representative := by
+  obtain ⟨_kind, _positive, ⟨transition⟩⟩ := step
+  exact transition.representativeExtension
+
+/-- Payload ownership remains classified by the same hidden transition kind;
+the relation does not replace the ordered stack equation by a count. -/
+theorem payloadEvolution
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : ProductPhaseState}
+    (step : CertifiedCoupledStep prog gt before after) :
+    ∃ kind : TransitionKind,
+      kind.PayloadEvolution before.cellIdentities after.cellIdentities := by
+  obtain ⟨kind, _positive, ⟨transition⟩⟩ := step
+  exact ⟨kind, transition.payloadEvolution⟩
+
+/-- Every covered step preserves the literal rooted alternative suffix. -/
+theorem baseAlts_eq
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : ProductPhaseState}
+    (step : CertifiedCoupledStep prog gt before after) :
+    after.baseAlts = before.baseAlts := by
+  obtain ⟨_kind, _positive, ⟨transition⟩⟩ := step
+  exact transition.baseAlts_eq
+
+/-- Root closure is preserved by the hidden-label coupled relation. -/
+theorem preserves_rootClosed
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : ProductPhaseState}
+    (step : CertifiedCoupledStep prog gt before after)
+    (closed : before.RootClosed) : after.RootClosed := by
+  obtain ⟨_kind, _positive, ⟨transition⟩⟩ := step
+  exact transition.preserves_rootClosed closed
+
+end CertifiedCoupledStep
+
+namespace ActiveStepReady
+
+/-- The exact successor generated by one proof-relevant readiness packet.
+
+The readiness packet lives in `Type`, not `Prop`: constructor identity and
+its data indices therefore cannot be erased by proof irrelevance.  Each
+production constructor retains the corresponding independent producer facts,
+so an administrative readiness cannot be paired with a cut successor merely
+because both happen to leave the same active state. -/
+inductive Produces (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable) :
+    {before : ProductPhaseState} →
+      ActiveStepReady before → ProductPhaseState → Prop where
+  | administrative
+      (state : RepresentativeActivePayloadState)
+      {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+      (positive : 0 < count)
+      (steps :
+        AdministrativeStepsN count state.carrier.index.bodyReferences
+          afterBody) :
+      Produces prog gt
+        (ActiveStepReady.administrative state positive steps)
+        (.active
+          (RepresentativeActivePayloadState.afterAdministrative
+            prog gt state steps))
+  | unify
+      (state : RepresentativeActivePayloadState)
+      {left right : Term} {result : Substitution}
+      {bodyRest : List PeTTaSpec.PrologCore.Goal}
+      (referenceHead :
+        state.carrier.index.bodyReferences = .unify left right :: bodyRest)
+      (leftSupported :
+        AlphaTreeSupported state.carrier.index.alpha
+          state.carrier.index.support (Term.denote left))
+      (rightSupported :
+        AlphaTreeSupported state.carrier.index.alpha
+          state.carrier.index.support (Term.denote right))
+      (continuationLive :
+        ReadyUnifyContinuationLive state.carrier.index.support
+          state.carrier.index.openConf)
+      (resolved :
+        UnifyResolution state.carrier.index.current left right result)
+      {bodyExecutableTail : List PLeaTTa.Goal}
+      {sourceExtension executableExtension : TreeSubstitution}
+      {generated installed : Subst}
+      {after : RepresentativeActivePayloadState}
+      (facts :
+        RepresentativeUnifySuccessorFacts prog gt state after left right
+          result bodyRest bodyExecutableTail sourceExtension
+          executableExtension generated installed) :
+      Produces prog gt
+        (ActiveStepReady.unify state referenceHead leftSupported
+          rightSupported continuationLive resolved)
+        (.active after)
+  | localCall
+      (state : RepresentativeActivePayloadState)
+      (head : NestedCallHead state.carrier)
+      (ready : MaterializedNestedCallReady state head)
+      {rejected : Nat} {skippedBranches : List ClauseBranch}
+      {skippedClauses : List PLeaTTa.Clause}
+      {finish : PreparedCursor} {branch : ClauseBranch}
+      {clause : PLeaTTa.Clause} {branchTail : List ClauseBranch}
+      {clauseTail : List PLeaTTa.Clause} {altTail : List PLeaTTa.Alt}
+      {copied : PLeaTTa.Clause} {installed : Subst}
+      {after : RepresentativeActivePayloadState}
+      (facts :
+        RepresentativeNestedCallSuccessorFacts prog gt state head rejected
+          skippedBranches skippedClauses finish branch clause branchTail
+          clauseTail altTail copied installed after) :
+      Produces prog gt (ActiveStepReady.localCall state head ready)
+        (.active after)
+  | bodyAnswer
+      (state : RepresentativeActivePayloadState)
+      (referenceEmpty : state.carrier.index.bodyReferences = [])
+      (executableEmpty : state.carrier.index.bodyExecutables = []) :
+      Produces prog gt
+        (ActiveStepReady.bodyAnswer state referenceEmpty executableEmpty)
+        (.scheduled
+          (RepresentativeActivePayloadState.afterBodyAnswer
+            prog gt state referenceEmpty executableEmpty))
+  | cut
+      (state : RepresentativeActivePayloadState)
+      (bodyRest : List PeTTaSpec.PrologCore.Goal)
+      (bodyExecutableTail : List PLeaTTa.Goal)
+      (referenceHead :
+        state.carrier.index.bodyReferences = .cut :: bodyRest)
+      (executableHead :
+        state.carrier.index.bodyExecutables =
+          .cutAt state.carrier.index.bodyBarrier :: bodyExecutableTail)
+      (coherent :
+        PLeaTTa.BarrierCacheCoherent state.carrier.index.openConf.toConf) :
+      Produces prog gt
+        (ActiveStepReady.cut state bodyRest bodyExecutableTail referenceHead
+          executableHead coherent)
+        (.committed
+          (RepresentativeActivePayloadState.afterCut prog gt state bodyRest
+            bodyExecutableTail referenceHead executableHead coherent))
+
+namespace Produces
+
+/-- Forgetting the readiness packet preserves the one real, non-stuttering
+coupled transition it generated. -/
+theorem certifiedCoupledStep
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : ProductPhaseState}
+    {ready : ActiveStepReady before}
+    (production : Produces prog gt ready after) :
+    CertifiedCoupledStep prog gt before after := by
+  cases production with
+  | administrative state positive steps =>
+      exact
+        ⟨.administrative _, positive,
+          ⟨.administrative state steps⟩⟩
+  | unify state referenceHead leftSupported rightSupported continuationLive
+      resolved facts =>
+      exact
+        ⟨.unify,
+          by simp [TransitionKind.sourceCost, TransitionKind.fineCost],
+          ⟨.unify facts⟩⟩
+  | localCall state head callReady facts =>
+      exact
+        ⟨.localCall _
+            (requestFor head.predicate head.referencePayload
+              state.carrier.index.current),
+          by simp [TransitionKind.sourceCost, TransitionKind.fineCost],
+          ⟨.localCall facts⟩⟩
+  | bodyAnswer state referenceEmpty executableEmpty =>
+      exact
+        ⟨.bodyAnswer,
+          by simp [TransitionKind.sourceCost, TransitionKind.fineCost],
+          ⟨.bodyAnswer state referenceEmpty executableEmpty⟩⟩
+  | cut state bodyRest bodyExecutableTail referenceHead executableHead
+      coherent =>
+      exact
+        ⟨.cut
+            (retainedCursorToken state.carrier.index.opened
+              state.carrier.index.finish state.carrier.index.branch
+              state.carrier.index.branchTail),
+          by simp [TransitionKind.sourceCost, TransitionKind.fineCost],
+          ⟨.cut state bodyRest bodyExecutableTail referenceHead executableHead
+            coherent⟩⟩
+
+/-- The dependency is observable: administrative readiness cannot be
+laundered through a committed successor, even if the same source state also
+admits a cut transition. -/
+theorem administrative_not_committed
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (state : RepresentativeActivePayloadState)
+    {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+    (positive : 0 < count)
+    (steps :
+      AdministrativeStepsN count state.carrier.index.bodyReferences
+        afterBody)
+    (target : RepresentativeCommittedPayloadState) :
+    ¬ Produces prog gt
+        (ActiveStepReady.administrative state positive steps)
+        (.committed target) := by
+  intro production
+  cases production
+
+end Produces
+
+/-- Every readiness packet constructs a real transition in the closed
+vocabulary.  The proof invokes the independent unification and local-call
+producers; it does not attach a caller-supplied successor to the packet. -/
+theorem produces
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : ProductPhaseState}
+    (ready : ActiveStepReady before) :
+    ∃ after : ProductPhaseState,
+      Produces prog gt ready after := by
+  cases ready with
+  | administrative state positive steps =>
+      exact
+        ⟨.active
+            (RepresentativeActivePayloadState.afterAdministrative
+              prog gt state steps),
+          .administrative state positive steps⟩
+  | @unify state left right result bodyRest referenceHead leftSupported
+      rightSupported continuationLive resolved =>
+      obtain
+        ⟨bodyExecutableTail, sourceExtension, executableExtension, generated,
+          installed, after, facts⟩ :=
+        RepresentativeActivePayloadState.exists_afterUnifySuccessLive
+          (prog := prog) (gt := gt) state referenceHead leftSupported
+          rightSupported continuationLive resolved
+      exact
+        ⟨.active after,
+          .unify state referenceHead leftSupported rightSupported
+            continuationLive resolved facts⟩
+  | localCall state head callReady =>
+      obtain
+        ⟨rejected, skippedBranches, skippedClauses, finish, branch, clause,
+          branchTail, clauseTail, altTail, copied, installed, after, facts⟩ :=
+        callReady.pushDetailed (prog := prog) (gt := gt)
+      exact
+        ⟨.active after,
+          .localCall state head callReady facts⟩
+  | bodyAnswer state referenceEmpty executableEmpty =>
+      exact
+        ⟨.scheduled
+            (RepresentativeActivePayloadState.afterBodyAnswer
+              prog gt state referenceEmpty executableEmpty),
+          .bodyAnswer state referenceEmpty executableEmpty⟩
+  | cut state bodyRest bodyExecutableTail referenceHead executableHead
+      coherent =>
+      exact
+        ⟨.committed
+            (RepresentativeActivePayloadState.afterCut prog gt state bodyRest
+              bodyExecutableTail referenceHead executableHead coherent),
+          .cut state bodyRest bodyExecutableTail referenceHead executableHead
+            coherent⟩
+
+/-- Readiness produces one shared closed label carrying both exact executions
+and every chronology/ownership invariant needed by prefix composition.
+
+Keeping `kind` outside all conjunctions is load-bearing: source execution,
+fine execution, and payload evolution cannot be justified by three different
+compatible-looking transition labels. -/
+theorem produces_exact_coupled_transition
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : ProductPhaseState}
+    (ready : ActiveStepReady before) :
+    ∃ after : ProductPhaseState, ∃ kind : TransitionKind,
+      0 < kind.sourceCost + kind.fineCost ∧
+        StepsN kind.sourceCost before.sourceState kind.sourceEvents
+          after.sourceState ∧
+        DemandDrivenCallStep.StepsN prog gt kind.fineCost before.fineState
+          after.fineState ∧
+        SessionHighWatersExtend before.session after.session ∧
+        before.openConf.persistent.counter ≤
+          after.openConf.persistent.counter ∧
+        AlphaExtendsAbove before.alpha after.alpha
+          before.session.resolver.nextFresh
+          before.openConf.persistent.counter ∧
+        (∃ extension : TreeSubstitution,
+          after.representative = extension ++ before.representative) ∧
+        kind.PayloadEvolution before.cellIdentities after.cellIdentities := by
+  obtain ⟨after, production⟩ := ready.produces (prog := prog) (gt := gt)
+  have coupled := production.certifiedCoupledStep
+  obtain ⟨kind, positive, ⟨transition⟩⟩ := coupled
+  exact
+    ⟨after, kind, positive, transition.sourceSteps, transition.fineSteps,
+      transition.sessionHighWaters, transition.executableCounter_mono,
+      transition.alphaExtension, transition.representativeExtension,
+      transition.payloadEvolution⟩
+
+end ActiveStepReady
+
+/-- One readiness-indexed, non-stuttering coupled progress-and-preservation
+obligation.
+
+The proof-relevant readiness packet and `Produces` relation select the same
+constructor and successor.  Thus an invariant cannot be transported along a
+cut transition while presenting unrelated administrative readiness for the
+same source state. -/
 def ProgressPreservesReady (prog : PLeaTTa.Prog)
     (gt : Metta.GroundingTable)
     (invariant : ProductPhaseState → Prop) : Prop :=
   ∀ {state : ProductPhaseState}, invariant state →
-    ActiveStepReady state ∧
-      ∃ kind : TransitionKind, ∃ next : ProductPhaseState,
-        ∃ _step : CertifiedTransition prog gt kind state next,
-          invariant next
+    ∃ ready : ActiveStepReady state, ∃ next : ProductPhaseState,
+      ready.Produces prog gt next ∧ invariant next
 
 namespace ActiveStepReady
 
@@ -2666,14 +3075,18 @@ theorem exists_prefix_of_ready
       ∃ kinds : List TransitionKind, ∃ after : ProductPhaseState,
         kinds.length = count ∧
           ∃ _run : CertifiedPrefix prog gt kinds before after,
-            invariant after ∧ ActiveStepReady after := by
+            invariant after ∧ Nonempty (ActiveStepReady after) := by
   intro count
   induction count generalizing before with
   | zero =>
-      exact ⟨[], before, rfl, .nil before, ready, (progress ready).1⟩
-  | succ count inductionHypothesis =>
-      obtain ⟨_currentReady, kind, middle, step, middleReady⟩ :=
+      obtain ⟨currentReady, _next, _production, _nextInvariant⟩ :=
         progress ready
+      exact ⟨[], before, rfl, .nil before, ready, ⟨currentReady⟩⟩
+  | succ count inductionHypothesis =>
+      obtain ⟨_currentReady, middle, production, middleReady⟩ :=
+        progress ready
+      have coupled := production.certifiedCoupledStep
+      obtain ⟨kind, _positive, ⟨step⟩⟩ := coupled
       obtain ⟨kinds, after, lengthExact, tail, afterInvariant,
           afterReady⟩ :=
         inductionHypothesis middleReady

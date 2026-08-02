@@ -2177,12 +2177,14 @@ theorem activeStepReady
     {state : RepresentativeActivePayloadState} {depth : Nat}
     {executableResult : Atom}
     (ready : RecursiveReadyAt state depth executableResult) :
-    PLeaTTa.PrologHeterogeneousPrefixBridge.ActiveStepReady (.active state) := by
+    Nonempty
+      (PLeaTTa.PrologHeterogeneousPrefixBridge.ActiveStepReady
+        (.active state)) := by
   obtain ⟨head, materialized, _predicate, _payload, _referenceRest,
       _arguments, _result, _executableRest, _tail⟩ := ready.materializedReady
   exact
-    PLeaTTa.PrologHeterogeneousPrefixBridge.ActiveStepReady.localCall
-      state head materialized
+    ⟨PLeaTTa.PrologHeterogeneousPrefixBridge.ActiveStepReady.localCall
+      state head materialized⟩
 
 end RecursiveReadyAt
 
@@ -2392,6 +2394,7 @@ theorem RecursiveReadyAt.pushDetailed
     {executableResult : Atom}
     (ready : RecursiveReadyAt before depth executableResult) :
     ∃ head : NestedCallHead before.carrier,
+      ∃ _materializedReady : MaterializedNestedCallReady before head,
       ∃ count : Nat, ∃ skippedBranches : List ClauseBranch,
       ∃ skippedClauses : List PLeaTTa.Clause,
       ∃ finish : PreparedCursor, ∃ branch : ClauseBranch,
@@ -2529,7 +2532,8 @@ theorem RecursiveReadyAt.pushDetailed
       below := facts.below
       materialized := materialized }
   exact
-    ⟨head, count, skippedBranches, skippedClauses, finish, branch, clause,
+    ⟨head, materializedReady, count, skippedBranches, skippedClauses, finish,
+      branch, clause,
       branchTail, clauseTail, altTail, selectedCopy, installed, after, facts,
       nextReady, countZero, branchExact, clauseExact, predicateExact,
       payloadExact⟩
@@ -2558,7 +2562,7 @@ theorem RecursiveReadyAt.pushCertified
             after.carrier.cellIdentities =
               cell :: before.carrier.cellIdentities := by
   obtain
-      ⟨head, count, skippedBranches, skippedClauses, finish, branch,
+      ⟨head, _materializedReady, count, skippedBranches, skippedClauses, finish, branch,
         clause, branchTail, clauseTail, altTail, selectedCopy, installed,
         after, facts, nextReady, countZero, _branchExact, _clauseExact,
         predicateExact, payloadExact⟩ :=
@@ -2599,20 +2603,16 @@ theorem recursiveProgress
         ∃ depth : Nat, ∃ executableResult : Atom,
           RecursiveReadyAt before depth executableResult at invariant
       obtain ⟨depth, executableResult, ready⟩ := invariant
-      constructor
-      · exact ready.activeStepReady
-      · obtain
-          ⟨head, count, skippedBranches, skippedClauses, finish, branch,
-            clause, branchTail, clauseTail, altTail, selectedCopy, installed,
-            after, facts, nextReady, _countZero, _branchExact, _clauseExact,
-            _predicateExact, _payloadExact⟩ :=
-          ready.pushDetailed (prog := prog) (gt := gt)
-        refine
-          ⟨.localCall count
-              (requestFor head.predicate head.referencePayload
-                before.carrier.index.current),
-            .active after, .localCall facts, ?_⟩
-        exact ⟨depth + 1, selectedCopy.result, nextReady⟩
+      obtain
+        ⟨head, materializedReady, count, skippedBranches, skippedClauses,
+          finish, branch, clause, branchTail, clauseTail, altTail,
+          selectedCopy, installed, after, facts, nextReady, _countZero,
+          _branchExact, _clauseExact, _predicateExact, _payloadExact⟩ :=
+        ready.pushDetailed (prog := prog) (gt := gt)
+      refine
+        ⟨.localCall before head materializedReady, .active after, ?_, ?_⟩
+      · exact .localCall before head materializedReady facts
+      · exact ⟨depth + 1, selectedCopy.result, nextReady⟩
 
 /-- From the literal root task, every requested finite number of recursive
 local-call activations has one exact Type-valued prefix.  The endpoint remains
@@ -2633,7 +2633,7 @@ theorem arbitrary_recursive_prefix
           ∃ kinds : List TransitionKind, ∃ after : ProductPhaseState,
             kinds.length = count ∧
               ∃ _run : CertifiedPrefix prog gt kinds (.active root) after,
-                RecursiveInvariant after ∧ ActiveStepReady after := by
+                RecursiveInvariant after ∧ Nonempty (ActiveStepReady after) := by
   obtain ⟨root, result, ready, sourceSteps, fineSteps⟩ :=
     rootReady (prog := prog) (gt := gt)
   have invariant : RecursiveInvariant (.active root) :=

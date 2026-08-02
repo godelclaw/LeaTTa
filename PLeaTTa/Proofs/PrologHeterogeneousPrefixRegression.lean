@@ -118,7 +118,10 @@ middle.  Thus this is not a counts-only witness: the administrative successor
 is definitionally the nested-call predecessor.  Its exact source cost is four
 while its fine cost is three, so the two schedule folds are observably distinct.
 Exact source observations and the one-cell payload push are retained
-simultaneously. -/
+simultaneously.  Both literal edges also inhabit the premise-only readiness
+relation and the unindexed coupled-step relation, so the global producer is
+exercised by two different transition kinds rather than existing as unused
+scaffolding. -/
 theorem truth_then_unbound_q_call_exact_literal_middle
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
     let request :=
@@ -129,10 +132,16 @@ theorem truth_then_unbound_q_call_exact_literal_middle
         run.states = [before, middle, after] ∧
           (CertifiedPrefix.split [.administrative 2]
               [.localCall 0 request] run).1 = middle ∧
-          StepsN 4 before.sourceState [.opened request] after.sourceState ∧
-          DemandDrivenCallStep.StepsN prog gt 3 before.fineState
-            after.fineState ∧
-          ∃ cell, after.cellIdentities = cell :: middle.cellIdentities := by
+          ∃ beforeReady : ActiveStepReady before,
+            ∃ middleReady : ActiveStepReady middle,
+              beforeReady.Produces prog gt middle ∧
+                middleReady.Produces prog gt after ∧
+                StepsN 4 before.sourceState [.opened request]
+                  after.sourceState ∧
+                DemandDrivenCallStep.StepsN prog gt 3 before.fineState
+                  after.fineState ∧
+                ∃ cell,
+                  after.cellIdentities = cell :: middle.cellIdentities := by
   dsimp only
   obtain
     ⟨middleState, head, ready, qPredicate, qPayload, _qReferenceRest,
@@ -173,12 +182,35 @@ theorem truth_then_unbound_q_call_exact_literal_middle
         (.active middleState) (.active afterState) := by
     simpa [request, qPredicate, qPayload, middleCurrent] using
       (CertifiedTransition.localCall (prog := prog) (gt := gt) facts)
+  have administrativePositive : 0 < 2 := by omega
+  let administrativeReady : ActiveStepReady (.active beforeState) :=
+    .administrative beforeState administrativePositive
+      (beforeTruthTwiceSteps middleState)
+  let nestedReady : ActiveStepReady (.active middleState) :=
+    .localCall middleState head ready
+  have administrativeProduction :
+      administrativeReady.Produces prog gt
+        (.active middleState) :=
+    by
+      have raw :=
+        ActiveStepReady.Produces.administrative
+          (prog := prog) (gt := gt) beforeState administrativePositive
+          (beforeTruthTwiceSteps middleState)
+      simpa [administrativeReady, beforeState,
+        afterAdministrative_beforeTruth_twice] using raw
+  have nestedProduction :
+      nestedReady.Produces prog gt (.active afterState) := by
+    simpa [nestedReady] using
+      (ActiveStepReady.Produces.localCall
+        (prog := prog) (gt := gt) middleState head ready facts)
   let run :
       CertifiedPrefix prog gt [.administrative 2, .localCall 0 request]
         (.active beforeState) (.active afterState) :=
     .cons administrative (.cons nested (.nil (.active afterState)))
   refine
     ⟨.active beforeState, .active middleState, .active afterState, run, ?_, ?_,
+      administrativeReady, nestedReady, administrativeProduction,
+      nestedProduction,
       ?_, ?_, ?_⟩
   · rfl
   · rfl
