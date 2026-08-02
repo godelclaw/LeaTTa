@@ -7,6 +7,8 @@ Purpose: Classify one rooted local scheduled pull while selecting the exact
 Trusted boundary: none
 Main exports:
   ScheduledLocalSelection,
+  ScheduledLocalSelection.pullTarget_unique,
+  ScheduledLocalSelection.matchesOriginLanding,
   ScheduledCellBankPull,
   ScheduledPayloadPullOutcome,
   ScheduledPayloadAlignment.classifyPull
@@ -89,7 +91,7 @@ theorem rest_eq_flatten_postResources
     {cells : List (ScheduledHistoryCell alpha)}
     (selection : ScheduledLocalSelection cells) :
     selection.rest = flattenOwnedAlts selection.postResources [] := by
-  simp [postResources, flattenOwnedAlts, afterPulledHead,
+  simp [postResources, afterPulledHead,
     selection.restExact]
 
 /-- The selected ordinal is derived from the structural prefix, so the
@@ -127,7 +129,7 @@ theorem path_cell_exact
     {build : ScheduledHistoryBuild history}
     (selection : ScheduledLocalSelection build.cells) :
     selection.path.cell = selection.selected := by
-  simpa [path, ScheduledHistoryBuild.Path.cell, position,
+  simp [path, ScheduledHistoryBuild.Path.cell, position,
     selection.cellsExact, List.get_eq_getElem]
 
 /-- An enabled barrier cache must drop exactly one marker per crossed empty
@@ -163,6 +165,96 @@ theorem barrierCount_drop_exact
       (selection.suffix.map ScheduledHistoryCell.resource) []
       selection.goals selection.binding selection.localTail earlierEmpty
       selection.selectedHead)
+
+/-- Two structural selections of the same literal cell bank cannot disagree
+on the branch returned by the executable pull.
+
+This is deliberately stated for independently supplied proof-relevant
+selections.  The conclusion follows from their two equations for the same
+`pullAux` call, rather than from proof irrelevance or resource equality. -/
+theorem pullTarget_unique
+    {alpha : List (LogicVar × String)}
+    {cells : List (ScheduledHistoryCell alpha)}
+    (left right : ScheduledLocalSelection cells) :
+    left.goals = right.goals ∧
+      left.binding = right.binding ∧ left.rest = right.rest := by
+  have same :
+      some (PLeaTTa.PullTarget.branch left.goals left.binding, left.rest) =
+        some
+          (PLeaTTa.PullTarget.branch right.goals right.binding, right.rest) :=
+    left.pullExact.symm.trans right.pullExact
+  have pairEq := Option.some.inj same
+  have targetEq := congrArg Prod.fst pairEq
+  have restEq := congrArg Prod.snd pairEq
+  injection targetEq with goalsEq bindingEq
+  exact ⟨goalsEq, bindingEq, restEq⟩
+
+/-- The complete post-pull remainder determines the selected cell ordinal.
+
+Every crossed local cell contributes exactly one barrier marker.  Thus even
+duplicate-shaped branch heads cannot move the selection to another payload
+occurrence while retaining the same residual bank. -/
+theorem earlier_length_eq_of_rest_eq
+    {alpha : List (LogicVar × String)}
+    {cells : List (ScheduledHistoryCell alpha)}
+    (left right : ScheduledLocalSelection cells)
+    (restEq : left.rest = right.rest) :
+    left.earlier.length = right.earlier.length := by
+  have leftCount := left.barrierCount_drop_exact
+  have rightCount := right.barrierCount_drop_exact
+  rw [restEq] at leftCount
+  omega
+
+/-- Contrapositive discriminator for the occurrence coordinate: selections
+at different local-cell ordinals cannot expose the same residual bank. -/
+theorem rest_ne_of_earlier_length_ne
+    {alpha : List (LogicVar × String)}
+    {cells : List (ScheduledHistoryCell alpha)}
+    (left right : ScheduledLocalSelection cells)
+    (different : left.earlier.length ≠ right.earlier.length) :
+    left.rest ≠ right.rest := by
+  intro restEq
+  exact different (earlier_length_eq_of_rest_eq left right restEq)
+
+/-- A source-origin landing over the history built from these exact local
+cells selects the same goals, runtime binding, and full residual bank as the
+Type-valued payload selection.
+
+The source proof remains Prop-valued and chooses no payload coordinate.  Its
+observable pull triple is forced by the shared literal bank; the residual
+bank then determines the occurrence ordinal by
+`earlier_length_eq_of_rest_eq`. -/
+theorem matchesOriginLanding
+    {alpha : List (LogicVar × String)}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    (selection : ScheduledLocalSelection build.cells)
+    {goals : List PLeaTTa.Goal} {binding : Subst}
+    {rest : List PLeaTTa.Alt}
+    (landing :
+      OriginPrefixLanding alpha history.resourceAgreement goals binding
+        rest) :
+    selection.goals = goals ∧
+      selection.binding = binding ∧ selection.rest = rest := by
+  have landingPull :
+      PLeaTTa.pullAux
+          (flattenOwnedAlts
+            (build.cells.map ScheduledHistoryCell.resource) []) =
+        some (.branch goals binding, rest) := by
+    rw [build.cells_map_resource]
+    exact landing.pullAux_exact
+  have same :
+      some
+          (PLeaTTa.PullTarget.branch selection.goals selection.binding,
+            selection.rest) =
+        some (PLeaTTa.PullTarget.branch goals binding, rest) :=
+    selection.pullExact.symm.trans landingPull
+  have pairEq := Option.some.inj same
+  have targetEq := congrArg Prod.fst pairEq
+  have restEq := congrArg Prod.snd pairEq
+  injection targetEq with goalsEq bindingEq
+  exact ⟨goalsEq, bindingEq, restEq⟩
 
 end ScheduledLocalSelection
 

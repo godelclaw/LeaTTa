@@ -94,4 +94,37 @@ theorem rejected_prefix_root_pull_selects_exact_payload_occurrence
       rw [bankShape] at pullNone
       simp [PLeaTTa.pullAux] at pullNone
 
+/-- The concrete retained-sibling run also inhabits the explicit source/payload
+pull coupling: independently quantified source landing data is forced to the
+Type-valued selection's exact goals, binding, and complete residual bank. -/
+theorem rejected_prefix_source_payload_pull_coupling_is_inhabited
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    exists before : RepresentativeScheduledPayloadState,
+      exists ready : RootClosedAnswerReady before,
+        exists selection :
+            ScheduledLocalSelection ready.result.historyBuild.cells,
+          exists goals : List PLeaTTa.Goal, exists binding : Metta.Subst,
+            exists rest : List PLeaTTa.Alt,
+              exists _landing :
+                OriginPrefixLanding before.carrier.index.alpha
+                  ready.result.history.resourceAgreement goals binding rest,
+                selection.goals = goals /\
+                  selection.binding = binding /\
+                  selection.rest = rest /\
+                  selection.selected.resource.alts ≠ [] /\
+                  PLeaTTa.pullAux
+                      before.carrier.index.openConf.control.alts =
+                    some (.branch goals binding, rest) := by
+  obtain
+    ⟨before, ready, selection, landing, _outcome, _path, _cell, pull⟩ :=
+    rejected_prefix_root_pull_selects_exact_payload_occurrence
+      (prog := prog) (gt := gt)
+  have coupled := selection.matchesOriginLanding landing
+  refine
+    ⟨before, ready, selection, selection.goals, selection.binding,
+      selection.rest, landing, coupled.1, coupled.2.1, coupled.2.2, ?_, ?_⟩
+  · rw [selection.selectedHead]
+    simp
+  · exact pull
+
 end PLeaTTa.PrologScheduledPayloadLandingRegression
