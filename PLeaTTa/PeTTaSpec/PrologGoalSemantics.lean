@@ -4915,6 +4915,409 @@ theorem findall_answer_then_loop_arbitrarily_long_open_prefix
   · simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
       (StepsN.trans findallLoop_initial_prefix (findallLoop_cycles cycles))
 
+/-! ### Streaming catch followed by divergence
+
+Unlike `findall/3`, ISO `catch/3` is not a collector.  A successful protected
+goal answer is composed with the caller tail immediately, while the protected
+goal's later alternatives remain available on backtracking.  The witness below
+uses the same concrete `loop :- loop` clause as the collector discriminator:
+the protected disjunction answers once and then recurses forever.  Wrapping it
+in `catch/3` must expose the first answer before entering that open suffix.
+-/
+
+private def catchLoopCatcher : Term :=
+  .variable (.source "$catch_loop_exception")
+
+private def catchLoopHandler : Goal := .truth
+
+private def catchLoopProtected : Goal :=
+  .disjunction [.truth, .call leftRecursivePredicate []]
+
+/-- Starting the exception allocator at zero makes the post-entry session
+definitionally equal to the established recursive witness session. -/
+private def catchLoopInitialSession : Session :=
+  { resolver := leftRecursiveResolver
+    nextCutScope := 1
+    nextExceptionScope := 0 }
+
+private theorem openCatch_loop_initial :
+    openCatch catchLoopInitialSession =
+      { cutScope := 1
+        handlerScope := { index := 0 }
+        session := leftRecursiveSession 2 } := by
+  rfl
+
+private def catchLoopOpenState (depth : Nat) : State :=
+  .running (leftRecursiveSession (depth + 3))
+    (.product 0
+      (.cutBoundary 1
+        (.catchBoundary { index := 0 } 1
+          (.product 1 (leftRecursiveChain depth 2) [])
+          catchLoopCatcher catchLoopHandler []))
+      [])
+
+private def catchLoopPulledState (depth : Nat) : State :=
+  .running (leftRecursiveSession (depth + 3))
+    (.product 0
+      (.cutBoundary 1
+        (.catchBoundary { index := 0 } 1
+          (.product 1 (leftRecursivePulled depth 2) [])
+          catchLoopCatcher catchLoopHandler []))
+      [])
+
+private theorem catchLoop_pull_transition (depth : Nat) :
+    Transition (catchLoopOpenState depth) []
+      (catchLoopPulledState depth) := by
+  have recursive := leftRecursiveChain_pull depth 2
+    (leftRecursiveSession (depth + 3))
+  have productStep : RawStep (leftRecursiveSession (depth + 3))
+      (.product 1 (leftRecursiveChain depth 2) []) [] .none
+      (leftRecursiveSession (depth + 3))
+      (.running (.product 1 (leftRecursivePulled depth 2) [])) := by
+    exact .productProgress 1 _ _ [] [] .none _ _ recursive
+      (by simp [Trace.AnswerFree])
+  have caught : RawStep (leftRecursiveSession (depth + 3))
+      (.catchBoundary { index := 0 } 1
+        (.product 1 (leftRecursiveChain depth 2) [])
+        catchLoopCatcher catchLoopHandler [])
+      [] .none (leftRecursiveSession (depth + 3))
+      (.running
+        (.catchBoundary { index := 0 } 1
+          (.product 1 (leftRecursivePulled depth 2) [])
+          catchLoopCatcher catchLoopHandler [])) := by
+    exact .catchProgress { index := 0 } 1 _ _ catchLoopCatcher
+      catchLoopHandler [] [] .none _ _ productStep
+  exact .ordinary _ _ _ _ _
+    (.productProgress 0 _ _ [] [] .none _ _
+      (.cutBoundaryProgress 1 _ _ [] _ _ caught)
+      (by simp [Trace.AnswerFree]))
+
+private theorem catchLoop_open_transition (depth : Nat) :
+    Transition (catchLoopPulledState depth)
+      [.opened leftRecursiveRequest] (catchLoopOpenState (depth + 1)) := by
+  have recursive : RawStep (leftRecursiveSession (depth + 3))
+      (leftRecursivePulled depth 2) [.opened leftRecursiveRequest] .none
+      (leftRecursiveSession (depth + 4))
+      (.running (leftRecursiveChain (depth + 1) 2)) := by
+    simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+      (leftRecursivePulled_open depth 2)
+  have productStep : RawStep (leftRecursiveSession (depth + 3))
+      (.product 1 (leftRecursivePulled depth 2) [])
+      [.opened leftRecursiveRequest] .none
+      (leftRecursiveSession (depth + 4))
+      (.running (.product 1 (leftRecursiveChain (depth + 1) 2) [])) := by
+    exact .productProgress 1 _ _ [] [.opened leftRecursiveRequest] .none
+      _ _ recursive (by simp [Trace.AnswerFree])
+  have caught : RawStep (leftRecursiveSession (depth + 3))
+      (.catchBoundary { index := 0 } 1
+        (.product 1 (leftRecursivePulled depth 2) [])
+        catchLoopCatcher catchLoopHandler [])
+      [.opened leftRecursiveRequest] .none
+      (leftRecursiveSession (depth + 4))
+      (.running
+        (.catchBoundary { index := 0 } 1
+          (.product 1 (leftRecursiveChain (depth + 1) 2) [])
+          catchLoopCatcher catchLoopHandler [])) := by
+    exact .catchProgress { index := 0 } 1 _ _ catchLoopCatcher
+      catchLoopHandler [] [.opened leftRecursiveRequest] .none _ _ productStep
+  simpa [catchLoopPulledState, catchLoopOpenState, RawTarget.toState,
+      Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+    (Transition.ordinary _ _ _ _ _
+      (RawStep.productProgress 0 _ _ [] [.opened leftRecursiveRequest]
+        .none _ _
+        (RawStep.cutBoundaryProgress 1 _ _
+          [.opened leftRecursiveRequest] _ _ caught)
+        (by simp [Trace.AnswerFree])))
+
+private theorem catchLoop_cycle (depth : Nat) :
+    StepsN 2 (catchLoopOpenState depth) [.opened leftRecursiveRequest]
+      (catchLoopOpenState (depth + 1)) := by
+  exact StepsN.succ 1 _ _ _ [] [.opened leftRecursiveRequest]
+    (catchLoop_pull_transition depth)
+    (StepsN.succ 0 _ _ _ [.opened leftRecursiveRequest] []
+      (catchLoop_open_transition depth) (StepsN.zero _))
+
+private theorem catchLoop_cycles (cycles : Nat) :
+    StepsN (2 * cycles) (catchLoopOpenState 0)
+      (leftRecursiveEvents cycles) (catchLoopOpenState cycles) := by
+  induction cycles with
+  | zero => exact StepsN.zero _
+  | succ cycles inductionHypothesis =>
+      simpa [leftRecursiveEvents, Nat.mul_succ] using
+        (StepsN.trans inductionHypothesis (catchLoop_cycle cycles))
+
+private def catchLoopEnteredState : State :=
+  .running (leftRecursiveSession 2)
+    (.product 0
+      (.cutBoundary 1
+        (.catchBoundary { index := 0 } 1
+          (.task 1 [catchLoopProtected] [])
+          catchLoopCatcher catchLoopHandler []))
+      [])
+
+private def catchLoopBranchedState : State :=
+  .running (leftRecursiveSession 2)
+    (.product 0
+      (.cutBoundary 1
+        (.catchBoundary { index := 0 } 1
+          (Search.disjoin 1
+            [.truth, .call leftRecursivePredicate []] [] [])
+          catchLoopCatcher catchLoopHandler []))
+      [])
+
+private def catchLoopTruthState : State :=
+  .running (leftRecursiveSession 2)
+    (.product 0
+      (.cutBoundary 1
+        (.catchBoundary { index := 0 } 1
+          (.choice 1
+            (.task 1 [] [])
+            (.task 1 [.call leftRecursivePredicate []] []))
+          catchLoopCatcher catchLoopHandler []))
+      [])
+
+private def catchLoopScheduledState : State :=
+  .running (leftRecursiveSession 2)
+    (.choice 0
+      (.task 0 [] [])
+      (.product 0
+        (.cutBoundary 1
+          (.catchBoundary { index := 0 } 1
+            (.choice 1 .done
+              (.task 1 [.call leftRecursivePredicate []] []))
+            catchLoopCatcher catchLoopHandler []))
+        []))
+
+private def catchLoopAnsweredState : State :=
+  .running (leftRecursiveSession 2)
+    (.choice 0 .done
+      (.product 0
+        (.cutBoundary 1
+          (.catchBoundary { index := 0 } 1
+            (.choice 1 .done
+              (.task 1 [.call leftRecursivePredicate []] []))
+            catchLoopCatcher catchLoopHandler []))
+        []))
+
+private def catchLoopRetainedState : State :=
+  .running (leftRecursiveSession 2)
+    (.product 0
+      (.cutBoundary 1
+        (.catchBoundary { index := 0 } 1
+          (.choice 1 .done
+            (.task 1 [.call leftRecursivePredicate []] []))
+          catchLoopCatcher catchLoopHandler []))
+      [])
+
+private def catchLoopRightState : State :=
+  .running (leftRecursiveSession 2)
+    (.product 0
+      (.cutBoundary 1
+        (.catchBoundary { index := 0 } 1
+          (.task 1 [.call leftRecursivePredicate []] [])
+          catchLoopCatcher catchLoopHandler []))
+      [])
+
+private theorem catchLoop_enter_transition :
+    Transition
+      (.running catchLoopInitialSession
+        (.task 0
+          [.catch catchLoopProtected catchLoopCatcher catchLoopHandler]
+          []))
+      [] catchLoopEnteredState := by
+  simpa [catchLoopEnteredState, openCatch_loop_initial,
+      RawTarget.toState] using
+    (Transition.ordinary _ _ _ _ _
+      (RawStep.taskCatch 0 catchLoopProtected catchLoopCatcher
+        catchLoopHandler [] [] catchLoopInitialSession))
+
+private theorem catchLoop_branch_transition :
+    Transition catchLoopEnteredState [] catchLoopBranchedState := by
+  have branch : RawStep (leftRecursiveSession 2)
+      (.task 1 [catchLoopProtected] []) [] .none
+      (leftRecursiveSession 2)
+      (.running
+        (Search.disjoin 1
+          [.truth, .call leftRecursivePredicate []] [] [])) := by
+    simpa [catchLoopProtected] using
+      (RawStep.taskDisjunction 1
+        [.truth, .call leftRecursivePredicate []] [] []
+        (leftRecursiveSession 2))
+  exact .ordinary _ _ _ _ _
+    (.productProgress 0 _ _ [] [] .none _ _
+      (.cutBoundaryProgress 1 _ _ [] _ _
+        (.catchProgress { index := 0 } 1 _ _ catchLoopCatcher
+          catchLoopHandler [] [] .none _ _ branch))
+      (by simp [Trace.AnswerFree]))
+
+private theorem catchLoop_truth_transition :
+    Transition catchLoopBranchedState [] catchLoopTruthState := by
+  have truth : RawStep (leftRecursiveSession 2)
+      (Search.disjoin 1
+        [.truth, .call leftRecursivePredicate []] [] [])
+      [] .none (leftRecursiveSession 2)
+      (.running
+        (.choice 1
+          (.task 1 [] [])
+          (.task 1 [.call leftRecursivePredicate []] []))) := by
+    simpa [Search.disjoin] using
+      (RawStep.choiceProgress 1
+        (.task 1 [.truth] [])
+        (.task 1 [.call leftRecursivePredicate []] [])
+        (.task 1 [] []) []
+        (leftRecursiveSession 2) (leftRecursiveSession 2)
+        (RawStep.taskTruth 1 [] [] (leftRecursiveSession 2)))
+  exact .ordinary _ _ _ _ _
+    (.productProgress 0 _ _ [] [] .none _ _
+      (.cutBoundaryProgress 1 _ _ [] _ _
+        (.catchProgress { index := 0 } 1 _ _ catchLoopCatcher
+          catchLoopHandler [] [] .none _ _ truth))
+      (by simp [Trace.AnswerFree]))
+
+private theorem catchLoop_schedule_transition :
+    Transition catchLoopTruthState [] catchLoopScheduledState := by
+  have answer : RawStep (leftRecursiveSession 2)
+      (.choice 1
+        (.task 1 [] [])
+        (.task 1 [.call leftRecursivePredicate []] []))
+      [.answer []] .none (leftRecursiveSession 2)
+      (.running
+        (.choice 1 .done
+          (.task 1 [.call leftRecursivePredicate []] []))) := by
+    exact .choiceProgress 1 _ _ _ [.answer []] _ _
+      (.taskAnswer 1 [] (leftRecursiveSession 2))
+  have caught : RawStep (leftRecursiveSession 2)
+      (.cutBoundary 1
+        (.catchBoundary { index := 0 } 1
+          (.choice 1
+            (.task 1 [] [])
+            (.task 1 [.call leftRecursivePredicate []] []))
+          catchLoopCatcher catchLoopHandler []))
+      [.answer []] .none (leftRecursiveSession 2)
+      (.running
+        (.cutBoundary 1
+          (.catchBoundary { index := 0 } 1
+            (.choice 1 .done
+              (.task 1 [.call leftRecursivePredicate []] []))
+            catchLoopCatcher catchLoopHandler []))) := by
+    exact .cutBoundaryProgress 1 _ _ [.answer []] _ _
+      (.catchProgress { index := 0 } 1 _ _ catchLoopCatcher
+        catchLoopHandler [] [.answer []] .none _ _ answer)
+  exact .ordinary _ _ _ _ _
+    (.productAnswer 0 _ _ [] [] _ _ caught)
+
+private theorem catchLoop_answer_transition :
+    Transition catchLoopScheduledState [.answer []]
+      catchLoopAnsweredState := by
+  exact .ordinary _ _ _ _ _
+    (.choiceProgress 0 _ _ _ [.answer []] _ _
+      (.taskAnswer 0 [] (leftRecursiveSession 2)))
+
+private theorem catchLoop_resume_transition :
+    Transition catchLoopAnsweredState [] catchLoopRetainedState := by
+  exact .ordinary _ _ _ _ _
+    (.choiceComplete 0 .done _ _ _ (.done (leftRecursiveSession 2)))
+
+private theorem catchLoop_switch_transition :
+    Transition catchLoopRetainedState [] catchLoopRightState := by
+  have switched : RawStep (leftRecursiveSession 2)
+      (.choice 1 .done
+        (.task 1 [.call leftRecursivePredicate []] []))
+      [] .none (leftRecursiveSession 2)
+      (.running (.task 1 [.call leftRecursivePredicate []] [])) := by
+    exact .choiceComplete 1 .done _ _ _ (.done (leftRecursiveSession 2))
+  exact .ordinary _ _ _ _ _
+    (.productProgress 0 _ _ [] [] .none _ _
+      (.cutBoundaryProgress 1 _ _ [] _ _
+        (.catchProgress { index := 0 } 1 _ _ catchLoopCatcher
+          catchLoopHandler [] [] .none _ _ switched))
+      (by simp [Trace.AnswerFree]))
+
+private theorem catchLoop_call_transition :
+    Transition catchLoopRightState [.opened leftRecursiveRequest]
+      (catchLoopOpenState 0) := by
+  have opened : RawStep (leftRecursiveSession 2)
+      (.task 1 [.call leftRecursivePredicate []] [])
+      [.opened leftRecursiveRequest] .none (leftRecursiveSession 3)
+      (.running (.product 1 (leftRecursiveChain 0 2) [])) := by
+    simpa [leftRecursiveRequest, leftRecursiveChain,
+        openedFor_leftRecursive, Nat.add_assoc] using
+      (RawStep.taskCall 1 leftRecursivePredicate [] [] []
+        (leftRecursiveSession 2) leftRecursive_notThrow rfl)
+  exact .ordinary _ _ _ _ _
+    (.productProgress 0 _ _ [] [.opened leftRecursiveRequest] .none _ _
+      (.cutBoundaryProgress 1 _ _ [.opened leftRecursiveRequest] _ _
+        (.catchProgress { index := 0 } 1 _ _ catchLoopCatcher
+          catchLoopHandler [] [.opened leftRecursiveRequest] .none _ _
+          opened))
+      (by simp [Trace.AnswerFree]))
+
+private theorem catchLoop_initial_prefix :
+    StepsN 8
+      (.running catchLoopInitialSession
+        (.task 0
+          [.catch catchLoopProtected catchLoopCatcher catchLoopHandler]
+          []))
+      [.answer [], .opened leftRecursiveRequest]
+      (catchLoopOpenState 0) := by
+  have one {start finish : State} {events : List Observation}
+      (step : Transition start events finish) :
+      StepsN 1 start events finish := by
+    simpa using
+      (StepsN.succ 0 start finish finish events [] step (.zero finish))
+  exact StepsN.trans (one catchLoop_enter_transition)
+    (StepsN.trans (one catchLoop_branch_transition)
+      (StepsN.trans (one catchLoop_truth_transition)
+        (StepsN.trans (one catchLoop_schedule_transition)
+          (StepsN.trans (one catchLoop_answer_transition)
+            (StepsN.trans (one catchLoop_resume_transition)
+              (StepsN.trans (one catchLoop_switch_transition)
+                (one catchLoop_call_transition)))))))
+
+/-- A source-shaped local `catch/3` exposes one protected-goal answer and then
+enters the concrete clause `loop :- loop`.  Every requested finite extension
+therefore begins with the same public answer, contains only call-open events
+after it, and remains running without a fabricated completion.
+
+This is the operational behavior hidden by a blocking catch implementation
+that requires the entire protected goal to terminate before replaying its
+answers.  The exact positive transition count and answer-first event sequence
+make the discriminator non-vacuous.
+
+[SPEC translator.pl:300-308; SWI-Prolog manual, `catch/3`] -/
+theorem catch_answer_then_loop_arbitrarily_long_open_prefix
+    (cycles : Nat) :
+    let later :=
+      [.opened leftRecursiveRequest] ++ leftRecursiveEvents cycles
+    let events := [.answer []] ++ later
+    events.length = cycles + 2 ∧
+      events.head? = some (.answer []) ∧
+      (∀ event ∈ later, event = .opened leftRecursiveRequest) ∧
+      (Trace.Observation.completed : Observation) ∉ events ∧
+      StepsN (2 * cycles + 8)
+        (.running catchLoopInitialSession
+          (.task 0
+            [.catch catchLoopProtected catchLoopCatcher catchLoopHandler]
+            []))
+        events (catchLoopOpenState cycles) := by
+  dsimp only
+  refine ⟨?_, rfl, ?_, ?_, ?_⟩
+  · simp [leftRecursiveEvents_length]
+  · intro event member
+    rcases List.mem_append.mp member with first | rest
+    · simpa only [List.mem_singleton] using first
+    · exact leftRecursiveEvents_only_opened cycles event rest
+  · intro completedMember
+    simp only [List.mem_append, List.mem_singleton] at completedMember
+    rcases completedMember with answer | opened | recursive
+    · cases answer
+    · cases opened
+    · have impossible :=
+        leftRecursiveEvents_only_opened cycles _ recursive
+      cases impossible
+  · simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+      (StepsN.trans catchLoop_initial_prefix (catchLoop_cycles cycles))
+
 /-- A real local `throw/1` task performs one silent allocation step into an
 internal raised packet.  The residual conjunction is discarded rather than
 entered, and ordinary clause lookup is excluded by `BuiltinThrowCall`. -/

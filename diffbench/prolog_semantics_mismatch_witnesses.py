@@ -83,8 +83,23 @@ def main() -> int:
             if row["transcript"] != "-":
                 raise SystemExit(
                     f"core case has transcript for {row['case']}")
-            pleatta = witnesses.run(witnesses.diff.leatta_results, fixture)
+            budget = row["pleatta_budget"]
+            if budget == "-":
+                pleatta = witnesses.run(
+                    witnesses.diff.leatta_results, fixture)
+            else:
+                if not budget.isdigit() or int(budget) <= 0:
+                    raise SystemExit(
+                        f"invalid PLeaTTa budget for {row['case']}: {budget}")
+                pleatta = witnesses.run(
+                    lambda path, timeout:
+                        witnesses.diff.leatta_results_with_budget(
+                            path, timeout, int(budget)),
+                    fixture)
         else:
+            if row["pleatta_budget"] != "-":
+                raise SystemExit(
+                    f"host replay case has core budget for {row['case']}")
             transcript = (ROOT / row["transcript"]).resolve()
             try:
                 transcript.relative_to(ROOT)

@@ -390,6 +390,17 @@ def leatta_results(path, timeout):
     return _leatta_command_results(LEATTA + [str(path)], timeout)
 
 
+def leatta_results_with_budget(path, timeout, budget):
+    """Run the core executable with an explicit semantic-step budget.
+
+    Divergence witnesses use a deliberately small finite budget so the gate
+    observes the clean executable's honest fuel-exhaustion result promptly
+    instead of relying on a wall-clock timeout.
+    """
+    return _leatta_command_results(
+        LEATTA + [str(path), str(budget)], timeout)
+
+
 def leatta_replay_results(path, transcript, timeout):
     """Run one deterministic typed-host replay through the same result parser."""
     return _leatta_command_results(

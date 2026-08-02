@@ -704,6 +704,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.findall_exception_transparent
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.local_findall_two_answers_exact_trace
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.findall_answer_then_loop_arbitrarily_long_open_prefix
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.catch_answer_then_loop_arbitrarily_long_open_prefix
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.throw_enters_fresh_raise
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.throw_packet_copy_contract
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.GoalSemantics.local_throw_exact_two_steps
@@ -1989,6 +1990,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.DemandDrivenStep.completedFindallCopyPhase_finish
 #print axioms PLeaTTa.DemandDrivenStep.findallExit_copy_expands
 #print axioms PLeaTTa.DemandDrivenStep.findallExit_copy_expands_and_collapses
+#print axioms PLeaTTa.DemandDrivenStep.sealed_general_catch_step_has_closed_subrun
 #print axioms PLeaTTa.DemandDrivenStep.sealed_findall_step_has_terminal_subrun
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.assertz
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.asserta

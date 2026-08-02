@@ -2435,6 +2435,36 @@ theorem findallExit_copy_expands_and_collapses
     ⟨findallExit_copy_expands prog gt inner frame remaining frameHead done,
       .findallExit inner frame remaining frameHead done⟩
 
+/-- Outside the direct grounded fast path, every sealed `catchg` step hides a
+closed nested execution premise.  The protected run must either reach a
+terminal configuration before its answers are replayed or finish a complete
+`Raises` derivation before the error value is installed.  There is no sealed
+constructor for an answer-producing nonterminal prefix.
+
+This inversion is deliberately disjunctive: exceptional completion is not
+misclassified as ordinary terminal completion, while both branches expose the
+same exact nested starting configuration. -/
+theorem sealed_general_catch_step_has_closed_subrun
+    {prog : Prog} {gt : GroundingTable} (outer next : Conf)
+    (template : Atom) (sub : List Goal) (result : Atom)
+    (rest : List Goal) (binding : Subst)
+    (head : outer.cur =
+      some (Goal.catchg template sub result :: rest, binding))
+    (notDirect : catchDirect? gt binding template sub = none)
+    (step : PLeaTTa.Step prog gt outer next) :
+    (∃ inner,
+      PLeaTTa.StepStar prog gt
+        (subConfOf outer sub binding template) inner ∧
+      PLeaTTa.Terminal inner) ∨
+    (∃ inner error,
+      PLeaTTa.Raises prog gt
+        (subConfOf outer sub binding template) inner error) := by
+  cases step <;> simp_all [subConfOf]
+  case catch_run =>
+    exact .inl ⟨_, by assumption, by assumption⟩
+  case catch_run_error =>
+    exact .inr ⟨_, _, by assumption⟩
+
 /-- The current sealed relation treats every outer findall step atomically:
 the step can exist only with a terminal nested `StepStar` premise. -/
 theorem sealed_findall_step_has_terminal_subrun
