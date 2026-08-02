@@ -363,6 +363,10 @@ PROLOG_SCHEDULED_ANSWER_VALUE_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologScheduledAnswerValueBridge.lean"
 )
+PROLOG_ANSWER_VISIBILITY_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologAnswerVisibilityBridge.lean"
+)
 PROLOG_UNBOUND_PUBLIC_ANSWER_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologUnboundPublicAnswerRegression.lean"
@@ -472,6 +476,7 @@ STRICT_AXIOM_AUDIT_ROWS = {
     "BISIM.root_closed_answer_pull",
     "BISIM.root_closed_local_live_answer",
     "BISIM.root_closed_public_answer_value",
+    "BISIM.answer_visibility_public",
 }
 
 
@@ -703,6 +708,8 @@ def check() -> list[str]:
             digest(PROLOG_ANSWER_VALUE_BRIDGE),
         "prolog_scheduled_answer_value_bridge_sha256":
             digest(PROLOG_SCHEDULED_ANSWER_VALUE_BRIDGE),
+        "prolog_answer_visibility_bridge_sha256":
+            digest(PROLOG_ANSWER_VISIBILITY_BRIDGE),
         "prolog_unbound_public_answer_regression_sha256":
             digest(PROLOG_UNBOUND_PUBLIC_ANSWER_REGRESSION),
         "prolog_current_session_assertion_transition_bridge_sha256":

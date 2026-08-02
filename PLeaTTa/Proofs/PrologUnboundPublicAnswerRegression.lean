@@ -8,7 +8,7 @@ Trusted boundary: none
 Main exports: ReachableUnboundPublicAnswerWitness,
   reachable_unbound_p_q_public_answer
 -/
-import PLeaTTa.Proofs.PrologScheduledAnswerValueBridge
+import PLeaTTa.Proofs.PrologAnswerVisibilityBridge
 import PLeaTTa.Proofs.PrologUnboundNestedCallRegression
 
 namespace PLeaTTa.PrologUnboundPublicAnswerRegression
@@ -18,7 +18,9 @@ open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.GoalSemantics
 open DemandDrivenStep
 open PrologAnswerValueBridge
+open PrologAnswerVisibilityBridge
 open PrologFindallCopyBridge
+open PrologFindallFrameZipperBridge
 open PrologHeterogeneousPrefixBridge
 open PrologNestedCallReadyBridge
 open PrologRecursiveCallPayloadBridge
@@ -187,14 +189,20 @@ theorem reachable_unbound_p_q_public_answer
   have scheduledFramesEmpty :
       scheduled.carrier.index.openConf.frames = [] := by
     simpa [scheduled] using framesEmpty
-  have publicOwner :
-      PublicAnswerOwner scheduled.carrier.index.openConf.frames := by
-    rw [scheduledFramesEmpty]
-    exact publicAnswerOwner_nil
+  have scheduledSourceCellsEmpty :
+      activeCollectionCells scheduled.carrier.index.source = some [] :=
+    PLeaTTa.PrologAnswerVisibilityBridge.RepresentativeScheduledPayloadState.sourceCellsEmpty
+      scheduled
+  have scheduledOccurrences :
+      CollectionOccurrenceAgrees scheduled.carrier.index.source
+        scheduled.carrier.index.openConf.frames := by
+    simp [CollectionOccurrenceAgrees, scheduledSourceCellsEmpty,
+      scheduledFramesEmpty]
   have publicRelation :
       RootClosedPublicAnswerRelates queryTerm prog gt scheduled ready :=
-    PLeaTTa.PrologScheduledAnswerValueBridge.RootClosedAnswerReady.withPublicAnswer
-      ready scheduledQueryAgreement scheduledQuerySupported publicOwner
+    PLeaTTa.PrologAnswerVisibilityBridge.RootClosedAnswerReady.withPublicAnswerOfOccurrences
+      ready scheduledQueryAgreement scheduledQuerySupported
+        scheduledOccurrences
   have scheduledSourceValueExact :
       scheduled.carrier.index.current.applyTerm queryTerm =
         .variable (.generated 1) := by
