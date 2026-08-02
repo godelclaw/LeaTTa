@@ -160,6 +160,22 @@ def retainedCursorScopes
     (focus : Search) :
     plug (frame :: outer) focus = plug outer (frame.wrap focus) := rfl
 
+/-- Appending an older context is literal nesting: the inner context wraps
+the focus first, then the appended outer context wraps that result.
+
+The equation fixes the inner-to-outer orientation used by every payload and
+history zipper; reversing either side would change clause order and cut
+scope. -/
+theorem plug_append
+    (inner outer : ActiveProductContext) (focus : Search) :
+    plug (inner ++ outer) focus = plug outer (plug inner focus) := by
+  induction inner generalizing focus with
+  | nil =>
+      rfl
+  | cons frame inner inductionHypothesis =>
+      simpa only [List.cons_append, plug_cons] using
+        inductionHypothesis (frame.wrap focus)
+
 /-- Plugging neither loses nor duplicates a cursor: the active focus comes
 first, followed by each retained region from inner to outer. -/
 theorem plug_liveCursors

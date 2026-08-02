@@ -570,6 +570,34 @@ structure PayloadHeadData
         ownership := resourceOwnership
         snapshot := snapshot } :: payloadCells outerAgrees
 
+namespace PayloadHeadData
+
+/-- The literal payload cell named by a dependent head view.
+
+Unlike `PayloadCell.historyCell`, this projection retains every delimiter
+label and the immutable snapshot. -/
+def cell
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    (head : PayloadHeadData payload) : PayloadCell alpha support :=
+  { currentBarrier := currentBarrier
+    currentScope := head.currentScope
+    nextScope := head.nextScope
+    outerScope := outer
+    segment := head.segment
+    outerSegments := head.laterSegments
+    resource := head.resource
+    cursor := head.cursor
+    ownership := head.resourceOwnership
+    snapshot := head.snapshot }
+
+end PayloadHeadData
+
 namespace PayloadHeadView
 
 /-- Eliminate an indexed head view into explicit constructor data.  The
@@ -746,6 +774,23 @@ def route
 end PayloadPath
 
 namespace PayloadRoute
+
+/-- The dependent route head is exactly the selected payload occurrence,
+including all typed delimiters and its immutable snapshot. -/
+theorem headCell_exact
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {path : PayloadPath payload}
+    (route : PayloadRoute payload path) :
+    route.head.data.cell = path.cell := by
+  have cellsAtHead :=
+    route.head.data.cellsExact.symm.trans route.cellsExact
+  simpa [PayloadHeadData.cell] using (List.cons.inj cellsAtHead).1
 
 /-- A route suffix is structurally nonempty: its head is the exact selected
 cell rather than a postulated compatible occurrence. -/

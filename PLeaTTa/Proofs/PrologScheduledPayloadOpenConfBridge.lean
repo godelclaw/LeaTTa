@@ -20,6 +20,7 @@ open Metta (Subst)
 open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.GoalSemantics
 open DemandDrivenStep
+open PrologActivationMacro
 open PrologFindallAnswerResourceBridge
 open PrologHeterogeneousPrefixBridge
 open PrologProductResourceContextBridge
@@ -35,6 +36,85 @@ namespace ScheduledSelectedHeadTransition
 /-! The source-selected dependent zipper and the executable eager pull meet
 at the exact residual alternative bank.  The real fine successor is always
 `privateAnswerTarget`; no compatible OpenConf is accepted as an input. -/
+
+/-- The real answer-and-pull successor installs exactly the freshened
+selected clause head certified by the source offset.
+
+This closes a deliberately important identity seam.  The structural pull
+selects opaque `goals` and `binding` fields, while `PulledHeadOffsetAgrees`
+names the source clause occurrence and its certified fresh copy.  Their two
+equations for the same literal alternative head force the executable current
+goal below; no compatible OpenConf or independently chosen clause is
+accepted. -/
+theorem fineCurrentExact
+    {before : RepresentativeScheduledPayloadState}
+    {ready : RootClosedAnswerReady before}
+    {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
+    {scope : CutScopeId}
+    (transition :
+      ScheduledSelectedHeadTransition ready.payloadAlignment selection scope
+        before.carrier.index.session) :
+    (privateAnswerTarget before.carrier.index.openConf
+        before.carrier.index.runtime).control.cur =
+      some
+        (PLeaTTa.Goal.eq
+              (.expr
+                (selection.selected.resource.args ++
+                  [selection.selected.resource.res]))
+              (.expr
+                (transition.copied.params ++ [transition.copied.result])) ::
+            transition.copied.body ++ selection.selected.resource.rest,
+          selection.selected.resource.binding) := by
+  have selectedPull :
+      PLeaTTa.pullAux before.carrier.index.openConf.control.alts =
+        some (.branch selection.goals selection.binding, selection.rest) := by
+    rw [ready.bankExact]
+    rw [← ready.result.historyBuild.cells_map_resource]
+    exact selection.pullExact
+  have selectedFields :=
+    PullOutcomeAgrees.fields_of_pull_some
+      (privateAnswerTarget_pullOutcome before.carrier.index.openConf
+        before.carrier.index.runtime)
+      selectedPull
+  have banksEqual :
+      resolutionAlt selection.selected.resource.argsv
+            selection.selected.resource.args selection.selected.resource.res
+            selection.selected.resource.rest
+            selection.selected.resource.binding
+            selection.selected.resource.qterm
+            selection.selected.resource.barrier
+            selection.selected.resource.counter transition.clause ::
+          selection.localTail =
+        .br selection.goals selection.binding :: selection.localTail :=
+    transition.offset.priorAlts.symm.trans selection.selectedHead
+  have headEqual := (List.cons.inj banksEqual).1
+  have selectedHead :
+      PLeaTTa.Alt.br
+          (PLeaTTa.Goal.eq
+                (.expr
+                  (selection.selected.resource.args ++
+                    [selection.selected.resource.res]))
+                (.expr
+                  (transition.copied.params ++
+                    [transition.copied.result])) ::
+              transition.copied.body ++ selection.selected.resource.rest)
+          selection.selected.resource.binding =
+        PLeaTTa.Alt.br selection.goals selection.binding := by
+    simpa [resolutionAlt, transition.offset.copiedExact] using headEqual
+  have selectedGoalsExact :
+      PLeaTTa.Goal.eq
+            (.expr
+              (selection.selected.resource.args ++
+                [selection.selected.resource.res]))
+            (.expr
+              (transition.copied.params ++ [transition.copied.result])) ::
+          transition.copied.body ++ selection.selected.resource.rest =
+        selection.goals := by
+    injection selectedHead with goalsExact _bindingExact
+  have selectedBindingExact :
+      selection.selected.resource.binding = selection.binding := by
+    injection selectedHead with _goalsExact bindingExact
+  rw [selectedFields.1, ← selectedGoalsExact, ← selectedBindingExact]
 
 /-- The real answer-and-pull successor owns exactly the flattened resources
 of the transformed dependent payload. -/

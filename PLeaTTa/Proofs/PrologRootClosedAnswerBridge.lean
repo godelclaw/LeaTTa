@@ -65,6 +65,9 @@ structure AllEmptyHistoryResult
     historyBuild.cells =
       initialBuild.cells ++
         (payloadCells payload).map PayloadCell.historyCell
+  historyContextExact :
+    historyBuild.activeContext =
+      initialBuild.activeContext ++ context
   bindingsExact : history.bindings = initial.bindings
   resourcesExact :
     history.resources = initial.resources ++ outerResources
@@ -102,6 +105,7 @@ noncomputable def absorbAllEmptyHistory
           history := history
           historyBuild := historyBuild
           historyCellsExact := by simp [payloadCells]
+          historyContextExact := by simp
           bindingsExact := rfl
           resourcesExact := by simp only [List.append_nil] }
   | cons currentBarrier currentScope nextScope outerScope segment segments
@@ -133,6 +137,7 @@ noncomputable def absorbAllEmptyHistory
           history := tailResult.history
           historyBuild := tailResult.historyBuild
           historyCellsExact := ?_
+          historyContextExact := ?_
           bindingsExact := ?_
           resourcesExact := ?_ }
       · simpa [absorbContextTarget, empty, nextHistory,
@@ -141,6 +146,8 @@ noncomputable def absorbAllEmptyHistory
       · simpa [nextBuild, ScheduledHistoryBuild.cells, payloadCells,
           PayloadCell.historyCell, List.append_assoc] using
           tailResult.historyCellsExact
+      · simpa [nextBuild, ScheduledHistoryBuild.activeContext, empty,
+          List.append_assoc] using tailResult.historyContextExact
       · simpa [nextHistory, PrivateScheduledResume.nextHistory] using
           tailResult.bindingsExact
       · simpa [ScheduledAnswerHistory.resources, nextHistory,
@@ -258,6 +265,10 @@ structure RootClosedAnswerReady
   bankExact :
     before.carrier.index.openConf.control.alts =
       flattenOwnedAlts result.history.resources []
+  /-- Root closure includes the active caller continuation, not only the
+  older payload tail.  Retaining this constructor premise keeps the exact
+  source frame recoverable after the private answer history is built. -/
+  callerReferencesEmpty : before.carrier.index.callerReferences = []
   fineHead :
     before.carrier.index.openConf.toConf.cur =
       some ([], before.carrier.index.runtime)
@@ -334,6 +345,7 @@ noncomputable def rootClosedAnswerReady
     { result := result
       sourceSteps := exactSourceSteps
       bankExact := bankExact
+      callerReferencesEmpty := referenceEmpty
       fineHead := fineHead }
 
 end RepresentativeScheduledPayloadState
@@ -353,6 +365,27 @@ theorem historyCells_eq_payloadCells
   rw [ready.result.historyCellsExact]
   cases before.carrier.payloadContext
   rfl
+
+/-- The completed history also reconstructs every typed source frame,
+including the active predicate cell which is absent from the older-only
+`index.context`.  Thus payload occurrence identity and cut/product context
+identity are coupled by the same Type-valued construction tree. -/
+theorem historyContext_eq_fullContext
+    {before : RepresentativeScheduledPayloadState}
+    (ready : RootClosedAnswerReady before) :
+    ready.result.historyBuild.activeContext =
+      { callerScope := before.carrier.index.callerScope
+        predicateScope := before.carrier.index.opened.scope
+        retained :=
+          .clauses before.carrier.index.opened.scope
+            (before.carrier.index.finish.advance before.carrier.index.branch
+              before.carrier.index.branchTail)
+        callerRest := before.carrier.index.callerReferences } ::
+        before.carrier.index.context := by
+  rw [ready.result.historyContextExact]
+  cases before.carrier.payloadContext
+  simp [currentAnswerHistoryBuild, ScheduledHistoryBuild.activeContext,
+    ready.callerReferencesEmpty]
 
 /-- Package the exact positional bridge used by later answer-landing
 classification. -/

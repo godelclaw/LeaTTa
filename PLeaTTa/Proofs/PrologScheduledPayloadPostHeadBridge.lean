@@ -22,6 +22,7 @@ open PeTTaSpec.PrologCore.GoalSemantics
 open PeTTaSpec.PrologCore.Resolver
 open PLeaTTa.PrologAnswerSelectedHeadOffsetBridge
 open PLeaTTa.PrologAnswerSourceCatchupBridge
+open PLeaTTa.PrologBodyFailureExhaustedResourceTransitionBridge
 open PLeaTTa.PrologBodyFailureResourceTransitionBridge
 open PLeaTTa.PrologControlSegmentSpineBridge
 open PLeaTTa.PrologPrefilterScanBridge
@@ -191,6 +192,7 @@ structure ScheduledSelectedHeadTransition
   selectedPayloadCell : PayloadCell alpha support
   selectedPayloadCellExact :
     selectedPayloadCell = (alignment.payloadPath selection.path).cell
+  sourceScopeExact : scope = selectedPayloadCell.currentScope
   callStart : PreparedCursor
   startPosition : Nat
   finish : PreparedCursor
@@ -220,6 +222,8 @@ structure ScheduledSelectedHeadTransition
       selectedPayloadCell.segment selectedPayloadCell.outerSegments
   postLaterResources : List RetainedAlternativeSegment
   postLaterContext : ActiveProductContext
+  postLaterContextExact :
+    postLaterContext = route.route.head.data.laterContext
   postPayload :
     SourceControlResourcePayloadContextAgrees alpha support qterm
       selectedPayloadCell.currentBarrier
@@ -261,6 +265,275 @@ structure ScheduledSelectedHeadTransition
       (payloadCells payload).drop (selection.path.position.val + 1)
 
 namespace ScheduledSelectedHeadTransition
+
+/-- Exact source catch-up partition at the same typed payload occurrence as a
+selected-head transition.
+
+The older classifier supplies the ranked source work in `Prop`; it does not
+choose runtime data.  These equations force its crossed prefix, selected
+frame, cursor, segment, and surviving context to be the literal positional
+suffix already selected by the Type-valued payload route. -/
+structure PartitionAgrees
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    {alignment : ScheduledPayloadAlignment payload build}
+    {selection : ScheduledLocalSelection build.cells}
+    {scope : CutScopeId} {session : Session}
+    (transition :
+      ScheduledSelectedHeadTransition alignment selection scope session)
+    (partition :
+      OuterResourceCatchupPartition alpha segments resources context) :
+    Prop where
+  crossedResourcesExact :
+    partition.crossedResources =
+      selection.earlier.map ScheduledHistoryCell.resource
+  firstResourceExact :
+    partition.first = selection.selected.resource
+  survivingResourcesExact :
+    partition.survivingResources =
+      selection.suffix.map ScheduledHistoryCell.resource
+  tailExact : partition.tail = selection.localTail
+  crossedFramesExact :
+    partition.crossedFrames =
+      context.take selection.path.position.val
+  firstFrameExact :
+    partition.firstFrame =
+      { callerScope := transition.selectedPayloadCell.nextScope
+        predicateScope := transition.selectedPayloadCell.currentScope
+        retained :=
+          .clauses transition.selectedPayloadCell.currentScope
+            selection.selected.cursor
+        callerRest := transition.selectedPayloadCell.segment.references }
+  survivingContextExact :
+    partition.survivingContext = transition.postLaterContext
+  firstCursorExact : partition.firstCursor = selection.selected.cursor
+  crossedSegmentsExact :
+    partition.crossedSegments =
+      segments.take selection.path.position.val
+  firstSegmentExact :
+    partition.firstSegment = transition.selectedPayloadCell.segment
+  survivingSegmentsExact :
+    partition.survivingSegments =
+      transition.selectedPayloadCell.outerSegments
+
+/-- The generic first-live source classifier is positionally identical to
+the already-selected payload route.  In particular, duplicate-shaped
+resources cannot move the source transition under another delimiter frame. -/
+theorem partitionExact
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    {alignment : ScheduledPayloadAlignment payload build}
+    {selection : ScheduledLocalSelection build.cells}
+    {scope : CutScopeId} {session : Session}
+    (transition :
+      ScheduledSelectedHeadTransition alignment selection scope session) :
+    ∃ partition :
+        OuterResourceCatchupPartition alpha segments resources context,
+      PartitionAgrees transition partition := by
+  obtain
+    ⟨partition, crossedResourcesExact, firstResourceExact,
+      survivingResourcesExact, tailExact⟩ :=
+    PLeaTTa.PrologScheduledPayloadLandingBridge.ScheduledPayloadAlignment.selection_partition
+      alignment selection
+  let head := transition.route.route.head.data
+  have headCellExact :
+      head.cell = transition.selectedPayloadCell :=
+    transition.route.route.headCell_exact.trans
+      transition.selectedPayloadCellExact.symm
+  have crossedFramesLength :
+      partition.crossedFrames.length =
+        selection.path.position.val := by
+    calc
+      partition.crossedFrames.length =
+          partition.crossedResources.length :=
+        partition.crossedWork.length_eq.symm
+      _ =
+          (selection.earlier.map
+            ScheduledHistoryCell.resource).length := by
+        rw [crossedResourcesExact]
+      _ = selection.path.position.val := by
+        simp [ScheduledLocalSelection.path,
+          ScheduledLocalSelection.position]
+  have partitionContextDrop :
+      context.drop selection.path.position.val =
+        partition.firstFrame :: partition.survivingContext := by
+    calc
+      context.drop selection.path.position.val =
+          (partition.crossedFrames ++
+            partition.firstFrame :: partition.survivingContext).drop
+              selection.path.position.val :=
+        congrArg (List.drop selection.path.position.val)
+          partition.contextEq
+      _ = partition.firstFrame :: partition.survivingContext := by
+        rw [← crossedFramesLength]
+        simp
+  have headContextDrop :
+      context.drop selection.path.position.val =
+        ({ callerScope := head.nextScope
+           predicateScope := head.currentScope
+           retained := .clauses head.currentScope head.cursor
+           callerRest := head.segment.references } : ActiveProductFrame) ::
+          head.laterContext := by
+    exact head.contextExact
+  have frameAndContext :=
+    List.cons.inj (partitionContextDrop.symm.trans headContextDrop)
+  have headFrameSelected :
+      ({ callerScope := head.nextScope
+         predicateScope := head.currentScope
+         retained := .clauses head.currentScope head.cursor
+         callerRest := head.segment.references } : ActiveProductFrame) =
+        { callerScope := transition.selectedPayloadCell.nextScope
+          predicateScope := transition.selectedPayloadCell.currentScope
+          retained :=
+            .clauses transition.selectedPayloadCell.currentScope
+              selection.selected.cursor
+          callerRest :=
+            transition.selectedPayloadCell.segment.references } := by
+    have cursorExact :
+        head.cursor = selection.selected.cursor := by
+      have selectedHistory :
+          head.cell.historyCell = selection.selected := by
+        exact
+          (congrArg PayloadCell.historyCell headCellExact).trans
+            ((congrArg PayloadCell.historyCell
+                transition.selectedPayloadCellExact).trans
+              transition.route.selectedExact)
+      exact congrArg ScheduledHistoryCell.cursor selectedHistory
+    have nextScopeExact :
+        head.nextScope = transition.selectedPayloadCell.nextScope := by
+      simpa [PayloadHeadData.cell] using
+        congrArg PayloadCell.nextScope headCellExact
+    have currentScopeExact :
+        head.currentScope = transition.selectedPayloadCell.currentScope := by
+      simpa [PayloadHeadData.cell] using
+        congrArg PayloadCell.currentScope headCellExact
+    have referencesExact :
+        head.segment.references =
+          transition.selectedPayloadCell.segment.references := by
+      simpa [PayloadHeadData.cell] using
+        congrArg (fun cell => cell.segment.references) headCellExact
+    rw [nextScopeExact, currentScopeExact, cursorExact, referencesExact]
+  have firstFrameExact :
+      partition.firstFrame =
+        { callerScope := transition.selectedPayloadCell.nextScope
+          predicateScope := transition.selectedPayloadCell.currentScope
+          retained :=
+            .clauses transition.selectedPayloadCell.currentScope
+              selection.selected.cursor
+          callerRest :=
+            transition.selectedPayloadCell.segment.references } :=
+    frameAndContext.1.trans headFrameSelected
+  have survivingContextExact :
+      partition.survivingContext = transition.postLaterContext :=
+    frameAndContext.2.trans transition.postLaterContextExact.symm
+  have firstCursorExact :
+      partition.firstCursor = selection.selected.cursor := by
+    have retained := partition.firstRetainedShape
+    rw [firstFrameExact] at retained
+    have cursorExact :=
+      congrArg
+        (fun search =>
+          match search with
+          | .clauses _ cursor => some cursor
+          | _ => none)
+        retained
+    simpa using cursorExact.symm
+  have crossedFramesExact :
+      partition.crossedFrames =
+        context.take selection.path.position.val := by
+    calc
+      partition.crossedFrames =
+          (partition.crossedFrames ++
+              partition.firstFrame :: partition.survivingContext).take
+            partition.crossedFrames.length := by simp
+      _ = context.take selection.path.position.val := by
+        rw [← partition.contextEq, crossedFramesLength]
+  have crossedSegmentsLength :
+      partition.crossedSegments.length =
+        selection.path.position.val := by
+    calc
+      partition.crossedSegments.length =
+          partition.crossedResources.length :=
+        partition.crossedSegmentDepth
+      _ =
+          (selection.earlier.map
+            ScheduledHistoryCell.resource).length := by
+        rw [crossedResourcesExact]
+      _ = selection.path.position.val := by
+        simp [ScheduledLocalSelection.path,
+          ScheduledLocalSelection.position]
+  have partitionSegmentsDrop :
+      segments.drop selection.path.position.val =
+        partition.firstSegment :: partition.survivingSegments := by
+    calc
+      segments.drop selection.path.position.val =
+          (partition.crossedSegments ++
+            partition.firstSegment :: partition.survivingSegments).drop
+              selection.path.position.val :=
+        congrArg (List.drop selection.path.position.val)
+          partition.segmentsEq
+      _ = partition.firstSegment :: partition.survivingSegments := by
+        rw [← crossedSegmentsLength]
+        simp
+  have headSegmentsDrop :
+      segments.drop selection.path.position.val =
+        head.segment :: head.laterSegments :=
+    head.segmentsExact
+  have segmentAndTail :=
+    List.cons.inj (partitionSegmentsDrop.symm.trans headSegmentsDrop)
+  have firstSegmentExact :
+      partition.firstSegment =
+        transition.selectedPayloadCell.segment :=
+    segmentAndTail.1.trans
+      (congrArg PayloadCell.segment headCellExact)
+  have survivingSegmentsExact :
+      partition.survivingSegments =
+        transition.selectedPayloadCell.outerSegments :=
+    segmentAndTail.2.trans
+      (congrArg PayloadCell.outerSegments headCellExact)
+  have crossedSegmentsExact :
+      partition.crossedSegments =
+        segments.take selection.path.position.val := by
+    calc
+      partition.crossedSegments =
+          (partition.crossedSegments ++
+              partition.firstSegment :: partition.survivingSegments).take
+            partition.crossedSegments.length := by simp
+      _ = segments.take selection.path.position.val := by
+        rw [← partition.segmentsEq, crossedSegmentsLength]
+  exact
+    ⟨partition,
+      { crossedResourcesExact := crossedResourcesExact
+        firstResourceExact := firstResourceExact
+        survivingResourcesExact := survivingResourcesExact
+        tailExact := tailExact
+        crossedFramesExact := crossedFramesExact
+        firstFrameExact := firstFrameExact
+        survivingContextExact := survivingContextExact
+        firstCursorExact := firstCursorExact
+        crossedSegmentsExact := crossedSegmentsExact
+        firstSegmentExact := firstSegmentExact
+        survivingSegmentsExact := survivingSegmentsExact }⟩
 
 /-- The transformed dependent zipper preserves every later payload cell
 literally, including its immutable snapshot. -/
@@ -438,8 +711,10 @@ theorem selectAndAdvanceHead
     {build : ScheduledHistoryBuild history}
     (alignment : ScheduledPayloadAlignment payload build)
     (selection : ScheduledLocalSelection build.cells)
-    (scope : CutScopeId) (session : Session) :
-    Nonempty (ScheduledSelectedHeadTransition alignment selection scope session) := by
+    (session : Session) :
+    Nonempty
+      (ScheduledSelectedHeadTransition alignment selection
+        (alignment.payloadPath selection.path).cell.currentScope session) := by
   let route :=
     PLeaTTa.PrologScheduledPayloadLandingBridge.ScheduledPayloadAlignment.selectionRoute
       alignment selection
@@ -529,7 +804,8 @@ theorem selectAndAdvanceHead
     ⟨callStart, startPosition, exactOwnership⟩
   obtain ⟨finish, readyClauses, frontier, sourceSteps, _positioned⟩ :=
     PLeaTTa.PrologAnswerSourceCatchupBridge.RetainedAlternativeSegment.catchupSelectedAt
-      exactOwnership selection.selectedHead scope session
+      exactOwnership selection.selectedHead
+        (alignment.payloadPath selection.path).cell.currentScope session
   obtain
     ⟨branch, clause, branchTail, copied, offset, tailOwnershipExact⟩ :=
     PLeaTTa.PrologAnswerSelectedHeadOffsetBridge.SelectedReadyFrontier.pulledHeadOffsetExact
@@ -622,6 +898,10 @@ theorem selectAndAdvanceHead
     ⟨{ route := route
        selectedPayloadCell := selectedPayloadCell
        selectedPayloadCellExact := selectedPayloadCellExact
+       sourceScopeExact := by
+         exact
+           (congrArg PayloadCell.currentScope
+              selectedPayloadCellExact).symm
        callStart := callStart
        startPosition := startPosition
        finish := finish
@@ -638,6 +918,7 @@ theorem selectAndAdvanceHead
          simpa [selectedPayloadCell] using consumedSnapshot
        postLaterResources := head.laterResources
        postLaterContext := head.laterContext
+       postLaterContextExact := rfl
        postPayload := by
          simpa [selectedPayloadCell] using postPayload
        postSegmentsExact := postSegmentsExact

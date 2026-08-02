@@ -2880,6 +2880,44 @@ control.  The dynamic world and global high-water remain current. -/
       cases persistent
       rfl
 
+/-- An enabled exact barrier cache remains enabled and exact across the eager
+pull performed after primitive-unification failure.
+
+This is stronger than coherence: the reference `none` cache lane cannot
+inhabit the conclusion.  It is useful when a surrounding correspondence must
+rule out silently inheriting the pre-pull depth. -/
+theorem unifyFailureSuccessor_barrierCacheExact
+    (state : OpenConf)
+    (cache : state.control.barriers =
+      some (PLeaTTa.barrierCount state.control.alts)) :
+    (unifyFailureSuccessor state).control.barriers =
+      some
+        (PLeaTTa.barrierCount
+          (unifyFailureSuccessor state).control.alts) := by
+  have sealedCache : state.toConf.barriers =
+      some (PLeaTTa.barrierCount state.toConf.alts) := by
+    simpa [OpenConf.toConf, Control.toConf] using cache
+  change
+    (PLeaTTa.pull { state.toConf with cur := none }).barriers =
+      some
+        (PLeaTTa.barrierCount
+          (PLeaTTa.pull { state.toConf with cur := none }).alts)
+  unfold PLeaTTa.pull
+  simp only [sealedCache, PLeaTTa.pullAuxTracked]
+  rw [PLeaTTa.pullAuxCached_exact]
+  cases pulled : PLeaTTa.pullAux state.toConf.alts with
+  | none => simp [PLeaTTa.barrierCount]
+  | some result =>
+      rcases result with ⟨target, rest⟩
+      cases target with
+      | branch goals binding => simp
+      | catchResume frame protectedAlts =>
+          simp [Nat.add_comm]
+      | softcutExhausted frame seenSuccess =>
+          cases seenSuccess <;> simp
+      | softcutResume frame protectedAlts =>
+          simp [Nat.add_comm]
+
 /-- Failed primitive unification may pull another alternative, but it never
 manufactures a nested-run answer. -/
 @[simp] theorem unifyFailureSuccessor_answers (state : OpenConf) :
