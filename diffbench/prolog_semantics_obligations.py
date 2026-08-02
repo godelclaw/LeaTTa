@@ -77,6 +77,10 @@ PROLOG_FINDALL_EXIT_PAYLOAD_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologFindallExitPayloadBridge.lean"
 )
+PROLOG_FINDALL_VARIANT_EXIT_PAYLOAD_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologFindallVariantExitPayloadBridge.lean"
+)
 PROLOG_ANSWER_ORIGIN_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologAnswerOriginBridge.lean"
 )
@@ -560,6 +564,8 @@ def check() -> list[str]:
             digest(PROLOG_FINDALL_EXIT_BRIDGE),
         "prolog_findall_exit_payload_bridge_sha256":
             digest(PROLOG_FINDALL_EXIT_PAYLOAD_BRIDGE),
+        "prolog_findall_variant_exit_payload_bridge_sha256":
+            digest(PROLOG_FINDALL_VARIANT_EXIT_PAYLOAD_BRIDGE),
         "prolog_answer_origin_bridge_sha256":
             digest(PROLOG_ANSWER_ORIGIN_BRIDGE),
         "prolog_answer_resource_bridge_sha256":
