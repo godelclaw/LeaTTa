@@ -7,8 +7,7 @@ Trusted boundary: none
 Main exports: residual_alias_breaks_exact_materialization,
   residual_alias_copies_still_runtime_agree
 -/
-import PLeaTTa.Proofs.PrologFindallCopyBridge
-import PLeaTTa.Proofs.PrologRecursiveCallPayloadBridge
+import PLeaTTa.Proofs.PrologAnswerValueBridge
 
 namespace PLeaTTa.PrologFindallResidualVariantBridge
 
@@ -20,6 +19,7 @@ open PeTTaSpec.PrologCore.GoalSemantics
 open PeTTaSpec.PrologCore.OpenSubstitution
 open PeTTaSpec.PrologCore.Resolver
 open CompilerAdequacy
+open PrologAnswerValueBridge
 open PrologMguBridge
 open PrologMguComposition
 open PrologMguOpenAgreement
@@ -52,16 +52,12 @@ Every field already belongs to the child task simulation: cumulative source
 and runtime valuation, structural template agreement, and occurrence-sensitive
 liveness support.  In particular this relation carries neither a post-
 substitution `RuntimeTermAgrees` fact nor any copied value. -/
-def FindallMaterializationProducerAgrees
+abbrev FindallMaterializationProducerAgrees
     (sourceBindings : Substitution) (runtimeBindings : Subst)
     (sourceTemplate : Term) (runtimeTemplate : Atom) : Prop :=
   ∃ alpha support : List (LogicVar × String),
-    ∃ canonical : TreeSubstitution,
-    ∃ referenceBase : Substitution,
-      TaskDataAgrees alpha support canonical referenceBase sourceBindings
-          runtimeBindings ∧
-        AlphaTermAgrees alpha sourceTemplate runtimeTemplate ∧
-        AlphaTermsSupported alpha support [sourceTemplate]
+    AnswerValueProducerAgrees alpha support sourceBindings runtimeBindings
+      sourceTemplate runtimeTemplate
 
 namespace FindallMaterializationProducerAgrees
 
@@ -76,30 +72,8 @@ theorem runtimeTermAgrees
         sourceTemplate runtimeTemplate) :
     RuntimeTermAgrees (sourceBindings.applyTerm sourceTemplate)
       (PLeaTTa.subst runtimeBindings runtimeTemplate) := by
-  rcases producer with
-    ⟨alpha, support, canonical, referenceBase, data,
-      templateAgreement, templateSupported⟩
-  obtain
-    ⟨representative, variants, _representativeCovered, leaves⟩ :=
-    PLeaTTa.PrologRecursiveCallPayloadBridge.AlphaCumulativeResidualVariantAgreesOn.applyTerms
-      data.valuation
-      (.cons templateAgreement .nil)
-      templateSupported
-  cases leaves with
-  | cons representativeRuntime _tail =>
-      apply runtimeTermAgrees_of_variants
-        (first :=
-          canonical ++ Substitution.denote referenceBase)
-        (second :=
-          representative ++ Substitution.denote referenceBase)
-        (tree := Term.denote sourceTemplate)
-        (alpha := alpha)
-      · rw [Substitution.denote_applyTerm, data.bindingShape,
-          Substitution.denote_append,
-          TreeSubstitution.denote_reify data.canonicalWellFormed]
-      · exact variants
-      · exact data.alphaShared
-      · exact representativeRuntime
+  rcases producer with ⟨alpha, support, producer⟩
+  exact AnswerValueProducerAgrees.runtimeTermAgrees producer
 
 end FindallMaterializationProducerAgrees
 

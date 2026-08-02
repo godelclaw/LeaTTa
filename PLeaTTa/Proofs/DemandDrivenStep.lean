@@ -2006,6 +2006,31 @@ def publicControl : Control → List Frame → Control
 def publicAnswers (state : OpenConf) : List Atom :=
   (publicControl state.control state.frames).answerValues
 
+/-- Structural ownership of the externally visible answer accumulator.
+
+Quantifying over every current control is load-bearing: equality for one
+accidentally value-equal control under a hiding frame would not survive the
+answer update.  Future transparent frame constructors may satisfy this
+predicate without changing the public-step theorem. -/
+def PublicAnswerOwner (frames : List Frame) : Prop :=
+  ∀ control, publicControl control frames = control
+
+@[simp] theorem publicAnswerOwner_nil : PublicAnswerOwner [] := by
+  intro control
+  rfl
+
+/-- The current frame type gives an exhaustive root/findall split.  Adding a
+new frame constructor deliberately breaks this proof, forcing its public or
+private answer behavior to be classified. -/
+theorem frames_root_or_findall (frames : List Frame) :
+    frames = [] ∨
+      ∃ frame remaining, frames = .findall frame :: remaining := by
+  cases frames with
+  | nil => exact .inl rfl
+  | cons head tail =>
+      cases head with
+      | findall frame => exact .inr ⟨frame, tail, rfl⟩
+
 @[simp] theorem publicAnswers_under_findall (persistent : Persistent)
     (current : Control) (frame : FindallFrame) (remaining : List Frame) :
     publicAnswers
@@ -2037,6 +2062,30 @@ theorem answer_is_one_step
     (Step.ordinary state (answerSuccessor state.toConf binding)
       notFindall
       (PLeaTTa.Step.answer state.toConf binding head))
+
+/-- A top-level answer is both one real fine transition and one exact public
+append.  The empty frame stack is load-bearing: with a suspended collector
+the same machine answer is private and the theorem below instead proves
+public suppression. -/
+theorem answer_is_one_public_step
+    (prog : Prog) (gt : GroundingTable) (state : OpenConf)
+    (binding : Subst)
+    (publicOwner : PublicAnswerOwner state.frames)
+    (head : state.toConf.cur = some ([], binding)) :
+    Step prog gt state (privateAnswerTarget state binding) ∧
+      publicAnswers (privateAnswerTarget state binding) =
+        publicAnswers state ++ [subst binding state.control.qterm] := by
+  refine ⟨answer_is_one_step prog gt state binding head, ?_⟩
+  unfold publicAnswers
+  rw [publicOwner state.control]
+  have targetOwner :
+      publicControl (privateAnswerTarget state binding).control
+          (privateAnswerTarget state binding).frames =
+        (privateAnswerTarget state binding).control := by
+    rw [privateAnswerTarget_frames]
+    exact publicOwner _
+  rw [targetOwner]
+  simp [Control.answerValues]
 
 /-- A private generator answer is suppressed from the public accumulator but
 is still exactly one fine transition.  Thus infinitely many private answers

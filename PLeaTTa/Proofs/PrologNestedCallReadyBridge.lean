@@ -509,6 +509,13 @@ structure NestedCallSuccessorFacts
     PLeaTTa.Step prog gt head.pending.pulled.toConf
       (PrologRepresentativeStepActivationBridge.activatedExecutableSuccessor
         head.pending copied head.executableTail before.index.qterm installed)
+  /-- The successor owns the literal fine executable activation target.
+  Exporting this equation avoids re-inverting the bounded call-entry/pull/
+  head-unification trace merely to recover frame or query-term facts. -/
+  openConfExact :
+    after.index.openConf =
+      PrologRepresentativeStepActivationBridge.activatedOpenSuccessor
+        head.pending copied head.executableTail before.index.qterm installed
   runtimeExact :
     after.index.runtime =
       PLeaTTa.trimFor (copied.body ++ head.executableTail)
@@ -1048,6 +1055,7 @@ theorem pushDetailed {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
       outerSegments := rfl
       baseAltsPreserved := rfl
       activationStep := ?_
+      openConfExact := rfl
       runtimeExact := ?_
       alphaExtension := ?_
       selectionFresh := ?_

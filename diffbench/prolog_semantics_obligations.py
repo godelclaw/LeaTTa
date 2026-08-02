@@ -356,6 +356,17 @@ PROLOG_ROOT_CLOSED_LOCAL_LIVE_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRootClosedLocalLiveRegression.lean"
 )
+PROLOG_ANSWER_VALUE_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologAnswerValueBridge.lean"
+)
+PROLOG_SCHEDULED_ANSWER_VALUE_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologScheduledAnswerValueBridge.lean"
+)
+PROLOG_UNBOUND_PUBLIC_ANSWER_REGRESSION = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologUnboundPublicAnswerRegression.lean"
+)
 PROLOG_CURRENT_SESSION_ASSERTION_TRANSITION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologCurrentSessionAssertionTransitionBridge.lean"
@@ -460,6 +471,7 @@ REQUIRED_PREFIXES = {
 STRICT_AXIOM_AUDIT_ROWS = {
     "BISIM.root_closed_answer_pull",
     "BISIM.root_closed_local_live_answer",
+    "BISIM.root_closed_public_answer_value",
 }
 
 
@@ -687,6 +699,12 @@ def check() -> list[str]:
             digest(PROLOG_ROOT_CLOSED_LOCAL_LIVE_BRIDGE),
         "prolog_root_closed_local_live_regression_sha256":
             digest(PROLOG_ROOT_CLOSED_LOCAL_LIVE_REGRESSION),
+        "prolog_answer_value_bridge_sha256":
+            digest(PROLOG_ANSWER_VALUE_BRIDGE),
+        "prolog_scheduled_answer_value_bridge_sha256":
+            digest(PROLOG_SCHEDULED_ANSWER_VALUE_BRIDGE),
+        "prolog_unbound_public_answer_regression_sha256":
+            digest(PROLOG_UNBOUND_PUBLIC_ANSWER_REGRESSION),
         "prolog_current_session_assertion_transition_bridge_sha256":
             digest(PROLOG_CURRENT_SESSION_ASSERTION_TRANSITION_BRIDGE),
         "prolog_current_session_unify_transition_bridge_sha256":

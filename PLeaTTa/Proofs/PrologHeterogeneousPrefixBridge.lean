@@ -191,6 +191,12 @@ def cellIdentities (state : ScheduledPayloadState) :
 def cellCount (state : ScheduledPayloadState) : Nat :=
   ActiveProductPayloadContext.cellCount state.payloadContext
 
+/-- The scheduled task payload selected by the carrier's literal active
+control.  Centralizing the conjunction traversal here keeps downstream
+observation proofs independent of the internal readiness-product layout. -/
+def headPayload (state : ScheduledPayloadState) :=
+  state.agreement.core.control.ready.2.2.2.headPayload
+
 theorem cellIdentities_length (state : ScheduledPayloadState) :
     state.cellIdentities.length = state.cellCount :=
   SourceControlResourcePayloadContextAgrees.cellIdentities_length_eq_cellCount
@@ -669,6 +675,50 @@ def afterAdministrative
     (afterAdministrative prog gt state steps).carrier.fineState =
       state.carrier.fineState := rfl
 
+/-- Source-only administration preserves the literal fine open state. -/
+@[simp] theorem afterAdministrative_openConf
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+    (steps :
+      AdministrativeStepsN count state.carrier.index.bodyReferences
+        afterBody) :
+    (afterAdministrative prog gt state steps).carrier.index.openConf =
+      state.carrier.index.openConf := rfl
+
+/-- Source-only administration preserves the observable query spelling. -/
+@[simp] theorem afterAdministrative_qterm
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+    (steps :
+      AdministrativeStepsN count state.carrier.index.bodyReferences
+        afterBody) :
+    (afterAdministrative prog gt state steps).carrier.index.qterm =
+      state.carrier.index.qterm := rfl
+
+/-- Source-only administration preserves the cumulative source binding. -/
+@[simp] theorem afterAdministrative_current
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+    (steps :
+      AdministrativeStepsN count state.carrier.index.bodyReferences
+        afterBody) :
+    (afterAdministrative prog gt state steps).carrier.index.current =
+      state.carrier.index.current := rfl
+
+/-- Source-only administration preserves the executable substitution. -/
+@[simp] theorem afterAdministrative_runtime
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+    (steps :
+      AdministrativeStepsN count state.carrier.index.bodyReferences
+        afterBody) :
+    (afterAdministrative prog gt state steps).carrier.index.runtime =
+      state.carrier.index.runtime := rfl
+
 /-- Source-only administration preserves the caller continuation literally. -/
 @[simp] theorem afterAdministrative_callerReferences
     (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
@@ -852,6 +902,46 @@ def afterBodyAnswer
     (executableEmpty : state.carrier.index.bodyExecutables = []) :
     (afterBodyAnswer prog gt state referenceEmpty executableEmpty).carrier.fineState =
       state.carrier.fineState := rfl
+
+/-- Body success changes phase but preserves the literal fine open state. -/
+@[simp] theorem afterBodyAnswer_openConf
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    (referenceEmpty : state.carrier.index.bodyReferences = [])
+    (executableEmpty : state.carrier.index.bodyExecutables = []) :
+    (afterBodyAnswer prog gt state referenceEmpty
+        executableEmpty).carrier.index.openConf =
+      state.carrier.index.openConf := rfl
+
+/-- Body success preserves the observable query spelling. -/
+@[simp] theorem afterBodyAnswer_qterm
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    (referenceEmpty : state.carrier.index.bodyReferences = [])
+    (executableEmpty : state.carrier.index.bodyExecutables = []) :
+    (afterBodyAnswer prog gt state referenceEmpty
+        executableEmpty).carrier.index.qterm =
+      state.carrier.index.qterm := rfl
+
+/-- Body success preserves the cumulative source binding. -/
+@[simp] theorem afterBodyAnswer_current
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    (referenceEmpty : state.carrier.index.bodyReferences = [])
+    (executableEmpty : state.carrier.index.bodyExecutables = []) :
+    (afterBodyAnswer prog gt state referenceEmpty
+        executableEmpty).carrier.index.current =
+      state.carrier.index.current := rfl
+
+/-- Body success preserves the executable substitution. -/
+@[simp] theorem afterBodyAnswer_runtime
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : RepresentativeActivePayloadState)
+    (referenceEmpty : state.carrier.index.bodyReferences = [])
+    (executableEmpty : state.carrier.index.bodyExecutables = []) :
+    (afterBodyAnswer prog gt state referenceEmpty
+        executableEmpty).carrier.index.runtime =
+      state.carrier.index.runtime := rfl
 
 /-- Completing the selected body preserves the literal caller continuation. -/
 @[simp] theorem afterBodyAnswer_callerReferences

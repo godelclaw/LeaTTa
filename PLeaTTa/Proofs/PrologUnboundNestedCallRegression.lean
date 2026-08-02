@@ -518,6 +518,15 @@ private theorem pCopied_body :
     pCopied.body = [.call "q" [] pCopied.result] := by
   rfl
 
+private theorem pCopied_params : pCopied.params = [] := by
+  rfl
+
+private theorem pCopied_result :
+    pCopied.result = .var ("x" ++ PLeaTTa.resolutionCompactSuffix 0) := by
+  simp [pCopied, pExecutableClause, PLeaTTa.freshenResolutionClause,
+    PLeaTTa.resolutionFreshSuffix, initialOpenConf, OpenConf.toConf,
+    Control.toConf, PLeaTTa.renameAtomSuffix_var]
+
 /-- The representative-preserving root activation factored through the
 generic literal-root certificate.  The concrete singleton clause identities
 and zero rejected-prefix cost are recovered from its returned banks. -/
@@ -773,6 +782,11 @@ theorem qMaterializedReadyAfterP
           state.carrier.index.support (Term.denote queryTerm) ∧
         state.carrier.index.qterm = queryAtom ∧
         state.carrier.index.openConf.control.qterm = queryAtom ∧
+        state.carrier.index.callerReferences = [] ∧
+        state.carrier.index.callerExecutables = [] ∧
+        state.carrier.index.outer = [] ∧
+        state.carrier.index.baseAlts = [] ∧
+        state.carrier.index.openConf.frames = [] ∧
         state.carrier.index.session.resolver.database = referenceDatabase ∧
         state.carrier.index.openConf.persistent.world = executableWorld ∧
         (openedFor state.carrier.index.session head.predicate
@@ -786,7 +800,11 @@ theorem qMaterializedReadyAfterP
           [.opened (requestFor "p" [queryTerm] [])]
           state.carrier.sourceState ∧
         DemandDrivenCallStep.StepsN prog gt 3
-          (.ready initialOpenConf) state.carrier.fineState := by
+          (.ready initialOpenConf) state.carrier.fineState ∧
+        PLeaTTa.subst state.carrier.index.runtime
+            state.carrier.index.openConf.control.qterm = pCopied.result ∧
+        PLeaTTa.subst state.carrier.index.runtime pCopied.result =
+          pCopied.result := by
   obtain
     ⟨finish, branch, branchTail, altTail, copied, representative, nextAlpha,
       sourceCanonical, flattened, installed, branchExact, copiedExact,
@@ -929,6 +947,96 @@ theorem qMaterializedReadyAfterP
         rw [pEntry.entry.outer]
       _ = initialOpenConf.toConf.qterm := rfl
       _ = queryAtom := frontier.queryTerm.symm
+  have runtimeQueryExact :
+      PLeaTTa.subst state.carrier.index.runtime
+          state.carrier.index.openConf.control.qterm = pCopied.result := by
+    rw [openQtermExact]
+    change
+      PLeaTTa.subst (PLeaTTa.trimFor pCopied.body queryAtom installed)
+        queryAtom = pCopied.result
+    obtain ⟨base, args, result, pulledHead, headMgu⟩ := activation.headMgu
+    rw [frontier.pulledExact] at pulledHead
+    have pairExact := Option.some.inj pulledHead
+    have baseExact : base = [] :=
+      (congrArg Prod.snd pairExact).symm
+    subst base
+    have goalsExact := congrArg Prod.fst pairExact
+    have headExact := (List.cons.inj goalsExact).1
+    have operandsExact : args ++ [result] = [queryAtom] := by
+      injection headExact with leftExact _rightExact
+      injection leftExact with valuesExact
+      exact valuesExact.symm
+    obtain ⟨generated, generatedExact, generatedAgrees⟩ := headMgu
+    have expectedGenerated :
+        PLeaTTa.unifyTopExact (.expr [queryAtom])
+            (.expr (pCopied.params ++ [pCopied.result])) =
+          some [("z", pCopied.result)] := by
+      rw [pCopied_params, pCopied_result]
+      have nameNe :
+          "z" ≠ "x" ++ PLeaTTa.resolutionCompactSuffix 0 := by
+        decide
+      unfold PLeaTTa.unifyTopExact
+      simp [queryAtom, Metta.Unify.unifyTopWith, Atom.size,
+        Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
+        Metta.Unify.decomposeEqWith, Metta.Unify.decomposeListWith,
+        Metta.Subst.occurs, Metta.Subst.extend, Metta.Subst.erase, nameNe]
+    rw [operandsExact] at generatedExact
+    simp [PLeaTTa.subst_nil] at generatedExact
+    rw [expectedGenerated] at generatedExact
+    have generatedValue : generated = [("z", pCopied.result)] :=
+      (Option.some.inj generatedExact).symm
+    obtain ⟨generatedTopological⟩ := generatedAgrees.topological
+    have installedTopological : PLeaTTa.SubstTopological installed := by
+      rw [generatedAgrees.installedShape]
+      exact
+        PrologMguComposition.installGeneratedTopological
+          emptyRuntimeTopological generatedTopological
+          generatedAgrees.avoidsBase
+    have queryRoot :
+        ∀ name, name ∈ queryAtom.vars →
+          PLeaTTa.isTrimRoot pCopied.body queryAtom name = true := by
+      intro name member
+      exact PLeaTTa.isTrimRoot_qterm_mem pCopied.body queryAtom name member
+    rw [PLeaTTa.subst_trimFor_eq_of_topological pCopied.body queryAtom
+      installed installedTopological queryAtom queryRoot]
+    rw [generatedAgrees.installedShape]
+    rw [PrologMguComposition.subst_installGenerated_eq_generated_after_base
+      emptyRuntimeTopological generatedTopological generatedAgrees.avoidsBase
+      queryAtom]
+    rw [PLeaTTa.subst_nil, generatedValue]
+    have expectedTopological :
+        PLeaTTa.SubstTopological [("z", pCopied.result)] := by
+      simpa [generatedValue] using generatedTopological
+    have rootLookup :
+        Metta.Subst.lookup [("z", pCopied.result)] "z" =
+          some pCopied.result := by
+      simp [Metta.Subst.lookup]
+    change
+      PLeaTTa.subst [("z", pCopied.result)] (.var "z") = pCopied.result
+    calc
+      _ = PLeaTTa.subst [("z", pCopied.result)] pCopied.result :=
+        expectedTopological.subst_var_of_lookup
+          [("z", pCopied.result)] "z" pCopied.result rootLookup
+      _ = pCopied.result := by
+        rw [pCopied_result]
+        apply PLeaTTa.subst_var_of_lookup_none
+        decide
+  have runtimeResultFixed :
+      PLeaTTa.subst state.carrier.index.runtime pCopied.result =
+        pCopied.result := by
+    obtain ⟨runtimeTopological⟩ := state.cumulative.runtimeTopological
+    have resultLookupNone :
+        Metta.Subst.lookup state.carrier.index.runtime
+            ("x" ++ PLeaTTa.resolutionCompactSuffix 0) = none := by
+      apply runtimeTopological.subst_resolvesDomain
+        state.carrier.index.runtime
+        state.carrier.index.openConf.control.qterm
+      rw [runtimeQueryExact, pCopied_result]
+      simp [Metta.Atom.vars]
+    rw [pCopied_result]
+    exact PLeaTTa.subst_var_of_lookup_none
+      state.carrier.index.runtime
+      ("x" ++ PLeaTTa.resolutionCompactSuffix 0) resultLookupNone
   have worldExact :
       state.carrier.index.openConf.persistent.world = executableWorld := by
     change
@@ -1101,8 +1209,9 @@ theorem qMaterializedReadyAfterP
     exact materialized
   refine
     ⟨state, head, ready, rfl, rfl, rfl, rfl, rfl, rfl, rfl, currentExact,
-      supportExact, queryReading, querySupported, qtermExact, openQtermExact, databaseExact,
-      worldExact, ?_, nextFreshOne, counterOne, ?_, ?_⟩
+      supportExact, queryReading, querySupported, qtermExact, openQtermExact,
+      rfl, rfl, rfl, rfl, rfl, databaseExact, worldExact, ?_, nextFreshOne,
+      counterOne, ?_, ?_, runtimeQueryExact, runtimeResultFixed⟩
   · simpa [head] using openedSingleton
   · rw [sourceExact]
     exact rootSourceSteps
@@ -1150,14 +1259,37 @@ theorem reachable_unbound_p_q_exact_prefix
           [(0,
             requestFor "q" [(.variable (.generated 0) : Term)]
               pSourceExtension)]
-          before after := by
+          before after ∧
+        after.carrier.index.bodyReferences = [] ∧
+        after.carrier.index.bodyExecutables = [] ∧
+        after.carrier.index.callerReferences = [] ∧
+        (∀ segment, segment ∈ after.carrier.index.outer →
+          segment.references = []) ∧
+        after.carrier.index.baseAlts = [] ∧
+        after.carrier.index.openConf.frames = [] ∧
+        after.carrier.index.qterm = queryAtom ∧
+        after.carrier.index.openConf.control.qterm = queryAtom ∧
+        AlphaTermAgrees after.carrier.index.alpha queryTerm queryAtom ∧
+        AlphaTermsSupported after.carrier.index.alpha
+          after.carrier.index.support [queryTerm] ∧
+        after.carrier.index.current.applyTerm queryTerm =
+          .variable (.generated 1) ∧
+        after.carrier.index.current.applyTerm queryTerm ≠ queryTerm ∧
+        PLeaTTa.subst after.carrier.index.runtime
+            after.carrier.index.openConf.control.qterm =
+          .var ("x" ++ PLeaTTa.resolutionCompactSuffix 1) ∧
+        PLeaTTa.subst after.carrier.index.runtime
+            after.carrier.index.openConf.control.qterm ≠
+          after.carrier.index.openConf.control.qterm := by
   obtain
     ⟨before, head, ready, qPredicate, qPayload, qReferenceRest, qArguments,
-      qResult, qExecutableRest, _qExecutableTail, beforeCurrent, _beforeSupport,
-      _beforeQueryReading, _beforeQuerySupported, _beforeQterm,
-      _beforeOpenQterm,
-      beforeDatabase, _beforeWorld, openedSingleton, beforeNextFresh,
-      beforeCounter, rootSourceSteps, rootFineSteps⟩ :=
+      qResult, qExecutableRest, _qExecutableTail, beforeCurrent, beforeSupport,
+      beforeQueryReading, _beforeQuerySupported, beforeQterm,
+      beforeOpenQterm, beforeCallerReferences, _beforeCallerExecutables,
+      beforeOuter, beforeBaseAlts, beforeFrames,
+      beforeDatabase, beforeWorld, openedSingleton, beforeNextFresh,
+      beforeCounter, rootSourceSteps, rootFineSteps, beforeRuntimeQueryExact,
+      beforeRuntimeResultFixed⟩ :=
     qMaterializedReadyAfterP (prog := prog) (gt := gt)
   obtain
     ⟨count, skippedBranches, skippedClauses, finish, branch, clause,
@@ -1235,10 +1367,253 @@ theorem reachable_unbound_p_q_exact_prefix
     have raw := NestedCallPushes.snoc
       (NestedCallPushes.nil (prog := prog) (gt := gt) before) facts
     simpa [countZero, qPredicate, qPayload, beforeCurrent] using raw
+  have afterBodyReferences :
+      after.carrier.index.bodyReferences = [] := by
+    rw [facts.bodyReferences, branchExact]
+    rfl
+  have skippedClausesNil : skippedClauses = [] := by
+    cases skippedClauses with
+    | nil => rfl
+    | cons skipped skippedTail =>
+        have impossible := facts.executableSkipCount
+        rw [countZero] at impossible
+        simp at impossible
+  have clauseExact : clause = qExecutableClause := by
+    have bank := facts.executableBank
+    rw [qPredicate, qArguments, beforeWorld, skippedClausesNil] at bank
+    simp only [List.length_nil] at bank
+    rw [qResolutionCandidates] at bank
+    exact (List.cons.inj bank).1.symm
+  have afterBodyExecutables :
+      after.carrier.index.bodyExecutables = [] := by
+    rw [facts.bodyExecutables, facts.frontier.copiedExact, clauseExact]
+    rfl
+  have afterCallerReferences :
+      after.carrier.index.callerReferences = [] := by
+    rw [facts.callerReferences, qReferenceRest]
+  have afterOuterReferences :
+      ∀ segment, segment ∈ after.carrier.index.outer →
+        segment.references = [] := by
+    intro segment member
+    rw [facts.outerSegments, beforeCallerReferences, beforeOuter] at member
+    simp only [List.mem_singleton] at member
+    subst segment
+    rfl
+  have afterBaseAlts : after.carrier.index.baseAlts = [] := by
+    rw [facts.baseAltsPreserved, beforeBaseAlts]
+  have afterFrames : after.carrier.index.openConf.frames = [] := by
+    rw [facts.openConfExact]
+    simpa [NestedCallHead.pending] using beforeFrames
+  have afterQterm : after.carrier.index.qterm = queryAtom := by
+    rw [facts.qtermPreserved, beforeQterm]
+  have afterOpenQterm :
+      after.carrier.index.openConf.control.qterm = queryAtom := by
+    rw [facts.openConfExact]
+    change
+      (PrologRepresentativeStepActivationBridge.activatedExecutableSuccessor
+        head.pending copied head.executableTail before.carrier.index.qterm
+        installed).qterm = queryAtom
+    calc
+      _ = head.pending.pulled.toConf.qterm := by
+        exact
+          PrologRepresentativeStepActivationBridge.activatedExecutableSuccessor_qterm
+            head.pending copied head.executableTail before.carrier.index.qterm
+              installed
+      _ = head.pending.installed.toConf.qterm := by
+        rw [facts.frontier.pulledExact]
+      _ = head.pending.outer.qterm := rfl
+      _ = before.carrier.index.openConf.control.qterm := rfl
+      _ = queryAtom := beforeOpenQterm
+  have beforeCounterConf :
+      before.carrier.index.openConf.toConf.counter = 1 := by
+    change before.carrier.index.openConf.persistent.counter = 1
+    exact beforeCounter
+  have copiedParams : copied.params = [] := by
+    rw [facts.frontier.copiedExact, clauseExact]
+    rfl
+  have copiedResult :
+      copied.result =
+        .var ("x" ++ PLeaTTa.resolutionCompactSuffix 1) := by
+    rw [facts.frontier.copiedExact, clauseExact,
+      facts.frontier.startCounterExact, beforeCounterConf]
+    simp [PLeaTTa.freshenResolutionClause, qExecutableClause,
+      PLeaTTa.resolutionFreshSuffix, PLeaTTa.renameAtomSuffix_var]
+  have copiedResultFixed :
+      PLeaTTa.subst before.carrier.index.runtime copied.result =
+        copied.result := by
+    have freshLookup :=
+      resolutionFreshSuffix_lookup_none
+        _ _ _ _ _ _ facts.frontier.highWater "x"
+    have exactLookup :
+        Metta.Subst.lookup before.carrier.index.runtime
+            ("x" ++ PLeaTTa.resolutionCompactSuffix 1) = none := by
+      simpa [PLeaTTa.resolutionFreshSuffix,
+        facts.frontier.startCounterExact, beforeCounterConf] using freshLookup
+    rw [copiedResult]
+    exact PLeaTTa.subst_var_of_lookup_none
+      before.carrier.index.runtime
+      ("x" ++ PLeaTTa.resolutionCompactSuffix 1) exactLookup
+  have afterRuntimeQueryExact :
+      PLeaTTa.subst after.carrier.index.runtime
+          after.carrier.index.openConf.control.qterm = copied.result := by
+    obtain ⟨_extension, _representativeExact, pendingMgu⟩ :=
+      facts.generatedMguExtension
+    obtain ⟨base, args, result, pulledHead, headMgu⟩ := pendingMgu
+    rw [facts.frontier.pulledExact] at pulledHead
+    have pairExact := Option.some.inj pulledHead
+    have baseExact : base = before.carrier.index.runtime :=
+      (congrArg Prod.snd pairExact).symm
+    subst base
+    have goalsExact := congrArg Prod.fst pairExact
+    have headExact := (List.cons.inj goalsExact).1
+    have operandsExact : args ++ [result] = [pCopied.result] := by
+      injection headExact with leftExact _rightExact
+      injection leftExact with valuesExact
+      rw [qArguments, qResult] at valuesExact
+      exact valuesExact.symm
+    obtain ⟨generated, generatedExact, generatedAgrees⟩ := headMgu
+    have expectedGenerated :
+        PLeaTTa.unifyTopExact (.expr [pCopied.result])
+            (.expr [copied.result]) =
+          some [("x" ++ PLeaTTa.resolutionCompactSuffix 0, copied.result)] := by
+      rw [pCopied_result, copiedResult]
+      have nameNe :
+          "x" ++ PLeaTTa.resolutionCompactSuffix 0 ≠
+            "x" ++ PLeaTTa.resolutionCompactSuffix 1 := by
+        decide
+      unfold PLeaTTa.unifyTopExact
+      simp [Metta.Unify.unifyTopWith, Atom.size,
+        Metta.Unify.unifyRoundsWith, Metta.Unify.decomposeAllWith,
+        Metta.Unify.decomposeEqWith, Metta.Unify.decomposeListWith,
+        Metta.Subst.occurs, Metta.Subst.extend, Metta.Subst.erase, nameNe]
+    rw [operandsExact, copiedParams] at generatedExact
+    simp only [List.map_singleton, List.nil_append,
+      beforeRuntimeResultFixed, copiedResultFixed] at generatedExact
+    rw [expectedGenerated] at generatedExact
+    have generatedValue :
+        generated =
+          [("x" ++ PLeaTTa.resolutionCompactSuffix 0, copied.result)] :=
+      (Option.some.inj generatedExact).symm
+    obtain ⟨beforeRuntimeTopological⟩ := before.cumulative.runtimeTopological
+    obtain ⟨generatedTopological⟩ := generatedAgrees.topological
+    have installedTopological : PLeaTTa.SubstTopological installed := by
+      rw [generatedAgrees.installedShape]
+      exact
+        PrologMguComposition.installGeneratedTopological
+          beforeRuntimeTopological generatedTopological
+          generatedAgrees.avoidsBase
+    have queryRoot :
+        ∀ name, name ∈ queryAtom.vars →
+          PLeaTTa.isTrimRoot
+            (copied.body ++ head.executableTail)
+            before.carrier.index.qterm name = true := by
+      intro name member
+      rw [beforeQterm]
+      exact
+        PLeaTTa.isTrimRoot_qterm_mem
+          (copied.body ++ head.executableTail) queryAtom name member
+    rw [afterOpenQterm, facts.runtimeExact]
+    rw [PLeaTTa.subst_trimFor_eq_of_topological
+      (copied.body ++ head.executableTail) before.carrier.index.qterm
+      installed installedTopological queryAtom queryRoot]
+    rw [generatedAgrees.installedShape]
+    rw [PrologMguComposition.subst_installGenerated_eq_generated_after_base
+      beforeRuntimeTopological generatedTopological
+      generatedAgrees.avoidsBase queryAtom]
+    have beforeRuntimeQueryAtomExact :
+        PLeaTTa.subst before.carrier.index.runtime queryAtom =
+          pCopied.result := by
+      rw [← beforeOpenQterm]
+      exact beforeRuntimeQueryExact
+    rw [beforeRuntimeQueryAtomExact, generatedValue]
+    have expectedTopological :
+        PLeaTTa.SubstTopological
+          [("x" ++ PLeaTTa.resolutionCompactSuffix 0, copied.result)] := by
+      simpa [generatedValue] using generatedTopological
+    have rootLookup :
+        Metta.Subst.lookup
+            [("x" ++ PLeaTTa.resolutionCompactSuffix 0, copied.result)]
+            ("x" ++ PLeaTTa.resolutionCompactSuffix 0) =
+          some copied.result := by
+      simp [Metta.Subst.lookup]
+    rw [pCopied_result]
+    calc
+      _ = PLeaTTa.subst
+          [("x" ++ PLeaTTa.resolutionCompactSuffix 0, copied.result)]
+          copied.result :=
+        expectedTopological.subst_var_of_lookup
+          [("x" ++ PLeaTTa.resolutionCompactSuffix 0, copied.result)]
+          ("x" ++ PLeaTTa.resolutionCompactSuffix 0) copied.result rootLookup
+      _ = copied.result := by
+        rw [copiedResult]
+        apply PLeaTTa.subst_var_of_lookup_none
+        decide
+  have afterRuntimeValueExact :
+      PLeaTTa.subst after.carrier.index.runtime
+          after.carrier.index.openConf.control.qterm =
+        .var ("x" ++ PLeaTTa.resolutionCompactSuffix 1) := by
+    rw [afterRuntimeQueryExact, copiedResult]
+  have afterRuntimeValueNontrivial :
+      PLeaTTa.subst after.carrier.index.runtime
+          after.carrier.index.openConf.control.qterm ≠
+        after.carrier.index.openConf.control.qterm := by
+    rw [afterRuntimeValueExact, afterOpenQterm]
+    intro equality
+    change
+      Atom.var ("x" ++ PLeaTTa.resolutionCompactSuffix 1) =
+        Atom.var "z" at equality
+    injection equality with nameEquality
+    have nameNe :
+        "x" ++ PLeaTTa.resolutionCompactSuffix 1 ≠ "z" := by
+      decide
+    exact nameNe nameEquality
+  have afterQueryReading :
+      AlphaTermAgrees after.carrier.index.alpha queryTerm queryAtom :=
+    AlphaTermAgrees.mono afterExtension.included beforeQueryReading
+  have afterQuerySupported :
+      AlphaTermsSupported after.carrier.index.alpha
+        after.carrier.index.support [queryTerm] := by
+    intro term member
+    simp only [List.mem_singleton] at member
+    subst term
+    rw [facts.supportPreserved, beforeSupport]
+    change
+      ∀ name, (queryIdentity, name) ∈ after.carrier.index.alpha →
+        (queryIdentity, name) ∈ rootAlpha
+    intro name linked
+    have beforeRootLinked :
+        (queryIdentity, "z") ∈ before.carrier.index.alpha := by
+      change
+        AlphaTermAgrees before.carrier.index.alpha
+          (.variable queryIdentity) (.var "z") at beforeQueryReading
+      cases beforeQueryReading with
+      | «variable» rootLinked => exact rootLinked
+    have rootLinked :
+        (queryIdentity, "z") ∈ after.carrier.index.alpha :=
+      afterExtension.included _ beforeRootLinked
+    have shared :=
+      after.carrier.agreement.core.control.ready.2.2.2.headPayload.data.alphaShared
+    have nameExact : name = "z" := shared.forward linked rootLinked
+    subst name
+    simp [rootAlpha, queryIdentity]
+  have afterMaterialized :
+      after.carrier.index.current.applyTerm queryTerm =
+        .variable (.generated 1) := by
+    rw [afterCurrent]
+    rfl
+  have afterMaterializedNontrivial :
+      after.carrier.index.current.applyTerm queryTerm ≠ queryTerm := by
+    rw [afterMaterialized]
+    simp [queryTerm, queryIdentity]
   refine
     ⟨before, after, rootSourceSteps, rootFineSteps, beforeNextFresh,
       beforeFrontier, ?_, ?_, afterCurrent, afterNextFresh, afterFrontier,
-      afterExtension, facts.representativeExtension, singletonChain⟩
+      afterExtension, facts.representativeExtension, singletonChain,
+      afterBodyReferences, afterBodyExecutables, afterCallerReferences,
+      afterOuterReferences, afterBaseAlts, afterFrames, afterQterm,
+      afterOpenQterm, afterQueryReading, afterQuerySupported,
+      afterMaterialized, afterMaterializedNontrivial,
+      afterRuntimeValueExact, afterRuntimeValueNontrivial⟩
   · simpa using sourceSteps
   · simpa using fineSteps
 

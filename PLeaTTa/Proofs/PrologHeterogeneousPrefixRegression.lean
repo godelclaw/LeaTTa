@@ -140,8 +140,11 @@ theorem truth_then_unbound_q_call_exact_literal_middle
       _middleSupport,
       _middleQueryReading, _middleQuerySupported, _middleQterm,
       _middleOpenQterm,
+      _middleCallerReferences, _middleCallerExecutables, _middleOuter,
+      _middleBaseAlts, _middleFrames,
       _middleDatabase, _middleWorld, openedSingleton, _middleNextFresh, _middleCounter,
-      _rootSourceSteps, _rootFineSteps⟩ :=
+      _rootSourceSteps, _rootFineSteps, _runtimeQueryExact,
+      _runtimeResultFixed⟩ :=
     qMaterializedReadyAfterP (prog := prog) (gt := gt)
   obtain
     ⟨count, skippedBranches, skippedClauses, finish, branch, clause,
@@ -219,9 +222,12 @@ theorem truth_then_query_unify_seven_exact_nonempty_residual
     ⟨middleState, _head, _ready, _qPredicate, _qPayload, _qReferenceRest,
       _qArguments, _qResult, _qExecutableRest, _qExecutableTail, middleCurrent,
       middleSupport, queryReading, querySupported, middleQterm, middleOpenQterm,
+      _middleCallerReferences, _middleCallerExecutables, _middleOuter,
+      _middleBaseAlts, _middleFrames,
       _middleDatabase,
       _middleWorld, _openedSingleton, _middleNextFresh, _middleCounter,
-      _rootSourceSteps, _rootFineSteps⟩ :=
+      _rootSourceSteps, _rootFineSteps, _runtimeQueryExact,
+      _runtimeResultFixed⟩ :=
     qMaterializedReadyAfterP (prog := prog) (gt := gt)
   have integerReading :
       AlphaTermAgrees middleState.carrier.index.alpha (.integer 7)
@@ -442,8 +448,11 @@ theorem query_unify_seven_reaches_materialized_ground_q
     ⟨middleState, middleHead, middleReady, qPredicate, qPayload,
       qReferenceRest, qArguments, _qResult, qExecutableRest, qExecutableTail,
       middleCurrent, middleSupport, queryReading, querySupported, middleQterm,
-      middleOpenQterm, middleDatabase, middleWorld, _middleOpenedSingleton,
-      middleNextFresh, _middleCounter, _rootSourceSteps, _rootFineSteps⟩ :=
+      middleOpenQterm, _middleCallerReferences, _middleCallerExecutables,
+      _middleOuter, _middleBaseAlts, _middleFrames, middleDatabase, middleWorld,
+      _middleOpenedSingleton,
+      middleNextFresh, _middleCounter, _rootSourceSteps, _rootFineSteps,
+      _runtimeQueryExact, _runtimeResultFixed⟩ :=
     qMaterializedReadyAfterP (prog := prog) (gt := gt)
   have integerReading :
       AlphaTermAgrees middleState.carrier.index.alpha (.integer 7)
