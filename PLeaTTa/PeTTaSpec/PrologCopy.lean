@@ -57,6 +57,52 @@ end
 
 mutual
 
+/-- Renaming a finite term maps its ordered variable-occurrence list
+pointwise.  This accounting lemma keeps later allocator proofs independent of
+the recursive spelling of `Term.renameVariables`. -/
+theorem termVariables_renameVariables
+    (rename : LogicVar → LogicVar) (term : Term) :
+    termVariables (term.renameVariables rename) =
+      (termVariables term).map rename :=
+  match term with
+  | .variable identity => by
+      simp [Term.renameVariables, termVariables]
+  | .atom name => by
+      simp [Term.renameVariables, termVariables]
+  | .integer value => by
+      simp [Term.renameVariables, termVariables]
+  | .float value => by
+      simp [Term.renameVariables, termVariables]
+  | .string value => by
+      simp [Term.renameVariables, termVariables]
+  | .compound functor arguments => by
+      simp only [Term.renameVariables, termVariables]
+      exact termsVariables_renameVariables rename arguments
+  | .list items none => by
+      simp only [Term.renameVariables, termVariables]
+      exact termsVariables_renameVariables rename items
+  | .list items (some tail) => by
+      simp only [Term.renameVariables, termVariables, List.map_append]
+      rw [termsVariables_renameVariables rename items,
+        termVariables_renameVariables rename tail]
+
+/-- Sequence counterpart of `termVariables_renameVariables`. -/
+theorem termsVariables_renameVariables
+    (rename : LogicVar → LogicVar) (terms : List Term) :
+    termsVariables (Terms.renameVariables rename terms) =
+      (termsVariables terms).map rename :=
+  match terms with
+  | [] => by
+      simp [Terms.renameVariables, termsVariables]
+  | term :: terms => by
+      simp only [Terms.renameVariables, termsVariables, List.map_append]
+      rw [termVariables_renameVariables rename term,
+        termsVariables_renameVariables rename terms]
+
+end
+
+mutual
+
 /-- Every variable in a term is generated at or above `lower`. -/
 def Term.GeneratedAtLeast (lower : Nat) : Term → Prop
   | .variable (.generated index) => lower ≤ index
@@ -72,6 +118,86 @@ def Terms.GeneratedAtLeast (lower : Nat) : List Term → Prop
   | [] => True
   | term :: terms =>
       term.GeneratedAtLeast lower ∧ Terms.GeneratedAtLeast lower terms
+
+end
+
+mutual
+
+/-- Lowering the allocation floor preserves structural generated-variable
+support. -/
+theorem generatedAtLeast_mono_term
+    {smaller larger : Nat} (ordered : smaller ≤ larger) :
+    ∀ {term : Term}, term.GeneratedAtLeast larger →
+      term.GeneratedAtLeast smaller
+  | .variable (.generated _index), above => Nat.le_trans ordered above
+  | .variable (.source _), impossible => False.elim impossible
+  | .variable (.anonymous _), impossible => False.elim impossible
+  | .atom _, _ => trivial
+  | .integer _, _ => trivial
+  | .float _, _ => trivial
+  | .string _, _ => trivial
+  | .compound _ _arguments, above =>
+      generatedAtLeast_mono_terms ordered above
+  | .list _items none, above =>
+      generatedAtLeast_mono_terms ordered above
+  | .list _items (some _tail), above =>
+      ⟨generatedAtLeast_mono_terms ordered above.1,
+        generatedAtLeast_mono_term ordered above.2⟩
+
+/-- Ordered-sequence counterpart of `generatedAtLeast_mono_term`. -/
+theorem generatedAtLeast_mono_terms
+    {smaller larger : Nat} (ordered : smaller ≤ larger) :
+    ∀ {terms : List Term}, Terms.GeneratedAtLeast larger terms →
+      Terms.GeneratedAtLeast smaller terms
+  | [], _ => trivial
+  | _ :: _, above =>
+      ⟨generatedAtLeast_mono_term ordered above.1,
+        generatedAtLeast_mono_terms ordered above.2⟩
+
+end
+
+mutual
+
+/-- Every variable occurrence in a structurally generated-above term has a
+concrete generated index at or above the advertised floor. -/
+theorem generatedAtLeast_index_of_mem_term
+    {lower : Nat} {identity : LogicVar} :
+    ∀ {term : Term}, term.GeneratedAtLeast lower →
+      identity ∈ termVariables term →
+        ∃ index, identity = .generated index ∧ lower ≤ index
+  | .variable (.generated index), above, member => by
+      simp only [termVariables, List.mem_singleton] at member
+      subst identity
+      exact ⟨index, rfl, above⟩
+  | .variable (.source _), impossible, _ => False.elim impossible
+  | .variable (.anonymous _), impossible, _ => False.elim impossible
+  | .atom _, _, member => by simp [termVariables] at member
+  | .integer _, _, member => by simp [termVariables] at member
+  | .float _, _, member => by simp [termVariables] at member
+  | .string _, _, member => by simp [termVariables] at member
+  | .compound _ _, above, member =>
+      generatedAtLeast_index_of_mem_terms above member
+  | .list _ none, above, member =>
+      generatedAtLeast_index_of_mem_terms above member
+  | .list _ (some _), above, member => by
+      simp only [termVariables, List.mem_append] at member
+      rcases member with member | member
+      · exact generatedAtLeast_index_of_mem_terms above.1 member
+      · exact generatedAtLeast_index_of_mem_term above.2 member
+
+/-- Ordered-sequence counterpart of
+`generatedAtLeast_index_of_mem_term`. -/
+theorem generatedAtLeast_index_of_mem_terms
+    {lower : Nat} {identity : LogicVar} :
+    ∀ {terms : List Term}, Terms.GeneratedAtLeast lower terms →
+      identity ∈ termsVariables terms →
+        ∃ index, identity = .generated index ∧ lower ≤ index
+  | [], _, member => by simp [termsVariables] at member
+  | _ :: _, above, member => by
+      simp only [termsVariables, List.mem_append] at member
+      rcases member with member | member
+      · exact generatedAtLeast_index_of_mem_term above.1 member
+      · exact generatedAtLeast_index_of_mem_terms above.2 member
 
 end
 
@@ -321,6 +447,47 @@ theorem copyTerm_generatedAtLeast (firstFresh : Nat) (term : Term) :
       ⟨firstFresh + (copyVariables term).idxOf identity,
         rfl, Nat.le_add_right firstFresh _⟩)
     term
+
+/-- Every generated identity emitted by `copyTerm` lies strictly below the
+exclusive upper bound returned by `copyNextFresh`.  Together with
+`copyTerm_generatedAtLeast`, this pins the copy to its advertised half-open
+allocation interval. -/
+theorem copyTerm_generatedBelowNextFresh (firstFresh : Nat) (term : Term) :
+    GeneratedBelow (copyNextFresh firstFresh term)
+      (termVariables (copyTerm firstFresh term)) := by
+  rw [copyTerm, termVariables_renameVariables]
+  intro index member
+  rcases List.mem_map.mp member with ⟨identity, identityMember, renamed⟩
+  have active : identity ∈ copyVariables term :=
+    List.mem_eraseDups.mpr identityMember
+  have position := List.idxOf_lt_length_of_mem active
+  simp only [copyRename] at renamed
+  injection renamed with indexEq
+  simp only [copyNextFresh]
+  omega
+
+/-- A freshly copied term is variable-disjoint from every older term whose
+generated identities lie below the copy's reservation start.  This is the
+allocator-facing separation lemma used when a collector prepends one new
+solution to an already copied bag. -/
+theorem copyTerm_variables_disjoint_of_generatedBelow
+    (firstFresh : Nat) (source older : Term)
+    (olderBelow : GeneratedBelow firstFresh (termVariables older)) :
+    List.Disjoint (termVariables (copyTerm firstFresh source))
+      (termVariables older) := by
+  rw [List.disjoint_left]
+  intro identity copiedMember olderMember
+  rw [copyTerm, termVariables_renameVariables] at copiedMember
+  rcases List.mem_map.mp copiedMember with
+    ⟨sourceIdentity, sourceMember, copiedEq⟩
+  have active : sourceIdentity ∈ copyVariables source :=
+    List.mem_eraseDups.mpr sourceMember
+  have position := List.idxOf_lt_length_of_mem active
+  simp only [copyRename] at copiedEq
+  subst identity
+  have below := olderBelow
+    (firstFresh + (copyVariables source).idxOf sourceIdentity) olderMember
+  omega
 
 /-- Complete deterministic copy preparation from a raw term and current
 substitution.  The raw term is materialized first, as ISO `throw/1` requires;

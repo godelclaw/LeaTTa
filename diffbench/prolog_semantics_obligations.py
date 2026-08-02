@@ -81,6 +81,10 @@ PROLOG_FINDALL_VARIANT_EXIT_PAYLOAD_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologFindallVariantExitPayloadBridge.lean"
 )
+PROLOG_FINDALL_BAG_ALPHA_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologFindallBagAlphaBridge.lean"
+)
 PROLOG_ANSWER_ORIGIN_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologAnswerOriginBridge.lean"
 )
@@ -482,6 +486,7 @@ STRICT_AXIOM_AUDIT_ROWS = {
     "BISIM.root_closed_public_answer_value",
     "BISIM.answer_visibility_public",
     "BISIM.findall_collection_answer_general",
+    "BISIM.findall_bag_alpha_support",
 }
 
 
@@ -566,6 +571,8 @@ def check() -> list[str]:
             digest(PROLOG_FINDALL_EXIT_PAYLOAD_BRIDGE),
         "prolog_findall_variant_exit_payload_bridge_sha256":
             digest(PROLOG_FINDALL_VARIANT_EXIT_PAYLOAD_BRIDGE),
+        "prolog_findall_bag_alpha_bridge_sha256":
+            digest(PROLOG_FINDALL_BAG_ALPHA_BRIDGE),
         "prolog_answer_origin_bridge_sha256":
             digest(PROLOG_ANSWER_ORIGIN_BRIDGE),
         "prolog_answer_resource_bridge_sha256":

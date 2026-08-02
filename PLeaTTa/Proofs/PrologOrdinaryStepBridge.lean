@@ -1380,7 +1380,7 @@ the proof.  The returned source and executable extensions are therefore tied
 to that literal orientation.  This is the producer used by the heterogeneous
 prefix zipper; the older existential theorem below is only its weak wrapper.
 -/
-theorem TaskDataAgrees.selectedUnifyTopExact_of_equivalent
+theorem TaskDataAgrees.selectedUnifyTopExact_of_equivalent_canonicalAgreement
     {alpha support : List (LogicVar × String)}
     {canonical representative : TreeSubstitution}
     {referenceBase current : Substitution}
@@ -1397,9 +1397,11 @@ theorem TaskDataAgrees.selectedUnifyTopExact_of_equivalent
         [(Term.denote sourceLeft, Term.denote sourceRight)]
         [(Term.denote runtimeLeft, Term.denote runtimeRight)])
     (leftAgreement :
-      AlphaTermAgrees alpha runtimeLeft executableLeft)
+      CanonicalRuntimeAgrees alpha
+        (Term.denote runtimeLeft) executableLeft)
     (rightAgreement :
-      AlphaTermAgrees alpha runtimeRight executableRight)
+      CanonicalRuntimeAgrees alpha
+        (Term.denote runtimeRight) executableRight)
     (leftSupported :
       AlphaTreeSupported alpha support (Term.denote runtimeLeft))
     (rightSupported :
@@ -1429,9 +1431,7 @@ theorem TaskDataAgrees.selectedUnifyTopExact_of_equivalent
           (Term.denote runtimeLeft))
         (PLeaTTa.subst runtime executableLeft) :=
     canonicalRuntimeAgrees_apply_on
-      (PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.canonicalRuntimeAgrees
-        leftAgreement)
-      selected.valuation leftSupported
+      leftAgreement selected.valuation leftSupported
   have rightAfter :
       CanonicalRuntimeAgrees alpha
         (TreeSubstitution.apply
@@ -1439,9 +1439,7 @@ theorem TaskDataAgrees.selectedUnifyTopExact_of_equivalent
           (Term.denote runtimeRight))
         (PLeaTTa.subst runtime executableRight) :=
     canonicalRuntimeAgrees_apply_on
-      (PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.canonicalRuntimeAgrees
-        rightAgreement)
-      selected.valuation rightSupported
+      rightAgreement selected.valuation rightSupported
   have sourceRelativeOriginal :
       TreeIsRelativeMgu
         (sourceExtension ++
@@ -1515,6 +1513,49 @@ theorem TaskDataAgrees.selectedUnifyTopExact_of_equivalent
         executableTopological := executableTopological
         generatedTopological := generatedTopological
         runtimeTopological := selected.runtimeTopological }⟩
+
+/-- Compatibility wrapper for raw-alpha callers.  The proof above only needs
+canonical readings, so raw term agreement is converted exactly once at this
+boundary and is not retained as an artificial requirement of the MGU
+producer. -/
+theorem TaskDataAgrees.selectedUnifyTopExact_of_equivalent
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution}
+    {runtime : Metta.Subst}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (selected :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase runtime representative)
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    (equivalent :
+      TreeUnificationEquivalent
+        [(Term.denote sourceLeft, Term.denote sourceRight)]
+        [(Term.denote runtimeLeft, Term.denote runtimeRight)])
+    (leftAgreement :
+      AlphaTermAgrees alpha runtimeLeft executableLeft)
+    (rightAgreement :
+      AlphaTermAgrees alpha runtimeRight executableRight)
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote runtimeLeft))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote runtimeRight))
+    {result : Substitution}
+    (resolved : UnifyResolution current sourceLeft sourceRight result) :
+    ∃ sourceExtension executableExtension generated,
+      SelectedUnifyTopExact alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated := by
+  exact agreement.selectedUnifyTopExact_of_equivalent_canonicalAgreement selected
+    equivalent
+    (PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.canonicalRuntimeAgrees
+      leftAgreement)
+    (PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.canonicalRuntimeAgrees
+      rightAgreement)
+    leftSupported rightSupported resolved
 
 theorem TaskDataAgrees.executableUnifyTopExact_of_equivalent
     {alpha support : List (LogicVar × String)}
@@ -2002,6 +2043,48 @@ theorem SelectedUnifyTopExact.afterUnifySuccessData
 /-- Strong selected-representative producer for one successful primitive
 equality over an arbitrary carried runtime.  All chosen extensions remain
 explicit indices of the returned certificate. -/
+theorem TaskDataAgrees.afterUnifySuccessDataWith_of_equivalentGeneral_canonicalAgreement
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (selected :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase runtime representative)
+    (equivalent :
+      TreeUnificationEquivalent
+        [(Term.denote sourceLeft, Term.denote sourceRight)]
+        [(Term.denote runtimeLeft, Term.denote runtimeRight)])
+    (leftAgreement :
+      CanonicalRuntimeAgrees alpha
+        (Term.denote runtimeLeft) executableLeft)
+    (rightAgreement :
+      CanonicalRuntimeAgrees alpha
+        (Term.denote runtimeRight) executableRight)
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote runtimeLeft))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote runtimeRight))
+    {result : Substitution}
+    (resolved : UnifyResolution current sourceLeft sourceRight result) :
+    ∃ sourceExtension executableExtension generated,
+      SelectedUnifySuccessData alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated
+        (PrologMguComposition.installGenerated generated runtime) := by
+  obtain ⟨sourceExtension, executableExtension, generated, exact⟩ :=
+    agreement.selectedUnifyTopExact_of_equivalent_canonicalAgreement selected equivalent
+      leftAgreement rightAgreement leftSupported rightSupported resolved
+  exact
+    ⟨sourceExtension, executableExtension, generated,
+      exact.afterUnifySuccessDataGeneral agreement⟩
+
+/-- Raw-alpha compatibility wrapper for the canonical success-data producer.
+No proof below the boundary needs the stronger raw presentation. -/
 theorem TaskDataAgrees.afterUnifySuccessDataWith_of_equivalentGeneral
     {alpha support : List (LogicVar × String)}
     {canonical representative : TreeSubstitution}
@@ -2033,12 +2116,14 @@ theorem TaskDataAgrees.afterUnifySuccessDataWith_of_equivalentGeneral
         runtimeRight executableLeft executableRight result sourceExtension
         executableExtension generated
         (PrologMguComposition.installGenerated generated runtime) := by
-  obtain ⟨sourceExtension, executableExtension, generated, exact⟩ :=
-    agreement.selectedUnifyTopExact_of_equivalent selected equivalent
-      leftAgreement rightAgreement leftSupported rightSupported resolved
   exact
-    ⟨sourceExtension, executableExtension, generated,
-      exact.afterUnifySuccessDataGeneral agreement⟩
+    agreement.afterUnifySuccessDataWith_of_equivalentGeneral_canonicalAgreement
+      selected equivalent
+      (PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.canonicalRuntimeAgrees
+        leftAgreement)
+      (PLeaTTa.PrologPrefilterBridge.AlphaTermAgrees.canonicalRuntimeAgrees
+        rightAgreement)
+      leftSupported rightSupported resolved
 
 /-- Compatibility form retaining the older conservative support premises. -/
 theorem TaskDataAgrees.afterUnifySuccessDataWith_of_equivalent
