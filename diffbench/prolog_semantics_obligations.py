@@ -356,6 +356,10 @@ PROLOG_SCHEDULED_ANSWER_PROPAGATION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologScheduledAnswerPropagationBridge.lean"
 )
+PROLOG_SCHEDULED_HISTORY_BUILD_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologScheduledHistoryBuildBridge.lean"
+)
 PROLOG_SCHEDULED_PAYLOAD_RESUME_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologScheduledPayloadResumeBridge.lean"
@@ -363,6 +367,22 @@ PROLOG_SCHEDULED_PAYLOAD_RESUME_BRIDGE = (
 PROLOG_SCHEDULED_PAYLOAD_RESUME_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologScheduledPayloadResumeRegression.lean"
+)
+PROLOG_SCHEDULED_PAYLOAD_PATH_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologScheduledPayloadPathBridge.lean"
+)
+PROLOG_SCHEDULED_PAYLOAD_PATH_REGRESSION = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologScheduledPayloadPathRegression.lean"
+)
+PROLOG_SCHEDULED_PAYLOAD_LANDING_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologScheduledPayloadLandingBridge.lean"
+)
+PROLOG_SCHEDULED_PAYLOAD_LANDING_REGRESSION = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologScheduledPayloadLandingRegression.lean"
 )
 PROLOG_ROOT_CLOSED_ANSWER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
@@ -501,6 +521,7 @@ STRICT_AXIOM_AUDIT_ROWS = {
     "BISIM.softcut_macro_prefix",
     "BISIM.root_closed_answer_pull",
     "BISIM.root_closed_local_live_answer",
+    "BISIM.scheduled_payload_landing",
     "BISIM.root_closed_public_answer_value",
     "BISIM.answer_visibility_public",
     "BISIM.findall_collection_answer_general",
@@ -735,10 +756,20 @@ def check() -> list[str]:
             digest(PROLOG_CURRENT_SESSION_PAYLOAD_TRANSITION_BRIDGE),
         "prolog_scheduled_answer_propagation_bridge_sha256":
             digest(PROLOG_SCHEDULED_ANSWER_PROPAGATION_BRIDGE),
+        "prolog_scheduled_history_build_bridge_sha256":
+            digest(PROLOG_SCHEDULED_HISTORY_BUILD_BRIDGE),
         "prolog_scheduled_payload_resume_bridge_sha256":
             digest(PROLOG_SCHEDULED_PAYLOAD_RESUME_BRIDGE),
         "prolog_scheduled_payload_resume_regression_sha256":
             digest(PROLOG_SCHEDULED_PAYLOAD_RESUME_REGRESSION),
+        "prolog_scheduled_payload_path_bridge_sha256":
+            digest(PROLOG_SCHEDULED_PAYLOAD_PATH_BRIDGE),
+        "prolog_scheduled_payload_path_regression_sha256":
+            digest(PROLOG_SCHEDULED_PAYLOAD_PATH_REGRESSION),
+        "prolog_scheduled_payload_landing_bridge_sha256":
+            digest(PROLOG_SCHEDULED_PAYLOAD_LANDING_BRIDGE),
+        "prolog_scheduled_payload_landing_regression_sha256":
+            digest(PROLOG_SCHEDULED_PAYLOAD_LANDING_REGRESSION),
         "prolog_root_closed_answer_bridge_sha256":
             digest(PROLOG_ROOT_CLOSED_ANSWER_BRIDGE),
         "prolog_root_closed_local_live_bridge_sha256":

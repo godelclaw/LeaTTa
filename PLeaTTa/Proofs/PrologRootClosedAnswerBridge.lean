@@ -11,6 +11,8 @@ Main exports: AllEmptyHistoryResult,
 -/
 import PLeaTTa.Proofs.PrologScheduledPayloadResumeBridge
 import PLeaTTa.Proofs.PrologAnswerPullClassificationBridge
+import PLeaTTa.Proofs.PrologScheduledHistoryBuildBridge
+import PLeaTTa.Proofs.PrologScheduledPayloadPathBridge
 
 namespace PLeaTTa.PrologRootClosedAnswerBridge
 
@@ -28,6 +30,8 @@ open PrologHeterogeneousPrefixBridge
 open PrologProductResourceContextBridge
 open PrologRetainedPayloadSnapshotBridge
 open PrologScheduledAnswerPropagationBridge
+open PrologScheduledHistoryBuildBridge
+open PrologScheduledPayloadPathBridge
 open PrologScheduledPayloadResumeBridge
 open PrologSourceProductContextBridge
 
@@ -40,14 +44,27 @@ history is data produced from the Type-valued payload zipper, and its resource
 equation says that every outer resource was appended once in executable
 order. -/
 structure AllEmptyHistoryResult
-    {alpha : List (LogicVar × String)} {source next : Search}
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {outerResources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments outerResources inner context outer)
+    {source next : Search}
     (initial : ScheduledAnswerHistory alpha source next)
-    (outerResources : List RetainedAlternativeSegment)
+    (initialBuild : ScheduledHistoryBuild initial)
     (expectedSource : Search) : Type where
   targetSource : Search
   targetSourceExact : targetSource = expectedSource
   targetNext : Search
   history : ScheduledAnswerHistory alpha targetSource targetNext
+  historyBuild : ScheduledHistoryBuild history
+  historyCellsExact :
+    historyBuild.cells =
+      initialBuild.cells ++
+        (payloadCells payload).map PayloadCell.historyCell
   bindingsExact : history.bindings = initial.bindings
   resourcesExact :
     history.resources = initial.resources ++ outerResources
@@ -70,10 +87,11 @@ noncomputable def absorbAllEmptyHistory
         currentBarrier segments resources inner context outer)
     {source next : Search}
     (history : ScheduledAnswerHistory alpha source next)
+    (historyBuild : ScheduledHistoryBuild history)
     (scopeExact : history.leafScope = inner)
     (allEmpty :
       forall segment, segment ∈ segments -> segment.references = []) :
-    AllEmptyHistoryResult history resources
+    AllEmptyHistoryResult payload history historyBuild
       (absorbContextTarget context history.bindings source next) := by
   induction payload generalizing source next with
   | nil currentBarrier scope =>
@@ -82,6 +100,8 @@ noncomputable def absorbAllEmptyHistory
           targetSourceExact := rfl
           targetNext := next
           history := history
+          historyBuild := historyBuild
+          historyCellsExact := by simp [payloadCells]
           bindingsExact := rfl
           resourcesExact := by simp only [List.append_nil] }
   | cons currentBarrier currentScope nextScope outerScope segment segments
@@ -102,18 +122,25 @@ noncomputable def absorbAllEmptyHistory
           segment.references resource resourceOwnership
       rw [empty] at resume
       let nextHistory := resume.nextHistory
+      let nextBuild : ScheduledHistoryBuild nextHistory :=
+        .resumed historyBuild nextScope currentScope cursor resource resume
       let tailResult :=
-        inductionHypothesis nextHistory rfl tailEmpty
+        inductionHypothesis nextHistory nextBuild rfl tailEmpty
       refine
         { targetSource := tailResult.targetSource
           targetSourceExact := ?_
           targetNext := tailResult.targetNext
           history := tailResult.history
+          historyBuild := tailResult.historyBuild
+          historyCellsExact := ?_
           bindingsExact := ?_
           resourcesExact := ?_ }
       · simpa [absorbContextTarget, empty, nextHistory,
           PrivateScheduledResume.nextHistory, privateResumeTarget,
           enclosingHeadNext] using tailResult.targetSourceExact
+      · simpa [nextBuild, ScheduledHistoryBuild.cells, payloadCells,
+          PayloadCell.historyCell, List.append_assoc] using
+          tailResult.historyCellsExact
       · simpa [nextHistory, PrivateScheduledResume.nextHistory] using
           tailResult.bindingsExact
       · simpa [ScheduledAnswerHistory.resources, nextHistory,
@@ -201,14 +228,29 @@ def fullyAbsorbedSource
       (before.carrier.index.finish.advance before.carrier.index.branch
         before.carrier.index.branchTail))
 
+/-- Type-valued local construction provenance for the current one-level
+history.  The cursor ownership is extracted from the same dependent payload
+zipper carried by `before`. -/
+def currentAnswerHistoryBuild
+    (before : RepresentativeScheduledPayloadState) :
+    ScheduledHistoryBuild (currentAnswerHistory before) :=
+  .oneLevel before.carrier.index.callerScope
+    before.carrier.index.opened.scope before.carrier.index.current
+    (before.carrier.index.finish.advance before.carrier.index.branch
+      before.carrier.index.branchTail)
+    before.carrier.index.active
+    (ActiveProductPayloadContext.activeOwnership
+      before.carrier.payloadContext)
+
 /-- A live scheduled carrier whose complete private caller spine has been
 absorbed and whose locally owned resource bank is the entire executable bank.
 -/
 structure RootClosedAnswerReady
     (before : RepresentativeScheduledPayloadState) : Type where
   result :
-    AllEmptyHistoryResult (currentAnswerHistory before)
-      before.carrier.index.resources
+    AllEmptyHistoryResult
+      (ActiveProductPayloadContext.outerPayload before.carrier.payloadContext)
+      (currentAnswerHistory before) (currentAnswerHistoryBuild before)
       (fullyAbsorbedSource before)
   sourceSteps :
     StepsN before.carrier.index.outer.length before.carrier.sourceState []
@@ -237,7 +279,9 @@ noncomputable def rootClosedAnswerReady
   let payloadTail :=
     ActiveProductPayloadContext.outerPayload before.carrier.payloadContext
   let result :=
-    absorbAllEmptyHistory payloadTail (currentAnswerHistory before) rfl allEmpty
+    absorbAllEmptyHistory payloadTail (currentAnswerHistory before)
+      (currentAnswerHistoryBuild before)
+      rfl allEmpty
   have sourceRun :=
     absorbAlignedContext payloadTail.alignment (currentAnswerHistory before)
       rfl before.carrier.index.session
@@ -295,6 +339,29 @@ noncomputable def rootClosedAnswerReady
 end RepresentativeScheduledPayloadState
 
 namespace RootClosedAnswerReady
+
+/-- The completed local history and the full immutable payload zipper carry
+the same occurrence cells in the same order.  This strengthens the older
+resource-list equation with exact cursors, so duplicate-but-equal executable
+banks cannot select the wrong snapshot. -/
+theorem historyCells_eq_payloadCells
+    {before : RepresentativeScheduledPayloadState}
+    (ready : RootClosedAnswerReady before) :
+    ready.result.historyBuild.cells =
+      (payloadCells before.carrier.payloadContext).map
+        PayloadCell.historyCell := by
+  rw [ready.result.historyCellsExact]
+  cases before.carrier.payloadContext
+  rfl
+
+/-- Package the exact positional bridge used by later answer-landing
+classification. -/
+def payloadAlignment
+    {before : RepresentativeScheduledPayloadState}
+    (ready : RootClosedAnswerReady before) :
+    ScheduledPayloadAlignment before.carrier.payloadContext
+      ready.result.historyBuild :=
+  ⟨ready.historyCells_eq_payloadCells⟩
 
 /-- Classify the actual eager executable pull at a rooted local answer.  The
 result is local-live or terminal; an unowned older-base branch is absent by
