@@ -1837,6 +1837,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.StepStar.preserves_confTopological
 #print axioms PLeaTTa.StepStar.active_topological_of_empty
 #print axioms PLeaTTa.BarrierCacheCoherent.barrierDepth_eq
+#print axioms PLeaTTa.catch_cut_currently_removes_active_delimiter
 #print axioms PLeaTTa.enabled_empty_barrierCacheCoherent
 #print axioms PLeaTTa.cutToCached_fst_exact
 #print axioms PLeaTTa.cutToTracked_fst_of_coherent

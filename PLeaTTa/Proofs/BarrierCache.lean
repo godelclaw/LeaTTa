@@ -103,6 +103,22 @@ theorem barrierCount_foldl {Binding : Type}
   rw [List.foldl_cons, barrierCount_foldl_raw]
   simp [barrierCountStep, Nat.add_comm]
 
+/-- Regression witness for the pre-repair catch representation: when the
+active catch delimiter itself is counted as the protected call's cut barrier,
+a cut at that scope removes the delimiter.  The caller suffix survives, but
+the subsequent typed catch exit can no longer recover its frame. -/
+theorem catch_cut_currently_removes_active_delimiter {Binding : Type}
+    (frame : CatchFrame Binding) (outer : List (Alt Binding)) :
+    cutTo (barrierCount outer + 1) (Alt.catchActive frame :: outer) = outer := by
+  have below : cutTo (barrierCount outer + 1) outer = outer := by
+    cases outer with
+    | nil => rfl
+    | cons head tail =>
+        unfold cutTo
+        rw [if_neg (by omega)]
+  unfold cutTo
+  rw [if_pos (by simp), below]
+
 @[simp] theorem barrierCount_cons_catchDormant {Binding : Type}
     (frame : CatchFrame Binding) (protectedAlts rest : List (Alt Binding)) :
     barrierCount (Alt.catchDormant frame protectedAlts :: rest) =
