@@ -59,6 +59,29 @@ abbrev FindallMaterializationProducerAgrees
     AnswerValueProducerAgrees alpha support sourceBindings runtimeBindings
       sourceTemplate runtimeTemplate
 
+/-- Public anti-vacuity packet for one opposite-orientation residual alias.
+
+The concrete variable spellings stay private to this module.  Downstream
+collection proofs receive only the semantic producer, raw template agreement,
+finite-copy injectivity, and the fact that exact post-materialization spelling
+is impossible. -/
+structure ResidualAliasMaterializationWitness where
+  sourceBindings : Substitution
+  runtimeBindings : Subst
+  sourceTemplate : Term
+  runtimeTemplate : Atom
+  producer :
+    FindallMaterializationProducerAgrees sourceBindings runtimeBindings
+      sourceTemplate runtimeTemplate
+  rawTemplate : TermAgrees sourceTemplate runtimeTemplate
+  encoding :
+    OpenBindingAgreement.EncodingInjectiveOn
+      (copyVariables (sourceBindings.applyTerm sourceTemplate))
+  exactMaterializationFails :
+    ¬ TermAgrees
+      (sourceBindings.applyTerm sourceTemplate)
+      (PLeaTTa.subst runtimeBindings runtimeTemplate)
+
 namespace FindallMaterializationProducerAgrees
 
 /-- The actual child-simulation invariants construct materialized runtime
@@ -301,6 +324,25 @@ theorem residual_alias_exact_debt_excludes_valid_state :
   ⟨source_bindings_denote, residual_alias_cumulative_agrees,
     residual_alias_raw_runtime_agrees,
     residual_alias_breaks_exact_materialization⟩
+
+/-- Package the concrete residual-alias discriminator for downstream
+collection-step anti-vacuity proofs. -/
+def residualAliasMaterializationWitness :
+    ResidualAliasMaterializationWitness where
+  sourceBindings := residualSourceBindings
+  runtimeBindings := residualRuntimeBindings
+  sourceTemplate := residualTemplate
+  runtimeTemplate := residualRuntimeTemplate
+  producer := residual_alias_materialization_producer
+  rawTemplate := by
+    simpa [residualTemplate, residualRuntimeTemplate, residualAliasX] using
+      (TermAgrees.sourceVariable "$findall_x")
+  encoding := by
+    simp [OpenBindingAgreement.EncodingInjectiveOn, source_materialized,
+      copyVariables,
+      termVariables]
+  exactMaterializationFails :=
+    residual_alias_breaks_exact_materialization
 
 private theorem source_copy_variable (firstFresh : Nat) :
     copyTerm firstFresh

@@ -6,6 +6,7 @@ Purpose: Compose one active local findall answer with the exact retained
   resource and executable-alternative zipper at its source answer leaf
 Trusted boundary: none
 Main exports: ActiveFindallAnswerResourceAgrees,
+  ContextualFindallCollectionAnswerResourceRelates,
   ContextualFindallAnswerResourceRelates
 -/
 import PLeaTTa.Proofs.PrologFindallAnswerBridge
@@ -489,8 +490,103 @@ theorem privateAnswerTarget_pullOutcome
     OpenConf.ofConfWith, OpenConf.toConf, Control.toConf, controlOf] using
       outcome
 
-/-- Exact contextual private-answer correspondence with the source origin's
+/-- General contextual private-answer correspondence with the source origin's
 resource zipper anchored to the literal incoming executable alternative bank.
+
+This relation needs only the collection-step payload.  In particular,
+alternative ownership and the real eager-pull result do not inspect the
+suspended caller output or tail.
+
+`afterAlts` is the zipper remainder beyond the complete source answer origin;
+it is intentionally not equated with `after.control.alts`. -/
+structure ContextualFindallCollectionAnswerResourceRelates
+    (alpha : List (LogicVar × String))
+    (prog : Prog) (gt : GroundingTable)
+    (beforeSession : Session) (beforeSearch : Search)
+    (childAfter : Session) (afterSearch : Search)
+    (cell : SourceCollectionCell) (answerBindings : Substitution)
+    (before after : OpenConf) (frame : FindallFrame)
+    (remaining : List Frame) (binding : Subst)
+    (beforeResources afterResources : List RetainedAlternativeSegment)
+    (afterAlts : List PLeaTTa.Alt) : Prop where
+  base :
+    ContextualFindallCollectionAnswerRelates prog gt beforeSession
+      beforeSearch childAfter afterSearch cell answerBindings before after frame
+      remaining binding
+  sourceResources :
+    ActiveFindallAnswerResourceAgrees alpha beforeSession beforeSearch
+      childAfter afterSearch cell answerBindings beforeResources afterResources
+      before.control.alts afterAlts
+
+namespace ContextualFindallCollectionAnswerResourceRelates
+
+/-- The fine successor is exactly the real answer-plus-pull machine result. -/
+theorem finePullExact
+    {alpha : List (LogicVar × String)}
+    {prog : Prog} {gt : GroundingTable}
+    {beforeSession childAfter : Session}
+    {beforeSearch afterSearch : Search}
+    {cell : SourceCollectionCell} {answerBindings : Substitution}
+    {before after : OpenConf} {frame : FindallFrame}
+    {remaining : List Frame} {binding : Subst}
+    {beforeResources afterResources : List RetainedAlternativeSegment}
+    {afterAlts : List PLeaTTa.Alt}
+    (agreement :
+      ContextualFindallCollectionAnswerResourceRelates alpha prog gt
+        beforeSession beforeSearch childAfter afterSearch cell answerBindings
+        before after frame remaining binding beforeResources afterResources
+        afterAlts) :
+    after.toConf = answerSuccessor before.toConf binding := by
+  rw [agreement.base.fineTarget]
+  simp [privateAnswerTarget]
+
+/-- The contextual fine successor is classified by the real total pull
+result over the zipper-anchored incoming bank. -/
+theorem finePullOutcome
+    {alpha : List (LogicVar × String)}
+    {prog : Prog} {gt : GroundingTable}
+    {beforeSession childAfter : Session}
+    {beforeSearch afterSearch : Search}
+    {cell : SourceCollectionCell} {answerBindings : Substitution}
+    {before after : OpenConf} {frame : FindallFrame}
+    {remaining : List Frame} {binding : Subst}
+    {beforeResources afterResources : List RetainedAlternativeSegment}
+    {afterAlts : List PLeaTTa.Alt}
+    (agreement :
+      ContextualFindallCollectionAnswerResourceRelates alpha prog gt
+        beforeSession beforeSearch childAfter afterSearch cell answerBindings
+        before after frame remaining binding beforeResources afterResources
+        afterAlts) :
+    PullOutcomeAgrees before.control.alts after.control.cur
+      after.control.alts := by
+  rw [agreement.base.fineTarget]
+  exact privateAnswerTarget_pullOutcome before binding
+
+/-- The anchored executable pre-bank has the exact ordered suffix exposed by
+the resource zipper. -/
+theorem sourceBank_suffix
+    {alpha : List (LogicVar × String)}
+    {prog : Prog} {gt : GroundingTable}
+    {beforeSession childAfter : Session}
+    {beforeSearch afterSearch : Search}
+    {cell : SourceCollectionCell} {answerBindings : Substitution}
+    {before after : OpenConf} {frame : FindallFrame}
+    {remaining : List Frame} {binding : Subst}
+    {beforeResources afterResources : List RetainedAlternativeSegment}
+    {afterAlts : List PLeaTTa.Alt}
+    (agreement :
+      ContextualFindallCollectionAnswerResourceRelates alpha prog gt
+        beforeSession beforeSearch childAfter afterSearch cell answerBindings
+        before after frame remaining binding beforeResources afterResources
+        afterAlts) :
+    exists consumed, before.control.alts = consumed ++ afterAlts :=
+  agreement.sourceResources.alts_suffix
+
+end ContextualFindallCollectionAnswerResourceRelates
+
+/-- Exit-enriched contextual private-answer correspondence with the source
+origin's resource zipper anchored to the literal incoming executable
+alternative bank.
 
 `afterAlts` is the zipper remainder beyond the complete source answer origin;
 it is intentionally not equated with `after.control.alts`. -/
@@ -515,6 +611,28 @@ structure ContextualFindallAnswerResourceRelates
 
 namespace ContextualFindallAnswerResourceRelates
 
+/-- Forget only the exact exit-ready suspended-caller packet. -/
+theorem collection
+    {alpha : List (LogicVar × String)}
+    {prog : Prog} {gt : GroundingTable}
+    {beforeSession childAfter : Session}
+    {beforeSearch afterSearch : Search}
+    {cell : SourceCollectionCell} {answerBindings : Substitution}
+    {before after : OpenConf} {frame : FindallFrame}
+    {remaining : List Frame} {binding : Subst}
+    {beforeResources afterResources : List RetainedAlternativeSegment}
+    {afterAlts : List PLeaTTa.Alt}
+    (agreement :
+      ContextualFindallAnswerResourceRelates alpha prog gt beforeSession
+        beforeSearch childAfter afterSearch cell answerBindings before after
+        frame remaining binding beforeResources afterResources afterAlts) :
+    ContextualFindallCollectionAnswerResourceRelates alpha prog gt
+      beforeSession beforeSearch childAfter afterSearch cell answerBindings
+      before after frame remaining binding beforeResources afterResources
+      afterAlts :=
+  { base := agreement.base.collection
+    sourceResources := agreement.sourceResources }
+
 /-- The fine successor is exactly the real answer-plus-pull machine result.
 This is the honest post-bank statement; no zipper endpoint is substituted for
 the result of `pull`. -/
@@ -532,9 +650,8 @@ theorem finePullExact
       ContextualFindallAnswerResourceRelates alpha prog gt beforeSession
         beforeSearch childAfter afterSearch cell answerBindings before after
         frame remaining binding beforeResources afterResources afterAlts) :
-    after.toConf = answerSuccessor before.toConf binding := by
-  rw [agreement.base.fineTarget]
-  simp [privateAnswerTarget]
+    after.toConf = answerSuccessor before.toConf binding :=
+  agreement.collection.finePullExact
 
 /-- The contextual fine successor is classified by the real total pull
 result over the zipper-anchored incoming bank. -/
@@ -553,9 +670,8 @@ theorem finePullOutcome
         beforeSearch childAfter afterSearch cell answerBindings before after
         frame remaining binding beforeResources afterResources afterAlts) :
     PullOutcomeAgrees before.control.alts after.control.cur
-      after.control.alts := by
-  rw [agreement.base.fineTarget]
-  exact privateAnswerTarget_pullOutcome before binding
+      after.control.alts :=
+  agreement.collection.finePullOutcome
 
 /-- The anchored executable pre-bank has the exact ordered suffix exposed by
 the resource zipper. -/
@@ -574,9 +690,41 @@ theorem sourceBank_suffix
         beforeSearch childAfter afterSearch cell answerBindings before after
         frame remaining binding beforeResources afterResources afterAlts) :
     exists consumed, before.control.alts = consumed ++ afterAlts :=
-  agreement.sourceResources.alts_suffix
+  agreement.collection.sourceBank_suffix
 
 end ContextualFindallAnswerResourceRelates
+
+/-- The resource-certified source answer composes with the general
+collection-only payload without adding a second source or fine step. -/
+theorem ActiveFindallAnswerResourceAgrees.privateCollectionAnswer_correspondence
+    {alpha : List (LogicVar × String)}
+    {prog : Prog} {gt : GroundingTable}
+    {beforeSession childAfter : Session}
+    {beforeSearch afterSearch : Search}
+    {cell : SourceCollectionCell} {answerBindings : Substitution}
+    {beforeResources afterResources : List RetainedAlternativeSegment}
+    {afterAlts : List PLeaTTa.Alt}
+    {before : OpenConf} {frame : FindallFrame}
+    {remaining : List Frame} {binding : Subst}
+    (answer :
+      ActiveFindallAnswerResourceAgrees alpha beforeSession beforeSearch
+        childAfter afterSearch cell answerBindings beforeResources
+        afterResources before.control.alts afterAlts)
+    (frameHead : before.frames = .findall frame :: remaining)
+    (beforeOccurrences :
+      CollectionOccurrenceAgrees beforeSearch before.frames)
+    (payload :
+      FindallCollectionAnswerPayloadAgrees childAfter cell before frame
+        answerBindings binding) :
+    ContextualFindallCollectionAnswerResourceRelates alpha prog gt
+      beforeSession beforeSearch childAfter afterSearch cell answerBindings
+      before (privateAnswerTarget before binding) frame remaining binding
+      beforeResources afterResources afterAlts := by
+  exact
+    { base :=
+        answer.weak.privateCollectionAnswer_correspondence
+          (prog := prog) (gt := gt) frameHead beforeOccurrences payload
+      sourceResources := answer }
 
 /-- The enriched source proof composes with the existing occurrence/payload
 correspondence without adding a second source step or a second fine step. -/
@@ -604,11 +752,14 @@ theorem ActiveFindallAnswerResourceAgrees.privateAnswer_correspondence
       beforeSearch childAfter afterSearch cell answerBindings before
       (privateAnswerTarget before binding) frame remaining binding
       beforeResources afterResources afterAlts := by
+  have general :=
+    answer.privateCollectionAnswer_correspondence (prog := prog) (gt := gt)
+      frameHead beforeOccurrences payload.collection
   exact
     { base :=
-        answer.weak.privateAnswer_correspondence frameHead beforeOccurrences
-          payload
-      sourceResources := answer }
+        answer.weak.privateAnswer_correspondence (prog := prog) (gt := gt)
+          frameHead beforeOccurrences payload
+      sourceResources := general.sourceResources }
 
 /-- A private answer with two live alternatives consumes exactly the first
 branch and leaves the second.  Therefore its post-bank cannot in general be

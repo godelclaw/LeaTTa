@@ -457,6 +457,42 @@ theorem terminal_fields_of_pull_none
 
 end PullOutcomeAgrees
 
+namespace ContextualFindallCollectionAnswerRelates
+
+/-- The collection-only state relation already determines the exact
+post-answer bag length used by the additive exit.  No suspended caller payload
+or exit-ready packet is needed for this ordered-copy invariant. -/
+theorem postAnswerBagLength
+    {prog : Prog} {gt : GroundingTable}
+    {beforeSession childAfter : Session}
+    {beforeSearch answeredSearch : Search}
+    {cell : SourceCollectionCell} {answerBindings : Substitution}
+    {before answered : OpenConf} {frame : FindallFrame}
+    {remaining : List Frame} {binding : Subst}
+    (related :
+      ContextualFindallCollectionAnswerRelates prog gt beforeSession
+        beforeSearch childAfter answeredSearch cell answerBindings before
+        answered frame remaining binding) :
+    (afterAnswer cell childAfter answerBindings).reversed.length =
+      answered.control.answerValues.length := by
+  have debtLength :
+      (afterAnswer cell childAfter answerBindings).reversed.length =
+        answered.control.answers.length :=
+    List.Forall₂.length_eq related.stateAfter.persistent.fresh.debt
+  have reverseLength :
+      answered.control.answers.length =
+        answered.control.answerValues.length := by
+    calc
+      answered.control.answers.length =
+          answered.control.answers.reverse.length :=
+        (@List.length_reverse _ answered.control.answers).symm
+      _ = answered.control.answerValues.length :=
+        congrArg List.length
+          (rawAnswerAccumulator_sourceOrder answered.control)
+  exact debtLength.trans reverseLength
+
+end ContextualFindallCollectionAnswerRelates
+
 namespace ContextualFindallAnswerRelates
 
 /-- The copy-debt relation determines the exact post-answer bag length used
@@ -474,22 +510,9 @@ theorem postAnswerBagLength
         childAfter answeredSearch cell answerBindings before answered frame
         remaining binding) :
     (afterAnswer cell childAfter answerBindings).reversed.length =
-      answered.control.answerValues.length := by
-  have debtLength :
-      (afterAnswer cell childAfter answerBindings).reversed.length =
-        answered.control.answers.length :=
-    List.Forall₂.length_eq related.exitPayloadAfter.copyFrontier.debt
-  have reverseLength :
-      answered.control.answers.length =
-        answered.control.answerValues.length := by
-    calc
-      answered.control.answers.length =
-          answered.control.answers.reverse.length :=
-        (@List.length_reverse _ answered.control.answers).symm
-      _ = answered.control.answerValues.length :=
-        congrArg List.length
-          (rawAnswerAccumulator_sourceOrder answered.control)
-  exact debtLength.trans reverseLength
+      answered.control.answerValues.length :=
+  PLeaTTa.PrologFindallAnswerExitBridge.ContextualFindallCollectionAnswerRelates.postAnswerBagLength
+    related.collection
 
 /-- Compose one jointly certified terminal private answer with the bounded
 certified copy phase.

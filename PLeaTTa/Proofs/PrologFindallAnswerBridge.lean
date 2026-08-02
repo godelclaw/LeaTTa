@@ -5,7 +5,9 @@ Module: PLeaTTa.Proofs.PrologFindallAnswerBridge
 Purpose: Relate one actual source findall generator answer to one private
   fine-machine answer step and the resulting ordered copy-debt frontier.
 Trusted boundary: none
-Main exports: ActiveFindallAnswer, ContextualFindallAnswerRelates
+Main exports: ActiveFindallAnswer,
+  ContextualFindallCollectionAnswerRelates,
+  ContextualFindallAnswerRelates
 -/
 import PLeaTTa.Proofs.PrologFindallExitPayloadBridge
 import PLeaTTa.Proofs.PrologFindallResidualVariantBridge
@@ -504,18 +506,25 @@ theorem binding_unique
 
 end FindallAnswerReadyTaskAgrees
 
-/-- Payload premises at the phase seam between the completed source child
-answer and the answer-ready fine state.
+/-- Payload premises needed by the collection step itself, at the phase seam
+between the completed source child answer and the answer-ready fine state.
+
+This deliberately excludes the suspended caller's exact exit payload.  A
+private generator answer copies only `cell.template`, advances the persistent
+copy frontier, and prepends the corresponding raw executable value.  It does
+not inspect the caller output or tail.  Keeping those exit-only fields out of
+this relation is load-bearing: opposite but equivalent residual-MGU
+orientations can invalidate exact post-entry caller spelling without
+invalidating the private collection step.
 
 `queryTemplate` prevents the executable query term and suspended frame
 template from floating independently.  The state relation is intentionally at
 `childAfter`, matching the literal `collectTemplate after` in
 `RawStep.collectionAnswer`; the earlier child simulation remains open. -/
-structure FindallAnswerPayloadAgrees
+structure FindallCollectionAnswerPayloadAgrees
     (childAfter : Session) (cell : SourceCollectionCell)
     (before : OpenConf) (frame : FindallFrame)
     (answerBindings : Substitution) (binding : Subst) : Prop where
-  framePayload : FindallFramePayloadAgrees cell frame
   queryTemplate : before.control.qterm = frame.template
   state :
     CollectionOpenStateRelates cell.reversed before.control.answers
@@ -530,17 +539,18 @@ structure FindallAnswerPayloadAgrees
         (PLeaTTa.subst binding before.control.qterm).vars ≤
       before.persistent.counter
 
-namespace FindallAnswerPayloadAgrees
+namespace FindallCollectionAnswerPayloadAgrees
 
 /-- One actual private answer successor extends the persistent copy debt and
-preserves all three typed allocator relations. -/
+preserves all three typed allocator relations.  No suspended caller payload
+is used by this update. -/
 theorem afterOpenState
     {childAfter : Session} {cell : SourceCollectionCell}
     {before : OpenConf} {frame : FindallFrame}
     {answerBindings : Substitution} {binding : Subst}
     (agreement :
-      FindallAnswerPayloadAgrees childAfter cell before frame answerBindings
-        binding) :
+      FindallCollectionAnswerPayloadAgrees childAfter cell before frame
+        answerBindings binding) :
     CollectionOpenStateRelates
       (afterAnswer cell childAfter answerBindings).reversed
       (privateAnswerTarget before binding).control.answers
@@ -573,6 +583,82 @@ theorem afterOpenState
         simpa using agreement.state.exception
       collection := by
         simpa using agreement.state.collection }
+
+/-- Query-template identity survives the private answer step literally. -/
+theorem afterQueryTemplate
+    {childAfter : Session} {cell : SourceCollectionCell}
+    {before : OpenConf} {frame : FindallFrame}
+    {answerBindings : Substitution} {binding : Subst}
+    (agreement :
+      FindallCollectionAnswerPayloadAgrees childAfter cell before frame
+        answerBindings binding) :
+    (privateAnswerTarget before binding).control.qterm = frame.template := by
+  simpa using
+    (privateAnswerTarget_qterm before binding).trans agreement.queryTemplate
+
+end FindallCollectionAnswerPayloadAgrees
+
+/-- Exit-enriched payload.  `framePayload` is intentionally separate from
+the collection-only packet above: it is needed to package the eventual
+caller rejoin, not to justify the private answer step.
+
+The five collection fields below deliberately mirror
+`FindallCollectionAnswerPayloadAgrees`.  Keep additions synchronized and
+extend `FindallAnswerPayloadAgrees.collection`: that projection is the
+compile-checked compatibility boundary between the general collection lane
+and this conservative exit-ready enrichment. -/
+structure FindallAnswerPayloadAgrees
+    (childAfter : Session) (cell : SourceCollectionCell)
+    (before : OpenConf) (frame : FindallFrame)
+    (answerBindings : Substitution) (binding : Subst) : Prop where
+  framePayload : FindallFramePayloadAgrees cell frame
+  queryTemplate : before.control.qterm = frame.template
+  state :
+    CollectionOpenStateRelates cell.reversed before.control.answers
+      childAfter before
+  answerReady :
+    FindallAnswerReadyTaskAgrees childAfter cell before answerBindings binding
+  encoding :
+    EncodingInjectiveOn
+      (copyVariables (answerBindings.applyTerm cell.template))
+  rawBound :
+    resolutionSeedHighWaterNames
+        (PLeaTTa.subst binding before.control.qterm).vars ≤
+      before.persistent.counter
+
+namespace FindallAnswerPayloadAgrees
+
+/-- Forget only the exact suspended-caller payload. -/
+theorem collection
+    {childAfter : Session} {cell : SourceCollectionCell}
+    {before : OpenConf} {frame : FindallFrame}
+    {answerBindings : Substitution} {binding : Subst}
+    (agreement :
+      FindallAnswerPayloadAgrees childAfter cell before frame answerBindings
+        binding) :
+    FindallCollectionAnswerPayloadAgrees childAfter cell before frame
+      answerBindings binding :=
+  { queryTemplate := agreement.queryTemplate
+    state := agreement.state
+    answerReady := agreement.answerReady
+    encoding := agreement.encoding
+    rawBound := agreement.rawBound }
+
+/-- One actual private answer successor extends the persistent copy debt and
+preserves all three typed allocator relations. -/
+theorem afterOpenState
+    {childAfter : Session} {cell : SourceCollectionCell}
+    {before : OpenConf} {frame : FindallFrame}
+    {answerBindings : Substitution} {binding : Subst}
+    (agreement :
+      FindallAnswerPayloadAgrees childAfter cell before frame answerBindings
+        binding) :
+    CollectionOpenStateRelates
+      (afterAnswer cell childAfter answerBindings).reversed
+      (privateAnswerTarget before binding).control.answers
+      (collectTemplate childAfter cell.template answerBindings).session
+      (privateAnswerTarget before binding) :=
+  agreement.collection.afterOpenState
 
 /-- The source payload update cannot alter the suspended compiler payload. -/
 theorem afterFramePayload
@@ -622,13 +708,123 @@ theorem afterQueryTemplate
     (agreement :
       FindallAnswerPayloadAgrees childAfter cell before frame answerBindings
         binding) :
-    (privateAnswerTarget before binding).control.qterm = frame.template := by
-  simpa using
-    (privateAnswerTarget_qterm before binding).trans agreement.queryTemplate
+    (privateAnswerTarget before binding).control.qterm = frame.template :=
+  agreement.collection.afterQueryTemplate
 
 end FindallAnswerPayloadAgrees
 
-/-- Exact one-answer source/fine correspondence at an active collector.
+/-- Exact collection-only one-answer correspondence at an active collector.
+
+This is the general private-step theorem.  It certifies the source answer,
+the fine private transition, occurrence ownership, ordered raw prepend,
+public-answer suppression, and the post-copy persistent state.  It does not
+claim that the suspended caller payload is already suitable for an exact-name
+exit; that stronger conclusion belongs to `ContextualFindallAnswerRelates`.
+
+The source outer step and fine private step are both real constructors.  The
+source child-step/fine-answer-ready correspondence is deliberately a premise
+through `payload.state`; this theorem does not launder that earlier phase into
+the oracle. -/
+structure ContextualFindallCollectionAnswerRelates
+    (prog : Prog) (gt : GroundingTable)
+    (beforeSession : Session) (beforeSearch : Search)
+    (childAfter : Session) (afterSearch : Search)
+    (cell : SourceCollectionCell) (answerBindings : Substitution)
+    (before after : OpenConf) (frame : FindallFrame)
+    (remaining : List Frame) (binding : Subst) : Prop where
+  sourceAnswer :
+    ActiveFindallAnswer beforeSession beforeSearch childAfter afterSearch
+      cell answerBindings
+  sourceStep :
+    RawStep beforeSession beforeSearch [] .none
+      (collectTemplate childAfter cell.template answerBindings).session
+      (.running afterSearch)
+  sourceSessionExact : beforeSession = childAfter
+  frameHead : before.frames = .findall frame :: remaining
+  fineHead : before.toConf.cur = some ([], binding)
+  fineStep : DemandDrivenStep.Step prog gt before after
+  fineTarget : after = privateAnswerTarget before binding
+  frameIdentity : cell.AgreesFrame (.findall frame)
+  occurrences :
+    CollectionOccurrenceAgrees afterSearch after.frames
+  framesPreserved : after.frames = before.frames
+  scopesPreserved : after.scopes = before.scopes
+  persistentPreserved : after.persistent = before.persistent
+  queryTemplateBefore : before.control.qterm = frame.template
+  queryTemplateAfter : after.control.qterm = frame.template
+  rawPrepended :
+    after.control.answers =
+      PLeaTTa.subst binding before.control.qterm ::
+        before.control.answers
+  publicAnswersPreserved :
+    publicAnswers after = publicAnswers before
+  payloadBefore :
+    FindallCollectionAnswerPayloadAgrees childAfter cell before frame
+      answerBindings binding
+  stateAfter :
+    CollectionOpenStateRelates
+      (afterAnswer cell childAfter answerBindings).reversed
+      after.control.answers
+      (collectTemplate childAfter cell.template answerBindings).session
+      after
+
+/-- One contextual source `collectionAnswer` and one arbitrary-frontier fine
+private answer step preserve the exact occurrence stack and produce the next
+copy-debt relation.  No exit-ready caller payload is assumed or produced. -/
+theorem ActiveFindallAnswer.privateCollectionAnswer_correspondence
+    {prog : Prog} {gt : GroundingTable}
+    {beforeSession childAfter : Session}
+    {beforeSearch afterSearch : Search}
+    {cell : SourceCollectionCell} {answerBindings : Substitution}
+    (answer :
+      ActiveFindallAnswer beforeSession beforeSearch childAfter afterSearch
+        cell answerBindings)
+    {before : OpenConf} {frame : FindallFrame}
+    {remaining : List Frame} {binding : Subst}
+    (frameHead : before.frames = .findall frame :: remaining)
+    (beforeOccurrences :
+      CollectionOccurrenceAgrees beforeSearch before.frames)
+    (payload :
+      FindallCollectionAnswerPayloadAgrees childAfter cell before frame
+        answerBindings binding) :
+    ContextualFindallCollectionAnswerRelates prog gt
+      beforeSession beforeSearch childAfter afterSearch cell answerBindings
+      before (privateAnswerTarget before binding) frame remaining binding := by
+  have fineHead : before.toConf.cur = some ([], binding) :=
+    payload.answerReady.fineHead
+  have fine :=
+    answer_is_one_private_step prog gt before frame remaining binding
+      frameHead fineHead
+  have aligned :
+      cell.AgreesFrame (.findall frame) ∧
+        CollectionOccurrenceAgrees afterSearch
+          (.findall frame :: remaining) := by
+    apply answer.occurrences_after
+    simpa [frameHead] using beforeOccurrences
+  exact
+    { sourceAnswer := answer
+      sourceStep := answer.sourceStep
+      sourceSessionExact := answer.childSession_exact
+      frameHead := frameHead
+      fineHead := fineHead
+      fineStep := fine.1
+      fineTarget := rfl
+      frameIdentity := aligned.1
+      occurrences := by
+        simpa [frameHead] using aligned.2
+      framesPreserved := fine.2.1
+      scopesPreserved := fine.2.2.1
+      persistentPreserved := fine.2.2.2.1
+      queryTemplateBefore := payload.queryTemplate
+      queryTemplateAfter := payload.afterQueryTemplate
+      rawPrepended := fine.2.2.2.2.2.1
+      publicAnswersPreserved := fine.2.2.2.2.2.2
+      payloadBefore := payload
+      stateAfter := payload.afterOpenState }
+
+/-- Exit-enriched one-answer source/fine correspondence at an active
+collector.  This conservatively extends the general private-step relation
+with an exact suspended-caller payload and the resulting exit packet.
 
 The source outer step and fine private step are both real constructors.  The
 source child-step/fine-answer-ready correspondence is deliberately a premise
@@ -681,6 +877,44 @@ structure ContextualFindallAnswerRelates
       (collectTemplate childAfter cell.template answerBindings).session
       (afterAnswer cell childAfter answerBindings) after frame
 
+namespace ContextualFindallAnswerRelates
+
+/-- Forget only the exit-ready suspended-caller conclusions. -/
+theorem collection
+    {prog : Prog} {gt : GroundingTable}
+    {beforeSession childAfter : Session}
+    {beforeSearch afterSearch : Search}
+    {cell : SourceCollectionCell} {answerBindings : Substitution}
+    {before after : OpenConf} {frame : FindallFrame}
+    {remaining : List Frame} {binding : Subst}
+    (agreement :
+      ContextualFindallAnswerRelates prog gt beforeSession beforeSearch
+        childAfter afterSearch cell answerBindings before after frame remaining
+        binding) :
+    ContextualFindallCollectionAnswerRelates prog gt beforeSession
+      beforeSearch childAfter afterSearch cell answerBindings before after frame
+      remaining binding :=
+  { sourceAnswer := agreement.sourceAnswer
+    sourceStep := agreement.sourceStep
+    sourceSessionExact := agreement.sourceSessionExact
+    frameHead := agreement.frameHead
+    fineHead := agreement.fineHead
+    fineStep := agreement.fineStep
+    fineTarget := agreement.fineTarget
+    frameIdentity := agreement.frameIdentity
+    occurrences := agreement.occurrences
+    framesPreserved := agreement.framesPreserved
+    scopesPreserved := agreement.scopesPreserved
+    persistentPreserved := agreement.persistentPreserved
+    queryTemplateBefore := agreement.queryTemplateBefore
+    queryTemplateAfter := agreement.queryTemplateAfter
+    rawPrepended := agreement.rawPrepended
+    publicAnswersPreserved := agreement.publicAnswersPreserved
+    payloadBefore := agreement.payloadBefore.collection
+    stateAfter := agreement.stateAfter }
+
+end ContextualFindallAnswerRelates
+
 /-- One contextual source `collectionAnswer` and one arbitrary-frontier fine
 private answer step preserve the exact occurrence stack and produce the next
 copy-debt/exit-payload relation. -/
@@ -703,37 +937,28 @@ theorem ActiveFindallAnswer.privateAnswer_correspondence
     ContextualFindallAnswerRelates prog gt
       beforeSession beforeSearch childAfter afterSearch cell answerBindings
       before (privateAnswerTarget before binding) frame remaining binding := by
-  have fineHead : before.toConf.cur = some ([], binding) :=
-    payload.answerReady.fineHead
-  have fine :=
-    answer_is_one_private_step prog gt before frame remaining binding
-      frameHead fineHead
-  have aligned :
-      cell.AgreesFrame (.findall frame) ∧
-        CollectionOccurrenceAgrees afterSearch
-          (.findall frame :: remaining) := by
-    apply answer.occurrences_after
-    simpa [frameHead] using beforeOccurrences
+  have general :=
+    answer.privateCollectionAnswer_correspondence (prog := prog) (gt := gt)
+      frameHead beforeOccurrences payload.collection
   exact
-    { sourceAnswer := answer
-      sourceStep := answer.sourceStep
-      sourceSessionExact := answer.childSession_exact
-      frameHead := frameHead
-      fineHead := fineHead
-      fineStep := fine.1
-      fineTarget := rfl
-      frameIdentity := aligned.1
-      occurrences := by
-        simpa [frameHead] using aligned.2
-      framesPreserved := fine.2.1
-      scopesPreserved := fine.2.2.1
-      persistentPreserved := fine.2.2.2.1
-      queryTemplateBefore := payload.queryTemplate
-      queryTemplateAfter := payload.afterQueryTemplate
-      rawPrepended := fine.2.2.2.2.2.1
-      publicAnswersPreserved := fine.2.2.2.2.2.2
+    { sourceAnswer := general.sourceAnswer
+      sourceStep := general.sourceStep
+      sourceSessionExact := general.sourceSessionExact
+      frameHead := general.frameHead
+      fineHead := general.fineHead
+      fineStep := general.fineStep
+      fineTarget := general.fineTarget
+      frameIdentity := general.frameIdentity
+      occurrences := general.occurrences
+      framesPreserved := general.framesPreserved
+      scopesPreserved := general.scopesPreserved
+      persistentPreserved := general.persistentPreserved
+      queryTemplateBefore := general.queryTemplateBefore
+      queryTemplateAfter := general.queryTemplateAfter
+      rawPrepended := general.rawPrepended
+      publicAnswersPreserved := general.publicAnswersPreserved
       payloadBefore := payload
-      stateAfter := payload.afterOpenState
+      stateAfter := general.stateAfter
       exitPayloadAfter := payload.afterExitPayload }
 
 /-- A mismatched live query term and suspended frame template cannot inhabit
@@ -743,8 +968,8 @@ theorem mismatched_query_template_rejected
     {before : OpenConf} {frame : FindallFrame}
     {answerBindings : Substitution} {binding : Subst}
     (different : before.control.qterm ≠ frame.template) :
-    ¬ FindallAnswerPayloadAgrees childAfter cell before frame answerBindings
-      binding := by
+    ¬ FindallCollectionAnswerPayloadAgrees childAfter cell before frame
+      answerBindings binding := by
   intro agreement
   exact different agreement.queryTemplate
 
@@ -879,6 +1104,153 @@ theorem nested_answer_only_updates_innermost_cell :
   intro changed
   have lengths := congrArg List.length changed
   simp [sourceCollectionCell] at lengths
+
+/-- The collection-only theorem genuinely covers a residual-alias state that
+the exact exit-ready payload excludes.
+
+The program shape is `findall(T, Generator, T)` after a cumulative alias has
+already been established.  The independent and executable substitutions
+choose opposite but equivalent residual orientations.  One real source
+`collectionAnswer` and one real fine private answer step still correspond;
+only the strict post-entry caller spelling is impossible.  Thus removing
+`framePayload` from the general theorem is semantic progress rather than a
+cosmetic structure projection. -/
+theorem residual_alias_private_answer_relates_without_frame_payload
+    (prog : Prog) (gt : GroundingTable) :
+    let fixture :=
+      PrologFindallResidualVariantBridge.residualAliasMaterializationWitness
+    let session : Session := {}
+    let counter :=
+      resolutionSeedHighWaterNames
+        (PLeaTTa.subst fixture.runtimeBindings fixture.runtimeTemplate).vars
+    let cell :=
+      sourceCollectionCell 2 ⟨1⟩ 0 fixture.sourceTemplate
+        fixture.sourceTemplate fixture.sourceBindings [] []
+    let beforeSearch : Search :=
+      .collectionBoundary ⟨1⟩ 0
+        (.cutBoundary 2 (.task 2 [] fixture.sourceBindings))
+        fixture.sourceTemplate fixture.sourceTemplate fixture.sourceBindings [] []
+    let afterSearch : Search :=
+      .collectionBoundary ⟨1⟩ 0 (.cutBoundary 2 .done)
+        fixture.sourceTemplate fixture.sourceTemplate fixture.sourceBindings []
+        [(collectTemplate session fixture.sourceTemplate
+          fixture.sourceBindings).prepared.copied]
+    let control : Control :=
+      { cur := some ([], fixture.runtimeBindings)
+        alts := []
+        qterm := fixture.runtimeTemplate
+        answers := [] }
+    let frame : FindallFrame :=
+      { preCut := 2
+        preCollection := 1
+        outer := control
+        template := fixture.runtimeTemplate
+        result := fixture.runtimeTemplate
+        rest := []
+        binding := fixture.runtimeBindings }
+    let before : OpenConf :=
+      { persistent := { world := {}, counter := counter }
+        control := control
+        frames := [.findall frame]
+        scopes := {} }
+    ContextualFindallCollectionAnswerRelates prog gt
+        session beforeSearch session afterSearch cell fixture.sourceBindings
+        before (privateAnswerTarget before fixture.runtimeBindings) frame []
+        fixture.runtimeBindings ∧
+      ¬ FindallFramePayloadAgrees cell frame := by
+  let fixture :=
+    PrologFindallResidualVariantBridge.residualAliasMaterializationWitness
+  let session : Session := {}
+  let counter :=
+    resolutionSeedHighWaterNames
+      (PLeaTTa.subst fixture.runtimeBindings fixture.runtimeTemplate).vars
+  let cell :=
+    sourceCollectionCell 2 ⟨1⟩ 0 fixture.sourceTemplate
+      fixture.sourceTemplate fixture.sourceBindings [] []
+  let beforeSearch : Search :=
+    .collectionBoundary ⟨1⟩ 0
+      (.cutBoundary 2 (.task 2 [] fixture.sourceBindings))
+      fixture.sourceTemplate fixture.sourceTemplate fixture.sourceBindings [] []
+  let afterSearch : Search :=
+    .collectionBoundary ⟨1⟩ 0 (.cutBoundary 2 .done)
+      fixture.sourceTemplate fixture.sourceTemplate fixture.sourceBindings []
+      [(collectTemplate session fixture.sourceTemplate
+        fixture.sourceBindings).prepared.copied]
+  let control : Control :=
+    { cur := some ([], fixture.runtimeBindings)
+      alts := []
+      qterm := fixture.runtimeTemplate
+      answers := [] }
+  let frame : FindallFrame :=
+    { preCut := 2
+      preCollection := 1
+      outer := control
+      template := fixture.runtimeTemplate
+      result := fixture.runtimeTemplate
+      rest := []
+      binding := fixture.runtimeBindings }
+  let before : OpenConf :=
+    { persistent := { world := {}, counter := counter }
+      control := control
+      frames := [.findall frame]
+      scopes := {} }
+  have sourceAnswer :
+      ActiveFindallAnswer session beforeSearch session afterSearch cell
+        fixture.sourceBindings := by
+    apply ActiveFindallAnswer.here
+    exact
+      ExactAnswerProducer.ofRawStep
+        (.cutBoundaryProgress 2 _ _ [.answer fixture.sourceBindings] _ _
+          (.taskAnswer 2 fixture.sourceBindings session))
+  have occurrences :
+      CollectionOccurrenceAgrees beforeSearch before.frames := by
+    simp [beforeSearch, before, frame, CollectionOccurrenceAgrees,
+      activeCollectionCells, SourceCollectionCell.AgreesFrame,
+      sourceCollectionCell]
+  have emptyPersistent :
+      SessionRelatesPersistent (CopyDebtFrontier [] []) session
+        before.persistent := by
+    refine { database := ?_, fresh := ?_ }
+    · simpa [session, before] using
+        (PrologStateBridge.empty_session_relates (fun _ _ => True) trivial).database
+    · simpa [CopyDebtFrontier, session, before] using
+        (CollectionCopyFrontier.empty 0 counter)
+  have payload :
+      FindallCollectionAnswerPayloadAgrees session cell before frame
+        fixture.sourceBindings fixture.runtimeBindings := by
+    refine
+      { queryTemplate := rfl
+        state := ?_
+        answerReady := ?_
+        encoding := ?_
+        rawBound := ?_ }
+    · exact
+        { persistent := emptyPersistent
+          cut := rfl
+          exception := rfl
+          collection := rfl }
+    · rcases fixture.producer with
+        ⟨alpha, support, canonical, referenceBase, data, template,
+          templateSupported⟩
+      exact
+        ⟨alpha, support, canonical, referenceBase, emptyPersistent, rfl,
+          data,
+          by simpa [cell, before, control, sourceCollectionCell] using template,
+          by simpa [cell, sourceCollectionCell] using templateSupported⟩
+    · change
+        EncodingInjectiveOn
+          (copyVariables
+            (fixture.sourceBindings.applyTerm fixture.sourceTemplate))
+      exact fixture.encoding
+    · exact Nat.le_refl counter
+  have related :=
+    sourceAnswer.privateCollectionAnswer_correspondence
+      (prog := prog) (gt := gt) (frame := frame) (remaining := [])
+      (binding := fixture.runtimeBindings) rfl occurrences payload
+  refine ⟨related, ?_⟩
+  intro strict
+  apply fixture.exactMaterializationFails
+  simpa [cell, frame, fixture, sourceCollectionCell] using strict.entryOutput
 
 /-- Fully closed inhabitance of the actual producer path:
 

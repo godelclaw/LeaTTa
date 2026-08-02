@@ -6,6 +6,7 @@ Purpose: Compose one active local findall answer with the exact independent
   source catch-up to the same eagerly selected local alternative
 Trusted boundary: none
 Main exports: ActiveFindallLocalLiveAnswerResourceAgrees,
+  ContextualFindallCollectionLocalLiveCatchupRelates,
   ContextualFindallLocalLiveCatchupRelates
 -/
 import PLeaTTa.Proofs.PrologFindallAnswerExitBridge
@@ -323,8 +324,62 @@ theorem sourceCatchup
 
 end ActiveFindallLocalLiveAnswerResourceAgrees
 
-/-- Exact contextual correspondence for one active local collector answer
+/-- General contextual correspondence for one active local collector answer
 whose eager executable pull selects another locally owned occurrence.
+
+This variant carries only the collection-step payload.  It therefore applies
+across residual-alias orientations that are semantically valid during
+collection but do not yet support exact-name caller exit packaging.
+
+The independent source emits the private answer in one transition and then
+takes `count` silent DFS transitions to the same branch-indexed frontier.  The
+fine additive lane performs the answer and eager pull in exactly one step. -/
+structure ContextualFindallCollectionLocalLiveCatchupRelates
+    (alpha : List (LogicVar × String))
+    (prog : Prog) (gt : GroundingTable)
+    (beforeSession childAfter : Session)
+    (beforeSearch answeredSearch : Search)
+    (cell : SourceCollectionCell) (answerBindings : Substitution)
+    (before answered : OpenConf) (frame : FindallFrame)
+    (remaining : List Frame) (binding : Subst)
+    (beforeResources afterResources : List RetainedAlternativeSegment)
+    (afterAlts : List PLeaTTa.Alt)
+    (selectedGoals : List PLeaTTa.Goal) (selectedBinding : Subst)
+    (selectedTail : List PLeaTTa.Alt)
+    (count : Nat) (target : Search) : Prop where
+  source :
+    ActiveFindallLocalLiveAnswerResourceAgrees alpha beforeSession beforeSearch
+      childAfter answeredSearch cell answerBindings beforeResources
+      afterResources before.control.alts afterAlts selectedGoals
+      selectedBinding selectedTail
+  answer :
+    ContextualFindallCollectionAnswerResourceRelates alpha prog gt
+      beforeSession beforeSearch childAfter answeredSearch cell answerBindings
+      before answered frame remaining binding beforeResources afterResources
+      afterAlts
+  catchup :
+    SilentStepsN
+      (collectTemplate childAfter cell.template answerBindings).session count
+      answeredSearch target
+  ready :
+    ConservativeReadyPullTarget alpha selectedGoals selectedBinding
+      selectedTail target
+  fineSelected :
+    answered.control.cur = some (selectedGoals, selectedBinding) ∧
+      answered.control.alts = selectedTail
+  answerCopyStep :
+    CopyStep prog gt (.open before) (.open answered)
+  sourceRun :
+    PeTTaSpec.PrologCore.GoalSemantics.StepsN (count + 1)
+      (.running beforeSession beforeSearch) []
+      (.running
+        (collectTemplate childAfter cell.template answerBindings).session
+        target)
+  fineRun :
+    CopyStepsN prog gt 1 (.open before) (.open answered)
+
+/-- Exit-enriched contextual correspondence for one active local collector
+answer whose eager executable pull selects another locally owned occurrence.
 
 The independent source emits the private answer in one transition and then
 takes `count` silent DFS transitions to the same branch-indexed frontier.  The
@@ -376,6 +431,138 @@ structure ContextualFindallLocalLiveCatchupRelates
         target)
   fineRun :
     CopyStepsN prog gt 1 (.open before) (.open answered)
+
+namespace ContextualFindallLocalLiveCatchupRelates
+
+/-- Forget only the strict exit-ready answer packet. -/
+theorem collection
+    {alpha : List (LogicVar × String)}
+    {prog : Prog} {gt : GroundingTable}
+    {beforeSession childAfter : Session}
+    {beforeSearch answeredSearch : Search}
+    {cell : SourceCollectionCell} {answerBindings : Substitution}
+    {before answered : OpenConf} {frame : FindallFrame}
+    {remaining : List Frame} {binding : Subst}
+    {beforeResources afterResources : List RetainedAlternativeSegment}
+    {afterAlts : List PLeaTTa.Alt}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {selectedTail : List PLeaTTa.Alt}
+    {count : Nat} {target : Search}
+    (agreement :
+      ContextualFindallLocalLiveCatchupRelates alpha prog gt beforeSession
+        childAfter beforeSearch answeredSearch cell answerBindings before
+        answered frame remaining binding beforeResources afterResources
+        afterAlts selectedGoals selectedBinding selectedTail count target) :
+    ContextualFindallCollectionLocalLiveCatchupRelates alpha prog gt
+      beforeSession childAfter beforeSearch answeredSearch cell answerBindings
+      before answered frame remaining binding beforeResources afterResources
+      afterAlts selectedGoals selectedBinding selectedTail count target :=
+  { source := agreement.source
+    answer := agreement.answer.collection
+    catchup := agreement.catchup
+    ready := agreement.ready
+    fineSelected := agreement.fineSelected
+    answerCopyStep := agreement.answerCopyStep
+    sourceRun := agreement.sourceRun
+    fineRun := agreement.fineRun }
+
+end ContextualFindallLocalLiveCatchupRelates
+
+namespace ContextualFindallCollectionAnswerRelates
+
+/-- Compose one jointly certified local-live private answer with its exact
+independent-source catch-up and bounded fine answer step, requiring no
+exit-ready suspended-caller payload.
+
+[SPEC metta.pl:251-256; SWI:findall/3] -/
+theorem localLiveCatchup
+    {alpha : List (LogicVar × String)}
+    {prog : Prog} {gt : GroundingTable}
+    {beforeSession childAfter : Session}
+    {beforeSearch answeredSearch : Search}
+    {cell : SourceCollectionCell} {answerBindings : Substitution}
+    {before : OpenConf} {frame : FindallFrame}
+    {remaining : List Frame} {binding : Subst}
+    {beforeResources afterResources : List RetainedAlternativeSegment}
+    {afterAlts : List PLeaTTa.Alt}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {selectedTail : List PLeaTTa.Alt}
+    (source :
+      ActiveFindallLocalLiveAnswerResourceAgrees alpha beforeSession
+        beforeSearch childAfter answeredSearch cell answerBindings
+        beforeResources afterResources before.control.alts afterAlts
+        selectedGoals selectedBinding selectedTail)
+    (beforeFrameHead : before.frames = .findall frame :: remaining)
+    (beforeOccurrences :
+      CollectionOccurrenceAgrees beforeSearch before.frames)
+    (payloadBefore :
+      FindallCollectionAnswerPayloadAgrees childAfter cell before frame
+        answerBindings binding) :
+    exists count target,
+      ContextualFindallCollectionLocalLiveCatchupRelates alpha prog gt
+        beforeSession childAfter beforeSearch answeredSearch cell
+        answerBindings before (privateAnswerTarget before binding) frame
+        remaining binding beforeResources afterResources afterAlts selectedGoals
+        selectedBinding selectedTail count target := by
+  let answered := privateAnswerTarget before binding
+  have answer :
+      ContextualFindallCollectionAnswerResourceRelates alpha prog gt
+        beforeSession beforeSearch childAfter answeredSearch cell
+        answerBindings before answered frame remaining binding beforeResources
+        afterResources afterAlts :=
+    source.toAnswer.privateCollectionAnswer_correspondence
+      (prog := prog) (gt := gt) beforeFrameHead beforeOccurrences payloadBefore
+  obtain ⟨count, target, catchup, ready⟩ := source.sourceCatchup
+  have fineSelected :
+      answered.control.cur = some (selectedGoals, selectedBinding) ∧
+        answered.control.alts = selectedTail :=
+    PLeaTTa.PrologFindallAnswerResourceBridge.PullOutcomeAgrees.fields_of_pull_some
+      answer.finePullOutcome source.pullExact
+  have answerCopy :
+      CopyStep prog gt (.open before) (.open answered) := by
+    rw [answer.base.fineTarget]
+    exact answer_is_one_private_copy_step prog gt before binding
+      answer.base.fineHead
+  have first :
+      PeTTaSpec.PrologCore.GoalSemantics.Transition
+        (.running beforeSession beforeSearch) []
+        (.running
+          (collectTemplate childAfter cell.template answerBindings).session
+          answeredSearch) :=
+    .ordinary _ [] _ _ _ answer.base.sourceStep
+  have firstRun :
+      PeTTaSpec.PrologCore.GoalSemantics.StepsN 1
+        (.running beforeSession beforeSearch) []
+        (.running
+          (collectTemplate childAfter cell.template answerBindings).session
+          answeredSearch) := by
+    simpa using
+      (PeTTaSpec.PrologCore.GoalSemantics.StepsN.succ 0 _ _ _ [] [] first
+        (.zero _))
+  have sourceRun :
+      PeTTaSpec.PrologCore.GoalSemantics.StepsN (count + 1)
+        (.running beforeSession beforeSearch) []
+        (.running
+          (collectTemplate childAfter cell.template answerBindings).session
+          target) := by
+    simpa [Nat.add_comm] using
+      PeTTaSpec.PrologCore.GoalSemantics.StepsN.trans firstRun
+        catchup.toStepsN
+  have fineRun :
+      CopyStepsN prog gt 1 (.open before) (.open answered) := by
+    simpa using CopyStepsN.succ 0 _ _ _ answerCopy (.zero _)
+  exact
+    ⟨count, target,
+      { source := source
+        answer := by simpa [answered] using answer
+        catchup := catchup
+        ready := ready
+        fineSelected := by simpa [answered] using fineSelected
+        answerCopyStep := by simpa [answered] using answerCopy
+        sourceRun := sourceRun
+        fineRun := by simpa [answered] using fineRun }⟩
+
+end ContextualFindallCollectionAnswerRelates
 
 namespace ContextualFindallAnswerRelates
 

@@ -477,6 +477,7 @@ STRICT_AXIOM_AUDIT_ROWS = {
     "BISIM.root_closed_local_live_answer",
     "BISIM.root_closed_public_answer_value",
     "BISIM.answer_visibility_public",
+    "BISIM.findall_collection_answer_general",
 }
 
 
