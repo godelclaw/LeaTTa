@@ -149,6 +149,7 @@ private def goalSummary : Goal → String
   | .callDyn _ args _ => s!"dynamic-call/{args.length}"
   | .evalg _ _ => "eval"
   | .catchg _ _ _ => "catch"
+  | .catchExit _ _ => "catch-exit"
   | .softcut _ _ _ _ => "softcut"
   | .eq _ _ => "unify"
   | .compileAlias _ _ => "compiler-alias"
@@ -188,17 +189,36 @@ private def persistentBindingSizes
   let runtimeState := binding.1.1
   (runtimeState.active.size, runtimeState.memo.depth)
 
+mutual
+
+/-- Fold every binding owned by an alternative tree, including suspended
+streaming-catch resumptions. -/
+private def foldAltBindings {Binding Acc : Type}
+    (visit : Acc → Binding → Acc) : Acc → Alt Binding → Acc
+  | current, .barrier => current
+  | current, .br _ binding => visit current binding
+  | current, .catchActive frame => visit current frame.entry
+  | current, .catchDormant frame protectedAlts =>
+      foldAltBindingsList visit (visit current frame.entry) protectedAlts
+
+/-- List companion for `foldAltBindings`. -/
+private def foldAltBindingsList {Binding Acc : Type}
+    (visit : Acc → Binding → Acc) : Acc → List (Alt Binding) → Acc
+  | current, [] => current
+  | current, alternative :: rest =>
+      foldAltBindingsList visit
+        (foldAltBindings visit current alternative) rest
+
+end
+
 private def persistentConfSizes
     (core : Conf SubstEngine.executablePersistent.State) : Nat × Nat :=
   let initial := match core.cur with
     | some (_, binding) => persistentBindingSizes binding
     | none => (0, 0)
-  core.alts.foldl (fun current alt =>
-    match alt with
-    | .barrier => current
-    | .br _ binding =>
-        let sizes := persistentBindingSizes binding
-        (max current.1 sizes.1, max current.2 sizes.2)) initial
+  foldAltBindingsList (fun current binding =>
+    let sizes := persistentBindingSizes binding
+    (max current.1 sizes.1, max current.2 sizes.2)) initial core.alts
 
 private def hostProfileCheckpointReached (exchangeLimit? : Option Nat)
     (state : HostMachine.State SubstEngine.executablePersistent.State) : Bool :=
@@ -730,10 +750,8 @@ private def runProgramMain (args : List String) : IO UInt32 := do
                   let (pendingGoals, substSize) := match done.cur with
                     | some (gs, b) => (gs.length, b.length)
                     | none => (0, 0)
-                  let maxAltSubst := done.alts.foldl (fun n alt =>
-                    match alt with
-                    | .br _ b => Nat.max n b.length
-                    | .barrier => n) 0
+                  let maxAltSubst := foldAltBindingsList
+                    (fun n b => Nat.max n b.length) 0 done.alts
                   if visible && observable then
                     IO.println s!"PROFILE q{qi} steps={steps} answers={done.answers.length} done={doneNow} stalled={stalled} goals={pendingGoals} subst={substSize} maxSubst={maxSubst} alts={done.alts.length} maxAltSubst={maxAltSubst} selfAtoms={done.world.selfAtoms.length} clauses={done.world.progClauses.length} counter={done.counter}"
                 else if incomplete then

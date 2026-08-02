@@ -175,7 +175,7 @@ theorem localLiveAnswer
         fineStep (.zero _)
   have selectedPull :
       PLeaTTa.pullAux before.carrier.index.openConf.control.alts =
-        some ((selectedGoals, selectedBinding), selectedTail) := by
+        some (.branch selectedGoals selectedBinding, selectedTail) := by
     rw [ready.bankExact]
     exact landing.pullAux_exact
   have fineSelected :

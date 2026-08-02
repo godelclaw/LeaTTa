@@ -454,6 +454,9 @@ theorem terminal_fields_of_pull_none
   | selected goals binding rest selected =>
       rw [empty] at selected
       cases selected
+  | catchResumed frame protectedAlts rest resumed =>
+      rw [empty] at resumed
+      cases resumed
 
 end PullOutcomeAgrees
 

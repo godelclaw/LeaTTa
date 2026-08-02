@@ -926,6 +926,21 @@ theorem compilerGoalNamesAllowed_compileAlias {external : String → Prop}
     left.vars right.vars).2
   exact ⟨leftAllowed, rightAllowed⟩
 
+/-- The typed streaming-catch delimiter carries the protected template and
+caller result as ordinary liveness roots; both therefore obey the same
+compiler-name discipline as an equality boundary. -/
+theorem compilerGoalNamesAllowed_catchExit {external : String → Prop}
+    {origin limit : Nat} {template result : Atom}
+    (templateAllowed :
+      CompilerAtomNamesAllowed external origin limit template)
+    (resultAllowed :
+      CompilerAtomNamesAllowed external origin limit result) :
+    CompilerGoalNamesAllowed external origin limit
+      (.catchExit template result) := by
+  apply (compilerNamesAllowed_append_iff external origin limit
+    template.vars result.vars).2
+  exact ⟨templateAllowed, resultAllowed⟩
+
 theorem compileBranch_namesAllowed {external : String → Prop}
     {origin limit : Nat} {out term : Atom} {goals aliases : List Goal}
     {branch : Atom × List Goal}
@@ -1220,6 +1235,15 @@ theorem compilerGoalNamesAllowed_substCompiled
       CompilerNamesAllowed]
   case cutAt => simp [substCompiledGoal, specializationGoalVars,
       CompilerNamesAllowed]
+  case catchExit template result =>
+      intro allowed
+      change CompilerNamesAllowed external origin limit
+        (template.vars ++ result.vars) at allowed
+      have parts := (compilerNamesAllowed_append_iff external origin limit
+        template.vars result.vars).mp allowed
+      exact compilerGoalNamesAllowed_catchExit
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.1)
+        (CompilerAtomNamesAllowed.subst bindingAllowed parts.2)
   case findall template goals result goalsIH =>
       intro allowed
       change CompilerNamesAllowed external origin limit

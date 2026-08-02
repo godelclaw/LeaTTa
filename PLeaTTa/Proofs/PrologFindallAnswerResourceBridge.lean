@@ -403,9 +403,10 @@ theorem underChoice_endpoints
 
 end ActiveFindallAnswerResourceAgrees
 
-/-- Total, exact control projection of one executable `pull`.  The exhausted
-case and the selected-branch case remain distinct, and the selected case
-retains the literal alternative tail returned by `pullAux`. -/
+/-- Total, exact control projection of one executable `pull`.  Exhaustion,
+ordinary branch selection, and dormant-catch resumption remain distinct.
+The resumption case reinstalls the protected alternatives and active catch
+delimiter exactly as `pull` does; it is neither an answer nor exhaustion. -/
 inductive PullOutcomeAgrees :
     List PLeaTTa.Alt -> Option (List PLeaTTa.Goal × Subst) ->
       List PLeaTTa.Alt -> Prop where
@@ -416,8 +417,16 @@ inductive PullOutcomeAgrees :
       (goals : List PLeaTTa.Goal) (binding : Subst)
       (rest : List PLeaTTa.Alt)
       (outcome :
-        PLeaTTa.pullAux beforeAlts = some ((goals, binding), rest)) :
+        PLeaTTa.pullAux beforeAlts =
+          some (.branch goals binding, rest)) :
       PullOutcomeAgrees beforeAlts (some (goals, binding)) rest
+  | catchResumed {beforeAlts : List PLeaTTa.Alt}
+      (frame : PLeaTTa.CatchFrame) (protectedAlts rest : List PLeaTTa.Alt)
+      (outcome :
+        PLeaTTa.pullAux beforeAlts =
+          some (.catchResume frame protectedAlts, rest)) :
+      PullOutcomeAgrees beforeAlts none
+        (protectedAlts ++ .catchActive frame :: rest)
 
 namespace PullOutcomeAgrees
 
@@ -438,8 +447,12 @@ theorem of_pull (conf : PLeaTTa.Conf) :
   | none =>
       exact .exhausted sameOutcome.symm
   | some result =>
-      rcases result with ⟨⟨goals, binding⟩, rest⟩
-      exact .selected goals binding rest sameOutcome.symm
+      rcases result with ⟨target, rest⟩
+      cases target with
+      | branch goals binding =>
+          exact .selected goals binding rest sameOutcome.symm
+      | catchResume frame protectedAlts =>
+          exact .catchResumed frame protectedAlts rest sameOutcome.symm
 
 /-- A selected concrete pull fixes both post-pull control fields.  This is an
 inversion of the total pull classifier, not a second execution of `pullAux`,
@@ -452,7 +465,8 @@ theorem fields_of_pull_some
     {rest : List PLeaTTa.Alt}
     (outcome : PullOutcomeAgrees beforeAlts cur afterAlts)
     (selected :
-      PLeaTTa.pullAux beforeAlts = some ((goals, binding), rest)) :
+      PLeaTTa.pullAux beforeAlts =
+        some (.branch goals binding, rest)) :
     cur = some (goals, binding) ∧ afterAlts = rest := by
   cases outcome with
   | exhausted exhausted =>
@@ -462,6 +476,9 @@ theorem fields_of_pull_some
       rw [actual] at selected
       cases selected
       exact ⟨rfl, rfl⟩
+  | catchResumed frame protectedAlts actualRest actual =>
+      rw [actual] at selected
+      cases selected
 
 end PullOutcomeAgrees
 

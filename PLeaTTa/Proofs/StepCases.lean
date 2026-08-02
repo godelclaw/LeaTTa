@@ -129,6 +129,66 @@ theorem step_cut (c : Conf) (rest : List Goal) (b : Subst)
     unfold step; rw [h]
   rw [hstep]; exact Step.cut_untagged c rest b h
 
+/-- Catch is a one-step demand-driven entry outside its finite grounded
+    shortcut; the historical executable no longer hides a nested run. -/
+theorem step_catchg (c : Conf) (tmpl : Atom) (sub : List Goal) (res : Atom)
+    (rest : List Goal) (b : Subst)
+    (h : c.cur = some (Goal.catchg tmpl sub res :: rest, b)) :
+    Step prog gt c (step prog gt fuel c) := by
+  cases hc : catchDirect? gt b tmpl sub with
+  | none =>
+      have hstep : step prog gt fuel c =
+          enterStreamingCatch c tmpl sub res rest b := by
+        unfold step
+        rw [h]
+        simp [hc]
+      rw [hstep]
+      exact Step.catch_stream_enter c tmpl sub res rest b h hc
+  | some direct =>
+      cases direct with
+      | error err =>
+          have hstep : step prog gt fuel c =
+              { c with cur := some (Goal.eq res err :: rest, b),
+                       world := c.world,
+                       counter := advanceCounterPastAtoms c.counter [err] } := by
+            unfold step
+            rw [h]
+            simp [hc]
+          rw [hstep]
+          exact Step.catch_direct_error c tmpl sub res rest b err h hc
+      | answers answers =>
+          have licensed :=
+            Step.catch_direct_answers (prog := prog) (gt := gt)
+              c tmpl sub res rest b answers h hc
+          cases answers with
+          | nil =>
+              simpa [step, h, hc, advanceCounterPastAtoms,
+                resolutionSeedHighWaterAtoms] using licensed
+          | cons answer answers =>
+              simpa [step, h, hc] using licensed
+
+/-- The compiler-unproducible catch boundary is nevertheless an exact
+    executable/spec step once installed by `enterStreamingCatch`. -/
+theorem step_catchExit (c : Conf) (template result : Atom)
+    (rest : List Goal) (b : Subst)
+    (h : c.cur = some (Goal.catchExit template result :: rest, b)) :
+    Step prog gt c (step prog gt fuel c) := by
+  cases hu : unifyB b result template with
+  | none =>
+      have hstep : step prog gt fuel c = pull { c with cur := none } := by
+        unfold step
+        rw [h]
+        simp only [hu]
+      rw [hstep]
+      exact Step.catch_stream_exit_fail c template result rest b h hu
+  | some b' =>
+      have hstep : step prog gt fuel c = exitStreamingCatch c b' := by
+        unfold step
+        rw [h]
+        simp only [hu]
+      rw [hstep]
+      exact Step.catch_stream_exit c template result rest b b' h hu
+
 theorem step_onceg (c : Conf) (tmpl : Atom) (sub : List Goal) (res : Atom)
     (rest : List Goal) (b : Subst)
     (h : c.cur = some (Goal.onceg tmpl sub res :: rest, b)) :
@@ -290,7 +350,7 @@ theorem step_call (c : Conf) (f : String) (args : List Atom) (res : Atom)
             ⟨f, args, res, rest, b, h, by
               simp [PWorld.needsTableCompute, hcan, hcache]⟩
           have hn : nestedRunHead c :=
-            Or.inr (Or.inr (Or.inr (Or.inl ht)))
+            Or.inr (Or.inr (Or.inl ht))
           exact Or.inr hn
   | false =>
       cases he : (c.world.clauseHeadCandidates f).isEmpty with
@@ -790,9 +850,10 @@ theorem machineMirrorsSpec_proved : machineMirrorsSpec := by
   | some (Goal.evalg v res :: rest, b) =>
       exact Or.inl (step_evalg prog gt fuel c v res rest b hcur)
   | some (Goal.catchg tmpl sub res :: rest, b) =>
-      have hc : catchRunHead c := ⟨tmpl, sub, res, rest, b, hcur⟩
-      have hn : nestedRunHead c := Or.inr (Or.inr (Or.inl hc))
-      exact Or.inr hn
+      exact Or.inl (step_catchg prog gt fuel c tmpl sub res rest b hcur)
+  | some (Goal.catchExit template result :: rest, b) =>
+      exact Or.inl
+        (step_catchExit prog gt fuel c template result rest b hcur)
   | some (Goal.softcut tmpl sub thn els :: rest, b) =>
       have hs : softcutRunHead c := ⟨tmpl, sub, thn, els, rest, b, hcur⟩
       have hn : nestedRunHead c := Or.inr (Or.inl hs)
@@ -806,7 +867,7 @@ theorem machineMirrorsSpec_proved : machineMirrorsSpec := by
   | some (Goal.transactiong tmpl sub :: rest, b) =>
       have ht : transactionRunHead c := ⟨tmpl, sub, rest, b, hcur⟩
       have hn : nestedRunHead c :=
-        Or.inr (Or.inr (Or.inr (Or.inr ht)))
+        Or.inr (Or.inr (Or.inr ht))
       exact Or.inr hn
   | some (Goal.amb branches res :: rest, b) =>
       exact Or.inl (step_amb prog gt fuel c branches res rest b hcur)
@@ -861,7 +922,7 @@ theorem not_nested_call_of_not_table (c : Conf) (f : String)
     (hcan : c.world.canTableCall f (args.map (subst b)) = false) :
     ¬ nestedRunHead c := by
   intro hn
-  simp [nestedRunHead, findallRunHead, softcutRunHead, catchRunHead,
+  simp [nestedRunHead, findallRunHead, softcutRunHead,
     tableRunHead, transactionRunHead, PWorld.needsTableCompute, hcur] at hn
   rcases hn with ⟨f1, args1, res1, rest1, b1, heq, hcan1, _hcache⟩
   rcases heq with ⟨⟨⟨hf, hargsres⟩, _hrest⟩, hb⟩
@@ -879,7 +940,7 @@ theorem not_nested_call_of_cache (c : Conf) (f : String)
     (hcache : c.world.tableLookup (tableKey f (args.map (subst b))) = some answers) :
     ¬ nestedRunHead c := by
   intro hn
-  simp [nestedRunHead, findallRunHead, softcutRunHead, catchRunHead,
+  simp [nestedRunHead, findallRunHead, softcutRunHead,
     tableRunHead, transactionRunHead, PWorld.needsTableCompute, hcur] at hn
   rcases hn with ⟨f1, args1, res1, rest1, b1, heq, _hcan1, hcache1⟩
   rcases heq with ⟨⟨⟨hf, hargsres⟩, _hrest⟩, hb⟩
@@ -1030,48 +1091,20 @@ theorem clean_sound_fuel (prog : Prog) (gt : GroundingTable) :
                                   simpa [stepClean, hcur, hc] using hprog
                                 simpa [hstepEq] using hs0
                     | none =>
-                        cases hr : runClean prog gt fuel
-                            (subConfOf c sub b tmpl) none with
-                        | done d =>
-                            have hrd0 := ih.done (subConfOf c sub b tmpl) none d hr
-                            have hrd :
-                                StepStar prog gt
-                                  { cur := some (sub, b), alts := [], world := c.world,
-                                    counter := c.counter, qterm := tmpl,
-                                    barriers := resetBarrierCache c.barriers } d ∧
-                                Terminal d := by
-                              simpa [subConfOf] using hrd0
-                            have hs0 := Step.catch_run (prog := prog) (gt := gt)
-                              c d tmpl sub res rest b hcur hc hrd.1 hrd.2
-                            cases he : d.answers with
-                            | nil =>
-                                have hstepEq := by
-                                  simpa [stepClean, hcur, hc, hr, he] using hprog
-                                simpa [Conf.answerValues, he, hstepEq] using hs0
-                            | cons a as =>
-                                have hstepEq := by
-                                  simpa [stepClean, hcur, hc, hr, he] using hprog
-                                simpa [he, hstepEq] using hs0
-                        | limited d =>
-                            simp [stepClean, hcur, hc, hr] at hprog
-                        | exhausted d =>
-                            simp [stepClean, hcur, hc, hr] at hprog
-                        | errored d err =>
-                            have hraise0 := ih.runError
-                              (subConfOf c sub b tmpl) none d err hr
-                            have hraise :
-                                Raises prog gt
-                                  { cur := some (sub, b), alts := [],
-                                    world := c.world, counter := c.counter,
-                                    qterm := tmpl,
-                                    barriers := resetBarrierCache c.barriers } d err := by
-                              simpa [subConfOf] using hraise0
-                            have hs0 := Step.catch_run_error
-                              (prog := prog) (gt := gt) c d tmpl sub res rest b err
-                              hcur hc hraise
-                            have hstepEq := by
-                              simpa [stepClean, hcur, hc, hr] using hprog
-                            simpa [hstepEq] using hs0
+                        have hstepEq :
+                            enterStreamingCatch c tmpl sub res rest b = c' := by
+                          simpa [stepClean, hcur, hc] using hprog
+                        have hs := Step.catch_stream_enter
+                          (prog := prog) (gt := gt) c tmpl sub res rest b hcur hc
+                        rw [hstepEq] at hs
+                        exact hs
+                | catchExit template result =>
+                    have hstepEq : step prog gt fuel c = c' := by
+                      simpa [stepClean, hcur] using hprog
+                    have hs := step_catchExit prog gt fuel c template result
+                      rest b hcur
+                    rw [hstepEq] at hs
+                    exact hs
                 | transactiong tmpl sub =>
                     let txSub := transactionSub tmpl sub
                     cases hr : runClean prog gt fuel
@@ -1286,7 +1319,19 @@ theorem clean_sound_fuel (prog : Prog) (gt : GroundingTable) :
                             rw [hstepEq] at hs
                             exact hs
                         | some err =>
-                            simp [stepClean, hcur, hlocal, hc] at hprog
+                            cases hcatch : catchErrorSuccessor? c err with
+                            | none =>
+                                simp [stepClean, hcur, hlocal, hc, hcatch]
+                                  at hprog
+                            | some next =>
+                                have hstepEq : next = c' := by
+                                  simpa [stepClean, hcur, hlocal, hc, hcatch]
+                                    using hprog
+                                have hs := Step.catch_stream_error
+                                  (prog := prog) (gt := gt) c next op args res
+                                  rest b err hcur hc hcatch
+                                rw [hstepEq] at hs
+                                exact hs
                 | callDyn hd args res =>
                     have hstepEq : step prog gt fuel c = c' := by
                       simpa [stepClean, hcur] using hprog
@@ -1366,17 +1411,8 @@ theorem clean_sound_fuel (prog : Prog) (gt : GroundingTable) :
                             by_cases he : answers = [] <;>
                               simp [stepClean, hcur, hc, he] at herror
                     | none =>
-                        cases hr : runClean prog gt fuel
-                            (subConfOf c sub b tmpl) none with
-                        | done result =>
-                            by_cases he : result.answers = [] <;>
-                              simp [stepClean, hcur, hc, hr, he] at herror
-                        | limited result =>
-                            simp [stepClean, hcur, hc, hr] at herror
-                        | exhausted result =>
-                            simp [stepClean, hcur, hc, hr] at herror
-                        | errored result raised =>
-                            simp [stepClean, hcur, hc, hr] at herror
+                        simp [stepClean, hcur, hc] at herror
+                | catchExit => simp [stepClean, hcur] at herror
                 | transactiong tmpl sub =>
                     let txSub := transactionSub tmpl sub
                     cases hr : runClean prog gt fuel
@@ -1481,11 +1517,18 @@ theorem clean_sound_fuel (prog : Prog) (gt : GroundingTable) :
                                 [Goal.bin op args res] = some (.error raised) :=
                               (caughtBinErrorResolved_some_iff gt b op args res
                                 raised).1 hc
-                            have hout : StepOutcome.errored c raised =
-                                StepOutcome.errored d err := by
-                              simpa [stepClean, hcur, hlocal, hc] using herror
-                            cases hout
-                            exact Raises.bin c op args res rest b err hcur hcatch
+                            cases hactive : catchErrorSuccessor? c raised with
+                            | some next =>
+                                simp [stepClean, hcur, hlocal, hc, hactive]
+                                  at herror
+                            | none =>
+                                have hout : StepOutcome.errored c raised =
+                                    StepOutcome.errored d err := by
+                                  simpa [stepClean, hcur, hlocal, hc, hactive]
+                                    using herror
+                                cases hout
+                                exact Raises.bin c op args res rest b err hcur
+                                  hcatch
                 | eq x y => simp [stepClean, hcur] at herror
                 | compileAlias x y => simp [stepClean, hcur] at herror
                 | cut => simp [stepClean, hcur] at herror

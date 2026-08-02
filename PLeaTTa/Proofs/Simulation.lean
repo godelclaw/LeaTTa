@@ -185,6 +185,77 @@ theorem pull_with_partialAlts (c : Conf) {left right : List Alt}
                   qterm := rfl
                   answers := rfl
                   barriers := rfl }
+          | catchActive frame =>
+              let leftHeadConf : Conf :=
+                { c with
+                  cur := none
+                  alts := Alt.catchActive frame :: leftTail }
+              let leftTailConf : Conf :=
+                { c with cur := none, alts := leftTail, barriers :=
+                    popBarrierCache c.barriers }
+              have hleft : pull leftHeadConf = pull leftTailConf := by
+                unfold pull
+                simp only [leftHeadConf, leftTailConf]
+                cases c.barriers <;> rfl
+              let rightHeadConf : Conf :=
+                { c with
+                  cur := none
+                  alts := Alt.catchActive frame :: rightTail }
+              let rightTailConf : Conf :=
+                { c with cur := none, alts := rightTail, barriers :=
+                    popBarrierCache c.barriers }
+              have hright : pull rightHeadConf = pull rightTailConf := by
+                unfold pull
+                simp only [rightHeadConf, rightTailConf]
+                cases c.barriers <;> rfl
+              change PartialConfRel (pull leftHeadConf) (pull rightHeadConf)
+              rw [hleft, hright]
+              exact ih
+                (c := { c with barriers := popBarrierCache c.barriers })
+          | catchDormant frame protectedAlts =>
+              let leftHeadConf : Conf :=
+                { c with
+                  cur := none
+                  alts := Alt.catchDormant frame protectedAlts :: leftTail }
+              let leftNext : Conf :=
+                { c with
+                  cur := none
+                  alts := protectedAlts ++ Alt.catchActive frame :: leftTail
+                  barriers := addBarrierCache c.barriers
+                    (barrierCount protectedAlts + 1) }
+              have hleft : pull leftHeadConf = leftNext := by
+                unfold pull
+                simp only [leftHeadConf, leftNext]
+                cases c.barriers <;> rfl
+              let rightHeadConf : Conf :=
+                { c with
+                  cur := none
+                  alts := Alt.catchDormant frame protectedAlts :: rightTail }
+              let rightNext : Conf :=
+                { c with
+                  cur := none
+                  alts := protectedAlts ++ Alt.catchActive frame :: rightTail
+                  barriers := addBarrierCache c.barriers
+                    (barrierCount protectedAlts + 1) }
+              have hright : pull rightHeadConf = rightNext := by
+                unfold pull
+                simp only [rightHeadConf, rightNext]
+                cases c.barriers <;> rfl
+              have nextAlts : SpecListRel PartialAltRel
+                  (protectedAlts ++ Alt.catchActive frame :: leftTail)
+                  (protectedAlts ++ Alt.catchActive frame :: rightTail) :=
+                SpecListRel.append (partialAltsRel_refl protectedAlts)
+                  (.cons (.same (Alt.catchActive frame)) tail)
+              change PartialConfRel (pull leftHeadConf) (pull rightHeadConf)
+              rw [hleft, hright]
+              exact
+                { cur := .same none
+                  alts := nextAlts
+                  world := rfl
+                  counter := rfl
+                  qterm := rfl
+                  answers := rfl
+                  barriers := rfl }
       | pending leftArgs rightArgs res rest b hargs branch =>
           cases branch with
           | branch params result body =>

@@ -20,6 +20,7 @@ open PLeaTTa.PrologAnswerOriginBridge
 open PLeaTTa.PrologAnswerResourceBridge
 open PLeaTTa.PrologFindallAnswerResourceBridge
 open PLeaTTa.PrologProductResourceContextBridge
+open PLeaTTa.PrologRetainedCursorOwnershipBridge
 
 /-!
 # Exact pull landing over an answer-origin zipper
@@ -58,7 +59,7 @@ mutual
         (head : resource.alts = .br goals binding :: tail)
         (pullExact :
           PLeaTTa.pullAux resource.alts =
-            some ((goals, binding), tail)) :
+            some (.branch goals binding, tail)) :
         RightRegionLanding alpha
           (.clauses scope original cursor position resource ownership)
           goals binding tail
@@ -77,7 +78,7 @@ mutual
         (inside : OriginPrefixLanding alpha history goals binding tail)
         (pullExact :
           PLeaTTa.pullAux (flattenOwnedAlts resources []) =
-            some ((goals, binding), tail)) :
+            some (.branch goals binding, tail)) :
         RightRegionLanding alpha
           (.scheduled callerScope callerTail origin resources nonempty history)
           goals binding tail
@@ -93,7 +94,7 @@ mutual
             (.br goals runtime :: tail))
         (pullExact :
           PLeaTTa.pullAux (.br goals runtime :: tail) =
-            some ((goals, runtime), tail)) :
+            some (.branch goals runtime, tail)) :
         RightRegionLanding alpha
           (.taskChoices support scope barrier canonical referenceBase current
             runtime right goals tail choices)
@@ -167,7 +168,7 @@ mutual
           OriginPrefixLanding alpha insideAgreement goals binding rest)
         (pullExact :
           PLeaTTa.pullAux beforeAlts =
-            some ((goals, binding), rest)) :
+            some (.branch goals binding, rest)) :
         OriginPrefixLanding alpha
           (.choice scope right insideOrigin insideAgreement regionAgreement)
           goals binding rest
@@ -192,7 +193,7 @@ mutual
           RightRegionLanding alpha regionAgreement goals binding regionTail)
         (pullExact :
           PLeaTTa.pullAux beforeAlts =
-            some ((goals, binding), regionTail ++ afterAlts)) :
+            some (.branch goals binding, regionTail ++ afterAlts)) :
         OriginPrefixLanding alpha
           (.choice scope right insideOrigin insideAgreement regionAgreement)
           goals binding (regionTail ++ afterAlts)
@@ -213,7 +214,7 @@ mutual
           OriginPrefixLanding alpha insideAgreement goals binding rest)
         (pullExact :
           PLeaTTa.pullAux beforeAlts =
-            some ((goals, binding), rest)) :
+            some (.branch goals binding, rest)) :
         OriginPrefixLanding alpha
           (.cutBoundary scope insideOrigin insideAgreement)
           goals binding rest
@@ -289,9 +290,9 @@ theorem pullAux_append_of_some
     {goals : List PLeaTTa.Goal} {binding : Subst}
     {tail : List PLeaTTa.Alt}
     (selected :
-      PLeaTTa.pullAux front = some ((goals, binding), tail)) :
+      PLeaTTa.pullAux front = some (.branch goals binding, tail)) :
     PLeaTTa.pullAux (front ++ suffix) =
-      some ((goals, binding), tail ++ suffix) := by
+      some (.branch goals binding, tail ++ suffix) := by
   induction front with
   | nil => simp [PLeaTTa.pullAux] at selected
   | cons head rest inductionHypothesis =>
@@ -301,6 +302,10 @@ theorem pullAux_append_of_some
       | br branchGoals branchBinding =>
           cases selected
           rfl
+      | catchActive frame =>
+          simpa [PLeaTTa.pullAux] using inductionHypothesis selected
+      | catchDormant frame protectedAlts =>
+          simp [PLeaTTa.pullAux] at selected
 
 /-- A branch-free prefix contributes no result to `pullAux`; appending it is
 observationally identical to pulling the older suffix directly. -/
@@ -315,6 +320,10 @@ theorem pullAux_append_of_none
       | barrier =>
           simpa [PLeaTTa.pullAux] using inductionHypothesis empty
       | br goals binding =>
+          simp [PLeaTTa.pullAux] at empty
+      | catchActive frame =>
+          simpa [PLeaTTa.pullAux] using inductionHypothesis empty
+      | catchDormant frame protectedAlts =>
           simp [PLeaTTa.pullAux] at empty
 
 /-- A marker-free bank whose pull is exhausted is literally empty.  This
@@ -332,6 +341,10 @@ theorem eq_nil_of_pullAux_none_of_barrierCount_zero
           simp at markerFree
       | br goals binding =>
           simp [PLeaTTa.pullAux] at empty
+      | catchActive frame =>
+          simp at markerFree
+      | catchDormant frame protectedAlts =>
+          simp [PLeaTTa.pullAux] at empty
 
 /-- In a marker-free bank, the branch selected by `pullAux` is the literal
 head and its returned remainder is the literal tail. -/
@@ -341,7 +354,7 @@ theorem eq_cons_of_pullAux_some_of_barrierCount_zero
     {tail : List PLeaTTa.Alt}
     (markerFree : PLeaTTa.barrierCount alts = 0)
     (selected :
-      PLeaTTa.pullAux alts = some ((goals, binding), tail)) :
+      PLeaTTa.pullAux alts = some (.branch goals binding, tail)) :
     alts = .br goals binding :: tail := by
   cases alts with
   | nil =>
@@ -354,6 +367,29 @@ theorem eq_cons_of_pullAux_some_of_barrierCount_zero
           simp only [PLeaTTa.pullAux] at selected
           cases selected
           rfl
+      | catchActive frame =>
+          simp at markerFree
+      | catchDormant frame protectedAlts =>
+          simp [PLeaTTa.pullAux] at selected
+
+/-- A bank consisting solely of resolution branches cannot produce a dormant
+catch-resumption target.  Unlike barrier counting, this discriminator also
+excludes dormant markers, whose barrier contribution is intentionally zero. -/
+theorem pullAux_catchResume_impossible_of_all_branches
+    {alts : List PLeaTTa.Alt} {frame : PLeaTTa.CatchFrame}
+    {protectedAlts rest : List PLeaTTa.Alt}
+    (branchOnly :
+      ∀ alt ∈ alts,
+        ∃ goals binding, alt = PLeaTTa.Alt.br goals binding) :
+    PLeaTTa.pullAux alts ≠
+      some (.catchResume frame protectedAlts, rest) := by
+  intro resumed
+  cases alts with
+  | nil => simp [PLeaTTa.pullAux] at resumed
+  | cons head tail =>
+      rcases branchOnly head (by simp) with ⟨goals, binding, headEq⟩
+      subst head
+      simp [PLeaTTa.pullAux] at resumed
 
 namespace RightRegionLanding
 
@@ -366,7 +402,7 @@ theorem pullAux_exact
     {goals : List PLeaTTa.Goal} {binding : Subst}
     {tail : List PLeaTTa.Alt}
     (landing : RightRegionLanding alpha agreement goals binding tail) :
-    PLeaTTa.pullAux segment = some ((goals, binding), tail) := by
+    PLeaTTa.pullAux segment = some (.branch goals binding, tail) := by
   cases landing with
   | clauses _ _ _ _ _ _ _ _ _ _ pullExact => exact pullExact
   | scheduled _ _ _ _ _ _ _ _ _ _ pullExact => exact pullExact
@@ -406,7 +442,7 @@ theorem pullAux_exact
     {goals : List PLeaTTa.Goal} {binding : Subst}
     {rest : List PLeaTTa.Alt}
     (landing : OriginPrefixLanding alpha agreement goals binding rest) :
-    PLeaTTa.pullAux beforeAlts = some ((goals, binding), rest) := by
+    PLeaTTa.pullAux beforeAlts = some (.branch goals binding, rest) := by
   cases landing with
   | choiceInside _ _ _ _ _ _ _ _ _ pullExact => exact pullExact
   | choiceRegion _ _ _ _ _ _ _ _ _ _ pullExact => exact pullExact
@@ -545,13 +581,21 @@ theorem classifyPrefix
             (.clauses scope original cursor position resource ownership empty
               pullEq)
       | some result =>
-          rcases result with ⟨⟨goals, binding⟩, tail⟩
-          have head := eq_cons_of_pullAux_some_of_barrierCount_zero
-            (resource.barrierCount_zero ownership) pullEq
-          exact .inl
-            ⟨goals, binding, tail,
-              .clauses scope original cursor position resource ownership goals
-                binding tail head pullEq⟩)
+          rcases result with ⟨target, tail⟩
+          cases target with
+          | branch goals binding =>
+              have head := eq_cons_of_pullAux_some_of_barrierCount_zero
+                (resource.barrierCount_zero ownership) pullEq
+              exact .inl
+                ⟨goals, binding, tail,
+                  .clauses scope original cursor position resource ownership
+                    goals binding tail head pullEq⟩
+          | catchResume frame protectedAlts =>
+              exact False.elim
+                (pullAux_catchResume_impossible_of_all_branches
+                  (RetainedCursorAlternativeOwnership.alts_all_branches
+                    ownership.scan)
+                  pullEq))
     (by
       intro callerScope callerTail leafScope bindings head next historyOrigin
         resources nonempty history historyIH
@@ -587,12 +631,12 @@ theorem classifyPrefix
           ⟨goals, binding, regionTail, regionLanding⟩ | regionEmpty
         · have pullExact :
               PLeaTTa.pullAux beforeAlts =
-                some ((goals, binding), regionTail ++ afterAlts) := by
+                some (.branch goals binding, regionTail ++ afterAlts) := by
             calc
               PLeaTTa.pullAux beforeAlts =
                   PLeaTTa.pullAux (regionAlts ++ afterAlts) :=
                 insideFalls.pullAux_eq
-              _ = some ((goals, binding), regionTail ++ afterAlts) :=
+              _ = some (.branch goals binding, regionTail ++ afterAlts) :=
                 pullAux_append_of_some regionLanding.pullAux_exact
           exact .inl
             ⟨goals, binding, regionTail ++ afterAlts,
@@ -631,7 +675,7 @@ theorem classifyPrefix
 
 end AnswerOriginResourceAgrees
 
-/-! ## Three-way answer-pull outcome -/
+/-! ## Four-way answer-pull outcome -/
 
 /-- Exact landing of one eager executable answer pull relative to the source
 origin zipper.
@@ -660,7 +704,13 @@ inductive OriginPullOutcome
       (goals : List PLeaTTa.Goal) (binding : Subst)
       (rest : List PLeaTTa.Alt)
       (basePull :
-        PLeaTTa.pullAux afterAlts = some ((goals, binding), rest)) :
+        PLeaTTa.pullAux afterAlts = some (.branch goals binding, rest)) :
+      OriginPullOutcome alpha agreement []
+  | baseCatchResume (falls : OriginPrefixFallsThrough alpha agreement)
+      (frame : PLeaTTa.CatchFrame) (protectedAlts rest : List PLeaTTa.Alt)
+      (basePull :
+        PLeaTTa.pullAux afterAlts =
+          some (.catchResume frame protectedAlts, rest)) :
       OriginPullOutcome alpha agreement []
   | terminal (falls : OriginPrefixFallsThrough alpha agreement)
       (basePull : PLeaTTa.pullAux afterAlts = none) :
@@ -668,7 +718,7 @@ inductive OriginPullOutcome
 
 namespace AnswerOriginResourceAgrees
 
-/-- Total trichotomy for the real incoming alternative bank.
+/-- Total classification for the real incoming alternative bank.
 
 No caller chooses the case or the branch.  The local/base split comes from
 `classifyPrefix`; only after every local region falls through is the literal
@@ -691,14 +741,19 @@ theorem classifyPull
   · cases baseEq : PLeaTTa.pullAux afterAlts with
     | none => exact ⟨[.completed], .terminal falls baseEq⟩
     | some result =>
-        rcases result with ⟨⟨goals, binding⟩, rest⟩
-        exact ⟨[], .baseLive falls goals binding rest baseEq⟩
+        rcases result with ⟨target, rest⟩
+        cases target with
+        | branch goals binding =>
+            exact ⟨[], .baseLive falls goals binding rest baseEq⟩
+        | catchResume frame protectedAlts =>
+            exact
+              ⟨[], .baseCatchResume falls frame protectedAlts rest baseEq⟩
 
 end AnswerOriginResourceAgrees
 
 namespace OriginPullOutcome
 
-/-- The three-way source classification reconstructs exactly the existing
+/-- The four-way source classification reconstructs exactly the existing
 total executable pull classifier at the literal incoming bank. -/
 theorem toPullOutcomeAgrees
     {alpha : List (LogicVar × String)}
@@ -717,9 +772,13 @@ theorem toPullOutcomeAgrees
         events = [] ∧
           PrologFindallAnswerResourceBridge.PullOutcomeAgrees beforeAlts
             (some (goals, binding)) rest) ∨
-      (events = [.completed] ∧
-        PrologFindallAnswerResourceBridge.PullOutcomeAgrees beforeAlts none
-          []) := by
+      (∃ frame protectedAlts rest,
+        events = [] ∧
+          PrologFindallAnswerResourceBridge.PullOutcomeAgrees beforeAlts none
+            (protectedAlts ++ .catchActive frame :: rest)) ∨
+        (events = [.completed] ∧
+          PrologFindallAnswerResourceBridge.PullOutcomeAgrees beforeAlts none
+            []) := by
   cases outcome with
   | localLive goals binding rest landing =>
       exact .inl
@@ -729,16 +788,25 @@ theorem toPullOutcomeAgrees
   | baseLive falls goals binding rest basePull =>
       have pullExact :
           PLeaTTa.pullAux beforeAlts =
-            some ((goals, binding), rest) :=
+            some (.branch goals binding, rest) :=
         falls.pullAux_eq.trans basePull
       exact .inl
         ⟨goals, binding, rest, rfl,
           .selected (beforeAlts := beforeAlts) goals binding rest pullExact⟩
+  | baseCatchResume falls frame protectedAlts rest basePull =>
+      have pullExact :
+          PLeaTTa.pullAux beforeAlts =
+            some (.catchResume frame protectedAlts, rest) :=
+        falls.pullAux_eq.trans basePull
+      exact .inr (.inl
+        ⟨frame, protectedAlts, rest, rfl,
+          .catchResumed (beforeAlts := beforeAlts) frame protectedAlts rest
+            pullExact⟩)
   | terminal falls basePull =>
       have pullNone : PLeaTTa.pullAux beforeAlts = none :=
         falls.pullAux_eq.trans basePull
-      exact .inr
-        ⟨rfl, .exhausted (beforeAlts := beforeAlts) pullNone⟩
+      exact .inr (.inr
+        ⟨rfl, .exhausted (beforeAlts := beforeAlts) pullNone⟩)
 
 /-- The classification fixes source-observation shape independently of any
 later step-count proof. -/
@@ -881,7 +949,7 @@ theorem first_local_region_is_inhabited :
         .localLive selectedGoals selectedBinding rest landing⟩
   · have selected :
         PLeaTTa.pullAux (resource.alts ++ [.barrier]) =
-          some ((goals, binding), tail ++ [.barrier]) := by
+          some (.branch goals binding, tail ++ [.barrier]) := by
       apply pullAux_append_of_some
       rw [head]
       rfl
@@ -979,7 +1047,7 @@ theorem second_local_region_after_empty_is_inhabited :
         innerAgreementForOuter liveRegion)
   have selected :
       PLeaTTa.pullAux (emptyResource.alts ++ liveResource.alts) =
-        some ((goals, binding), tail) := by
+        some (.branch goals binding, tail) := by
     rw [emptyHead, liveHead]
     simp [PLeaTTa.pullAux]
   refine
@@ -1038,7 +1106,7 @@ theorem barriers_are_skipped_not_selected :
     let agreement :
         AnswerOriginResourceAgrees ([] : List (LogicVar × String)) origin
           [] [] base base := .task 0 [] [] base
-    PLeaTTa.pullAux base = some (([], []), [.barrier]) ∧
+    PLeaTTa.pullAux base = some (.branch [] [], [.barrier]) ∧
       OriginPullOutcome [] agreement [] := by
   dsimp only
   exact

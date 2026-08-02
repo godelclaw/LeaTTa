@@ -93,7 +93,7 @@ theorem pullAuxTracked_flattenOwnedAlts_first_nonempty
     PLeaTTa.pullAuxTracked cache
         (flattenOwnedAlts (emptyPrefix ++ first :: rest) base) =
       (some
-        ((goals, binding),
+        (.branch goals binding,
           tail ++ PLeaTTa.Alt.barrier :: flattenOwnedAlts rest base),
         popBarrierCacheN emptyPrefix.length cache) := by
   induction emptyPrefix generalizing cache with
@@ -214,7 +214,8 @@ theorem tracked_empty_then_live_retains_live_marker :
         (flattenOwnedAlts
           [trackedEmptyWitnessResource, trackedLiveWitnessResource] []) =
       (some
-        (([.call "witness" [] (.sym "result")], []),
+        (.branch
+          [PLeaTTa.Goal.call "witness" [] (.sym "result")] [],
           [PLeaTTa.Alt.barrier]),
         some 1) := by
   rfl
@@ -584,6 +585,8 @@ private def partitionLiveGoals : List PLeaTTa.Goal :=
   match partitionLiveAlt with
   | .br goals _ => goals
   | .barrier => []
+  | .catchActive _ => []
+  | .catchDormant _ _ => []
 
 private theorem partitionLiveAlt_shape :
     partitionLiveAlt = .br partitionLiveGoals [] := by
@@ -1841,6 +1844,13 @@ inductive ExhaustedPostFailureCatchupResult
       ExhaustedPostFailureCatchupResult freshFrontier alpha opened pending
         qterm callerBarrier callerScope outerScope segments resources context
         baseAlts predecessor source successor
+  | baseCatchResume
+      (partition :
+        BaseCatchResumeOuterResourceCatchupPartition alpha segments resources
+          context baseAlts) :
+      ExhaustedPostFailureCatchupResult freshFrontier alpha opened pending
+        qterm callerBarrier callerScope outerScope segments resources context
+        baseAlts predecessor source successor
   | terminal
       (partition :
         TerminalOuterResourceCatchupPartition alpha segments resources context
@@ -1901,6 +1911,8 @@ theorem SpinedExhaustedPostFailureOffsetRelates.catchupClassified
       exact .firstLive partition suffixBarrier sourceSteps relation
   | baseLive partition =>
       exact .baseLive partition
+  | baseCatchResume partition =>
+      exact .baseCatchResume partition
   | terminal partition =>
       obtain ⟨sourceSteps, relation⟩ :=
         PLeaTTa.PrologBodyFailureOuterResourceCatchupBridge.SpinedExhaustedPostFailureOffsetRelates.catchupTerminal

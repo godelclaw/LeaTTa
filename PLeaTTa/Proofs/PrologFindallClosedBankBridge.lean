@@ -296,8 +296,8 @@ theorem classifyPull
   · exact ⟨[.completed], .terminal falls⟩
 
 /-- Every generic pull outcome over a closed origin is one of the two closed
-cases.  The impossible `baseLive` branch is rejected by the literal equation
-`pullAux [] = some _`. -/
+cases.  The impossible `baseLive` and `baseCatchResume` branches are rejected
+by their literal equations over `pullAux []`. -/
 theorem ofOriginPullOutcome
     {alpha : List (LogicVar × String)}
     {leafScope : CutScopeId} {bindings : Substitution}
@@ -315,6 +315,8 @@ theorem ofOriginPullOutcome
   | localLive goals binding rest landing =>
       exact .localLive goals binding rest landing
   | baseLive falls goals binding rest basePull =>
+      simp [PLeaTTa.pullAux] at basePull
+  | baseCatchResume falls frame protectedAlts rest basePull =>
       simp [PLeaTTa.pullAux] at basePull
   | terminal falls _ =>
       exact .terminal falls

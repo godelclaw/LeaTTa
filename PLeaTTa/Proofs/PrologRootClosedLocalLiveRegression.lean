@@ -141,16 +141,17 @@ theorem rejected_prefix_then_root_answer_is_genuinely_local_live
       ⟨selectedGoals, selectedBinding, selectedTail, count, target, exact⟩
     have selectedPull :
         PLeaTTa.pullAux before.carrier.index.openConf.control.alts =
-          some ((selectedGoals, selectedBinding), selectedTail) := by
+          some (.branch selectedGoals selectedBinding, selectedTail) := by
       rw [ready.bankExact]
       exact exact.landing.pullAux_exact
     have retainedPull :
         PLeaTTa.pullAux before.carrier.index.openConf.control.alts =
-          some ((retainedGoals, retainedBinding), [.barrier]) := by
+          some (.branch retainedGoals retainedBinding, [.barrier]) := by
       rw [bankShape]
       rfl
     rw [retainedPull] at selectedPull
-    simp only [Option.some.injEq, Prod.mk.injEq] at selectedPull
+    simp only [Option.some.injEq, Prod.mk.injEq, PullTarget.branch.injEq]
+      at selectedPull
     refine
       ⟨before, ready, retainedGoals, retainedBinding, selectedGoals,
         selectedBinding, selectedTail, count, target, exact, bankShape,

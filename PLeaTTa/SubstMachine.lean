@@ -43,29 +43,23 @@ namespace SubstEngine
   have erased := unifyB_map_denote reference state left right True.intro
   simpa [reference] using erased
 
-/-- Replace the reference binding carried by an alternative with an
-engine state. The goals and barrier structure are unchanged. -/
-def rebindAlt {State : Type} (state : State) : Alt → Alt State
-  | .br goals _ => .br goals state
-  | .barrier => .barrier
+/-- Replace every reference binding owned by an alternative tree with one
+engine state.  Dormant catch payloads are traversed rather than discarded. -/
+def rebindAlt {State : Type} (state : State) (alt : Alt) : Alt State :=
+  mapAlt (fun _ => state) alt
 
 def rebindAlts {State : Type} (state : State) (alts : List Alt) :
     List (Alt State) :=
   alts.map (rebindAlt state)
 
-def Carries (binding : Subst) : Alt → Prop
-  | .br _ carried => carried = binding
-  | .barrier => True
+/-- Every substitution slot in an alternative tree carries the same binding.
+This fixed-point formulation covers catch-frame entries and dormant forests. -/
+def Carries (binding : Subst) (alt : Alt) : Prop :=
+  rebindAlt binding alt = alt
 
 theorem rebindAlt_eq_self_of_carries (binding : Subst) (alt : Alt)
     (carries : Carries binding alt) :
-    rebindAlt binding alt = alt := by
-  cases alt with
-  | barrier => rfl
-  | br goals carried =>
-      simp only [Carries] at carries
-      subst carried
-      rfl
+    rebindAlt binding alt = alt := carries
 
 theorem rebindAlts_eq_self_of_forall (binding : Subst) (alts : List Alt)
     (carries : ∀ alt ∈ alts, Carries binding alt) :
@@ -83,7 +77,9 @@ theorem rebindAlts_eq_self_of_forall (binding : Subst) (alts : List Alt)
     (state : engine.State) (alt : Alt) :
     mapAlt engine.denote (rebindAlt state alt) =
       rebindAlt (engine.denote state) alt := by
-  cases alt <;> rfl
+  unfold rebindAlt
+  rw [mapAlt_comp]
+  congr 1
 
 @[simp] theorem mapAlt_rebindAlts (engine : SubstEngine)
     (state : engine.State) (alts : List Alt) :
@@ -101,16 +97,8 @@ theorem rebindAlts_eq_self_of_forall (binding : Subst) (alts : List Alt)
 private theorem barrierFold_mapAlt {Source Target : Type}
     (map : Source → Target) (initial : Nat) :
     ∀ alts : List (Alt Source),
-      (alts.map (mapAlt map)).foldl
-          (fun count alt => match alt with
-            | .barrier => count + 1
-            | _ => count)
-          initial =
-        alts.foldl
-          (fun count alt => match alt with
-            | .barrier => count + 1
-            | _ => count)
-          initial
+      (alts.map (mapAlt map)).foldl barrierCountStep initial =
+        alts.foldl barrierCountStep initial
   | [] => rfl
   | alt :: rest => by
       cases alt <;> exact barrierFold_mapAlt map _ rest
@@ -151,6 +139,16 @@ theorem cutToCached_mapAlt {Source Target : Type} (map : Source → Target)
       split
       · exact cutToCached_mapAlt map count (depth - 1) rest
       · rfl
+  | depth, .catchActive frame :: rest => by
+      simp only [List.map_cons, mapAlt, cutToCached]
+      split
+      · exact cutToCached_mapAlt map count (depth - 1) rest
+      · rfl
+  | depth, .catchDormant frame protectedAlts :: rest => by
+      simp only [List.map_cons, mapAlt, cutToCached]
+      split
+      · exact cutToCached_mapAlt map count depth rest
+      · rfl
 
 @[simp] theorem cutToTracked_mapAlt {Source Target : Type}
     (map : Source → Target) (count : Nat) (cache : Option Nat)
@@ -167,25 +165,72 @@ theorem cutToCached_mapAlt {Source Target : Type} (map : Source → Target)
       simp only [cutToTracked]
       rw [cutToCached_mapAlt]
 
+def mapCatchSplit {Source Target : Type} (map : Source → Target)
+    (split : CatchSplit Source) : CatchSplit Target :=
+  { frame := mapCatchFrame map split.frame
+    protectedAlts := split.protectedAlts.map (mapAlt map)
+    outer := split.outer.map (mapAlt map) }
+
+theorem splitCatchActive_mapAlt {Source Target : Type}
+    (map : Source → Target) : ∀ alts : List (Alt Source),
+    splitCatchActive (alts.map (mapAlt map)) =
+      (splitCatchActive alts).map (mapCatchSplit map)
+  | [] => rfl
+  | .catchActive frame :: rest => rfl
+  | .br goals state :: rest => by
+      simp only [List.map_cons, mapAlt, splitCatchActive]
+      rw [splitCatchActive_mapAlt map rest]
+      cases splitCatchActive rest <;> rfl
+  | .barrier :: rest => by
+      simp only [List.map_cons, mapAlt, splitCatchActive]
+      rw [splitCatchActive_mapAlt map rest]
+      cases splitCatchActive rest <;> rfl
+  | .catchDormant frame protectedAlts :: rest => by
+      simp only [List.map_cons, mapAlt, splitCatchActive]
+      rw [splitCatchActive_mapAlt map rest]
+      cases splitCatchActive rest <;> rfl
+
+def mapPullTarget {Source Target : Type} (map : Source → Target) :
+    PullTarget Source → PullTarget Target
+  | .branch goals state => .branch goals (map state)
+  | .catchResume frame protectedAlts =>
+      .catchResume (mapCatchFrame map frame) (mapAlts map protectedAlts)
+
 theorem pullAux_mapAlt {Source Target : Type} (map : Source → Target) :
     ∀ alts : List (Alt Source),
       pullAux (alts.map (mapAlt map)) =
         (pullAux alts).map (fun result =>
-          ((result.1.1, map result.1.2), result.2.map (mapAlt map)))
+          (mapPullTarget map result.1, result.2.map (mapAlt map)))
   | [] => rfl
   | .barrier :: rest => pullAux_mapAlt map rest
+  | .catchActive _ :: rest => pullAux_mapAlt map rest
   | .br _ _ :: _ => rfl
+  | .catchDormant _ _ :: _ => rfl
 
 theorem pullAuxCached_mapAlt {Source Target : Type} (map : Source → Target) :
     ∀ (depth : Nat) (alts : List (Alt Source)),
       pullAuxCached depth (alts.map (mapAlt map)) =
         ((pullAuxCached depth alts).1.map (fun result =>
-          ((result.1.1, map result.1.2), result.2.map (mapAlt map))),
+          (mapPullTarget map result.1, result.2.map (mapAlt map))),
           (pullAuxCached depth alts).2)
   | _, [] => rfl
   | depth, .barrier :: rest =>
       pullAuxCached_mapAlt map (depth - 1) rest
+  | depth, .catchActive _ :: rest =>
+      pullAuxCached_mapAlt map (depth - 1) rest
   | _, .br _ _ :: _ => rfl
+  | _, .catchDormant _ _ :: _ => rfl
+
+theorem pullAuxTracked_mapAlt {Source Target : Type}
+    (map : Source → Target) (cache : Option Nat)
+    (alts : List (Alt Source)) :
+    pullAuxTracked cache (alts.map (mapAlt map)) =
+      ((pullAuxTracked cache alts).1.map (fun result =>
+        (mapPullTarget map result.1, result.2.map (mapAlt map))),
+        (pullAuxTracked cache alts).2) := by
+  cases cache with
+  | none => simp [pullAuxTracked, pullAux_mapAlt]
+  | some depth => simp [pullAuxTracked, pullAuxCached_mapAlt]
 
 @[simp] theorem mapConf_fields {Source Target : Type}
     (map : Source → Target) (cur : Option (List Goal × Source))
@@ -297,12 +342,66 @@ theorem answers_eq_of_erase_eq (engine : SubstEngine)
     mapConf map (pull conf) = pull (mapConf map conf) := by
   rcases conf with ⟨cur, alts, world, counter, qterm, answers,
     answerKeys, answerKeys_sound, barriers⟩
-  apply Conf.ext
-  all_goals
-    cases barriers <;>
-      simp [pull, mapConf, pullAuxTracked, pullAux_mapAlt,
-        pullAuxCached_mapAlt] <;>
-      split <;> simp_all
+  unfold pull
+  simp only [Conf.alts, Conf.barriers, mapConf_fields]
+  rw [pullAuxTracked_mapAlt]
+  cases tracked : pullAuxTracked barriers alts with
+  | mk pulled cache =>
+      simp only [tracked, Option.map]
+      cases pulled with
+      | none => rfl
+      | some result =>
+          rcases result with ⟨target, rest⟩
+          cases target with
+          | branch goals binding => rfl
+          | catchResume frame protectedAlts =>
+              simp [mapConf, mapPullTarget, mapCatchFrame,
+                mapAlt, List.map_append, barrierCount_mapAlt]
+
+@[simp] theorem mapConf_enterStreamingCatch {Source Target : Type}
+    (map : Source → Target) (conf : Conf Source) (template : Atom)
+    (sub : List Goal) (result : Atom) (rest : List Goal) (entry : Source) :
+    mapConf map (enterStreamingCatch conf template sub result rest entry) =
+      enterStreamingCatch (mapConf map conf) template sub result rest
+        (map entry) := by
+  rcases conf with ⟨cur, alts, world, counter, qterm, answers,
+    answerKeys, answerKeys_sound, barriers⟩
+  cases barriers <;>
+    simp [enterStreamingCatch, mapConf, mapAlt, mapCatchFrame,
+      barrierDepth, barrierCount_mapAlt]
+
+@[simp] theorem mapConf_exitStreamingCatch {Source Target : Type}
+    (map : Source → Target) (conf : Conf Source) (binding : Source) :
+    mapConf map (exitStreamingCatch conf binding) =
+      exitStreamingCatch (mapConf map conf) (map binding) := by
+  rcases conf with ⟨cur, alts, world, counter, qterm, answers,
+    answerKeys, answerKeys_sound, barriers⟩
+  unfold exitStreamingCatch
+  simp only [Conf.alts, mapConf_fields]
+  rw [splitCatchActive_mapAlt]
+  cases found : splitCatchActive alts with
+  | none =>
+      simp only [found, Option.map_none]
+      rw [mapConf_pull]
+      rfl
+  | some split =>
+      simp [found, mapConf, mapCatchSplit, mapCatchFrame, mapAlt,
+        List.map_append, barrierCount_mapAlt]
+
+theorem mapConf_catchErrorSuccessor {Source Target : Type}
+    (map : Source → Target) (conf : Conf Source) (error : Atom) :
+    (catchErrorSuccessor? conf error).map (mapConf map) =
+      catchErrorSuccessor? (mapConf map conf) error := by
+  rcases conf with ⟨cur, alts, world, counter, qterm, answers,
+    answerKeys, answerKeys_sound, barriers⟩
+  unfold catchErrorSuccessor?
+  simp only [Conf.alts, mapConf_fields]
+  rw [splitCatchActive_mapAlt]
+  cases found : splitCatchActive alts with
+  | none => simp [found]
+  | some split =>
+      simp [found, mapConf, mapCatchSplit, mapCatchFrame,
+        barrierCount_mapAlt]
 
 theorem mapConf_oncePull {Source Target : Type} (map : Source → Target)
     (conf : Conf Source) (sub rest : List Goal) (res tmpl : Atom)
@@ -354,10 +453,18 @@ theorem pullAux_valid (engine : SubstEngine) :
       (∀ alt ∈ alts, AltValid engine alt) →
       match pullAux alts with
       | none => True
-      | some ((_, state), rest) =>
+      | some (.branch _ state, rest) =>
           engine.Valid state ∧ ∀ alt ∈ rest, AltValid engine alt
+      | some (.catchResume frame protectedAlts, rest) =>
+          engine.Valid frame.entry ∧
+            (∀ alt ∈ protectedAlts, AltValid engine alt) ∧
+            (∀ alt ∈ rest, AltValid engine alt)
   | [], _ => trivial
   | .barrier :: rest, valid => by
+      apply pullAux_valid engine rest
+      intro alt member
+      exact valid alt (by simp [member])
+  | .catchActive _ :: rest, valid => by
       apply pullAux_valid engine rest
       intro alt member
       exact valid alt (by simp [member])
@@ -366,6 +473,11 @@ theorem pullAux_valid (engine : SubstEngine) :
       · exact valid (.br goals state) (by simp)
       · intro alt member
         exact valid alt (by simp [member])
+  | .catchDormant frame protectedAlts :: rest, valid => by
+      have dormantValid := valid (.catchDormant frame protectedAlts) (by simp)
+      exact ⟨dormantValid.1,
+        (altForestValid_iff_forall engine protectedAlts).mp dormantValid.2,
+        fun alt member => valid alt (by simp [member])⟩
 
 theorem pull_valid (engine : SubstEngine) (conf : Conf engine.State)
     (valid : ConfValid engine conf) :
@@ -384,14 +496,27 @@ theorem pull_valid (engine : SubstEngine) (conf : Conf engine.State)
       · simp
       · simp
   | some pulled =>
-      rcases pulled with ⟨⟨goals, state⟩, rest⟩
-      simp only [result] at auxiliary
-      constructor
-      · intro currentGoals currentState equality
-        simp only [Option.some.injEq, Prod.mk.injEq] at equality
-        rcases equality with ⟨rfl, rfl⟩
-        exact auxiliary.1
-      · exact auxiliary.2
+      rcases pulled with ⟨target, rest⟩
+      cases target with
+      | branch goals state =>
+          simp only [result] at auxiliary
+          constructor
+          · intro currentGoals currentState equality
+            simp only [Option.some.injEq, Prod.mk.injEq] at equality
+            rcases equality with ⟨rfl, rfl⟩
+            exact auxiliary.1
+          · exact auxiliary.2
+      | catchResume frame protectedAlts =>
+          simp only [result] at auxiliary
+          simp only [result]
+          constructor
+          · simp
+          · intro alt member
+            rcases List.mem_append.mp member with inside | activeOrRest
+            · exact auxiliary.2.1 alt inside
+            · rcases List.mem_cons.mp activeOrRest with rfl | outer
+              · exact auxiliary.1
+              · exact auxiliary.2.2 alt outer
 
 def AltsValid (engine : SubstEngine)
     (alts : List (Alt engine.State)) : Prop :=
@@ -1618,7 +1743,8 @@ theorem unionReverseAltsWith_valid (engine : SubstEngine)
           intro alt member
           simp only [rebindAlts, List.mem_map] at member
           rcases member with ⟨referenceAlt, _, rfl⟩
-          cases referenceAlt <;> simp [rebindAlt, AltValid, nextValid]
+          exact mapAlt_valid_of engine (fun _ => next) (fun _ => nextValid)
+            referenceAlt
 
 theorem unionReverseAltsWithForOp_erase (engine : SubstEngine)
     (op : String) (args : List Atom) (res : Atom) (rest : List Goal)
@@ -2575,9 +2701,11 @@ def stepWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable)
             else
               enqueueHostAnswers c answers rest res state
         | none =>
-            let subConf := subConfOfWith engine c sub state tmpl
-            let done := runWith engine prog gt fuel subConf none
-            finishCatch c done rest res state
+            enterStreamingCatch c tmpl sub res rest state
+    | .catchExit template result =>
+        match engine.unify state result template with
+        | some next => exitStreamingCatch c next
+        | none => pull { c with cur := none }
     | .transactiong tmpl sub =>
         let txSub := transactionSub tmpl sub
         let subConf := subConfOfWith engine c txSub state tmpl
@@ -2884,6 +3012,33 @@ def toStepOutcome : StepOutcomeWith Subst → StepOutcome
   | .exhausted conf => .exhausted conf
   | .errored conf error => .errored conf error
 
+/-- Route a primitive exception through the nearest active catch, or expose it
+    as an uncaught error.  Kept generic so all substitution representations
+    share the same exception-unwind decision. -/
+def catchErrorOutcome {Binding : Type} (conf : Conf Binding) (error : Atom) :
+    StepOutcomeWith Binding :=
+  match catchErrorSuccessor? conf error with
+  | some next => .progressed next
+  | none => .errored conf error
+
+@[simp] theorem mapStepOutcome_catchErrorOutcome {Source Target : Type}
+    (map : Source → Target) (conf : Conf Source) (error : Atom) :
+    mapStepOutcome map (catchErrorOutcome conf error) =
+      catchErrorOutcome (mapConf map conf) error := by
+  have mapped := mapConf_catchErrorSuccessor map conf error
+  cases found : catchErrorSuccessor? conf error with
+  | none =>
+      have targetNone :
+          catchErrorSuccessor? (mapConf map conf) error = none := by
+        simpa [found] using mapped.symm
+      simp [catchErrorOutcome, found, targetNone, mapStepOutcome]
+  | some next =>
+      have targetSome :
+          catchErrorSuccessor? (mapConf map conf) error =
+            some (mapConf map next) := by
+        simpa [found] using mapped.symm
+      simp [catchErrorOutcome, found, targetSome, mapStepOutcome]
+
 @[simp] theorem toStepOutcome_finishCatchOutcome (conf : Conf)
     (rest : List Goal) (res : Atom) (state : Subst)
     (outcome : RunOutcomeWith Subst) :
@@ -2962,9 +3117,8 @@ def stepCleanWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable) :
               else
                 .progressed (enqueueHostAnswers conf found rest res state)
           | none =>
-              let nested := subConfOfWith engine conf sub state tmpl
-              finishCatchOutcome conf rest res state
-                (runCleanWith engine prog gt fuel nested none)
+              .progressed
+                (enterStreamingCatch conf tmpl sub res rest state)
       | some (Goal.transactiong tmpl sub :: rest, state) =>
           let nested := subConfOfWith engine conf (transactionSub tmpl sub)
             state tmpl
@@ -3002,7 +3156,7 @@ def stepCleanWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable) :
           | some _ => .progressed (stepWith engine prog gt fuel conf)
           | none =>
               match caughtBinErrorResolvedWithGround? gt op values allGround with
-              | some error => .errored conf error
+              | some error => catchErrorOutcome conf error
               | none => .progressed (stepWith engine prog gt fuel conf)
       | _ => .progressed (stepWith engine prog gt fuel conf)
 
@@ -3113,6 +3267,24 @@ theorem erase_stepWith_of_run (engine : SubstEngine) (prog : Prog)
               simp only [stepWith, erase]
               rw [mapConf_pull]
               rfl
+          | catchExit template result =>
+              have hunify :=
+                engine.unify_denote state result template stateValid
+              cases resultEq : engine.unify state result template with
+              | none =>
+                  simp only [resultEq, Option.map_none] at hunify
+                  simp only [stepWith, resultEq, erase]
+                  rw [mapConf_pull]
+                  simp [mapConf]
+                  rw [← hunify]
+                  rfl
+              | some next =>
+                  simp only [resultEq, Option.map_some] at hunify
+                  simp only [stepWith, resultEq, erase]
+                  rw [mapConf_exitStreamingCatch]
+                  simp [mapConf]
+                  rw [← hunify]
+                  rfl
           | cutAt count =>
               have hcut := cutToTracked_mapAlt engine.denote count barriers alts
               simp [stepWith, erase, mapConf]
@@ -3489,21 +3661,7 @@ theorem erase_stepWith_of_run (engine : SubstEngine) (prog : Prog)
                         exact mapConf_enqueueHostAnswers engine.denote base
                           caught rest res state
               | none =>
-                  let nested := subConfOfWith engine base sub state tmpl
-                  have nestedValid : ConfValid engine nested := by
-                    exact subConfOfWith_valid engine base sub state tmpl
-                      stateValid
-                  have nestedErase := erase_subConfOfWith engine base sub
-                    state tmpl
-                  unfold erase at nestedErase
-                  have doneErase := runErase nested none nestedValid
-                  unfold erase at doneErase
-                  simp only [stepWith, base, direct, erase,
-                    reference_denote]
-                  rw [mapConf_finishCatch]
-                  rw [doneErase]
-                  rw [nestedErase]
-                  simp [base, direct]
+                  simp [stepWith, base, direct, erase]
                   rfl
           | softcut tmpl sub thn els =>
               let base : Conf engine.State :=
@@ -3975,9 +4133,12 @@ theorem checked_clean_run_step_simulation (engine : SubstEngine) (prog : Prog)
                                             PersistentSubst.PreparedAtom.atom)
                                         res rest = none := by
                                   rw [← localDenote, localResult]
-                                simp [stepCleanWith, argsResult, localResult,
-                                  referenceLocal, errorResult, referenceError,
-                                  mapStepOutcome, erase, mapConf]
+                                have mappedError :=
+                                  mapStepOutcome_catchErrorOutcome
+                                    (checked engine).denote source error
+                                simpa [stepCleanWith, source, argsResult,
+                                  localResult, referenceLocal, errorResult,
+                                  referenceError, erase] using mappedError
                             | some goals =>
                                 have referenceLocal :
                                     localTranslatePredicateGoals? world gt op
@@ -4033,51 +4194,14 @@ theorem checked_clean_run_step_simulation (engine : SubstEngine) (prog : Prog)
                     cases direct : catchDirect? gt
                         ((checked engine).denote state) tmpl sub with
                     | none =>
-                        let nested := subConfOfWith (checked engine) source
-                          sub state tmpl
-                        have nestedRun := induction.1 nested none
                         change mapStepOutcome (checked engine).denote
                             (stepCleanWith (checked engine) prog gt
                               (fuel + 1) source) =
                           stepCleanWith reference prog gt (fuel + 1)
                             (mapConf (checked engine).denote source)
-                        calc
-                          _ = mapStepOutcome (checked engine).denote
-                              (finishCatchOutcome source rest res state
-                                (runCleanWith (checked engine) prog gt fuel
-                                  nested none)) := by
-                                simp [stepCleanWith, source, direct, nested]
-                          _ = finishCatchOutcome
-                              (mapConf (checked engine).denote source) rest
-                              res ((checked engine).denote state)
-                              (mapRunOutcome (checked engine).denote
-                                (runCleanWith (checked engine) prog gt fuel
-                                  nested none)) :=
-                                mapStepOutcome_finishCatchOutcome
-                                  (checked engine).denote source rest res
-                                  state _
-                          _ = finishCatchOutcome
-                              (mapConf (checked engine).denote source) rest
-                              res ((checked engine).denote state)
-                              (runCleanWith reference prog gt fuel
-                                (erase (checked engine) nested) none) := by
-                                unfold reference
-                                rw [nestedRun]
-                          _ = finishCatchOutcome
-                              (mapConf (checked engine).denote source) rest
-                              res ((checked engine).denote state)
-                              (runCleanWith reference prog gt fuel
-                                (subConfOfWith reference
-                                  (mapConf (checked engine).denote source)
-                                  sub ((checked engine).denote state) tmpl)
-                                none) := by
-                                unfold reference
-                                rw [erase_subConfOfWith]
-                                rfl
-                          _ = stepCleanWith reference prog gt (fuel + 1)
-                              (mapConf (checked engine).denote source) := by
-                                unfold reference
-                                simp [stepCleanWith, source, direct]
+                        simp [stepCleanWith, source, direct, mapStepOutcome,
+                          erase]
+                        rfl
                     | some result =>
                         cases result with
                         | error error =>
@@ -4180,6 +4304,20 @@ theorem checked_clean_run_step_simulation (engine : SubstEngine) (prog : Prog)
                     simpa [stepCleanWith, erase, mapConf] using
                       rawProgressed
                         ({ cur := some (Goal.cut :: rest, state)
+                           alts := alts
+                           world := world
+                           counter := counter
+                           qterm := qterm
+                           answers := answers
+                           answerKeys := answerKeys
+                           answerKeys_sound := answerKeys_sound
+                           barriers := barriers } :
+                          Conf (checked engine).State)
+                | catchExit template result =>
+                    simpa [stepCleanWith, erase, mapConf] using
+                      rawProgressed
+                        ({ cur := some
+                            (Goal.catchExit template result :: rest, state)
                            alts := alts
                            world := world
                            counter := counter

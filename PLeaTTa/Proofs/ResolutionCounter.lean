@@ -87,6 +87,26 @@ theorem resolutionLiveVars_pull_subset
                 simpa [PLeaTTa.pull, pullAux, pullAuxTracked,
                   pullAuxCached, resolutionLiveVars, resolutionAltVars,
                   List.append_assoc] using member
+          | catchActive frame =>
+              cases barriers with
+              | none =>
+                  have retained := ih (barriers := none) member
+                  simp [PLeaTTa.pull, pullAux, pullAuxTracked,
+                    resolutionLiveVars, resolutionAltVars,
+                    resolutionCatchFrameVars, List.append_assoc] at retained ⊢
+                  aesop
+              | some depth =>
+                  have retained := ih (barriers := some (depth - 1)) member
+                  simp [PLeaTTa.pull, pullAux, pullAuxTracked,
+                    pullAuxCached, resolutionLiveVars, resolutionAltVars,
+                    resolutionCatchFrameVars, List.append_assoc] at retained ⊢
+                  aesop
+          | catchDormant frame protectedAlts =>
+              cases barriers <;>
+                simp [PLeaTTa.pull, pullAux, pullAuxTracked, pullAuxCached,
+                  resolutionLiveVars, resolutionAltVars,
+                  resolutionCatchFrameVars, List.append_assoc] at member ⊢ <;>
+                aesop
   | some branch =>
       rcases branch with ⟨activeGoals, activeBinding⟩
       induction alts generalizing barriers with
@@ -118,6 +138,26 @@ theorem resolutionLiveVars_pull_subset
                 simpa [PLeaTTa.pull, pullAux, pullAuxTracked,
                   pullAuxCached, resolutionLiveVars, resolutionAltVars,
                   List.append_assoc] using extended
+          | catchActive frame =>
+              cases barriers with
+              | none =>
+                  have retained := ih (barriers := none) member
+                  simp [PLeaTTa.pull, pullAux, pullAuxTracked,
+                    resolutionLiveVars, resolutionAltVars,
+                    resolutionCatchFrameVars, List.append_assoc] at retained ⊢
+                  aesop
+              | some depth =>
+                  have retained := ih (barriers := some (depth - 1)) member
+                  simp [PLeaTTa.pull, pullAux, pullAuxTracked,
+                    pullAuxCached, resolutionLiveVars, resolutionAltVars,
+                    resolutionCatchFrameVars, List.append_assoc] at retained ⊢
+                  aesop
+          | catchDormant frame protectedAlts =>
+              cases barriers <;>
+                simp [PLeaTTa.pull, pullAux, pullAuxTracked, pullAuxCached,
+                  resolutionLiveVars, resolutionAltVars,
+                  resolutionCatchFrameVars, List.append_assoc] at member ⊢ <;>
+                aesop
 
 theorem ConfBelowResolutionCounter.pull {conf : Conf}
     (below : ConfBelowResolutionCounter conf) :
@@ -126,7 +166,11 @@ theorem ConfBelowResolutionCounter.pull {conf : Conf}
     unfold PLeaTTa.pull
     generalize pullAuxTracked conf.barriers conf.alts = result
     rcases result with ⟨result, cache⟩
-    cases result <;> exact Nat.le_refl _)
+    cases result with
+    | none => exact Nat.le_refl _
+    | some target =>
+        rcases target with ⟨target, rest⟩
+        cases target <;> exact Nat.le_refl _)
     (resolutionLiveVars_pull_subset conf)
 
 private theorem resolutionSeedHighWaterName_le_of_mem
@@ -400,6 +444,12 @@ theorem resolutionSeedHighWaterGoal_renameCompact_le
       simp only [renameGoalSuffix, specializationGoalVars,
         resolutionSeedHighWaterNames_append]
       omega
+  | catchExit template result =>
+      have htemplate := resolutionSeedHighWaterAtom_renameCompact_le template seed
+      have hresult := resolutionSeedHighWaterAtom_renameCompact_le result seed
+      simp only [renameGoalSuffix, specializationGoalVars,
+        resolutionSeedHighWaterNames_append]
+      omega
   | softcut template sub thenGoals elseGoals =>
       have htemplate := resolutionSeedHighWaterAtom_renameCompact_le template seed
       have hsub := resolutionSeedHighWaterGoals_renameCompact_le sub barrier seed
@@ -557,6 +607,42 @@ mutual
       simp [tagCutsBranches, specializationBranchVars,
         specializationGoalsVars_tagCutsGoals,
         specializationBranchVars_tagCutsBranches]
+
+end
+
+mutual
+
+@[simp] theorem specializationGoalVars_retagCutsGoal
+    (barrier : Nat) (goal : Goal) :
+    specializationGoalVars (retagCutsGoal barrier goal) =
+      specializationGoalVars goal := by
+  cases goal <;>
+    simp [retagCutsGoal, specializationGoalVars,
+      specializationGoalsVars_retagCutsGoals,
+      specializationBranchVars_retagCutsBranches]
+
+@[simp] theorem specializationGoalsVars_retagCutsGoals
+    (barrier : Nat) (goals : List Goal) :
+    specializationGoalsVars (retagCutsGoals barrier goals) =
+      specializationGoalsVars goals := by
+  cases goals with
+  | nil => rfl
+  | cons goal rest =>
+      simp [retagCutsGoals, specializationGoalsVars,
+        specializationGoalVars_retagCutsGoal,
+        specializationGoalsVars_retagCutsGoals]
+
+@[simp] theorem specializationBranchVars_retagCutsBranches
+    (barrier : Nat) (branches : List (Atom × List Goal)) :
+    specializationBranchVars (retagCutsBranches barrier branches) =
+      specializationBranchVars branches := by
+  cases branches with
+  | nil => rfl
+  | cons branch rest =>
+      rcases branch with ⟨template, goals⟩
+      simp [retagCutsBranches, specializationBranchVars,
+        specializationGoalsVars_retagCutsGoals,
+        specializationBranchVars_retagCutsBranches]
 
 end
 
@@ -1246,6 +1332,18 @@ theorem cutToCached_resolutionAltVars_subset (alts : List Alt) (cut depth : Nat)
           · simp only [List.flatMap_cons, List.mem_append]
             exact Or.inr (ih (depth := depth) member)
           · exact member
+      | catchActive frame =>
+          unfold cutToCached at member
+          split at member
+          · simp only [List.flatMap_cons, List.mem_append]
+            exact Or.inr (ih (depth := depth - 1) member)
+          · exact member
+      | catchDormant frame protectedAlts =>
+          unfold cutToCached at member
+          split at member
+          · simp only [List.flatMap_cons, List.mem_append]
+            exact Or.inr (ih (depth := depth) member)
+          · exact member
 
 theorem cutToTracked_resolutionAltVars_subset (alts : List Alt) (cut : Nat)
     (cache : Option Nat) (name : String)
@@ -1522,7 +1620,38 @@ theorem smatchAlts_counter_mono (world : PWorld) (counter : Nat)
   unfold pull
   generalize pullAuxTracked conf.barriers conf.alts = result
   rcases result with ⟨result, cache⟩
-  cases result <;> rfl
+  cases result with
+  | none => rfl
+  | some target =>
+      rcases target with ⟨target, rest⟩
+      cases target <;> rfl
+
+@[simp] theorem enterStreamingCatch_counter {Binding : Type}
+    (conf : Conf Binding) (template : Atom) (sub : List Goal)
+    (result : Atom) (rest : List Goal) (entry : Binding) :
+    (enterStreamingCatch conf template sub result rest entry).counter =
+      conf.counter := by
+  rfl
+
+@[simp] theorem exitStreamingCatch_counter {Binding : Type}
+    (conf : Conf Binding) (binding : Binding) :
+    (exitStreamingCatch conf binding).counter = conf.counter := by
+  unfold exitStreamingCatch
+  split
+  · exact pull_counter _
+  · rfl
+
+theorem catchErrorSuccessor_counter_mono {Binding : Type}
+    {conf next : Conf Binding} {error : Atom}
+    (caught : catchErrorSuccessor? conf error = some next) :
+    conf.counter ≤ next.counter := by
+  unfold catchErrorSuccessor? at caught
+  cases found : splitCatchActive conf.alts with
+  | none => simp [found] at caught
+  | some split =>
+      simp only [found, Option.map_some, Option.some.injEq] at caught
+      subst next
+      exact advanceCounterPastAtoms_mono conf.counter [error]
 
 theorem Step.counter_mono {prog : Prog} {gt : GroundingTable}
     {source target : Conf} (hstep : Step prog gt source target) :
@@ -1549,6 +1678,8 @@ theorem Step.counter_mono {prog : Prog} {gt : GroundingTable}
     exact hcounter
   case findall =>
     exact Nat.le_trans (by omega) (copyFindallBag_counter_mono _ _)
+  case catch_stream_error =>
+    exact catchErrorSuccessor_counter_mono (by assumption)
   case retract_matched =>
     exact retractPredicateMatchedCounter_old_le _ _ _
   all_goals omega
@@ -1619,6 +1750,128 @@ theorem ConfBelowResolutionCounter.nested {conf : Conf}
     simpa using hqterm
   · simp [resolutionSeedHighWaterNames]
 
+theorem ConfBelowResolutionCounter.enterStreamingCatch {conf : Conf}
+    (below : ConfBelowResolutionCounter conf) (template : Atom)
+    (sub : List Goal) (result : Atom) (rest : List Goal) (entry : Subst)
+    (head : conf.cur =
+      some (Goal.catchg template sub result :: rest, entry)) :
+    ConfBelowResolutionCounter
+      (enterStreamingCatch conf template sub result rest entry) := by
+  apply below.of_subset (by rfl)
+  intro name member
+  unfold PLeaTTa.enterStreamingCatch at member
+  simp [resolutionLiveVars, resolutionAltVars,
+    resolutionCatchFrameVars, specializationGoalsVars,
+    specializationGoalVars, head, List.append_assoc] at member ⊢
+  aesop
+
+theorem ConfBelowResolutionCounter.exitStreamingCatch {conf : Conf}
+    (below : ConfBelowResolutionCounter conf) (template result : Atom)
+    (rest : List Goal) (binding next : Subst)
+    (head : conf.cur =
+      some (Goal.catchExit template result :: rest, binding))
+    (unified : unifyB binding result template = some next) :
+    ConfBelowResolutionCounter (exitStreamingCatch conf next) := by
+  have nextOrigin : ∀ name, name ∈ resolutionSubstVars next →
+      name ∈ resolutionSubstVars binding ∨ name ∈ result.vars ∨
+        name ∈ template.vars := by
+    intro name member
+    exact unifyB_substVars_origin binding result template next unified name member
+  have nextActiveOrigin : ∀ name, name ∈ resolutionSubstVars next →
+      ((name ∈ template.vars ∨ name ∈ result.vars) ∨
+        name ∈ specializationGoalsVars rest) ∨
+          name ∈ resolutionSubstVars binding := by
+    intro name member
+    rcases nextOrigin name member with hbinding | hresult | htemplate
+    · exact Or.inr hbinding
+    · exact Or.inl (Or.inl (Or.inr hresult))
+    · exact Or.inl (Or.inl (Or.inl htemplate))
+  have nextBelow : ConfBelowResolutionCounter
+      { conf with cur := some (rest, next) } := by
+    apply below.replaceActive
+      (Goal.catchExit template result :: rest) binding head rest next
+    intro name member
+    simp only [specializationGoalsVars, specializationGoalVars,
+      List.mem_append] at member ⊢
+    rcases member with hrest | hnext
+    · exact Or.inl (Or.inr hrest)
+    · exact nextActiveOrigin name hnext
+  have exitEq :
+      PLeaTTa.exitStreamingCatch
+          ({ conf with cur := some (rest, next) }) next =
+        PLeaTTa.exitStreamingCatch conf next := by
+    unfold PLeaTTa.exitStreamingCatch
+    rfl
+  rw [← exitEq]
+  let updated : Conf := { conf with cur := some (rest, next) }
+  change ConfBelowResolutionCounter
+    (PLeaTTa.exitStreamingCatch updated next)
+  unfold PLeaTTa.exitStreamingCatch
+  cases found : splitCatchActive updated.alts with
+  | none =>
+      exact nextBelow.clearActive.pull
+  | some split =>
+      have reassembled := splitCatchActive_reassembles updated.alts
+      simp only [found] at reassembled
+      have ownedSubset (name : String)
+          (member : name ∈ specializationGoalsVars split.frame.rest ∨
+            name ∈ resolutionAltsVars
+              (Alt.catchDormant split.frame split.protectedAlts ::
+                split.outer)) :
+          name ∈ resolutionAltsVars updated.alts := by
+        rw [reassembled]
+        simp only [resolutionAltsVars_eq_flatMap, List.flatMap_append,
+          List.flatMap_cons, resolutionAltVars, List.mem_append] at member ⊢
+        rcases member with hframe | halts
+        · exact Or.inr (Or.inl (by
+            simp [resolutionCatchFrameVars, hframe]))
+        · aesop
+      apply nextBelow.of_subset (by rfl)
+      intro name member
+      simp only [resolutionLiveVars, List.mem_append] at member ⊢
+      rcases member with ((hcurrent | halts) | hqterm) | hanswers
+      · rcases hcurrent with hframe | hnext
+        · exact Or.inl (Or.inl (Or.inr
+            (ownedSubset name (Or.inl hframe))))
+        · exact Or.inl (Or.inl (Or.inl (Or.inr hnext)))
+      · exact Or.inl (Or.inl (Or.inr
+          (ownedSubset name (Or.inr halts))))
+      · exact Or.inl (Or.inr hqterm)
+      · exact Or.inr hanswers
+
+theorem ConfBelowResolutionCounter.catchErrorSuccessor {conf next : Conf}
+    (below : ConfBelowResolutionCounter conf) (error : Atom)
+    (caught : catchErrorSuccessor? conf error = some next) :
+    ConfBelowResolutionCounter next := by
+  cases found : splitCatchActive conf.alts with
+  | none =>
+      simp [catchErrorSuccessor?, found] at caught
+  | some split =>
+      simp only [catchErrorSuccessor?, found, Option.map_some,
+        Option.some.injEq] at caught
+      subst next
+      have reassembled := splitCatchActive_reassembles conf.alts
+      simp only [found] at reassembled
+      let nextCounter := advanceCounterPastAtoms conf.counter [error]
+      have errorNames : resolutionSeedHighWaterNames error.vars ≤
+          nextCounter := by
+        unfold nextCounter advanceCounterPastAtoms
+        rw [resolutionSeedHighWaterAtoms_eq]
+        simp only [List.flatMap_singleton]
+        exact Nat.le_max_right _ _
+      have errorName (name : String) (member : name ∈ error.vars) :
+          resolutionSeedHighWaterName name ≤ nextCounter :=
+        (PersistentSubst.resolutionSeedHighWaterNames_le_iff
+          error.vars nextCounter).mp errorNames name member
+      apply below.of_origin
+        (advanceCounterPastAtoms_mono conf.counter [error])
+      intro name member
+      simp [resolutionLiveVars, resolutionAltVars,
+        resolutionCatchFrameVars, specializationGoalsVars,
+        specializationGoalVars, reassembled, nextCounter,
+        List.append_assoc] at member ⊢
+      aesop
+
 /-- The monotone resolution-name counter bounds every variable on the live
     execution surface after every formal semantic step. -/
 theorem Step.preserves_belowResolutionCounter {prog : Prog}
@@ -1653,6 +1906,18 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
   case step =>
     intro a b d err hstep hraise ihStep ihRaise below
     exact ihRaise (ihStep below)
+  case catch_stream_enter =>
+    intro c template sub result rest binding head notDirect below
+    exact below.enterStreamingCatch template sub result rest binding head
+  case catch_stream_exit =>
+    intro c template result rest binding next head unified below
+    exact below.exitStreamingCatch template result rest binding next head unified
+  case catch_stream_exit_fail =>
+    intro c template result rest binding head unified below
+    exact below.clearActive.pull
+  case catch_stream_error =>
+    intro c next op args result rest binding error head raised caught below
+    exact below.catchErrorSuccessor error caught
   case answer =>
     intro c binding hcur below
     have hactive := below.active [] binding hcur
@@ -2496,58 +2761,6 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
       exact Nat.max_le.mpr ⟨hbranches, below.alts⟩
     · exact below.qterm
     · exact below.answers
-  case catch_run =>
-    intro c d template sub res rest binding hcur hdirect hrun hterminal ih
-      below
-    have nestedBelow : ConfBelowResolutionCounter
-        (Conf.mk (some (sub, binding)) [] c.world c.counter template []
-          [] (by rfl) (resetBarrierCache c.barriers)) :=
-      below.nested (Goal.catchg template sub res :: rest) sub binding hcur
-        c.world template (by
-          intro name member
-          simp only [specializationGoalsVars, specializationGoalVars,
-            List.mem_append] at member ⊢
-          rcases member with (hsub | hbinding) | htemplate
-          · simp [hsub]
-          · simp [hbinding]
-          · simp [htemplate])
-    have dBelow := ih nestedBelow
-    have hcounter : c.counter ≤ d.counter := by
-      simpa using hrun.counter_mono
-    have hqueued := below.enqueueEqAlts
-      (Goal.catchg template sub res :: rest) binding hcur res rest
-      d.answerValues
-      d.world d.counter hcounter (by
-        intro name member
-        simp only [specializationGoalsVars, specializationGoalVars,
-          List.mem_append] at member ⊢
-        rcases member with (hres | hrest) | hbinding
-        · simp [hres]
-        · simp [hrest]
-        · simp [hbinding]) dBelow.answerValues
-    exact hqueued.pull
-  case catch_run_error =>
-    intro c d template sub res rest binding err hcur hdirect hrun ih below
-    let counter := advanceCounterPastAtoms d.counter [err]
-    have hcounter : c.counter ≤ counter :=
-      Nat.le_trans (by simpa using hrun.counter_mono)
-        (advanceCounterPastAtoms_mono d.counter [err])
-    have herr : resolutionSeedHighWaterNames err.vars ≤ counter := by
-      unfold counter advanceCounterPastAtoms
-      rw [resolutionSeedHighWaterAtoms_eq]
-      simp only [List.flatMap_singleton]
-      exact Nat.le_max_right _ _
-    have hnext := below.replaceActiveEq
-      (Goal.catchg template sub res :: rest) binding hcur res err rest
-      d.world counter hcounter (by
-        intro name member
-        simp only [specializationGoalsVars, specializationGoalVars,
-          List.mem_append] at member ⊢
-        rcases member with (hres | hrest) | hbinding
-        · simp [hres]
-        · simp [hrest]
-        · simp [hbinding]) herr
-    simpa [counter] using hnext
   case softcut_some =>
     intro c d template sub thenGoals elseGoals rest binding hcur hrun
       hterminal hnonempty ih below

@@ -44,7 +44,11 @@ theorem pull_qterm {Binding : Type} (conf : PLeaTTa.Conf Binding) :
     PLeaTTa.pullAuxTracked conf.barriers conf.alts = result
   cases result with
   | mk branch cache =>
-      cases branch <;> rfl
+      cases branch with
+      | none => rfl
+      | some pulled =>
+          rcases pulled with ⟨target, rest⟩
+          cases target <;> rfl
 
 /-!
 `SegmentedActiveProductRelates` is intentionally insufficient here.  It gives

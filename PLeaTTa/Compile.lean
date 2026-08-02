@@ -588,6 +588,8 @@ def substCompiledGoal (binding : Subst) : Goal → Goal
   | .catchg template goals result =>
       .catchg (subst binding template) (substCompiledGoals binding goals)
         (subst binding result)
+  | .catchExit template result =>
+      .catchExit (subst binding template) (subst binding result)
   | .softcut template condition thenGoals elseGoals =>
       .softcut (subst binding template)
         (substCompiledGoals binding condition)
@@ -657,7 +659,8 @@ mutual
 left-to-right order in which its nested source expressions were translated. -/
 def collectCompileAliasesGoal : Goal → List (Atom × Atom)
   | .call _ _ _ | .bin _ _ _ | .callDyn _ _ _ | .evalg _ _
-  | .eq _ _ | .cut | .cutAt _ | .spread _ _ | .smatch _ | .wact _ _ _ => []
+  | .catchExit _ _ | .eq _ _ | .cut | .cutAt _ | .spread _ _ | .smatch _
+  | .wact _ _ _ => []
   | .compileAlias left right => [(left, right)]
   | .catchg _ goals _ => collectCompileAliasesGoals goals
   | .softcut _ condition thenGoals elseGoals =>
@@ -699,6 +702,7 @@ def eraseCompileAliasesGoal : Goal → Option Goal
   | .evalg value result => some (.evalg value result)
   | .catchg template goals result =>
       some (.catchg template (eraseCompileAliasesGoals goals) result)
+  | .catchExit template result => some (.catchExit template result)
   | .softcut template condition thenGoals elseGoals =>
       some (.softcut template
         (eraseCompileAliasesGoals condition)

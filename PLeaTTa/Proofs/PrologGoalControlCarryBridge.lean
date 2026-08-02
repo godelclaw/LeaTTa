@@ -84,6 +84,7 @@ goal.  Non-control term fields stay in the separately certified term forest. -/
 def materializedSoftCutControlsGoal (runtime : Subst) :
     PLeaTTa.Goal → List MaterializedSoftCutControl
   | .catchg _ goals _ => materializedSoftCutControlsGoals runtime goals
+  | .catchExit _ _ => []
   | .softcut template condition thenGoals elseGoals =>
       MaterializedSoftCutControl.ofEmitted runtime template condition thenGoals
           elseGoals ::

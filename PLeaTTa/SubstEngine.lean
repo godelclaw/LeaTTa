@@ -213,10 +213,31 @@ namespace SubstEngine
         Metta.isGround := by
   rw [preparedAtomsAllGround_map, engine.substManyCertified_value]
 
+def mapCatchFrame {Source Target : Type} (f : Source → Target)
+    (frame : CatchFrame Source) : CatchFrame Target :=
+  { template := frame.template
+    result := frame.result
+    rest := frame.rest
+    entry := f frame.entry }
+
+mutual
+
+/-- Map every substitution representation owned by an alternative, including
+    the entry state and protected forest hidden inside a dormant catch. -/
 def mapAlt {Source Target : Type} (f : Source → Target) :
     Alt Source → Alt Target
   | .br goals state => .br goals (f state)
   | .barrier => .barrier
+  | .catchActive frame => .catchActive (mapCatchFrame f frame)
+  | .catchDormant frame protectedAlts =>
+      .catchDormant (mapCatchFrame f frame) (mapAlts f protectedAlts)
+
+def mapAlts {Source Target : Type} (f : Source → Target) :
+    List (Alt Source) → List (Alt Target)
+  | [] => []
+  | alt :: rest => mapAlt f alt :: mapAlts f rest
+
+end
 
 def mapConf {Source Target : Type} (f : Source → Target)
     (conf : Conf Source) : Conf Target :=
@@ -236,21 +257,83 @@ def erase (engine : SubstEngine) (conf : Conf engine.State) : Conf :=
 def lift (engine : SubstEngine) (conf : Conf) : Conf engine.State :=
   mapConf engine.ofDenote conf
 
+mutual
+
+/-- Validity covers every representation value owned by a control tree.  In
+    particular, dormant catch resumptions are not an unchecked hiding place. -/
 def AltValid (engine : SubstEngine) : Alt engine.State → Prop
   | .br _ state => engine.Valid state
   | .barrier => True
+  | .catchActive frame => engine.Valid frame.entry
+  | .catchDormant frame protectedAlts =>
+      engine.Valid frame.entry ∧ AltForestValid engine protectedAlts
+
+def AltForestValid (engine : SubstEngine) : List (Alt engine.State) → Prop
+  | [] => True
+  | alt :: rest => AltValid engine alt ∧ AltForestValid engine rest
+
+end
+
+@[simp] theorem altForestValid_iff_forall (engine : SubstEngine)
+    (alts : List (Alt engine.State)) :
+    AltForestValid engine alts ↔ ∀ alt ∈ alts, AltValid engine alt := by
+  induction alts with
+  | nil => simp [AltForestValid]
+  | cons alt rest ih =>
+      simp only [AltForestValid, List.mem_cons, forall_eq_or_imp, ih]
 
 def ConfValid (engine : SubstEngine) (conf : Conf engine.State) : Prop :=
   (∀ goals state, conf.cur = some (goals, state) → engine.Valid state) ∧
     ∀ alt ∈ conf.alts, AltValid engine alt
 
+mutual
+
 @[simp] theorem mapAlt_id (alt : Alt) : mapAlt id alt = alt := by
-  cases alt <;> rfl
+  cases alt with
+  | br goals state => rfl
+  | barrier => rfl
+  | catchActive frame => cases frame; rfl
+  | catchDormant frame protectedAlts =>
+      simp only [mapAlt, mapAlts_id]
+      cases frame
+      rfl
+
+@[simp] theorem mapAlts_id (alts : List Alt) : mapAlts id alts = alts := by
+  cases alts with
+  | nil => rfl
+  | cons alt rest => simp only [mapAlts, mapAlt_id, mapAlts_id]
+
+end
+
+@[simp] theorem mapAlts_eq_map {Source Target : Type}
+    (f : Source → Target) (alts : List (Alt Source)) :
+    mapAlts f alts = alts.map (mapAlt f) := by
+  induction alts with
+  | nil => rfl
+  | cons alt rest => simp [mapAlts, *]
+
+mutual
 
 theorem mapAlt_comp {A B C : Type} (f : A → B) (g : B → C)
     (alt : Alt A) :
     mapAlt g (mapAlt f alt) = mapAlt (g ∘ f) alt := by
-  cases alt <;> rfl
+  cases alt with
+  | br goals state => rfl
+  | barrier => rfl
+  | catchActive frame => cases frame; rfl
+  | catchDormant frame protectedAlts =>
+      simp only [mapAlt, mapAlts_comp]
+      cases frame
+      rfl
+
+theorem mapAlts_comp {A B C : Type} (f : A → B) (g : B → C)
+    (alts : List (Alt A)) :
+    mapAlts g (mapAlts f alts) = mapAlts (g ∘ f) alts := by
+  cases alts with
+  | nil => rfl
+  | cons alt rest => simp only [mapAlts, mapAlt_comp, mapAlts_comp]
+
+end
 
 theorem mapConf_comp {A B C : Type} (f : A → B) (g : B → C)
     (conf : Conf A) :
@@ -272,8 +355,78 @@ theorem mapConf_comp {A B C : Type} (f : A → B) (g : B → C)
       · cases cur <;> simp
       · induction alts with
         | nil => rfl
-        | cons alt rest ih =>
-            cases alt <;> simp [mapAlt, ih]
+        | cons alt rest ih => simp [mapAlt_id, ih]
+
+mutual
+
+theorem mapAlt_ofDenote_valid (engine : SubstEngine) (alt : Alt) :
+    AltValid engine (mapAlt engine.ofDenote alt) := by
+  cases alt with
+  | br goals state => exact engine.ofDenote_valid state
+  | barrier => trivial
+  | catchActive frame => exact engine.ofDenote_valid frame.entry
+  | catchDormant frame protectedAlts =>
+      exact ⟨engine.ofDenote_valid frame.entry,
+        mapAlts_ofDenote_forest_valid engine protectedAlts⟩
+
+theorem mapAlts_ofDenote_forest_valid (engine : SubstEngine)
+    (alts : List Alt) :
+    AltForestValid engine (mapAlts engine.ofDenote alts) := by
+  cases alts with
+  | nil => trivial
+  | cons alt rest =>
+      exact ⟨mapAlt_ofDenote_valid engine alt,
+        mapAlts_ofDenote_forest_valid engine rest⟩
+
+end
+
+mutual
+
+theorem mapAlt_valid_of {Source : Type} (engine : SubstEngine)
+    (f : Source → engine.State) (mappedValid : ∀ source, engine.Valid (f source))
+    (alt : Alt Source) : AltValid engine (mapAlt f alt) := by
+  cases alt with
+  | br goals state => exact mappedValid state
+  | barrier => trivial
+  | catchActive frame => exact mappedValid frame.entry
+  | catchDormant frame protectedAlts =>
+      exact ⟨mappedValid frame.entry,
+        mapAlts_forest_valid_of engine f mappedValid protectedAlts⟩
+
+theorem mapAlts_forest_valid_of {Source : Type} (engine : SubstEngine)
+    (f : Source → engine.State) (mappedValid : ∀ source, engine.Valid (f source))
+    (alts : List (Alt Source)) : AltForestValid engine (mapAlts f alts) := by
+  cases alts with
+  | nil => trivial
+  | cons alt rest =>
+      exact ⟨mapAlt_valid_of engine f mappedValid alt,
+        mapAlts_forest_valid_of engine f mappedValid rest⟩
+
+end
+
+mutual
+
+theorem altValid_of_all (engine : SubstEngine)
+    (allValid : ∀ state, engine.Valid state) (alt : Alt engine.State) :
+    AltValid engine alt := by
+  cases alt with
+  | br goals state => exact allValid state
+  | barrier => trivial
+  | catchActive frame => exact allValid frame.entry
+  | catchDormant frame protectedAlts =>
+      exact ⟨allValid frame.entry,
+        altForestValid_of_all engine allValid protectedAlts⟩
+
+theorem altForestValid_of_all (engine : SubstEngine)
+    (allValid : ∀ state, engine.Valid state)
+    (alts : List (Alt engine.State)) : AltForestValid engine alts := by
+  cases alts with
+  | nil => trivial
+  | cons alt rest =>
+      exact ⟨altValid_of_all engine allValid alt,
+        altForestValid_of_all engine allValid rest⟩
+
+end
 
 theorem lift_valid (engine : SubstEngine) (conf : Conf) :
     ConfValid engine (lift engine conf) := by
@@ -292,9 +445,7 @@ theorem lift_valid (engine : SubstEngine) (conf : Conf) :
     unfold lift mapConf at halt
     rw [List.mem_map] at halt
     rcases halt with ⟨sourceAlt, hsource, rfl⟩
-    cases sourceAlt with
-    | barrier => trivial
-    | br goals sourceState => exact engine.ofDenote_valid sourceState
+    exact mapAlt_ofDenote_valid engine sourceAlt
 
 def referenceSubst (state : Subst) (atom : Atom) : Atom × Subst :=
   (PLeaTTa.subst state atom, state)
@@ -779,7 +930,7 @@ theorem checked_confValid (engine : SubstEngine)
   · intro goals state equality
     trivial
   · intro alt member
-    cases alt <;> trivial
+    exact altValid_of_all (checked engine) (fun _ => trivial) alt
 
 namespace PreparedUnify
 

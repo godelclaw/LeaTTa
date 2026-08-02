@@ -181,6 +181,26 @@ theorem RetainedCursorAlternativeOwnership.barrierCount_zero
       scan⟩
   exact scan.barrierCount_zero
 
+/-- Exact ownership retains the stronger scan invariant that every stored
+alternative is an ordinary branch.  In particular, neither active nor
+dormant catch markers can occur in a clause-owned resource bank. -/
+theorem RetainedCursorAlternativeOwnership.alts_all_branches
+    {queryAlpha : List (LogicVar × String)}
+    {cursor : PreparedCursor}
+    {argsv args : List Atom} {res : Atom}
+    {rest : List PLeaTTa.Goal} {binding : Subst}
+    {qterm : Atom} {barrier counter : Nat}
+    {alts : List PLeaTTa.Alt} {finalCounter : Nat}
+    (ownership :
+      RetainedCursorAlternativeOwnership queryAlpha cursor argsv args res
+        rest binding qterm barrier counter alts finalCounter) :
+    ∀ alt ∈ alts,
+      ∃ goals branchBinding, alt = PLeaTTa.Alt.br goals branchBinding := by
+  rcases ownership with
+    ⟨_candidates, _wellFormed, _query, _substitutedArgs, _supported,
+      _arities, scan⟩
+  exact scan.alts_all_branches
+
 /-! ## Anti-vacuity at the exact executable ownership seam -/
 
 private def ownershipWitnessCutClause : PLeaTTa.Clause :=

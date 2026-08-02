@@ -233,7 +233,7 @@ theorem pullExact
         answered cell answerBindings beforeResources afterResources beforeAlts
         afterAlts selectedGoals selectedBinding selectedTail) :
     PLeaTTa.pullAux beforeAlts =
-      some ((selectedGoals, selectedBinding), selectedTail) := by
+      some (.branch selectedGoals selectedBinding, selectedTail) := by
   induction live with
   | here _ _ _ _ _ _ _ _ _ _ _ _ _ _ landing =>
       exact landing.pullAux_exact
@@ -809,7 +809,7 @@ theorem nested_wrapped_local_live_source_run_is_inhabited :
   have selected :
       PLeaTTa.pullAux
           (emptyResource.alts ++ liveResource.alts) =
-        some ((goals, binding), localTail) := by
+        some (.branch goals binding, localTail) := by
     rw [emptyHead, liveHead]
     simp [PLeaTTa.pullAux]
   rcases AnswerOriginResourceAgrees.classifyPrefix originAgreement with

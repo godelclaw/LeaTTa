@@ -75,7 +75,7 @@ theorem pullAux_flattenOwnedAlts_first_nonempty
     PLeaTTa.pullAux
         (flattenOwnedAlts (emptyPrefix ++ first :: rest) base) =
       some
-        ((goals, binding),
+        (.branch goals binding,
           tail ++ PLeaTTa.Alt.barrier :: flattenOwnedAlts rest base) := by
   induction emptyPrefix with
   | nil =>
@@ -99,7 +99,7 @@ theorem pull_cur_alts_of_pullAux_some
     (goals : List PLeaTTa.Goal) (binding : Subst)
     (rest : List PLeaTTa.Alt)
     (outcome :
-      PLeaTTa.pullAux conf.alts = some ((goals, binding), rest)) :
+      PLeaTTa.pullAux conf.alts = some (.branch goals binding, rest)) :
     (PLeaTTa.pull conf).cur = some (goals, binding) ∧
       (PLeaTTa.pull conf).alts = rest := by
   unfold PLeaTTa.pull
@@ -109,7 +109,7 @@ theorem pull_cur_alts_of_pullAux_some
   have branchEq :=
     PLeaTTa.pullAuxTracked_fst conf.barriers conf.alts
   rw [trackedEq, outcome] at branchEq
-  change branch = some ((goals, binding), rest) at branchEq
+  change branch = some (.branch goals binding, rest) at branchEq
   subst branch
   exact ⟨rfl, rfl⟩
 
@@ -285,7 +285,7 @@ theorem two_frame_empty_then_live_pull_witness :
         (flattenOwnedAlts
           [emptyPullWitnessResource, livePullWitnessResource] []) =
       some
-        (([.call "witness" [] (.sym "result")], []),
+        (.branch [.call "witness" [] (.sym "result")] [],
           [PLeaTTa.Alt.barrier]) := by
   rfl
 
@@ -1099,7 +1099,24 @@ structure BaseLiveOuterResourceCatchupPartition
   binding : Subst
   tail : List PLeaTTa.Alt
   baseLive :
-    PLeaTTa.pullAux base = some ((goals, binding), tail)
+    PLeaTTa.pullAux base = some (.branch goals binding, tail)
+
+/-- All aligned local resources are empty, while the arbitrary older base
+resumes a dormant catch delimiter.  The protected bank and delimiter are
+kept literal: this outcome is neither an ordinary answer nor terminality. -/
+structure BaseCatchResumeOuterResourceCatchupPartition
+    (alpha : List (LogicVar × String))
+    (segments : List ControlSegment)
+    (resources : List RetainedAlternativeSegment)
+    (context : ActiveProductContext)
+    (base : List PLeaTTa.Alt) where
+  allLocal :
+    AllLocalResourcesExhausted alpha segments resources context
+  frame : PLeaTTa.CatchFrame
+  protectedAlts : List PLeaTTa.Alt
+  tail : List PLeaTTa.Alt
+  baseResume :
+    PLeaTTa.pullAux base = some (.catchResume frame protectedAlts, tail)
 
 /-- Exhaustive constructive outcome of eager catch-up across the aligned
 local resources and the arbitrary older executable base. -/
@@ -1116,6 +1133,10 @@ inductive OuterResourceCatchupOutcome
       (partition :
         BaseLiveOuterResourceCatchupPartition alpha segments resources context
           base)
+  | baseCatchResume
+      (partition :
+        BaseCatchResumeOuterResourceCatchupPartition alpha segments resources
+          context base)
   | terminal
       (partition :
         TerminalOuterResourceCatchupPartition alpha segments resources context
@@ -1219,41 +1240,39 @@ theorem SourceControlResourceContextAgrees.classifyLocal
                       exhaustedPulls exhaustedFinishEmpty
                       partition.crossedWork }
       | cons head tail =>
-          cases head with
-          | barrier =>
-              have markerFree :=
-                RetainedAlternativeSegment.HasIndexedOwnershipAt.barrierCount_zero
-                  resourceOwnership
-              rw [altsEq] at markerFree
-              simp at markerFree
-          | br goals binding =>
-              exact .firstLive
-                { crossedSegments := []
-                  firstSegment := segment
-                  survivingSegments := segments
-                  crossedResources := []
-                  first := resource
-                  survivingResources := resources
-                  crossedFrames := []
-                  firstFrame :=
-                    { callerScope := nextScope
-                      predicateScope := currentScope
-                      retained := .clauses currentScope cursor
-                      callerRest := segment.references }
-                  survivingContext := context
-                  firstCursor := cursor
-                  rejectionSteps := 0
-                  goals := goals
-                  binding := binding
-                  tail := tail
-                  segmentsEq := rfl
-                  resourcesEq := rfl
-                  contextEq := rfl
-                  crossedSegmentDepth := rfl
-                  crossedWork := .nil
-                  firstRetainedShape := rfl
-                  firstOwnership := resourceOwnership
-                  firstHead := altsEq }
+          have branchOnly :=
+            RetainedAlternativeSegment.HasIndexedOwnershipAt.alts_all_branches
+              resourceOwnership
+          have headBranch := branchOnly head (by rw [altsEq]; simp)
+          rcases headBranch with ⟨goals, binding, headEq⟩
+          subst head
+          exact .firstLive
+            { crossedSegments := []
+              firstSegment := segment
+              survivingSegments := segments
+              crossedResources := []
+              first := resource
+              survivingResources := resources
+              crossedFrames := []
+              firstFrame :=
+                { callerScope := nextScope
+                  predicateScope := currentScope
+                  retained := .clauses currentScope cursor
+                  callerRest := segment.references }
+              survivingContext := context
+              firstCursor := cursor
+              rejectionSteps := 0
+              goals := goals
+              binding := binding
+              tail := tail
+              segmentsEq := rfl
+              resourcesEq := rfl
+              contextEq := rfl
+              crossedSegmentDepth := rfl
+              crossedWork := .nil
+              firstRetainedShape := rfl
+              firstOwnership := resourceOwnership
+              firstHead := altsEq }
 
 /-- Construct the honest three-way catch-up partition automatically.
 
@@ -1284,13 +1303,22 @@ theorem SourceControlResourceContextAgrees.classifyCatchup
               crossedWork := partition.crossedWork
               baseTerminal := basePull }
       | some result =>
-          rcases result with ⟨⟨goals, binding⟩, tail⟩
-          exact .baseLive
-            { allLocal := partition
-              goals := goals
-              binding := binding
-              tail := tail
-              baseLive := basePull }
+          rcases result with ⟨target, tail⟩
+          cases target with
+          | branch goals binding =>
+              exact .baseLive
+                { allLocal := partition
+                  goals := goals
+                  binding := binding
+                  tail := tail
+                  baseLive := basePull }
+          | catchResume frame protectedAlts =>
+              exact .baseCatchResume
+                { allLocal := partition
+                  frame := frame
+                  protectedAlts := protectedAlts
+                  tail := tail
+                  baseResume := basePull }
 
 /-- A live arbitrary base is a substantive third outcome even when there are
 no local resources. -/
@@ -1310,6 +1338,28 @@ theorem empty_local_live_base_partition_is_inhabited :
       binding := []
       tail := []
       baseLive := rfl }
+  exact ⟨partition, rfl, rfl⟩
+
+/-- A dormant catch in the arbitrary older base inhabits the fourth outcome;
+it cannot be collapsed into either an ordinary live branch or terminality. -/
+theorem empty_local_catch_resume_partition_is_inhabited
+    (frame : PLeaTTa.CatchFrame) (protectedAlts : List PLeaTTa.Alt) :
+    ∃ partition :
+        BaseCatchResumeOuterResourceCatchupPartition [] [] [] []
+          [.catchDormant frame protectedAlts],
+      partition.protectedAlts = protectedAlts ∧ partition.tail = [] := by
+  let allLocal : AllLocalResourcesExhausted [] [] [] [] :=
+    { rejectionSteps := 0
+      segmentDepth := rfl
+      crossedWork := .nil }
+  let partition :
+      BaseCatchResumeOuterResourceCatchupPartition [] [] [] []
+        [.catchDormant frame protectedAlts] :=
+    { allLocal := allLocal
+      frame := frame
+      protectedAlts := protectedAlts
+      tail := []
+      baseResume := rfl }
   exact ⟨partition, rfl, rfl⟩
 
 /-- The same live base cannot be laundered into the terminal partition. -/

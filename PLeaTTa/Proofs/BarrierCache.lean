@@ -57,6 +57,15 @@ private theorem barrierCount_foldl_raw {Binding : Type}
                   simp [Nat.add_assoc]
             _ = count + rest.foldl barrierCountStep 1 :=
               congrArg (count + ·) (ih 1).symm
+      | catchActive frame =>
+          simp only [barrierCountStep]
+          calc
+            count + 1 + rest.foldl barrierCountStep 0 =
+                count + (1 + rest.foldl barrierCountStep 0) := by
+                  simp [Nat.add_assoc]
+            _ = count + rest.foldl barrierCountStep 1 :=
+              congrArg (count + ·) (ih 1).symm
+      | catchDormant frame protectedAlts => simp [barrierCountStep]
 
 theorem barrierCount_foldl {Binding : Type}
     (alts : List (Alt Binding)) (count : Nat) :
@@ -83,6 +92,21 @@ theorem barrierCount_foldl {Binding : Type}
     (goals : List Goal) (binding : Binding)
     (rest : List (Alt Binding)) :
     barrierCount (Alt.br goals binding :: rest) = barrierCount rest := by
+  unfold barrierCount
+  rw [List.foldl_cons, barrierCount_foldl_raw]
+  simp [barrierCountStep]
+
+@[simp] theorem barrierCount_cons_catchActive {Binding : Type}
+    (frame : CatchFrame Binding) (rest : List (Alt Binding)) :
+    barrierCount (Alt.catchActive frame :: rest) = barrierCount rest + 1 := by
+  unfold barrierCount
+  rw [List.foldl_cons, barrierCount_foldl_raw]
+  simp [barrierCountStep, Nat.add_comm]
+
+@[simp] theorem barrierCount_cons_catchDormant {Binding : Type}
+    (frame : CatchFrame Binding) (protectedAlts rest : List (Alt Binding)) :
+    barrierCount (Alt.catchDormant frame protectedAlts :: rest) =
+      barrierCount rest := by
   unfold barrierCount
   rw [List.foldl_cons, barrierCount_foldl_raw]
   simp [barrierCountStep]
@@ -250,6 +274,16 @@ theorem cutToCached_count_exact {Binding : Type} (cut : Nat) :
       split
       · simpa using cutToCached_count_exact cut rest
       · rfl
+  | .catchActive frame :: rest => by
+      unfold cutToCached
+      split
+      · simpa using cutToCached_count_exact cut rest
+      · rfl
+  | .catchDormant frame protectedAlts :: rest => by
+      unfold cutToCached
+      split
+      · simpa using cutToCached_count_exact cut rest
+      · rfl
 
 theorem cutToCached_fst_exact {Binding : Type} (cut : Nat) :
     ∀ alts : List (Alt Binding),
@@ -264,6 +298,18 @@ theorem cutToCached_fst_exact {Binding : Type} (cut : Nat) :
   | .br goals binding :: rest => by
       unfold cutToCached cutTo
       simp only [barrierCount_cons_branch]
+      split
+      · simpa using cutToCached_fst_exact cut rest
+      · rfl
+  | .catchActive frame :: rest => by
+      unfold cutToCached cutTo
+      simp only [barrierCount_cons_catchActive]
+      split
+      · simpa using cutToCached_fst_exact cut rest
+      · rfl
+  | .catchDormant frame protectedAlts :: rest => by
+      unfold cutToCached cutTo
+      simp only [barrierCount_cons_catchDormant]
       split
       · simpa using cutToCached_fst_exact cut rest
       · rfl
@@ -304,6 +350,10 @@ theorem pullAuxCached_exact {Binding : Type} : ∀ alts : List (Alt Binding),
       simpa [pullAuxCached, pullAux] using
         pullAuxCached_exact rest
   | .br goals binding :: rest => rfl
+  | .catchActive frame :: rest => by
+      simpa [pullAuxCached, pullAux] using
+        pullAuxCached_exact rest
+  | .catchDormant frame protectedAlts :: rest => rfl
 
 theorem BarrierCacheCoherent.pull {Binding : Type} (conf : Conf Binding)
     (coherent : BarrierCacheCoherent conf) :
@@ -313,7 +363,11 @@ theorem BarrierCacheCoherent.pull {Binding : Type} (conf : Conf Binding)
       unfold BarrierCacheCoherent PLeaTTa.pull
       rw [cached]
       simp only [pullAuxTracked]
-      cases pullAux conf.alts <;> simp
+      cases pulled : pullAux conf.alts with
+      | none => simp
+      | some result =>
+          rcases result with ⟨target, rest⟩
+          cases target <;> simp
   | some depth =>
       have exactDepth := coherent.depth_eq cached
       subst depth
@@ -324,7 +378,9 @@ theorem BarrierCacheCoherent.pull {Binding : Type} (conf : Conf Binding)
       | none => simp [BarrierCacheCoherent, barrierCount]
       | some result =>
           rcases result with ⟨branch, rest⟩
-          simp [BarrierCacheCoherent]
+          cases branch <;>
+            simp [BarrierCacheCoherent, Nat.add_assoc, Nat.add_comm,
+              Nat.add_left_comm]
 
 theorem BarrierCacheCoherent.cut {Binding : Type} (conf : Conf Binding)
     (cut : Nat) (coherent : BarrierCacheCoherent conf) :
@@ -333,6 +389,62 @@ theorem BarrierCacheCoherent.cut {Binding : Type} (conf : Conf Binding)
         alts := (cutToTracked cut conf.barriers conf.alts).1
         barriers := (cutToTracked cut conf.barriers conf.alts).2 } := by
   exact cutToTracked_coherent cut conf.barriers conf.alts coherent
+
+theorem BarrierCacheCoherent.enterStreamingCatch {Binding : Type}
+    (conf : Conf Binding) (template : Atom) (sub : List Goal)
+    (result : Atom) (rest : List Goal) (entry : Binding)
+    (coherent : BarrierCacheCoherent conf) :
+    BarrierCacheCoherent
+      (enterStreamingCatch conf template sub result rest entry) := by
+  cases cached : conf.barriers with
+  | none =>
+      simp [BarrierCacheCoherent, PLeaTTa.enterStreamingCatch, cached]
+  | some depth =>
+      have exactDepth := coherent.depth_eq cached
+      simp [BarrierCacheCoherent, PLeaTTa.enterStreamingCatch, cached,
+        exactDepth]
+
+theorem BarrierCacheCoherent.exitStreamingCatch {Binding : Type}
+    (conf : Conf Binding) (binding : Binding)
+    (coherent : BarrierCacheCoherent conf) :
+    BarrierCacheCoherent (exitStreamingCatch conf binding) := by
+  unfold PLeaTTa.exitStreamingCatch
+  cases found : splitCatchActive conf.alts with
+  | none =>
+      apply BarrierCacheCoherent.pull
+      simpa [BarrierCacheCoherent] using coherent
+  | some split =>
+      have reassembled := splitCatchActive_reassembles conf.alts
+      simp only [found] at reassembled
+      rcases split with ⟨frame, protectedAlts, outer⟩
+      cases cached : conf.barriers with
+      | none => trivial
+      | some depth =>
+          have exactDepth := coherent.depth_eq cached
+          change conf.alts =
+            protectedAlts ++ Alt.catchActive frame :: outer at reassembled
+          rw [reassembled, barrierCount_append,
+            barrierCount_cons_catchActive] at exactDepth
+          unfold BarrierCacheCoherent
+          simp only [cached, removeBarrierCache, Option.map,
+            barrierCount_cons_catchDormant]
+          change depth - (barrierCount protectedAlts + 1) =
+            barrierCount outer
+          omega
+
+theorem BarrierCacheCoherent.catchErrorSuccessor {Binding : Type}
+    (conf next : Conf Binding) (error : Atom)
+    (successor : catchErrorSuccessor? conf error = some next) :
+    BarrierCacheCoherent next := by
+  unfold catchErrorSuccessor? at successor
+  cases found : splitCatchActive conf.alts with
+  | none => simp [found] at successor
+  | some split =>
+      simp only [found, Option.map_some] at successor
+      injection successor with nextEq
+      subst next
+      cases cached : conf.barriers <;>
+        simp [BarrierCacheCoherent, exactBarrierCache, cached]
 
 /-- Every formal transition preserves exactness of an enabled barrier cache. -/
 theorem Step.preserves_barrierCacheCoherent {prog : Prog}
@@ -404,6 +516,18 @@ theorem Step.preserves_barrierCacheCoherent {prog : Prog}
       hfresh hraise ih coherent
     apply ih
     cases c.barriers <;> simp [BarrierCacheCoherent]
+  case catch_stream_enter =>
+    intro c template sub result rest entry hcur hdirect coherent
+    exact coherent.enterStreamingCatch c template sub result rest entry
+  case catch_stream_exit =>
+    intro c template result rest binding next hcur hunify coherent
+    exact coherent.exitStreamingCatch c next
+  case catch_stream_exit_fail =>
+    intro c template result rest binding hcur hunify coherent
+    exact coherent.pull
+  case catch_stream_error =>
+    intro c next op args res rest binding error hcur herror hcatch coherent
+    exact BarrierCacheCoherent.catchErrorSuccessor c next error hcatch
   all_goals intros
   all_goals try assumption
   all_goals try

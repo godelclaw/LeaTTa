@@ -771,10 +771,29 @@ def PWorld.needsTableCompute (w : PWorld) (f : String) (argsv : List Atom) : Boo
 def PWorld.deactivateTable (w : PWorld) (key : Atom) : PWorld :=
   { w with tableActive := w.tableActive.filter (fun k => k != key) }
 
-/-- One pending alternative, or a clause barrier (choice-point marker). -/
+/-- Backtrackable metadata for one streaming `catchg` activation.  Persistent
+world and allocation state are deliberately absent: exception unwind keeps
+the current world/counter while restoring only the entry binding and caller
+continuation. -/
+structure CatchFrame (Binding : Type := Subst) where
+  template : Atom
+  result : Atom
+  rest : List Goal
+  entry : Binding
+deriving Repr, Inhabited
+
+/-- One pending alternative or typed control marker.
+
+`catchActive` is both the live exception delimiter and a cut barrier while the
+protected goal executes.  `catchDormant` is an ordinary prunable choice point
+that owns the exact protected prefix while the caller continuation executes;
+its payload is inactive and therefore contributes no live cut barrier. -/
 inductive Alt (Binding : Type := Subst) where
   | br (goals : List Goal) (bnd : Binding)
   | barrier
+  | catchActive (frame : CatchFrame Binding)
+  | catchDormant (frame : CatchFrame Binding)
+      (protectedAlts : List (Alt Binding))
 deriving Repr, Inhabited
 
 def nilExactKey : PersistentSubst.AtomExactKey :=
@@ -909,17 +928,40 @@ def resolutionWorldVars (world : PWorld) : List String :=
       entry.1.vars ++ entry.2.flatMap Atom.vars) ++
     world.typeDecls.flatMap (fun entry => entry.1.vars ++ entry.2.vars)
 
+def resolutionCatchFrameVars (frame : CatchFrame) : List String :=
+  frame.template.vars ++ frame.result.vars ++
+    specializationGoalsVars frame.rest ++ resolutionSubstVars frame.entry
+
+mutual
+
 def resolutionAltVars : Alt → List String
   | .barrier => []
   | .br goals binding =>
       specializationGoalsVars goals ++ resolutionSubstVars binding
+  | .catchActive frame => resolutionCatchFrameVars frame
+  | .catchDormant frame protectedAlts =>
+      resolutionCatchFrameVars frame ++ resolutionAltsVars protectedAlts
+
+def resolutionAltsVars : List Alt → List String
+  | [] => []
+  | alternative :: rest =>
+      resolutionAltVars alternative ++ resolutionAltsVars rest
+
+end
+
+@[simp] theorem resolutionAltsVars_eq_flatMap (alts : List Alt) :
+    resolutionAltsVars alts = alts.flatMap resolutionAltVars := by
+  induction alts with
+  | nil => rfl
+  | cons alternative rest induction =>
+      simp only [resolutionAltsVars, List.flatMap_cons, induction]
 
 def resolutionConfVars (conf : Conf) : List String :=
   (match conf.cur with
     | none => []
     | some (goals, binding) =>
         specializationGoalsVars goals ++ resolutionSubstVars binding) ++
-  conf.alts.flatMap resolutionAltVars ++ resolutionWorldVars conf.world ++
+  resolutionAltsVars conf.alts ++ resolutionWorldVars conf.world ++
   conf.qterm.vars ++ conf.answers.flatMap Atom.vars
 
 /-- Variable names that can collide with the next standardized-apart clause.
@@ -930,7 +972,7 @@ def resolutionLiveVars (conf : Conf) : List String :=
     | none => []
     | some (goals, binding) =>
         specializationGoalsVars goals ++ resolutionSubstVars binding) ++
-  conf.alts.flatMap resolutionAltVars ++
+  resolutionAltsVars conf.alts ++
   conf.qterm.vars ++ conf.answers.flatMap Atom.vars
 
 def resolutionLiveHighWater (conf : Conf) : Nat :=
@@ -1201,6 +1243,8 @@ private def goalAlphaAtom : Goal → Atom
   | .evalg value res => Atom.expr [Atom.sym "goal.evalg", value, res]
   | .catchg tmpl sub res =>
       Atom.expr [Atom.sym "goal.catchg", tmpl, goalsAlphaAtom sub, res]
+  | .catchExit template result =>
+      Atom.expr [Atom.sym "goal.catchExit", template, result]
   | .softcut tmpl sub thn els =>
       Atom.expr [Atom.sym "goal.softcut", tmpl, goalsAlphaAtom sub,
         goalsAlphaAtom thn, goalsAlphaAtom els]
@@ -2101,6 +2145,8 @@ private def goalVarsFuel : Nat → Goal → VarSet → VarSet
   | _ + 1, .evalg v r, acc => addAtomVars (addAtomVars acc r) v
   | k + 1, .catchg t sub r, acc =>
       goalsVarsFuel k sub (addAtomVars (addAtomVars acc r) t)
+  | _ + 1, .catchExit template result, acc =>
+      addAtomVars (addAtomVars acc result) template
   | k + 1, .softcut t sub thn els, acc =>
       goalsVarsFuel k els (goalsVarsFuel k thn
         (goalsVarsFuel k sub (addAtomVars acc t)))
@@ -2143,6 +2189,7 @@ private def goalFuel : Goal → Nat
   | .callDyn _ _ _ => 1
   | .evalg _ _ => 1
   | .catchg _ sub _ => goalsFuel sub + 1
+  | .catchExit _ _ => 1
   | .softcut _ sub thn els =>
       Nat.max (goalsFuel sub) (Nat.max (goalsFuel thn) (goalsFuel els)) + 1
   | .eq _ _ => 1
@@ -2737,6 +2784,9 @@ private theorem goalVarsFuel_preserves_contains (fuel : Nat)
           exact goalsVarsFuel_preserves_contains fuel tracked sub _
             (addAtomVars_preserves_contains tracked _
               (addAtomVars_preserves_contains tracked acc h res) tmpl)
+      | catchExit template result =>
+          exact addAtomVars_preserves_contains tracked _
+            (addAtomVars_preserves_contains tracked acc h result) template
       | softcut tmpl sub thn els =>
           exact goalsVarsFuel_preserves_contains fuel tracked els _
             (goalsVarsFuel_preserves_contains fuel tracked thn _
@@ -3911,6 +3961,90 @@ theorem trimFor_eq_self_of_root_keys (goals : List Goal) (qterm : Atom)
     isTrimRoot goals (Atom.var q) q = true := by
   simp [isTrimRoot, addAtomVars]
 
+/-- The template carried by the typed streaming-catch exit is an explicit
+liveness root.  This is the positive half of the regression that motivated
+replacing the former nullary delimiter. -/
+@[simp] theorem isTrimRoot_catchExit_template_var
+    (template result query : String) :
+    isTrimRoot
+      [Goal.catchExit (Atom.var template) (Atom.var result)]
+      (Atom.sym query) template = true := by
+  simp [isTrimRoot, goalsVars, goalsFuel, goalFuel, goalsVarsFuel,
+    goalVarsFuel, addAtomVars]
+
+/-- The caller result carried by the typed streaming-catch exit is likewise
+an explicit liveness root. -/
+@[simp] theorem isTrimRoot_catchExit_result_var
+    (template result query : String) :
+    isTrimRoot
+      [Goal.catchExit (Atom.var template) (Atom.var result)]
+      (Atom.sym query) result = true := by
+  simp [isTrimRoot, goalsVars, goalsFuel, goalFuel, goalsVarsFuel,
+    goalVarsFuel, addAtomVars]
+
+/-- Holding the answer-transfer substitution fixed, removing every liveness
+root reproduces the old nullary-exit failure: the whole protected chain is
+legitimately collected as dead. -/
+theorem trimFor_rootless_drops_protected_answer :
+    trimFor [] (Atom.sym "query")
+      [("result", Atom.var "template"),
+       ("template", Atom.sym "first")] = [] := by
+  simp [trimFor, trimSubst, goalsVars, goalsVarsFuel,
+    closeSubstVars, filterLiveSubst, addAtomVars]
+
+/-- A caller-result root alone does not directly cover a distinct protected
+template.  Thus the template field of `catchExit` cannot be inferred merely
+from carrying the result field. -/
+theorem isTrimRoot_result_only_misses_template :
+    isTrimRoot [] (Atom.var "result") "template" = false := by
+  simp [isTrimRoot, goalsVars, goalsVarsFuel, addAtomVars]
+
+/-- A protected-template root alone does not directly cover the distinct
+caller result.  Thus the result field of `catchExit` is independently
+load-bearing. -/
+theorem isTrimRoot_template_only_misses_result :
+    isTrimRoot [] (Atom.var "template") "result" = false := by
+  simp [isTrimRoot, goalsVars, goalsVarsFuel, addAtomVars]
+
+/-- The typed exit retains the complete answer-transfer chain.  The result
+alias points to the protected template, whose binding contains the concrete
+answer; neither link may be trimmed before answer-time unification. -/
+theorem trimFor_typed_catchExit_retains_answer_chain :
+    trimFor
+      [Goal.catchExit (Atom.var "template") (Atom.var "result")]
+      (Atom.sym "query")
+      [("result", Atom.var "template"),
+       ("template", Atom.sym "first")] =
+      [("result", Atom.var "template"),
+       ("template", Atom.sym "first")] := by
+  apply trimFor_eq_self_of_root_keys
+  · intro name value member
+    simp only [List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq]
+      at member
+    rcases member with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · exact isTrimRoot_catchExit_result_var "template" "result" "query"
+    · exact isTrimRoot_catchExit_template_var "template" "result" "query"
+  · simp
+
+/-- For every acyclic protected substitution, the typed exit preserves the
+complete deep denotation of its template.  This specializes the general
+closure theorem to `catchExit`, so arbitrarily long intermediate alias chains
+remain observable even though only their root occurs in the goal. -/
+theorem subst_trimFor_typed_catchExit_template_eq_of_topological
+    (template result query : String) (b : Subst)
+    (topological : SubstTopological b) :
+    subst
+        (trimFor
+          [Goal.catchExit (Atom.var template) (Atom.var result)]
+          (Atom.sym query) b)
+        (Atom.var template) =
+      subst b (Atom.var template) := by
+  apply subst_trimFor_eq_of_topological _ _ b topological
+  intro name hname
+  simp only [Atom.vars, List.mem_singleton] at hname
+  subst name
+  exact isTrimRoot_catchExit_template_var template result query
+
 @[simp] theorem isTrimRoot_guard_head (h q f x : String) (rhs res : Atom) :
     isTrimRoot
       [Goal.eq rhs (Atom.var h), Goal.call f [Atom.var x] res]
@@ -4248,6 +4382,7 @@ def tagCutsGoal (bc : Nat) : Goal → Goal
   | .callDyn h args res => .callDyn h args res
   | .evalg v r => .evalg v r
   | .catchg t sub r => .catchg t (tagCutsGoals bc sub) r
+  | .catchExit template result => .catchExit template result
   | .softcut t sub thn els =>
       .softcut t (tagCutsGoals bc sub) (tagCutsGoals bc thn) (tagCutsGoals bc els)
   | .eq a b => .eq a b
@@ -4272,6 +4407,48 @@ def tagCutsBranches (bc : Nat) : List (Atom × List Goal) →
     List (Atom × List Goal)
   | [] => []
   | (t, gs) :: bs => (t, tagCutsGoals bc gs) :: tagCutsBranches bc bs
+end
+
+mutual
+
+/-- Rebase every cut in a protected streaming-catch body to its newly opened
+barrier.  Clause entry has already tagged raw cuts at the caller scope, so
+merely applying `tagCutsGoals` would preserve the stale outer indices. -/
+def retagCutsGoal (bc : Nat) : Goal → Goal
+  | .call f args res => .call f args res
+  | .bin op args res => .bin op args res
+  | .callDyn h args res => .callDyn h args res
+  | .evalg v r => .evalg v r
+  | .catchg t sub r => .catchg t (retagCutsGoals bc sub) r
+  | .catchExit template result => .catchExit template result
+  | .softcut t sub thn els =>
+      .softcut t (retagCutsGoals bc sub) (retagCutsGoals bc thn)
+        (retagCutsGoals bc els)
+  | .eq a b => .eq a b
+  | .compileAlias a b => .compileAlias a b
+  | .cut => .cutAt bc
+  | .cutAt _ => .cutAt bc
+  | .findall t sub r => .findall t (retagCutsGoals bc sub) r
+  | .onceg t sub r => .onceg t (retagCutsGoals bc sub) r
+  | .transactiong t sub => .transactiong t (retagCutsGoals bc sub)
+  | .amb bs r => .amb (retagCutsBranches bc bs) r
+  | .ite c t e r =>
+      .ite c (t.1, retagCutsGoals bc t.2)
+        (e.1, retagCutsGoals bc e.2) r
+  | .spread v r => .spread v r
+  | .smatch p => .smatch p
+  | .wact op args res => .wact op args res
+
+def retagCutsGoals (bc : Nat) : List Goal → List Goal
+  | [] => []
+  | goal :: rest => retagCutsGoal bc goal :: retagCutsGoals bc rest
+
+def retagCutsBranches (bc : Nat) : List (Atom × List Goal) →
+    List (Atom × List Goal)
+  | [] => []
+  | (template, goals) :: rest =>
+      (template, retagCutsGoals bc goals) :: retagCutsBranches bc rest
+
 end
 
 /-- Every caller variable whose identity is live at a clause-copy boundary.
@@ -4510,6 +4687,9 @@ def renameGoalSuffix (suffix : String) (bc : Nat) : Goal → Goal
   | .catchg tmpl sub res =>
       .catchg (renameAtomSuffix suffix tmpl) (renameGoalsSuffix suffix bc sub)
         (renameAtomSuffix suffix res)
+  | .catchExit template result =>
+      .catchExit (renameAtomSuffix suffix template)
+        (renameAtomSuffix suffix result)
   | .softcut tmpl sub thn els =>
       .softcut (renameAtomSuffix suffix tmpl)
         (renameGoalsSuffix suffix bc sub) (renameGoalsSuffix suffix bc thn)
@@ -4764,6 +4944,7 @@ def unionReverseAltsForOp (op : String) (args : List Atom) (res : Atom)
 
 @[simp] def barrierCountStep {Binding : Type} (count : Nat) : Alt Binding → Nat
   | .barrier => count + 1
+  | .catchActive _ => count + 1
   | _ => count
 
 def barrierCount {Binding : Type} (alts : List (Alt Binding)) : Nat :=
@@ -4781,6 +4962,18 @@ def barrierDepth {Binding : Type} (c : Conf Binding) : Nat :=
 @[simp] def popBarrierCache : Option Nat → Option Nat
   | none => none
   | some depth => some (depth - 1)
+
+@[simp] def addBarrierCache (cache : Option Nat) (count : Nat) : Option Nat :=
+  cache.map (· + count)
+
+@[simp] def removeBarrierCache (cache : Option Nat) (count : Nat) :
+    Option Nat :=
+  cache.map (· - count)
+
+@[simp] def exactBarrierCache {Binding : Type}
+    (cache : Option Nat) (alts : List (Alt Binding)) :
+    Option Nat :=
+  cache.map (fun _ => barrierCount alts)
 
 @[simp] def resetBarrierCache : Option Nat → Option Nat
   | none => none
@@ -4803,7 +4996,9 @@ def cutToCached {Binding : Type} (k : Nat) :
       if barriers ≥ k then
         let next := match alt with
           | .barrier => barriers - 1
+          | .catchActive _ => barriers - 1
           | .br _ _ => barriers
+          | .catchDormant _ _ => barriers
         cutToCached k next rest
       else
         (alt :: rest, barriers)
@@ -4817,32 +5012,104 @@ def cutToTracked {Binding : Type} (k : Nat) :
       let result := cutToCached k barriers alts
       (result.1, some result.2)
 
+/-- Exact decomposition at the nearest live catch delimiter.  The protected
+prefix remains in original stack order; dormant nested resumptions are owned
+as ordinary prefix elements rather than traversed. -/
+structure CatchSplit (Binding : Type) where
+  frame : CatchFrame Binding
+  protectedAlts : List (Alt Binding)
+  outer : List (Alt Binding)
+deriving Repr, Inhabited
+
+def splitCatchActive {Binding : Type} :
+    List (Alt Binding) → Option (CatchSplit Binding)
+  | [] => none
+  | .catchActive frame :: outer =>
+      some { frame, protectedAlts := [], outer }
+  | alternative :: rest =>
+      (splitCatchActive rest).map (fun split =>
+        { split with protectedAlts := alternative :: split.protectedAlts })
+
+/-- Packaging cannot drop, duplicate, or reorder an alternative.  This exact
+round-trip equation is the ownership invariant used by both normal exit and
+exception unwind. -/
+theorem splitCatchActive_reassembles {Binding : Type}
+    (alts : List (Alt Binding)) :
+    match splitCatchActive alts with
+    | none => True
+    | some split =>
+        alts = split.protectedAlts ++ .catchActive split.frame :: split.outer := by
+  induction alts with
+  | nil => simp [splitCatchActive]
+  | cons alternative rest inductionHypothesis =>
+      cases found : splitCatchActive rest with
+      | none =>
+          cases alternative <;> simp [splitCatchActive, found]
+      | some split =>
+          have restEquation :
+              rest = split.protectedAlts ++
+                .catchActive split.frame :: split.outer := by
+            simpa [found] using inductionHypothesis
+          cases alternative with
+          | br goals binding =>
+              simpa [splitCatchActive, found] using
+                congrArg (fun tail => Alt.br goals binding :: tail)
+                  restEquation
+          | barrier =>
+              simpa [splitCatchActive, found] using
+                congrArg (fun tail => (Alt.barrier : Alt Binding) :: tail)
+                  restEquation
+          | catchActive frame => simp [splitCatchActive]
+          | catchDormant frame protectedAlts =>
+              simpa [splitCatchActive, found] using
+                congrArg
+                  (fun tail => Alt.catchDormant frame protectedAlts :: tail)
+                  restEquation
+
+/-- A structural pull either finds an ordinary branch or a dormant catch
+resumption.  Reinstalling a resumption is deliberately not hidden inside the
+scan: `pull` exposes it as one state transition with `cur = none`. -/
+inductive PullTarget (Binding : Type) where
+  | branch (goals : List Goal) (binding : Binding)
+  | catchResume (frame : CatchFrame Binding)
+      (protectedAlts : List (Alt Binding))
+deriving Repr, Inhabited
+
 def pullAux {Binding : Type} :
     List (Alt Binding) →
-      Option ((List Goal × Binding) × List (Alt Binding))
+      Option (PullTarget Binding × List (Alt Binding))
   | [] => none
   | .barrier :: rest => pullAux rest
-  | .br gs b :: rest => some ((gs, b), rest)
+  | .catchActive _ :: rest => pullAux rest
+  | .br gs b :: rest => some (.branch gs b, rest)
+  | .catchDormant frame protectedAlts :: rest =>
+      some (.catchResume frame protectedAlts, rest)
 
 /-- Pull while decrementing the cached barrier depth for each skipped
 marker. Branch alternatives do not change the depth. -/
 def pullAuxCached {Binding : Type} : Nat → List (Alt Binding) →
-    Option ((List Goal × Binding) × List (Alt Binding)) × Nat
+    Option (PullTarget Binding × List (Alt Binding)) × Nat
   | _, [] => (none, 0)
   | barriers, .barrier :: rest =>
       pullAuxCached (barriers - 1) rest
+  | barriers, .catchActive _ :: rest =>
+      pullAuxCached (barriers - 1) rest
   | barriers, .br gs b :: rest =>
-      (some ((gs, b), rest), barriers)
+      (some (.branch gs b, rest), barriers)
+  | barriers, .catchDormant frame protectedAlts :: rest =>
+      (some (.catchResume frame protectedAlts, rest), barriers)
 
 theorem pullAuxCached_fst {Binding : Type} :
     ∀ (depth : Nat) (alts : List (Alt Binding)),
       (pullAuxCached depth alts).1 = pullAux alts
   | _, [] => rfl
   | depth, .barrier :: rest => pullAuxCached_fst (depth - 1) rest
+  | depth, .catchActive _ :: rest => pullAuxCached_fst (depth - 1) rest
   | _, .br _ _ :: _ => rfl
+  | _, .catchDormant _ _ :: _ => rfl
 
 def pullAuxTracked {Binding : Type} : Option Nat → List (Alt Binding) →
-    Option ((List Goal × Binding) × List (Alt Binding)) × Option Nat
+    Option (PullTarget Binding × List (Alt Binding)) × Option Nat
   | none, alts => (pullAux alts, none)
   | some barriers, alts =>
       let result := pullAuxCached barriers alts
@@ -4860,8 +5127,16 @@ def pull {Binding : Type} (c : Conf Binding) : Conf Binding :=
   let result := pullAuxTracked c.barriers c.alts
   match result.1 with
   | none => { c with cur := none, alts := [], barriers := result.2 }
-  | some (br, rest) =>
-      { c with cur := some br, alts := rest, barriers := result.2 }
+  | some (.branch goals binding, rest) =>
+      { c with
+        cur := some (goals, binding)
+        alts := rest
+        barriers := result.2 }
+  | some (.catchResume frame protectedAlts, rest) =>
+      { c with
+        cur := none
+        alts := protectedAlts ++ .catchActive frame :: rest
+        barriers := addBarrierCache result.2 (barrierCount protectedAlts + 1) }
 
 @[simp] theorem pull_barrier {Binding : Type} (c : Conf Binding)
     (rest : List (Alt Binding)) :
@@ -4870,7 +5145,8 @@ def pull {Binding : Type} (c : Conf Binding) : Conf Binding :=
       alts := Alt.barrier :: rest
       barriers := pushBarrierCache c.barriers } =
       pull { c with cur := none, alts := rest } := by
-  cases c.barriers <;> rfl
+  cases c.barriers <;>
+    simp [pull, pullAux, pullAuxTracked, pullAuxCached]
 
 @[simp] theorem pull_branch {Binding : Type} (c : Conf Binding)
     (gs : List Goal) (b : Binding) (rest : List (Alt Binding)) :
@@ -6199,11 +6475,21 @@ inductive CatchResult where
   | error (err : Atom)
 deriving Repr, Inhabited
 
+/-- Operations whose result belongs to the typed host protocol cannot be
+    precomputed by catch's direct grounded-builtin shortcut.  Streaming them
+    keeps the request, response, and any host exception observable to both
+    live execution and replay. -/
+def binRequiresHostExecutor : String → Bool
+  | "py-call" | "readln!" | "println!" | "get_time"
+  | "translatePredicate" => true
+  | op => importedPrologHostBacked op
+
 private def caughtBin? (gt : GroundingTable) (b : Subst) (tmpl : Atom) :
     String → List Atom → Atom → Option CatchResult
   | op, args, r =>
       let av := args.map (subst b)
-      if binArity op != 0 && av.length < binArity op then none
+      if binRequiresHostExecutor op then none
+      else if binArity op != 0 && av.length < binArity op then none
       else if op == "get-type" || op == "get-metatype" then none
       else if ["+", "-", "*"].contains op && !(av.all Metta.isGround) then none
       else if nonstrictOps.contains op || av.all Metta.isGround then
@@ -6226,7 +6512,8 @@ uses this before the ordinary machine step; successful answers are still
 handled by `binResolvedStep`. -/
 def caughtBinErrorResolved? (gt : GroundingTable) (op : String)
     (args : List Atom) : Option Atom :=
-  if binArity op != 0 && args.length < binArity op then none
+  if binRequiresHostExecutor op then none
+  else if binArity op != 0 && args.length < binArity op then none
   else if op == "get-type" || op == "get-metatype" then none
   else if ["+", "-", "*"].contains op && !(args.all Metta.isGround) then none
   else if nonstrictOps.contains op || args.all Metta.isGround then
@@ -6240,7 +6527,8 @@ def caughtBinErrorResolved? (gt : GroundingTable) (op : String)
 The ordinary helper remains the denotational reference. -/
 def caughtBinErrorResolvedWithGround? (gt : GroundingTable) (op : String)
     (args : List Atom) (allGround : Bool) : Option Atom :=
-  if binArity op != 0 && args.length < binArity op then none
+  if binRequiresHostExecutor op then none
+  else if binArity op != 0 && args.length < binArity op then none
   else if op == "get-type" || op == "get-metatype" then none
   else if ["+", "-", "*"].contains op && !allGround then none
   else if nonstrictOps.contains op || allGround then
@@ -6273,6 +6561,51 @@ def tableFresh {Binding : Type} (c : Conf Binding) : Atom :=
     keeps the transaction step inside the existing StepStar proof boundary. -/
 def transactionSub (tmpl : Atom) (sub : List Goal) : List Goal :=
   [Goal.onceg tmpl sub tmpl]
+
+/-- Enter the protected region of the streaming catch implementation.  The
+protected cuts are rebased to the fresh positional barrier represented by the
+active catch marker; the caller continuation is owned by the frame and is not
+present in the active goal list. -/
+def enterStreamingCatch {Binding : Type} (c : Conf Binding)
+    (template : Atom) (sub : List Goal) (result : Atom) (rest : List Goal)
+    (entry : Binding) : Conf Binding :=
+  let cutScope := barrierDepth c + 1
+  let frame : CatchFrame Binding := { template, result, rest, entry }
+  { c with
+    cur := some
+      (retagCutsGoals cutScope sub ++ [Goal.catchExit template result], entry)
+    alts := .catchActive frame :: c.alts
+    barriers := pushBarrierCache c.barriers }
+
+/-- Leave the protected region after one successful protected answer.  The
+exact prefix above the active marker becomes one dormant, atomically prunable
+resumption.  The caller tail runs with the successful protected binding and
+without a live catch delimiter. -/
+def exitStreamingCatch {Binding : Type} (c : Conf Binding)
+    (binding : Binding) : Conf Binding :=
+  match splitCatchActive c.alts with
+  | none => pull { c with cur := none }
+  | some split =>
+      { c with
+        cur := some (split.frame.rest, binding)
+        alts := .catchDormant split.frame split.protectedAlts :: split.outer
+        barriers := removeBarrierCache c.barriers
+          (barrierCount split.protectedAlts + 1) }
+
+/-- Catch one currently escaping primitive error at the nearest active catch
+delimiter.  Protected bindings and alternatives unwind; persistent world and
+fresh allocation remain current.  Dormant inner resumptions in the discarded
+prefix are removed atomically. -/
+def catchErrorSuccessor? {Binding : Type} (c : Conf Binding)
+    (error : Atom) : Option (Conf Binding) :=
+  (splitCatchActive c.alts).map (fun split =>
+    { c with
+      cur := some
+        (Goal.eq split.frame.result error :: split.frame.rest,
+          split.frame.entry)
+      alts := split.outer
+      counter := advanceCounterPastAtoms c.counter [error]
+      barriers := exactBarrierCache c.barriers split.outer })
 
 mutual
 
@@ -6367,19 +6700,11 @@ def step (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf) : Conf :=
                 alts := answers.map (fun inst =>
                   Alt.br (Goal.eq res inst :: rest) b) ++ c.alts }
         | none =>
-            let subConf : Conf :=
-              { cur := some (sub, b), alts := [], world := c.world,
-                counter := c.counter, qterm := tmpl,
-                barriers := resetBarrierCache c.barriers }
-            let d := run prog gt fuel subConf none
-            if d.answers.isEmpty then
-              pull { c with cur := none, world := d.world,
-                            counter := d.counter }
-            else
-              pull { c with cur := none, world := d.world,
-                            counter := d.counter,
-                            alts := d.answerValues.map (fun inst =>
-                              Alt.br (Goal.eq res inst :: rest) b) ++ c.alts }
+            enterStreamingCatch c tmpl sub res rest b
+    | .catchExit template result =>
+        match unifyB b result template with
+        | some next => exitStreamingCatch c next
+        | none => pull { c with cur := none }
     | .transactiong tmpl sub =>
         let txSub := transactionSub tmpl sub
         let subConf : Conf :=
@@ -6727,8 +7052,7 @@ def stepClean (prog : Prog) (gt : GroundingTable) :
                     alts := answers.map (fun inst =>
                       Alt.br (Goal.eq res inst :: rest) b) ++ c.alts })
           | none =>
-              finishCatchClean c rest res b
-                (runClean prog gt fuel (subConfOf c sub b tmpl) none)
+              .progressed (enterStreamingCatch c tmpl sub res rest b)
       | some (Goal.transactiong tmpl sub :: rest, b) =>
           let txSub := transactionSub tmpl sub
           finishTransactionClean c rest tmpl b
@@ -6758,7 +7082,10 @@ def stepClean (prog : Prog) (gt : GroundingTable) :
           | some _ => .progressed (step prog gt fuel c)
           | none =>
               match caughtBinErrorResolved? gt op values with
-              | some err => .errored c err
+              | some err =>
+                  match catchErrorSuccessor? c err with
+                  | some next => .progressed next
+                  | none => .errored c err
               | none => .progressed (step prog gt fuel c)
       | _ => .progressed (step prog gt fuel c)
 

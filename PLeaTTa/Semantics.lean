@@ -435,33 +435,41 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
           counter := advanceCounterPastAtoms c.counter answers
           alts := answers.map (fun inst =>
             Alt.br (Goal.eq res inst :: rest) b) ++ c.alts })
-  -- catchg, general path: run the guarded sub-goals to terminality, then
-  -- replay their positive answers. Failure is ordinary branch failure.
-  | catch_run (c d : Conf) (tmpl : Atom) (sub : List Goal) (res : Atom)
+  /-- Outside the finite direct-builtin shortcut, catch enters a live typed
+      delimiter.  Protected cuts are retagged to that delimiter and the
+      caller continuation moves into its non-persistent frame. -/
+  | catch_stream_enter (c : Conf) (tmpl : Atom) (sub : List Goal)
+      (res : Atom) (rest : List Goal) (b : Subst)
+      (h : c.cur = some (Goal.catchg tmpl sub res :: rest, b))
+      (hc : catchDirect? gt b tmpl sub = none) :
+      Step prog gt c (enterStreamingCatch c tmpl sub res rest b)
+  /-- One protected success unifies the answer-time template with the caller
+      result at the typed internal boundary.  Its remaining protected
+      alternatives become a dormant, atomically-prunable resumption while
+      the caller continuation runs outside the catch. -/
+  | catch_stream_exit (c : Conf) (template result : Atom)
+      (rest : List Goal) (b b' : Subst)
+      (h : c.cur = some (Goal.catchExit template result :: rest, b))
+      (hu : unifyB b result template = some b') :
+      Step prog gt c (exitStreamingCatch c b')
+  /-- A protected solution whose answer-time transfer cannot unify is an
+      ordinary failed solution: resume the next protected alternative rather
+      than exposing a caller answer. -/
+  | catch_stream_exit_fail (c : Conf) (template result : Atom)
       (rest : List Goal) (b : Subst)
-      (h : c.cur = some (Goal.catchg tmpl sub res :: rest, b))
-      (hc : catchDirect? gt b tmpl sub = none)
-      (hrun : StepStar prog gt
-        { cur := some (sub, b), alts := [], world := c.world,
-          counter := c.counter, qterm := tmpl,
-          barriers := resetBarrierCache c.barriers } d)
-      (hdone : Terminal d) :
-      Step prog gt c
-        (pull { c with cur := none, world := d.world, counter := d.counter,
-                       alts := d.answerValues.map (fun inst =>
-                         Alt.br (Goal.eq res inst :: rest) b) ++ c.alts })
-  | catch_run_error (c d : Conf) (tmpl : Atom) (sub : List Goal)
+      (h : c.cur = some (Goal.catchExit template result :: rest, b))
+      (hu : unifyB b result template = none) :
+      Step prog gt c (pull { c with cur := none })
+  /-- A primitive exception raised while a streaming catch is active unwinds
+      exactly to the nearest active delimiter.  Persistent world state and
+      the fresh counter remain current; the protected substitution is
+      discarded in favour of the entry substitution stored by the frame. -/
+  | catch_stream_error (c next : Conf) (op : String) (args : List Atom)
       (res : Atom) (rest : List Goal) (b : Subst) (err : Atom)
-      (h : c.cur = some (Goal.catchg tmpl sub res :: rest, b))
-      (hc : catchDirect? gt b tmpl sub = none)
-      (hrun : Raises prog gt
-        { cur := some (sub, b), alts := [], world := c.world,
-          counter := c.counter, qterm := tmpl,
-          barriers := resetBarrierCache c.barriers } d err) :
-      Step prog gt c
-        { c with cur := some (Goal.eq res err :: rest, b),
-                 world := d.world,
-                 counter := advanceCounterPastAtoms d.counter [err] }
+      (h : c.cur = some (Goal.bin op args res :: rest, b))
+      (herr : caughtBinErrorResolved? gt op (args.map (subst b)) = some err)
+      (hc : catchErrorSuccessor? c err = some next) :
+      Step prog gt c next
   | softcut_some (c d : Conf) (tmpl : Atom) (sub thn els rest : List Goal)
       (b : Subst)
       (h : c.cur = some (Goal.softcut tmpl sub thn els :: rest, b))
@@ -610,9 +618,9 @@ inductive StepStar (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop 
 
 /-- Exceptional execution of the clean machine. `Raises c d err` means that
     ordinary semantic steps and/or a nested semantic sub-run reach the exact
-    configuration `d` at which `err` escapes. Catch is deliberately absent:
-    `Step.catch_run_error` converts a nested exception back into an ordinary
-    value-producing step. -/
+    configuration `d` at which `err` escapes. Streaming catch consumes a
+    primitive exception through `Step.catch_stream_error`; no atomic nested
+    catch constructor can hide an open protected prefix. -/
 inductive Raises (prog : Prog) (gt : GroundingTable) :
     Conf → Conf → Atom → Prop where
   | bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
@@ -675,10 +683,6 @@ def softcutRunHead (c : Conf) : Prop :=
   ∃ tmpl sub thn els rest b,
     c.cur = some (Goal.softcut tmpl sub thn els :: rest, b)
 
-def catchRunHead (c : Conf) : Prop :=
-  ∃ tmpl sub res rest b,
-    c.cur = some (Goal.catchg tmpl sub res :: rest, b)
-
 def transactionRunHead (c : Conf) : Prop :=
   ∃ tmpl sub rest b,
     c.cur = some (Goal.transactiong tmpl sub :: rest, b)
@@ -689,16 +693,17 @@ def tableRunHead (c : Conf) : Prop :=
     c.world.needsTableCompute f (args.map (subst b)) = true
 
 /-- The current branch's head goal nests a fuel-bounded sub-run (`findall`,
-    `softcut`, `catchg`, or uncached tabled call). These are the machine's
+    `softcut`, transaction, or uncached tabled call). These are the machine's
     fuel-truncatable steps. -/
 def nestedRunHead (c : Conf) : Prop :=
   findallRunHead c ∨
     (softcutRunHead c ∨
-      (catchRunHead c ∨ (tableRunHead c ∨ transactionRunHead c)))
+      (tableRunHead c ∨ transactionRunHead c))
 
 /-- Correspondence: whenever the executable makes progress on a goal that
     does not nest a sub-run, the relation licenses that exact step. Nested
-    heads (`findall`/`softcut`/`catchg`) are excluded per `nestedRunHead` —
+    heads (`findall`/`softcut`/transaction/table) are excluded per
+    `nestedRunHead` —
     for those the relation demands terminal sub-runs, which fuel cannot
     promise. -/
 def machineMirrorsSpec : Prop :=

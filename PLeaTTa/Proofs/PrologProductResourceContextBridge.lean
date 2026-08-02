@@ -401,6 +401,18 @@ theorem barrierCount_zero
   exact RetainedCursorAlternativeOwnership.barrierCount_zero
     exactOwnership.scan
 
+/-- Existentially packaged ownership still excludes every non-branch marker,
+including dormant catches whose barrier count is intentionally zero. -/
+theorem alts_all_branches
+    {alpha : List (LogicVar × String)} {cursor : PreparedCursor}
+    {resource : RetainedAlternativeSegment}
+    (ownership : resource.HasIndexedOwnershipAt alpha cursor) :
+    ∀ alt ∈ resource.alts,
+      ∃ goals branchBinding, alt = PLeaTTa.Alt.br goals branchBinding := by
+  rcases ownership with ⟨_callStart, _position, exactOwnership⟩
+  exact RetainedCursorAlternativeOwnership.alts_all_branches
+    exactOwnership.scan
+
 /-- Existential packaging also retains the source-occurrence upper bound on
 the executable alternative slice. -/
 theorem alts_length_le

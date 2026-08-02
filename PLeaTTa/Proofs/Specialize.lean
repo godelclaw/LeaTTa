@@ -4276,6 +4276,9 @@ inductive ProfileGoalLowered (isDefined isBin : String → Bool) :
       ProfileGoalLowered isDefined isBin (.compileAlias a b)
         (.compileAlias a b)
   | cut : ProfileGoalLowered isDefined isBin .cut .cut
+  | catchExit (template result : Atom) :
+      ProfileGoalLowered isDefined isBin (.catchExit template result)
+        (.catchExit template result)
   | cutAt (n : Nat) : ProfileGoalLowered isDefined isBin (.cutAt n) (.cutAt n)
   | findall (tmpl res : Atom) (sub sub' : List Goal)
       (hsub : ProfileGoalsLowered isDefined isBin sub sub') :
@@ -4347,6 +4350,7 @@ theorem lowerProfileGoal_exact (isDefined isBin : String → Bool)
   | eq a b => exact .eq a b
   | compileAlias a b => exact .compileAlias a b
   | cut => exact .cut
+  | catchExit template result => exact .catchExit template result
   | cutAt n => exact .cutAt n
   | findall tmpl sub res =>
       exact .findall tmpl res sub _ (lowerProfileGoals_exact _ _ sub)
@@ -4477,6 +4481,7 @@ def nonHeadAtomsGoal : Goal → List Atom
         nonHeadAtomsGoals els)
   | .eq a b | .compileAlias a b => [a, b]
   | .cut | .cutAt _ => []
+  | .catchExit template result => [template, result]
   | .findall tmpl sub res | .onceg tmpl sub res =>
       tmpl :: res :: nonHeadAtomsGoals sub
   | .transactiong tmpl sub => tmpl :: nonHeadAtomsGoals sub
@@ -5219,6 +5224,7 @@ theorem specializeCallableHeadGoal_preserves_nonHead
   | eq a b => exact List.Sublist.refl _
   | compileAlias a b => exact List.Sublist.refl _
   | cut => exact List.Sublist.refl _
+  | catchExit template result => exact List.Sublist.refl _
   | cutAt n => exact List.Sublist.refl _
   | findall tmpl sub res =>
       exact (specializeCallableHeadGoals_preserves_nonHead _ _ binding sub).cons_cons
@@ -5533,6 +5539,8 @@ mutual
   | eq a b => simp [proofGoalEq]
   | compileAlias a b => simp [proofGoalEq]
   | cut => rfl
+  | catchExit template result =>
+      simp [proofGoalEq, proofAtomEq_self]
   | cutAt n => simp [proofGoalEq]
   | findall tmpl sub res => simp [proofGoalEq, proofGoalsEq_self sub]
   | onceg tmpl sub res => simp [proofGoalEq, proofGoalsEq_self sub]
@@ -5614,6 +5622,8 @@ theorem callableHeadRewriteValid_specialize (isDefined isBin : String → Bool)
   | compileAlias a b =>
       simp [specializeCallableHeadGoal, callableHeadRewriteValid]
   | cut =>
+      simp [specializeCallableHeadGoal, callableHeadRewriteValid]
+  | catchExit =>
       simp [specializeCallableHeadGoal, callableHeadRewriteValid]
   | cutAt n =>
       simp [specializeCallableHeadGoal, callableHeadRewriteValid]

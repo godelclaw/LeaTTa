@@ -125,6 +125,32 @@ theorem ResolutionScan.barrierCount_zero
       inductionHypothesis =>
       simpa [resolutionAlt] using inductionHypothesis
 
+/-- Every alternative owned by a resolution scan is literally an ordinary
+branch.  This is stronger than `barrierCount_zero`: dormant catch markers
+also have zero barrier count, but cannot be produced by clause resolution. -/
+theorem ResolutionScan.alts_all_branches
+    {argsv args : List Atom} {res : Atom} {rest : List Goal}
+    {binding : Subst} {qterm : Atom} {barrier : Nat}
+    {clauses : List Clause} {counter : Nat} {alts : List Alt}
+    {finalCounter : Nat}
+    (scan :
+      ResolutionScan argsv args res rest binding qterm barrier clauses
+        counter alts finalCounter) :
+    ∀ alt ∈ alts, ∃ goals branchBinding, alt = Alt.br goals branchBinding := by
+  induction scan with
+  | nil => simp
+  | skipped clause clauses counter finalCounter alts skipped tail
+      inductionHypothesis =>
+      exact inductionHypothesis
+  | retained clause clauses counter finalCounter alts retained tail
+      inductionHypothesis =>
+      intro alt member
+      simp only [List.mem_cons] at member
+      rcases member with head | member
+      · subst alt
+        simp [resolutionAlt]
+      · exact inductionHypothesis alt member
+
 theorem scanResolution_certified (argsv args : List Atom) (res : Atom)
     (rest : List Goal) (binding : Subst) (qterm : Atom)
     (barrier : Nat) (clauses : List Clause) (counter : Nat) :
@@ -444,21 +470,33 @@ theorem leading_full_head_eq_failure_is_silent
     generalize outcomeEq :
       pullAuxTracked conf.barriers conf.alts = outcome
     rcases outcome with ⟨outcome, barriers⟩
-    cases outcome <;> rfl
+    cases outcome with
+    | none => rfl
+    | some pulled =>
+        rcases pulled with ⟨target, rest⟩
+        cases target <;> rfl
   have world :
       (pull { conf with cur := none }).world = conf.world := by
     unfold pull
     generalize outcomeEq :
       pullAuxTracked conf.barriers conf.alts = outcome
     rcases outcome with ⟨outcome, barriers⟩
-    cases outcome <;> rfl
+    cases outcome with
+    | none => rfl
+    | some pulled =>
+        rcases pulled with ⟨target, rest⟩
+        cases target <;> rfl
   have counter :
       (pull { conf with cur := none }).counter = conf.counter := by
     unfold pull
     generalize outcomeEq :
       pullAuxTracked conf.barriers conf.alts = outcome
     rcases outcome with ⟨outcome, barriers⟩
-    cases outcome <;> rfl
+    cases outcome with
+    | none => rfl
+    | some pulled =>
+        rcases pulled with ⟨target, rest⟩
+        cases target <;> rfl
   exact ⟨answers, world, counter⟩
 
 /-! ## Anti-vacuity witnesses for the activation macro -/

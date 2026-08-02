@@ -17,7 +17,6 @@ attribute [local reducible] SubstEngine.reference
     executor runs recursively.  Reification lets a Python request suspend at
     any depth without hiding IO in a pure function. -/
 inductive Frame (State : Type) where
-  | catch (outer : Conf State) (rest : List Goal) (res : Atom) (state : State)
   | transaction (outer : Conf State) (rest : List Goal) (tmpl : Atom)
       (state : State)
   | softcut (outer : Conf State) (rest thn els : List Goal) (tmpl : Atom)
@@ -96,7 +95,6 @@ def pythonErrorAtom (error : HostError) : Atom :=
 
 def finishFrame {Binding : Type} (done : Conf Binding) :
     Frame Binding → Conf Binding
-  | .catch outer rest res state => finishCatch outer done rest res state
   | .transaction outer rest tmpl state =>
       finishTransaction outer done rest tmpl state
   | .softcut outer rest thn els tmpl state =>
@@ -104,20 +102,95 @@ def finishFrame {Binding : Type} (done : Conf Binding) :
   | .findall outer rest res state => finishFindall outer done rest res state
   | .table outer key rest res state => finishTable outer done key rest res state
 
-/-- Propagate a nested error until the nearest `catch`, exactly as the clean
-    recursive executor's `finish*Outcome` functions do. -/
+/-- Restore a suspended caller while retaining the world and allocation
+    high-water reached by a non-transactional nested evaluation.  Control,
+    answers, and alternatives are backtrackable caller state. -/
+def restoreCallerForError {Binding : Type} (caller current : Conf Binding) :
+    Conf Binding :=
+  { caller with world := current.world, counter := current.counter }
+
+@[simp] theorem mapConf_restoreCallerForError {Source Target : Type}
+    (map : Source → Target) (caller current : Conf Source) :
+    SubstEngine.mapConf map (restoreCallerForError caller current) =
+      restoreCallerForError (SubstEngine.mapConf map caller)
+        (SubstEngine.mapConf map current) := by
+  rfl
+
+/-- An exception aborts a transaction just as ordinary failure does: restore
+    the caller world, but never rewind the global fresh-name high-water. -/
+def restoreTransactionCallerForError {Binding : Type}
+    (caller current : Conf Binding) : Conf Binding :=
+  { caller with counter := current.counter }
+
+@[simp] theorem mapConf_restoreTransactionCallerForError
+    {Source Target : Type} (map : Source → Target)
+    (caller current : Conf Source) :
+    SubstEngine.mapConf map
+        (restoreTransactionCallerForError caller current) =
+      restoreTransactionCallerForError (SubstEngine.mapConf map caller)
+        (SubstEngine.mapConf map current) := by
+  rfl
+
+/-- Propagate an error through suspended nested evaluations.  At every level
+    the certified core gets the first opportunity to consume the exception at
+    its nearest active streaming-catch delimiter.  If no delimiter is active,
+    the nested frame is discarded, its caller control is restored, persistent
+    state is threaded forward, and unwinding continues outward. -/
 def unwindFrames {Binding : Type} (core : Conf Binding)
     (host : HostSession) : List (Frame Binding) → Atom → StepOutcome Binding
-  | [], error => .errored { core, host } error
-  | .catch outer rest res binding :: frames, error =>
-      .progressed {
-        core := { outer with
-          cur := some (Goal.eq res error :: rest, binding)
-          world := core.world
-          counter := advanceCounterPastAtoms core.counter [error] }
-        frames
-        host }
-  | _ :: frames, error => unwindFrames core host frames error
+  | frames, error =>
+      match catchErrorSuccessor? core error with
+      | some caught => .progressed { core := caught, frames, host }
+      | none =>
+          match frames with
+          | [] => .errored { core, host } error
+          | .transaction outer _ _ _ :: rest =>
+              unwindFrames
+                (restoreTransactionCallerForError outer core) host rest error
+          | .softcut outer _ _ _ _ _ :: rest =>
+              unwindFrames (restoreCallerForError outer core) host rest error
+          | .findall outer _ _ _ :: rest =>
+              unwindFrames (restoreCallerForError outer core) host rest error
+          | .table outer _ _ _ _ :: rest =>
+              unwindFrames (restoreCallerForError outer core) host rest error
+
+private def transactionRollbackOuter : Conf Unit :=
+  { cur := none
+    alts := []
+    world := {}
+    counter := 3
+    qterm := Atom.sym "query" }
+
+private def transactionRollbackInner : Conf Unit :=
+  { transactionRollbackOuter with
+    world := { transactionRollbackOuter.world with
+      selfAtoms := [Atom.sym "transient"] }
+    counter := 11 }
+
+private def transactionRollbackHost : HostSession := {}
+
+/-- Ordinary failure and an escaping exception both discard a transaction's
+    world mutation.  The exception path nevertheless retains the advanced
+    allocation counter, so rollback cannot reissue fresh names. -/
+theorem transaction_failure_and_escaping_exception_rollback_witness :
+    let failed := finishTransaction transactionRollbackOuter
+      transactionRollbackInner [] (Atom.sym "result") ()
+    let escaped := unwindFrames transactionRollbackInner
+      transactionRollbackHost
+      [.transaction transactionRollbackOuter [] (Atom.sym "result") ()]
+      (Atom.sym "boom")
+    failed.world = transactionRollbackOuter.world ∧
+      failed.counter = transactionRollbackInner.counter ∧
+      escaped = .errored
+        { core := restoreTransactionCallerForError transactionRollbackOuter
+            transactionRollbackInner
+          host := transactionRollbackHost }
+        (Atom.sym "boom") ∧
+      transactionRollbackInner.world.selfAtoms = [Atom.sym "transient"] := by
+  simp [transactionRollbackOuter, transactionRollbackInner,
+    transactionRollbackHost, finishTransaction, pull, pullAuxTracked,
+    pullAux, unwindFrames, catchErrorSuccessor?, splitCatchActive,
+    restoreTransactionCallerForError]
 
 def unwindError {Binding : Type} (state : State Binding)
     (error : Atom) : StepOutcome Binding :=
@@ -147,12 +220,25 @@ private theorem observe_unwindFrames_host_independent {Binding : Type}
     (left right : HostSession) :
     observeStep (unwindFrames core left frames error) =
       observeStep (unwindFrames core right frames error) := by
-  induction frames with
-  | nil => rfl
+  induction frames generalizing core with
+  | nil =>
+      unfold unwindFrames
+      cases catchErrorSuccessor? core error <;> rfl
   | cons frame frames induction =>
-      cases frame <;>
-        simp only [unwindFrames, observeStep, observeState] <;>
-        exact induction
+      unfold unwindFrames
+      cases found : catchErrorSuccessor? core error with
+      | some caught => rfl
+      | none =>
+          cases frame with
+          | transaction outer _ _ _ =>
+              exact induction
+                (core := restoreTransactionCallerForError outer core)
+          | softcut outer _ _ _ _ _ =>
+              exact induction (core := restoreCallerForError outer core)
+          | findall outer _ _ _ =>
+              exact induction (core := restoreCallerForError outer core)
+          | table outer _ _ _ _ =>
+              exact induction (core := restoreCallerForError outer core)
 
 /-- Once a fixed host response has been accepted, all observable machine
     state is independent of whether that response came from live IO or a
@@ -536,8 +622,8 @@ def stepWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable) :
                       s!"translatePredicate goal: {reprStr (deepUnchain innerExpr)}")
             | _ => unwindError state (marshallingErrorAtom "translatePredicate arity")
         | some (Goal.catchg tmpl sub res :: rest, binding) =>
-            pushNested state (subConfOfWith engine core sub binding tmpl)
-              (.catch core rest res binding)
+            fromCoreOutcome state
+              (SubstEngine.stepCleanWith engine prog gt fuel core)
         | some (Goal.transactiong tmpl sub :: rest, binding) =>
             pushNested state
               (subConfOfWith engine core (transactionSub tmpl sub) binding tmpl)
@@ -604,8 +690,6 @@ def runWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable) :
 
 def mapFrame {Source Target : Type} (map : Source → Target) :
     Frame Source → Frame Target
-  | .catch outer rest res state =>
-      .catch (mapConf map outer) rest res (map state)
   | .transaction outer rest tmpl state =>
       .transaction (mapConf map outer) rest tmpl (map state)
   | .softcut outer rest thn els tmpl state =>
@@ -633,7 +717,7 @@ theorem mapConf_finishFrame {Source Target : Type} (map : Source → Target)
     SubstEngine.mapConf map (finishFrame done frame) =
       finishFrame (SubstEngine.mapConf map done) (mapFrame map frame) := by
   cases frame <;>
-    simp only [finishFrame, mapFrame, SubstEngine.mapConf_finishCatch,
+    simp only [finishFrame, mapFrame,
       SubstEngine.mapConf_finishTransaction,
       SubstEngine.mapConf_finishSoftcut,
       SubstEngine.mapConf_finishFindall,
@@ -645,21 +729,37 @@ theorem mapStepOutcome_unwindFrames {Source Target : Type}
     mapStepOutcome map (unwindFrames core host frames error) =
       unwindFrames (SubstEngine.mapConf map core) host
         (frames.map (mapFrame map)) error := by
-  induction frames with
-  | nil => rfl
+  induction frames generalizing core with
+  | nil =>
+      simp only [List.map_nil]
+      unfold unwindFrames
+      rw [← SubstEngine.mapConf_catchErrorSuccessor]
+      cases catchErrorSuccessor? core error <;> rfl
   | cons frame frames induction =>
-      cases frame with
-      | «catch» outer rest res state =>
-          simp [unwindFrames, mapFrame, mapStepOutcome, mapState,
-            SubstEngine.mapConf]
-      | transaction outer rest tmpl state =>
-          simpa [unwindFrames, mapFrame] using induction
-      | softcut outer rest thn els tmpl state =>
-          simpa [unwindFrames, mapFrame] using induction
-      | findall outer rest res state =>
-          simpa [unwindFrames, mapFrame] using induction
-      | table outer key rest res state =>
-          simpa [unwindFrames, mapFrame] using induction
+      simp only [List.map_cons]
+      unfold unwindFrames
+      rw [← SubstEngine.mapConf_catchErrorSuccessor]
+      cases found : catchErrorSuccessor? core error with
+      | some caught => rfl
+      | none =>
+          cases frame with
+          | transaction outer _ _ _ =>
+              simp only [Option.map_none, mapFrame,
+                mapConf_restoreTransactionCallerForError]
+              exact induction
+                (core := restoreTransactionCallerForError outer core)
+          | softcut outer _ _ _ _ _ =>
+              simp only [Option.map_none, mapFrame,
+                mapConf_restoreCallerForError]
+              exact induction (core := restoreCallerForError outer core)
+          | findall outer _ _ _ =>
+              simp only [Option.map_none, mapFrame,
+                mapConf_restoreCallerForError]
+              exact induction (core := restoreCallerForError outer core)
+          | table outer _ _ _ _ =>
+              simp only [Option.map_none, mapFrame,
+                mapConf_restoreCallerForError]
+              exact induction (core := restoreCallerForError outer core)
 
 theorem mapStepOutcome_consumeResponse {Source Target : Type}
     (map : Source → Target) (state : State Source) (core : Conf Source)
@@ -1149,15 +1249,13 @@ theorem checked_stepWith_simulation (engine : SubstEngine) (prog : Prog)
                           checked_fromCoreOutcome_step_simulation
                             engine prog gt fuel source
             | catchg tmpl sub res =>
-              have nestedEq := SubstEngine.erase_subConfOfWith
-                (SubstEngine.checked engine) source.core sub binding tmpl
-              unfold SubstEngine.erase at nestedEq
-              have mapped := mapStepOutcome_pushNested
-                (SubstEngine.checked engine).denote source
-                (SubstEngine.subConfOfWith (SubstEngine.checked engine)
-                  source.core sub binding tmpl)
-                (.catch source.core rest res binding)
-              simpa [stepWith, source, mapState, mapFrame, nestedEq] using mapped
+              simpa [stepWith, source, mapState, SubstEngine.mapConf] using
+                checked_fromCoreOutcome_step_simulation
+                  engine prog gt fuel source
+            | catchExit template result =>
+              simpa [stepWith, source, mapState, SubstEngine.mapConf] using
+                checked_fromCoreOutcome_step_simulation
+                  engine prog gt fuel source
             | transactiong tmpl sub =>
               have nestedEq := SubstEngine.erase_subConfOfWith
                 (SubstEngine.checked engine) source.core

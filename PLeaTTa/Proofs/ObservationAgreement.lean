@@ -552,7 +552,9 @@ constructors of the small-step relation. -/
   rcases tracked with ⟨next, depth⟩
   cases next with
   | none => rfl
-  | some branch => cases branch; rfl
+  | some branch =>
+      rcases branch with ⟨target, rest⟩
+      cases target <;> rfl
 
 /-- Pulling the next alternative changes control only; it preserves the
 published answer sequence. -/
@@ -563,7 +565,34 @@ theorem pull_answerValues (c : Conf) :
   rcases tracked with ⟨next, depth⟩
   cases next with
   | none => rfl
-  | some branch => cases branch; rfl
+  | some branch =>
+      rcases branch with ⟨target, rest⟩
+      cases target <;> rfl
+
+@[simp] theorem enterStreamingCatch_answers (c : Conf)
+    (template : Atom) (sub : List Goal) (result : Atom) (rest : List Goal)
+    (entry : Metta.Subst) :
+    (PLeaTTa.enterStreamingCatch c template sub result rest entry).answers =
+      c.answers := by
+  rfl
+
+@[simp] theorem exitStreamingCatch_answers (c : Conf)
+    (binding : Metta.Subst) :
+    (PLeaTTa.exitStreamingCatch c binding).answers = c.answers := by
+  unfold PLeaTTa.exitStreamingCatch
+  cases splitCatchActive c.alts <;> simp
+
+@[simp] theorem catchErrorSuccessor_answers {c next : Conf} (error : Atom)
+    (successor : catchErrorSuccessor? c error = some next) :
+    next.answers = c.answers := by
+  unfold catchErrorSuccessor? at successor
+  cases found : splitCatchActive c.alts with
+  | none => simp [found] at successor
+  | some split =>
+      simp only [found, Option.map_some] at successor
+      injection successor with nextEq
+      subst next
+      rfl
 
 /-- Every sealed semantic step either preserves the ordered answer sequence or
 is the unique answer transition, which appends exactly one instantiated query.
@@ -578,6 +607,8 @@ theorem Step.answerValues_shape
         target.answerValues =
           source.answerValues ++ [PLeaTTa.subst binding source.qterm] := by
   cases step <;> simp [Conf.answerValues, rejoinFindall, *]
+  apply catchErrorSuccessor_answers
+  assumption
 
 /-- A single semantic step can only extend the published answer sequence by a
 suffix.  The stronger `Step.answerValues_shape` theorem identifies the sole

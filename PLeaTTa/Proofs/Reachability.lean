@@ -16,9 +16,46 @@ open Metta (Atom Subst GroundingTable)
 def HasTopologicalSubst (b : Subst) : Prop :=
   Nonempty (SubstTopological b)
 
-/-- Every branch alternative carries a topological substitution. -/
-def AltsTopological (alts : List Alt) : Prop :=
-  ∀ goals b, Alt.br goals b ∈ alts → HasTopologicalSubst b
+/- Every substitution owned by an alternative is topological.  Dormant
+    catch resumptions recursively own their protected alternative prefix;
+    active and dormant frames own the entry substitution that exception
+    unwind may later restore.  Keeping this structural prevents hidden
+    resumption state from escaping the reachability invariant. -/
+mutual
+
+def AltTopological : Alt → Prop
+  | .br _ binding => HasTopologicalSubst binding
+  | .barrier => True
+  | .catchActive frame => HasTopologicalSubst frame.entry
+  | .catchDormant frame protectedAlts =>
+      HasTopologicalSubst frame.entry ∧ AltsTopological protectedAlts
+
+def AltsTopological : List Alt → Prop
+  | [] => True
+  | alternative :: rest =>
+      AltTopological alternative ∧ AltsTopological rest
+
+end
+
+/-- Compatibility projection used by the older branch-oriented proofs. -/
+theorem AltsTopological.branch {alts : List Alt}
+    (halts : AltsTopological alts) (goals : List Goal) (binding : Subst)
+    (member : Alt.br goals binding ∈ alts) :
+    HasTopologicalSubst binding := by
+  induction alts with
+  | nil => simp at member
+  | cons alternative rest inductionHypothesis =>
+      simp only [List.mem_cons] at member
+      rcases member with head | tail
+      · cases head
+        exact halts.1
+      · exact inductionHypothesis halts.2 tail
+
+instance {alts : List Alt} :
+    CoeFun (AltsTopological alts)
+      (fun _ => ∀ goals binding, Alt.br goals binding ∈ alts →
+        HasTopologicalSubst binding) where
+  coe halts := halts.branch
 
 /-- The active branch and all stored alternatives carry topological
     substitutions. -/
@@ -41,45 +78,86 @@ def ConfTopological (c : Conf) : Prop :=
 theorem AltsTopological.append {left right : List Alt}
     (hleft : AltsTopological left) (hright : AltsTopological right) :
     AltsTopological (left ++ right) := by
-  intro goals b hmem
-  simp only [List.mem_append] at hmem
-  exact hmem.elim (hleft goals b) (hright goals b)
+  induction left with
+  | nil => simpa [AltsTopological] using hright
+  | cons alternative rest inductionHypothesis =>
+      exact ⟨hleft.1, inductionHypothesis hleft.2⟩
 
 theorem AltsTopological.reverse {alts : List Alt}
     (halts : AltsTopological alts) :
     AltsTopological alts.reverse := by
-  intro goals b hmem
-  exact halts goals b (List.mem_reverse.mp hmem)
+  induction alts with
+  | nil => trivial
+  | cons alternative rest inductionHypothesis =>
+      have tail := inductionHypothesis halts.2
+      have head : AltsTopological [alternative] := ⟨halts.1, trivial⟩
+      simpa using tail.append head
+
+theorem AltsTopological.of_append_left {left right : List Alt}
+    (halts : AltsTopological (left ++ right)) : AltsTopological left := by
+  induction left with
+  | nil => trivial
+  | cons alternative rest inductionHypothesis =>
+      exact ⟨halts.1, inductionHypothesis halts.2⟩
+
+theorem AltsTopological.of_append_right {left right : List Alt}
+    (halts : AltsTopological (left ++ right)) : AltsTopological right := by
+  induction left with
+  | nil => simpa using halts
+  | cons alternative rest inductionHypothesis =>
+      exact inductionHypothesis halts.2
+
+/-- A successful nearest-delimiter split exposes topological ownership for
+    the frame entry, the protected prefix, and the outer suffix separately. -/
+theorem AltsTopological.splitCatchActive {alts : List Alt}
+    {split : CatchSplit Subst} (halts : AltsTopological alts)
+    (found : PLeaTTa.splitCatchActive alts = some split) :
+    HasTopologicalSubst split.frame.entry ∧
+      AltsTopological split.protectedAlts ∧
+      AltsTopological split.outer := by
+  have reassembled := PLeaTTa.splitCatchActive_reassembles alts
+  rw [found] at reassembled
+  rw [reassembled] at halts
+  have protectedTopological : AltsTopological split.protectedAlts :=
+    halts.of_append_left
+  have suffixTopological :
+      AltsTopological (.catchActive split.frame :: split.outer) :=
+    halts.of_append_right
+  exact ⟨suffixTopological.1, protectedTopological, suffixTopological.2⟩
 
 theorem AltsTopological.cons_barrier {alts : List Alt}
     (halts : AltsTopological alts) :
     AltsTopological (Alt.barrier :: alts) := by
-  intro goals b hmem
-  simp only [List.mem_cons] at hmem
-  rcases hmem with hhead | htail
-  · cases hhead
-  · exact halts goals b htail
+  exact ⟨trivial, halts⟩
 
 theorem AltsTopological.cons_branch {goals : List Goal} {b : Subst}
     {alts : List Alt} (hb : HasTopologicalSubst b)
     (halts : AltsTopological alts) :
     AltsTopological (Alt.br goals b :: alts) := by
-  intro branchGoals branchSubst hmem
-  simp only [List.mem_cons] at hmem
-  rcases hmem with hhead | htail
-  · cases hhead
-    exact hb
-  · exact halts branchGoals branchSubst htail
+  exact ⟨hb, halts⟩
+
+theorem AltsTopological.cons_catchActive {frame : CatchFrame}
+    {alts : List Alt} (hentry : HasTopologicalSubst frame.entry)
+    (halts : AltsTopological alts) :
+    AltsTopological (.catchActive frame :: alts) := by
+  exact ⟨hentry, halts⟩
+
+theorem AltsTopological.cons_catchDormant {frame : CatchFrame}
+    {protectedAlts alts : List Alt}
+    (hentry : HasTopologicalSubst frame.entry)
+    (hprotected : AltsTopological protectedAlts)
+    (halts : AltsTopological alts) :
+    AltsTopological (.catchDormant frame protectedAlts :: alts) := by
+  exact ⟨⟨hentry, hprotected⟩, halts⟩
 
 theorem altsTopological_map_branch {α : Type} (items : List α)
     (goals : α → List Goal) (b : Subst)
     (hb : HasTopologicalSubst b) :
     AltsTopological (items.map (fun item => Alt.br (goals item) b)) := by
-  intro branchGoals branchSubst hmem
-  simp only [List.mem_map] at hmem
-  rcases hmem with ⟨item, _, heq⟩
-  cases heq
-  exact hb
+  induction items with
+  | nil => trivial
+  | cons item rest inductionHypothesis =>
+      exact ⟨hb, inductionHypothesis⟩
 
 theorem AltsTopological.cutTo (alts : List Alt) (k : Nat)
     (halts : AltsTopological alts) :
@@ -89,11 +167,8 @@ theorem AltsTopological.cutTo (alts : List Alt) (k : Nat)
   | cons alt rest ih =>
       unfold PLeaTTa.cutTo
       split
-      · exact ih (by
-          intro goals b hmem
-          exact halts goals b (List.mem_cons_of_mem alt hmem))
-      · intro goals b hmem
-        exact halts goals b hmem
+      · exact ih halts.2
+      · exact halts
 
 theorem AltsTopological.cutToCached (alts : List Alt) (k barriers : Nat)
     (halts : AltsTopological alts) :
@@ -103,11 +178,8 @@ theorem AltsTopological.cutToCached (alts : List Alt) (k barriers : Nat)
   | cons alt rest ih =>
       unfold PLeaTTa.cutToCached
       split
-      · apply ih
-        intro goals b hmem
-        exact halts goals b (List.mem_cons_of_mem alt hmem)
-      · intro goals b hmem
-        exact halts goals b hmem
+      · exact ih _ halts.2
+      · exact halts
 
 theorem AltsTopological.cutToTracked (alts : List Alt) (k : Nat)
     (barriers : Option Nat) (halts : AltsTopological alts) :
@@ -135,13 +207,10 @@ private theorem pull_preserves_topological_alts (alts : List Alt) :
   | cons alt rest ih =>
       intro c halts htop
       rcases htop with ⟨hcur, haltsTopo⟩
+      rw [halts] at haltsTopo
       cases alt with
       | barrier =>
-          have hrest : AltsTopological rest := by
-            intro goals b hmem
-            exact haltsTopo goals b (by
-              rw [halts]
-              exact List.mem_cons_of_mem Alt.barrier hmem)
+          have hrest : AltsTopological rest := haltsTopo.2
           have hc : ConfTopological
               { c with alts := rest, barriers :=
                   popBarrierCache c.barriers } := by
@@ -161,13 +230,8 @@ private theorem pull_preserves_topological_alts (alts : List Alt) :
           rw [hpullEq]
           exact hpull
       | br goals b =>
-          have hb : HasTopologicalSubst b := by
-            exact haltsTopo goals b (by rw [halts]; simp)
-          have hrest : AltsTopological rest := by
-            intro restGoals restSubst hmem
-            exact haltsTopo restGoals restSubst (by
-              rw [halts]
-              exact List.mem_cons_of_mem (Alt.br goals b) hmem)
+          have hb : HasTopologicalSubst b := haltsTopo.1
+          have hrest : AltsTopological rest := haltsTopo.2
           rw [pull_of_alts_branch c goals b rest halts]
           constructor
           · intro activeGoals activeSubst hactive
@@ -175,6 +239,43 @@ private theorem pull_preserves_topological_alts (alts : List Alt) :
             rcases hactive with ⟨rfl, rfl⟩
             exact hb
           · exact hrest
+      | catchActive frame =>
+          have hrest : AltsTopological rest := haltsTopo.2
+          have hc : ConfTopological
+              { c with alts := rest, barriers :=
+                  popBarrierCache c.barriers } := by
+            constructor
+            · intro goals b hactive
+              exact hcur goals b (by simpa using hactive)
+            · exact hrest
+          have hpull := ih
+            { c with alts := rest, barriers :=
+                popBarrierCache c.barriers } rfl hc
+          have hpullEq : pull c =
+              pull { c with alts := rest, barriers :=
+                popBarrierCache c.barriers } := by
+            unfold pull
+            rw [halts]
+            cases c.barriers <;> rfl
+          rw [hpullEq]
+          exact hpull
+      | catchDormant frame protectedAlts =>
+          have hentry : HasTopologicalSubst frame.entry := haltsTopo.1.1
+          have hprotected : AltsTopological protectedAlts := haltsTopo.1.2
+          have hrest : AltsTopological rest := haltsTopo.2
+          have hnew : AltsTopological
+              (protectedAlts ++ .catchActive frame :: rest) :=
+            hprotected.append (hrest.cons_catchActive hentry)
+          unfold pull
+          rw [halts]
+          cases c.barriers <;>
+            simp only [pullAuxTracked, pullAuxCached, pullAux,
+              addBarrierCache, Option.map]
+          all_goals
+            constructor
+            · intro goals b hactive
+              simp at hactive
+            · exact hnew
 
 theorem ConfTopological.pull (c : Conf) (htop : ConfTopological c) :
     ConfTopological (pull c) := by
@@ -196,8 +297,7 @@ theorem ConfTopological.frame {source target : Conf}
   constructor
   · intro goals b hactive
     exact htop.1 goals b (by simpa [hcur] using hactive)
-  · intro goals b hmem
-    exact htop.2 goals b (by simpa [halts] using hmem)
+  · simpa [halts] using htop.2
 
 theorem ConfTopological.replaceActive {c : Conf} {oldGoals newGoals : List Goal}
     {b : Subst} (htop : ConfTopological c)
@@ -271,8 +371,7 @@ theorem resolveAlts_topological (cs : List Clause) (argsv args : List Atom)
   change AltsTopological
     (cs.foldl addClause ([], counter)).1.reverse
   exact (preserve cs ([], counter) (by
-    intro goals branchSubst hmem
-    simp at hmem)).reverse
+    trivial)).reverse
 
 theorem smatchAlts_topological (w : PWorld) (counter : Nat) (b : Subst)
     (pat : Atom) (rest : List Goal) (qterm : Atom)
@@ -306,9 +405,7 @@ theorem smatchAlts_topological (w : PWorld) (counter : Nat) (b : Subst)
         split
         · exact AltsTopological.cons_branch hb hacc
         · exact hacc
-  have hfold := preserve (w.atomCandidates space query) [] (by
-    intro goals branchSubst hmem
-    simp at hmem)
+  have hfold := preserve (w.atomCandidates space query) [] (by trivial)
   change AltsTopological
     ((w.atomCandidates space query).foldl addAtom []).reverse
   exact hfold.reverse
@@ -565,15 +662,52 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
       · intro goals branchSubst hcur
         simp at hcur
       · exact hnew
-  | catch_run c d tmpl sub res rest b h hc hrun hdone =>
+  | catch_stream_enter c tmpl sub res rest b h hc =>
       have hb := htop.active h
-      have hnew := (altsTopological_map_branch d.answerValues
-        (fun inst => Goal.eq res inst :: rest) b hb).append htop.2
-      apply ConfTopological.pull
       constructor
-      · intro goals branchSubst hcur
-        simp at hcur
-      · exact hnew
+      · intro goals binding hcur
+        simp only [enterStreamingCatch, Option.some.injEq, Prod.mk.injEq]
+          at hcur
+        rcases hcur with ⟨rfl, rfl⟩
+        exact hb
+      · exact htop.2.cons_catchActive hb
+  | catch_stream_exit c template result rest b b' h hu =>
+      have hb := htop.active h
+      rcases hb with ⟨topological⟩
+      have hb' : HasTopologicalSubst b' :=
+        ⟨unifyB_topological b result template b' topological hu⟩
+      cases found : splitCatchActive c.alts with
+      | none =>
+          simp only [exitStreamingCatch, found]
+          exact ConfTopological.pull _ htop.clearActive
+      | some split =>
+          have pieces := htop.2.splitCatchActive found
+          simp only [exitStreamingCatch, found]
+          constructor
+          · intro goals binding hcur
+            simp only [Option.some.injEq, Prod.mk.injEq] at hcur
+            rcases hcur with ⟨rfl, rfl⟩
+            exact hb'
+          · exact AltsTopological.cons_catchDormant
+              (frame := split.frame)
+              (protectedAlts := split.protectedAlts)
+              (alts := split.outer) pieces.1 pieces.2.1 pieces.2.2
+  | catch_stream_exit_fail c template result rest b h hu =>
+      exact ConfTopological.pull _ htop.clearActive
+  | catch_stream_error c _ op args res rest b err h herr hc =>
+      cases found : splitCatchActive c.alts with
+      | none => simp [catchErrorSuccessor?, found] at hc
+      | some split =>
+          have pieces := htop.2.splitCatchActive found
+          simp only [catchErrorSuccessor?, found, Option.map_some,
+            Option.some.injEq] at hc
+          cases hc
+          constructor
+          · intro goals binding hcur
+            simp only [Option.some.injEq, Prod.mk.injEq] at hcur
+            rcases hcur with ⟨rfl, rfl⟩
+            exact pieces.1
+          · exact pieces.2.2
   | softcut_some c d tmpl sub thn els rest b h hrun hdone hne =>
       have hb := htop.active h
       have hnew := (altsTopological_map_branch d.answerValues
@@ -644,8 +778,6 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
       · exact hnew
   | findall c d tmpl sub res rest b h hrun hdone =>
       apply ConfTopological.frame (htop.replaceActive h) <;> rfl
-  | catch_run_error c d tmpl sub res rest b err h hc hrun =>
-      apply ConfTopological.frame (htop.replaceActive h) <;> rfl
   | call_table_compute c d f args res rest b tres h hcan hcache htres hrun hdone =>
       have hb := htop.active h
       have hnew := (altsTopological_map_branch d.answerValues
@@ -681,9 +813,8 @@ theorem confTopological_of_empty (c : Conf) (goals : List Goal)
     simp only [Option.some.injEq, Prod.mk.injEq] at hactive
     rcases hactive with ⟨rfl, rfl⟩
     exact hasTopologicalSubst_nil
-  · intro branchGoals b hmem
-    rw [halts] at hmem
-    simp at hmem
+  · rw [halts]
+    trivial
 
 /-- Every active substitution reachable from the standard empty-substitution,
     empty-alternative start has a constructional topological witness. -/

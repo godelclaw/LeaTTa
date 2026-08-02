@@ -826,6 +826,14 @@ inductive ExhaustedPayloadCatchupResult
         qterm cursor bodyBarrier callerBarrier callerReferences
         callerExecutables active callerScope outerScope segments resources
         context baseAlts predecessor source successor payloadContext
+  | baseCatchResume
+      (partition :
+        BaseCatchResumeOuterResourceCatchupPartition alpha segments resources
+          context baseAlts) :
+      ExhaustedPayloadCatchupResult freshFrontier alpha support opened pending
+        qterm cursor bodyBarrier callerBarrier callerReferences
+        callerExecutables active callerScope outerScope segments resources
+        context baseAlts predecessor source successor payloadContext
   | terminal
       (partition :
         TerminalOuterResourceCatchupPartition alpha segments resources context
@@ -853,8 +861,8 @@ inductive ExhaustedPayloadCatchupResult
 catch-up cases.
 
 The generated first-live and terminal partitions are consumed immediately by
-the exact payload theorems.  A live arbitrary base remains the explicit third
-boundary outcome. -/
+the exact payload theorems.  An arbitrary base branch or dormant-catch
+resumption remains an explicit uncomposed boundary outcome. -/
 theorem catchupClassified
     {freshFrontier : FreshFrontierRelation}
     {alpha support : List (LogicVar × String)}
@@ -897,6 +905,8 @@ theorem catchupClassified
       exact .firstLive partition payloadSuffix sourceSteps relation
   | baseLive partition =>
       exact .baseLive partition
+  | baseCatchResume partition =>
+      exact .baseCatchResume partition
   | terminal partition =>
       obtain ⟨sourceSteps, relation⟩ :=
         PLeaTTa.PrologCurrentSessionExhaustedPayloadCatchupBridge.SpinedExhaustedPayloadResourceRelatesAt.catchupTerminal

@@ -154,10 +154,16 @@ private def caughtReplay : HostMachine.RunOutcome Subst :=
   HostMachine.runWith reference emptyProg pleattaTable 30
     { core := caughtConf, host := .replay [raisedExchange] } none
 
+#guard binRequiresHostExecutor "py-call"
+#guard (catchDirect? pleattaTable [] resultVar
+  [Goal.bin "py-call" [lengthArgument] resultVar]).isNone
+#guard (caughtBinErrorResolved? pleattaTable "py-call" [lengthArgument]).isNone
+
 #guard match caughtReplay with
   | .done state =>
       state.core.answers == [pythonErrorAtom {
-        kind := "ValueError", message := "fixture" }]
+        kind := "ValueError", message := "fixture" }] &&
+      state.host.cursor == 1
   | _ => false
 
 private def mismatchedReplay : HostMachine.RunOutcome Subst :=

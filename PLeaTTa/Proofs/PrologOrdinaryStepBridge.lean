@@ -2846,7 +2846,11 @@ control.  The dynamic world and global high-water remain current. -/
       PLeaTTa.pullAuxTracked state.toConf.barriers state.toConf.alts =
         outcome
     rcases outcome with ⟨outcome, barriers⟩
-    cases outcome <;> rfl
+    cases outcome with
+    | none => rfl
+    | some pulled =>
+        rcases pulled with ⟨target, rest⟩
+        cases target <;> rfl
   have counter :
       (PLeaTTa.pull { state.toConf with cur := none }).counter =
         state.toConf.counter := by
@@ -2855,7 +2859,11 @@ control.  The dynamic world and global high-water remain current. -/
       PLeaTTa.pullAuxTracked state.toConf.barriers state.toConf.alts =
         outcome
     rcases outcome with ⟨outcome, barriers⟩
-    cases outcome <;> rfl
+    cases outcome with
+    | none => rfl
+    | some pulled =>
+        rcases pulled with ⟨target, rest⟩
+        cases target <;> rfl
   change
     persistentOf (PLeaTTa.pull { state.toConf with cur := none }) =
       state.persistent
@@ -2877,7 +2885,11 @@ manufactures a nested-run answer. -/
   generalize outcomeEq :
     PLeaTTa.pullAuxTracked state.toConf.barriers state.toConf.alts = outcome
   rcases outcome with ⟨outcome, barriers⟩
-  cases outcome <;> rfl
+  cases outcome with
+  | none => rfl
+  | some pulled =>
+      rcases pulled with ⟨target, rest⟩
+      cases target <;> rfl
 
 @[simp] theorem unifyFailureSuccessor_frames (state : OpenConf) :
     (unifyFailureSuccessor state).frames = state.frames := by

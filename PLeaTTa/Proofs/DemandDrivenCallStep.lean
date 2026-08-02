@@ -143,7 +143,11 @@ def pendingCallOf (state : OpenConf) (branches : List Alt)
   unfold pull
   generalize pullAuxTracked conf.barriers conf.alts = result
   rcases result with ⟨result, cache⟩
-  cases result <;> rfl
+  cases result with
+  | none => rfl
+  | some pulled =>
+      rcases pulled with ⟨target, rest⟩
+      cases target <;> rfl
 
 @[simp] theorem PendingCall.pulled_persistent (pending : PendingCall) :
     pending.pulled.persistent = pending.persistent := by

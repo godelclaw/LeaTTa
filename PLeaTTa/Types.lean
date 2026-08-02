@@ -48,6 +48,12 @@ inductive Goal where
       translated subexpression; ordinary failure remains failure, while a
       runtime/type exception is reified as an `(Error ...)` value. -/
   | catchg (tmpl : Atom) (sub : List Goal) (res : Atom)
+  /-- Internal protected-to-caller boundary for streaming `catchg`.
+      The compiler never emits this constructor.  It carries the protected
+      template and caller result as explicit liveness roots, performs their
+      answer-time unification, then suspends the protected alternatives and
+      leaves the catch region before the caller continuation begins. -/
+  | catchExit (template result : Atom)
   /-- Soft cut, Prolog's `(Sub -> Then ; Else)`: run `sub` to its FIRST
       answer; on success re-bind `tmpl ≐ instance` in the caller and run
       `thn`; on failure run `els`. Powers `unify/4` and first-match `case`
@@ -111,6 +117,8 @@ def instantiateGoal (s : Subst) : Goal → Goal
   | .catchg tmpl sub res =>
       .catchg (Metta.Subst.apply s tmpl) (instantiateGoals s sub)
         (Metta.Subst.apply s res)
+  | .catchExit template result =>
+      .catchExit (Metta.Subst.apply s template) (Metta.Subst.apply s result)
   | .softcut tmpl sub thn els =>
       .softcut (Metta.Subst.apply s tmpl) (instantiateGoals s sub)
         (instantiateGoals s thn) (instantiateGoals s els)

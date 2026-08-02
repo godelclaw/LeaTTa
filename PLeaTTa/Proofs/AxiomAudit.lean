@@ -1990,7 +1990,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.DemandDrivenStep.completedFindallCopyPhase_finish
 #print axioms PLeaTTa.DemandDrivenStep.findallExit_copy_expands
 #print axioms PLeaTTa.DemandDrivenStep.findallExit_copy_expands_and_collapses
-#print axioms PLeaTTa.DemandDrivenStep.sealed_general_catch_step_has_closed_subrun
+#print axioms PLeaTTa.DemandDrivenStep.sealed_general_catch_step_is_stream_enter
 #print axioms PLeaTTa.DemandDrivenStep.sealed_findall_step_has_terminal_subrun
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.assertz
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.asserta
@@ -2693,3 +2693,17 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologFindallTailForestBridge.FindallFrameForestPayloadAgrees.materializedTailForest
 #print axioms PLeaTTa.PrologFindallTailForestBridge.FindallFrameForestPayloadAgrees.materializedTailControl
 #print axioms PLeaTTa.PrologFindallTailForestBridge.FindallFrameForestPayloadAgrees.afterAnswer
+
+-- Typed streaming-catch answer-transfer liveness.
+#print axioms PLeaTTa.isTrimRoot_catchExit_template_var
+#print axioms PLeaTTa.isTrimRoot_catchExit_result_var
+#print axioms PLeaTTa.trimFor_rootless_drops_protected_answer
+#print axioms PLeaTTa.isTrimRoot_result_only_misses_template
+#print axioms PLeaTTa.isTrimRoot_template_only_misses_result
+#print axioms PLeaTTa.trimFor_typed_catchExit_retains_answer_chain
+#print axioms PLeaTTa.subst_trimFor_typed_catchExit_template_eq_of_topological
+#print axioms PLeaTTa.compilerGoalNamesAllowed_catchExit
+#print axioms PLeaTTa.Step.catch_stream_enter
+#print axioms PLeaTTa.Step.catch_stream_exit
+#print axioms PLeaTTa.Step.catch_stream_exit_fail
+#print axioms PLeaTTa.Step.catch_stream_error

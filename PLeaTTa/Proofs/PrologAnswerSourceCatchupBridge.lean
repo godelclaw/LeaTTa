@@ -781,7 +781,9 @@ private theorem realizeRightClauses
     (goals : List PLeaTTa.Goal) (binding : Subst)
     (tail : List PLeaTTa.Alt)
     (head : resource.alts = .br goals binding :: tail)
-    (pullExact : PLeaTTa.pullAux resource.alts = some ((goals, binding), tail)) :
+    (pullExact :
+      PLeaTTa.pullAux resource.alts =
+        some (.branch goals binding, tail)) :
     RightLandingRealizes session
       (.clauses scope callStart cursor position resource ownership
         goals binding tail head pullExact) := by
@@ -810,7 +812,7 @@ private theorem realizeRightScheduled
     (inside : OriginPrefixLanding alpha history goals binding tail)
     (pullExact :
       PLeaTTa.pullAux (flattenOwnedAlts resources []) =
-        some ((goals, binding), tail))
+        some (.branch goals binding, tail))
     (insideIH : OriginLandingRealizes session inside) :
     RightLandingRealizes session
       (.scheduled callerScope callerTail origin resources nonempty history
@@ -834,7 +836,7 @@ private theorem realizeRightTaskChoices
         referenceBase current runtime right (.br goals runtime :: tail))
     (pullExact :
       PLeaTTa.pullAux (.br goals runtime :: tail) =
-        some ((goals, runtime), tail)) :
+        some (.branch goals runtime, tail)) :
     RightLandingRealizes session
       (.taskChoices support scope barrier canonical referenceBase current
         runtime right goals tail choices pullExact) := by
@@ -897,7 +899,8 @@ private theorem realizeOriginChoiceInside
     (goals : List PLeaTTa.Goal) (binding : Subst)
     (rest : List PLeaTTa.Alt)
     (inside : OriginPrefixLanding alpha insideAgreement goals binding rest)
-    (pullExact : PLeaTTa.pullAux beforeAlts = some ((goals, binding), rest))
+    (pullExact :
+      PLeaTTa.pullAux beforeAlts = some (.branch goals binding, rest))
     (insideIH : OriginLandingRealizes session inside) :
     OriginLandingRealizes session
       (.choiceInside scope right insideOrigin insideAgreement regionAgreement
@@ -929,7 +932,7 @@ private theorem realizeOriginChoiceRegion
       RightRegionLanding alpha regionAgreement goals binding regionTail)
     (pullExact :
       PLeaTTa.pullAux beforeAlts =
-        some ((goals, binding), regionTail ++ afterAlts))
+        some (.branch goals binding, regionTail ++ afterAlts))
     (insideIH : OriginFallsRealizes session insideEmpty)
     (regionIH : RightLandingRealizes session regionLive) :
     OriginLandingRealizes session
@@ -958,7 +961,8 @@ private theorem realizeOriginCut
     (goals : List PLeaTTa.Goal) (binding : Subst)
     (rest : List PLeaTTa.Alt)
     (inside : OriginPrefixLanding alpha insideAgreement goals binding rest)
-    (pullExact : PLeaTTa.pullAux beforeAlts = some ((goals, binding), rest))
+    (pullExact :
+      PLeaTTa.pullAux beforeAlts = some (.branch goals binding, rest))
     (insideIH : OriginLandingRealizes session inside) :
     OriginLandingRealizes session
       (.cutBoundary scope insideOrigin insideAgreement goals binding rest inside
@@ -1251,27 +1255,39 @@ def SourcePhase
       ConservativeReadyPullTarget alpha goals binding rest target) \/
     (events = [] /\
       exists count goals binding rest,
-        PLeaTTa.pullAux afterAlts = some ((goals, binding), rest) /\
+        PLeaTTa.pullAux afterAlts =
+            some (.branch goals binding, rest) /\
         StepsN count (.running session next) [.completed]
           (.terminal session .completed)) \/
+    (events = [] /\
+      exists count,
+        ∃ frame : PLeaTTa.CatchFrame,
+          ∃ protectedAlts rest : List PLeaTTa.Alt,
+            PLeaTTa.pullAux afterAlts =
+                some (.catchResume frame protectedAlts, rest) /\
+            StepsN count (.running session next) [.completed]
+              (.terminal session .completed)) \/
     (events = [.completed] /\
       exists count,
         PLeaTTa.pullAux afterAlts = none /\
         StepsN count (.running session next) [.completed]
           (.terminal session .completed))
 
-/-- Exact first source phase corresponding to the three-way executable pull
+/-- Exact first source phase corresponding to the four-way executable pull
 classification.
 
 * a local branch reaches its branch-indexed conservative cursor silently;
 * a live older base first completes the child origin, after which an outer
   source context must consume that completion before selecting the base;
+* an older dormant catch likewise completes the child origin before its
+  protected continuation is resumed by the enclosing executable context;
 * total exhaustion completes the child origin and that completion is the
   classified terminal observation.
 
-The middle disjunct is intentionally distinct from the terminal one even
-though both child phases end in `.completed`: only the executable older-bank
-equation distinguishes whether an enclosing source context must continue. -/
+The two context-pending disjuncts are intentionally distinct from the
+terminal one even though all three child phases end in `.completed`: only the
+executable older-bank equation distinguishes ordinary selection, catch
+resumption, and total exhaustion. -/
 theorem sourcePhase
     {alpha : List (LogicVar × String)}
     {leafScope : CutScopeId} {bindings : OpenSubstitution.Substitution}
@@ -1297,11 +1313,17 @@ theorem sourcePhase
         PLeaTTa.PrologAnswerSourceCatchupBridge.OriginPrefixFallsThrough.sourceStepsN
           falls session
       exact .inr (.inl ⟨rfl, count, goals, binding, rest, basePull, steps⟩)
+  | baseCatchResume falls frame protectedAlts rest basePull =>
+      obtain ⟨count, steps⟩ :=
+        PLeaTTa.PrologAnswerSourceCatchupBridge.OriginPrefixFallsThrough.sourceStepsN
+          falls session
+      exact .inr (.inr (.inl
+        ⟨rfl, count, frame, protectedAlts, rest, basePull, steps⟩))
   | terminal falls basePull =>
       obtain ⟨count, steps⟩ :=
         PLeaTTa.PrologAnswerSourceCatchupBridge.OriginPrefixFallsThrough.sourceStepsN
           falls session
-      exact .inr (.inr ⟨rfl, count, basePull, steps⟩)
+      exact .inr (.inr (.inr ⟨rfl, count, basePull, steps⟩))
 
 end OriginPullOutcome
 
@@ -1429,7 +1451,7 @@ theorem base_live_and_terminal_source_phases_are_distinct
     let liveBase : List PLeaTTa.Alt := [.br [] []]
     let exhaustedBase : List PLeaTTa.Alt := [.barrier, .barrier]
     OriginPullOutcome.SourcePhase [] .done liveBase [] session /\
-      PLeaTTa.pullAux liveBase = some (([], []), []) /\
+      PLeaTTa.pullAux liveBase = some (.branch [] [], []) /\
       OriginPullOutcome.SourcePhase [] .done exhaustedBase [.completed]
         session /\
       PLeaTTa.pullAux exhaustedBase = none /\
@@ -1477,7 +1499,7 @@ theorem three_branch_task_choice_source_catchup_preserves_older_suffix
           SilentStepsN session 1 (.choice 7 .done right) right /\
           ConservativeReadyPullTarget [] [] [] (regionTail ++ base) right /\
           PLeaTTa.pullAux ((.br [] [] :: regionTail) ++ base) =
-            some (([], []), regionTail ++ base) := by
+            some (.branch [] [], regionTail ++ base) := by
   dsimp only
   obtain ⟨region, _length, _markers⟩ :=
     PLeaTTa.PrologAnswerResourceBridge.AnswerOriginResourceAgrees.three_branch_task_choice_region_is_inhabited

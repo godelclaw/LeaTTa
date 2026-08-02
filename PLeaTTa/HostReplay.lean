@@ -77,35 +77,30 @@ theorem unwindError_aligned {Binding : Type} (transcript : List HostExchange)
       (HostMachine.unwindError {
         core, frames, host := {
           mode := .replay, transcript, cursor } } error) := by
-  induction frames with
+  induction frames generalizing core with
   | nil =>
-      change StateAligned transcript
-          { core := core, host := {
-              mode := .live, transcript := liveTranscript, cursor } }
-          { core := core, host := {
-              mode := .replay, transcript, cursor } } ∧ error = error
-      simp [StateAligned]
+      unfold HostMachine.unwindError HostMachine.unwindFrames
+      cases catchErrorSuccessor? core error <;>
+        simp [StepAligned, StateAligned]
   | cons frame frames induction =>
-      cases frame with
-      | «catch» outer rest res binding =>
-          change StateAligned transcript
-            { core := { outer with
-                cur := some (Goal.eq res error :: rest, binding)
-                world := core.world
-                counter := advanceCounterPastAtoms core.counter [error] }
-              frames
-              host := { mode := .live, transcript := liveTranscript, cursor } }
-            { core := { outer with
-                cur := some (Goal.eq res error :: rest, binding)
-                world := core.world
-                counter := advanceCounterPastAtoms core.counter [error] }
-              frames
-              host := { mode := .replay, transcript, cursor } }
-          simp [StateAligned]
-      | transaction outer rest tmpl binding => exact induction
-      | softcut outer rest thn els tmpl binding => exact induction
-      | findall outer rest res binding => exact induction
-      | table outer key rest res binding => exact induction
+      unfold HostMachine.unwindError HostMachine.unwindFrames
+      cases found : catchErrorSuccessor? core error with
+      | some caught => simp [StepAligned, StateAligned]
+      | none =>
+          cases frame with
+          | transaction outer rest tmpl binding =>
+              exact induction
+                (core := HostMachine.restoreTransactionCallerForError
+                  outer core)
+          | softcut outer rest thn els tmpl binding =>
+              exact induction
+                (core := HostMachine.restoreCallerForError outer core)
+          | findall outer rest res binding =>
+              exact induction
+                (core := HostMachine.restoreCallerForError outer core)
+          | table outer key rest res binding =>
+              exact induction
+                (core := HostMachine.restoreCallerForError outer core)
 
 theorem completeRecordedStep_unwindError (engine : SubstEngine)
     (prog : Prog) (gt : GroundingTable) (transcript : List HostExchange)
@@ -115,19 +110,29 @@ theorem completeRecordedStep_unwindError (engine : SubstEngine)
     completeRecordedStep engine prog gt transcript fuel
         (HostMachine.unwindError { core, frames, host } error) =
       HostMachine.unwindError { core, frames, host } error := by
-  induction frames with
-  | nil => rfl
+  induction frames generalizing core with
+  | nil =>
+      unfold HostMachine.unwindError HostMachine.unwindFrames
+      cases catchErrorSuccessor? core error <;> rfl
   | cons frame frames induction =>
-      cases frame with
-      | «catch» outer rest res binding => rfl
-      | transaction outer rest tmpl binding =>
-          simpa [HostMachine.unwindError, HostMachine.unwindFrames] using induction
-      | softcut outer rest thn els tmpl binding =>
-          simpa [HostMachine.unwindError, HostMachine.unwindFrames] using induction
-      | findall outer rest res binding =>
-          simpa [HostMachine.unwindError, HostMachine.unwindFrames] using induction
-      | table outer key rest res binding =>
-          simpa [HostMachine.unwindError, HostMachine.unwindFrames] using induction
+      unfold HostMachine.unwindError HostMachine.unwindFrames
+      cases found : catchErrorSuccessor? core error with
+      | some caught => rfl
+      | none =>
+          cases frame with
+          | transaction outer rest tmpl binding =>
+              exact induction
+                (core := HostMachine.restoreTransactionCallerForError
+                  outer core)
+          | softcut outer rest thn els tmpl binding =>
+              exact induction
+                (core := HostMachine.restoreCallerForError outer core)
+          | findall outer rest res binding =>
+              exact induction
+                (core := HostMachine.restoreCallerForError outer core)
+          | table outer key rest res binding =>
+              exact induction
+                (core := HostMachine.restoreCallerForError outer core)
 
 abbrev fromCore {Binding : Type} :=
   HostMachine.fromCoreOutcome (Binding := Binding)
@@ -674,9 +679,19 @@ theorem recordedStepWith_replay (engine : SubstEngine) (prog : Prog)
                                 hcur, hop, hopr, hprint, hclock, hopt, fromCore,
                                 HostMachine.fromCoreOutcome] using aligned
                 | catchg tmpl sub res =>
-                    simp [recordedStepWith, completeRecordedStep,
-                      HostMachine.stepWith, HostMachine.pushNested, hcur,
-                      StepAligned, StateAligned]
+                    have aligned := completeRecordedStep_fromCore_aligned
+                      engine prog gt transcript (fuel + 1) core frames
+                      liveTranscript cursor
+                      (engine.stepCleanWith prog gt fuel core)
+                    simpa [recordedStepWith, HostMachine.stepWith, hdone, hcur,
+                      fromCore, HostMachine.fromCoreOutcome] using aligned
+                | catchExit =>
+                    have aligned := completeRecordedStep_fromCore_aligned
+                      engine prog gt transcript (fuel + 1) core frames
+                      liveTranscript cursor
+                      (engine.stepCleanWith prog gt fuel core)
+                    simpa [recordedStepWith, HostMachine.stepWith, hdone, hcur,
+                      fromCore, HostMachine.fromCoreOutcome] using aligned
                 | transactiong tmpl sub =>
                     simp [recordedStepWith, completeRecordedStep,
                       HostMachine.stepWith, HostMachine.pushNested, hcur,

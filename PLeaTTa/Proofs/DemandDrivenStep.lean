@@ -391,7 +391,11 @@ fresh high-water. -/
   unfold pull persistentOf
   generalize pullAuxTracked conf.barriers conf.alts = result
   rcases result with ⟨next, cache⟩
-  cases next <;> rfl
+  cases next with
+  | none => rfl
+  | some target =>
+      rcases target with ⟨target, rest⟩
+      cases target <;> rfl
 
 /-- World state is outside the backtrackable alternative bank. -/
 @[simp] theorem privateAnswer_pull_world (conf : Conf) :
@@ -399,7 +403,11 @@ fresh high-water. -/
   unfold pull
   generalize pullAuxTracked conf.barriers conf.alts = result
   rcases result with ⟨next, cache⟩
-  cases next <;> rfl
+  cases next with
+  | none => rfl
+  | some target =>
+      rcases target with ⟨target, rest⟩
+      cases target <;> rfl
 
 /-- The general-purpose fresh counter is likewise outside the alternative
 bank. -/
@@ -408,7 +416,11 @@ bank. -/
   unfold pull
   generalize pullAuxTracked conf.barriers conf.alts = result
   rcases result with ⟨next, cache⟩
-  cases next <;> rfl
+  cases next with
+  | none => rfl
+  | some target =>
+      rcases target with ⟨target, rest⟩
+      cases target <;> rfl
 
 /-- Pulling changes control position only; the observable query term remains
 the one installed when the private generator was entered. -/
@@ -417,7 +429,11 @@ the one installed when the private generator was entered. -/
   unfold pull
   generalize pullAuxTracked conf.barriers conf.alts = result
   rcases result with ⟨next, cache⟩
-  cases next <;> rfl
+  cases next with
+  | none => rfl
+  | some target =>
+      rcases target with ⟨target, rest⟩
+      cases target <;> rfl
 
 /-- Pulling cannot rewrite the reverse-discovery answer accumulator. -/
 @[simp] theorem privateAnswer_pull_answers (conf : Conf) :
@@ -425,7 +441,11 @@ the one installed when the private generator was entered. -/
   unfold pull
   generalize pullAuxTracked conf.barriers conf.alts = result
   rcases result with ⟨next, cache⟩
-  cases next <;> rfl
+  cases next with
+  | none => rfl
+  | some target =>
+      rcases target with ⟨target, rest⟩
+      cases target <;> rfl
 
 @[simp] theorem privateAnswerTarget_frames
     (state : OpenConf) (binding : Subst) :
@@ -2435,16 +2455,11 @@ theorem findallExit_copy_expands_and_collapses
     ⟨findallExit_copy_expands prog gt inner frame remaining frameHead done,
       .findallExit inner frame remaining frameHead done⟩
 
-/-- Outside the direct grounded fast path, every sealed `catchg` step hides a
-closed nested execution premise.  The protected run must either reach a
-terminal configuration before its answers are replayed or finish a complete
-`Raises` derivation before the error value is installed.  There is no sealed
-constructor for an answer-producing nonterminal prefix.
-
-This inversion is deliberately disjunctive: exceptional completion is not
-misclassified as ordinary terminal completion, while both branches expose the
-same exact nested starting configuration. -/
-theorem sealed_general_catch_step_has_closed_subrun
+/-- Outside the direct grounded fast path, the sealed relation has exactly the
+same demand-driven catch entry as the executable.  In particular there is no
+atomic constructor carrying a terminal nested-run premise, so an open
+protected prefix cannot be collapsed into one outer step. -/
+theorem sealed_general_catch_step_is_stream_enter
     {prog : Prog} {gt : GroundingTable} (outer next : Conf)
     (template : Atom) (sub : List Goal) (result : Atom)
     (rest : List Goal) (binding : Subst)
@@ -2452,18 +2467,8 @@ theorem sealed_general_catch_step_has_closed_subrun
       some (Goal.catchg template sub result :: rest, binding))
     (notDirect : catchDirect? gt binding template sub = none)
     (step : PLeaTTa.Step prog gt outer next) :
-    (∃ inner,
-      PLeaTTa.StepStar prog gt
-        (subConfOf outer sub binding template) inner ∧
-      PLeaTTa.Terminal inner) ∨
-    (∃ inner error,
-      PLeaTTa.Raises prog gt
-        (subConfOf outer sub binding template) inner error) := by
+    next = enterStreamingCatch outer template sub result rest binding := by
   cases step <;> simp_all [subConfOf]
-  case catch_run =>
-    exact .inl ⟨_, by assumption, by assumption⟩
-  case catch_run_error =>
-    exact .inr ⟨_, _, by assumption⟩
 
 /-- The current sealed relation treats every outer findall step atomically:
 the step can exist only with a terminal nested `StepStar` premise. -/
