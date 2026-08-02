@@ -116,6 +116,10 @@ structure SpinedActiveProductPayloadResourceRelatesAt
   that cell's own allocation seeds.  Unlike a one-level head certificate,
   this survives arbitrary nested-call exhaustion and payload popping. -/
   activationOrdered : ActivationOrdered payloadContext
+  /-- Every retained activation is indexed by its literal call-start
+  generation and dominated by this relation's current persistent session. -/
+  activationOrigins :
+    LocalActivationOriginSpineRelates session payloadContext
   /-- Every retained occurrence owns the exact historical alternatives and
   barrier cache outside its call.  The separate frame conjunct explicitly
   states the current local-call build has no typed delimiter interleaved
@@ -404,6 +408,7 @@ def reindex
     endpointsBelow_mono payloadContext agreement.endpointsCurrent
       advanced.fresh (Nat.le_refl _),
     agreement.activationOrdered,
+    agreement.activationOrigins.advance payloadContext advanced,
     agreement.controlOrigins⟩
 
 /-- The payload-coupled relation genuinely admits a strictly later fresh
@@ -589,6 +594,8 @@ theorem
       endpointsBelow outerPayloads opened.cursor.reservationStart
         startCounter)
     (outerOrdered : ActivationOrdered outerPayloads)
+    (outerActivationOrigins :
+      LocalActivationOriginSpineRelates opened.session outerPayloads)
     (baseAlts : List PLeaTTa.Alt)
     (outerAlts :
       pending.outer.alts = flattenOwnedAlts resources baseAlts)
@@ -628,11 +635,13 @@ theorem
     _root_.PLeaTTa.PrologNestedRetainedPayloadBridge.SpinedRepresentativeProductActivation.activeResourceStackWithNestedSnapshots
       retainedPosition positioned frontier preHeadPayload oldCumulative
       materializedAtOpen openedArguments openedBindings queryReferenceBelow activation
-      sourceFresh outerPayloads outerEndpoints outerOrdered baseAlts outerAlts
+      sourceFresh outerPayloads outerEndpoints outerOrdered
+      outerActivationOrigins baseAlts outerAlts
   have endpoints := result.1
   have activationOrdered := result.2.1
-  have outerPayloadExact := result.2.2.1
-  have _outerActivationEndpoints := result.2.2.2.1
+  have activationOrigins := result.2.2.1
+  have outerPayloadExact := result.2.2.2.1
+  have _outerActivationEndpoints := result.2.2.2.2.1
   have resourceStack :
       ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
         callerBarrier pending (finish.advance branch branchTail)
@@ -641,15 +650,15 @@ theorem
         baseAlts
         (activatedOpenSuccessor pending copied
           (segmentExecutableRest ++ flattenExecutables outer) qterm
-          installed) := result.2.2.2.2.1
+          installed) := result.2.2.2.2.2.1
   have snapshotRepresentative :
       (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.residualRepresentative =
       representative :=
-    result.2.2.2.2.2.1
+    result.2.2.2.2.2.2.1
   have snapshotOrigin :
       (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.controlOrigin.MatchesPendingControl
         pending :=
-    result.2.2.2.2.2.2
+    result.2.2.2.2.2.2.2
   have counterExact :
       (activatedOpenSuccessor pending copied
         (segmentExecutableRest ++ flattenExecutables outer) qterm
@@ -726,6 +735,8 @@ theorem
       controlOriginsAtPending
   refine
     ⟨active, payloadContext, ?_, outerPayloadExact, snapshotRepresentative⟩
-  exact ⟨core, endpointsCurrent, activationOrdered, controlOrigins⟩
+  exact
+    ⟨core, endpointsCurrent, activationOrdered, activationOrigins,
+      controlOrigins⟩
 
 end PLeaTTa.PrologCurrentSessionPayloadBridge

@@ -272,7 +272,8 @@ theorem activateSelectedHead
             |>.member_first_le_next branchMember)
       (by simp [afterPulledHead])
 
-  rcases nextSnapshotExists with ⟨nextSnapshot, nextSnapshotOrigin⟩
+  rcases nextSnapshotExists with
+    ⟨nextSnapshot, nextSnapshotOrigin, nextSnapshotActivationOrigin⟩
   have callerAgrees :
       ({ barrier := callerBarrier
          references := callerReferences
@@ -337,6 +338,50 @@ theorem activateSelectedHead
   have nextActivationOrdered :
       ActivationOrdered nextPayloadContext := by
     exact ⟨outerNextAtActivation, outerNextOrdered⟩
+  have consumedActivationExtends :
+      consumed.activationOrigin.Extends session := by
+    exact
+      PostFailurePayloadOffsetContext.headSnapshot_activationExtends
+        payloadContext agreement.activationOrigins
+  have consumedCutScope :
+      consumed.activationOrigin.nextCutScope = opened.scope + 1 := by
+    exact
+      PostFailurePayloadOffsetContext.headSnapshot_activationCutScope
+        payloadContext agreement.activationOrigins
+  have restoredActivationExtends :
+      restored.activationOrigin.Extends session := by
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · simpa [restored, SelectedHeadActivationChronology.restoreSnapshot,
+        PreparedCursor.advance] using consumedActivationExtends.generation
+    · simpa [restored, SelectedHeadActivationChronology.restoreSnapshot] using
+        consumedActivationExtends.fresh
+    · simpa [restored, SelectedHeadActivationChronology.restoreSnapshot] using
+        consumedActivationExtends.cut
+    · simpa [restored, SelectedHeadActivationChronology.restoreSnapshot] using
+        consumedActivationExtends.exception
+    · simpa [restored, SelectedHeadActivationChronology.restoreSnapshot] using
+        consumedActivationExtends.collection
+  have restoredCutScope :
+      restored.activationOrigin.nextCutScope = opened.scope + 1 := by
+    simpa [restored, SelectedHeadActivationChronology.restoreSnapshot,
+      CallActivationOrigin.reindex] using consumedCutScope
+  have outerNextActivationOrigins :
+      LocalActivationOriginSpineRelates session outerNext := by
+    exact
+      (LocalActivationOriginSpineRelates.tail payloadContext
+          agreement.activationOrigins).extendAbove extension
+        (SourceControlResourcePayloadContextAgrees.tail payloadContext)
+        agreement.outerActivationEndpoints
+  have nextActivationOrigins :
+      LocalActivationOriginSpineRelates session nextPayloadContext := by
+    exact
+      ⟨by
+          rw [nextSnapshotActivationOrigin]
+          exact restoredActivationExtends,
+        by
+          rw [nextSnapshotActivationOrigin]
+          exact restoredCutScope,
+        outerNextActivationOrigins⟩
   have consumedOrigin :
       consumed.controlOrigin =
         (SourceControlResourcePayloadContextAgrees.headCell
@@ -528,7 +573,7 @@ theorem activateSelectedHead
         (unifySuccessor state (copied.body ++ resource.rest) installed)
         nextPayloadContext :=
     ⟨targetCore, nextEndpointsCurrent, nextActivationOrdered,
-      nextControlOrigins⟩
+      nextActivationOrigins, nextControlOrigins⟩
   have cumulativeAtStateQuery :
       AlphaCumulativeResidualVariantAgreesOnWith
         nextAlpha support (sourceCanonical ++ restored.canonical)

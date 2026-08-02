@@ -834,6 +834,13 @@ theorem qMaterializedReadyAfterP
     trivial
   have outerOrdered : ActivationOrdered outerPayloads := by
     trivial
+  have outerActivationOrigins :
+      LocalActivationOriginSpineRelates
+        (openedFor initialSession "p" [queryTerm] []).session outerPayloads := by
+    simpa [outerPayloads] using
+      (LocalActivationOriginSpineRelates.nil
+        (alpha := rootAlpha) (support := rootAlpha) (qterm := queryAtom)
+        (openedFor initialSession "p" [queryTerm] []).session 0 rootScope)
   have sourceFresh :
       (openedFor initialSession "p" [queryTerm] []).session.resolver.nextFresh =
         (openedFor initialSession "p" [queryTerm] []).cursor.reservedUntil := by
@@ -874,7 +881,7 @@ theorem qMaterializedReadyAfterP
       (by simp [openedFor, openLocalCall, requestFor, prepareCall])
       (by simp [openedFor, openLocalCall, requestFor, prepareCall])
       referenceBelow activation sourceFresh outerPayloads outerEndpoints
-      outerOrdered [] outerAlts outerControlOrigins
+      outerOrdered outerActivationOrigins [] outerAlts outerControlOrigins
   let carrier := ActivePayloadState.ofAgreement agreement
   have carrierCumulative :
       AlphaCumulativeResidualVariantAgreesOnWith carrier.index.alpha

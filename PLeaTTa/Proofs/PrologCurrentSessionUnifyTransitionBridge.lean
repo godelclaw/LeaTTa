@@ -351,7 +351,7 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccessWithLive
       executableHead, by simpa [installed] using selectedSuccess,
       sourceStep, executableStep,
       ⟨nextCore, nextEndpoints, agreement.activationOrdered,
-        nextControlOrigins⟩,
+        agreement.activationOrigins, nextControlOrigins⟩,
       by simpa [executableTail] using nextSelected⟩
 
 /-- Compatibility entry point for callers carrying the older conservative

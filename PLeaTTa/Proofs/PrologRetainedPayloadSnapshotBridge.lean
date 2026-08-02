@@ -7,6 +7,7 @@ Purpose: Preserve the pre-head cumulative logical payload required to
 Trusted boundary: none
 Main exports:
   RetainedCallControlOrigin,
+  CallActivationOrigin,
   RetainedCallPayloadSnapshot,
   installedBarrierCache,
   recordedBaseBarrierCache,
@@ -49,6 +50,7 @@ open PrologRepresentativeCallFrontierBridge
 open PrologRepresentativeProductActivationBridge
 open PrologRetainedCursorOwnershipBridge
 open PrologSourceProductContextBridge
+open PrologStateBridge
 open PrologSupportedCursorAlternativeBridge
 
 /-!
@@ -96,6 +98,148 @@ structure MatchesPendingControl
 
 end RetainedCallControlOrigin
 
+/-! ## Persistent-free activation chronology
+
+A retained cursor may later be selected from an outer call whose activation
+predates the current database, world, and allocator state.  Retaining the old
+`Session` would make it possible to restore persistent state on backtracking;
+pairing the old cursor with the current `Session` would instead fabricate an
+`OpenedCall` that never occurred.  The indexed origin below records exactly
+the monotone activation facts needed by later composition and nothing which
+can be restored.
+-/
+
+/-- Historical allocator frontiers for one real local-call activation.
+
+The logical-update generation is a type index, not an ordinary field.  Thus a
+cursor from one call-start generation cannot be silently retagged as another.
+There is deliberately no database, world, control stack, or inverse
+constructor back to `OpenedCall`.  Every stored field has a
+generation-independent type; adding a generation-dependent field would
+require a new transport argument rather than the value-preserving `reindex`
+below. -/
+structure CallActivationOrigin (generation : Generation) where
+  nextFresh : Nat
+  nextCutScope : Nat
+  nextExceptionScope : Nat
+  nextCollectionScope : Nat
+
+namespace CallActivationOrigin
+
+/-- One-way projection from a literal historical session.  Consumers may
+retain this compact value, but cannot recover the discarded persistent state. -/
+def ofSession (session : Session) :
+    CallActivationOrigin session.resolver.database.generation :=
+  { nextFresh := session.resolver.nextFresh
+    nextCutScope := session.nextCutScope
+    nextExceptionScope := session.nextExceptionScope
+    nextCollectionScope := session.nextCollectionScope }
+
+/-- Project a session at a propositionally equal generation without exposing
+an inverse cast or permitting an unrelated generation to be chosen. -/
+def ofSessionAt {generation : Generation} (session : Session)
+    (_exact : generation = session.resolver.database.generation) :
+    CallActivationOrigin generation :=
+  { nextFresh := session.resolver.nextFresh
+    nextCutScope := session.nextCutScope
+    nextExceptionScope := session.nextExceptionScope
+    nextCollectionScope := session.nextCollectionScope }
+
+/-- Transport only the phantom generation index along the exact frozen-cursor
+identity.  Every stored frontier remains definitionally unchanged. -/
+def reindex {source target : Generation}
+    (origin : CallActivationOrigin source) (_exact : target = source) :
+    CallActivationOrigin target :=
+  { nextFresh := origin.nextFresh
+    nextCutScope := origin.nextCutScope
+    nextExceptionScope := origin.nextExceptionScope
+    nextCollectionScope := origin.nextCollectionScope }
+
+/-- A current session monotonically extends an indexed historical activation.
+
+All five coordinates are load-bearing.  In particular, database generation
+is not inferred from allocator monotonicity, and distinct delimiter allocators
+are never collapsed into the fresh-name counter. -/
+structure Extends {generation : Generation}
+    (origin : CallActivationOrigin generation) (current : Session) : Prop where
+  generation : generation ≤ current.resolver.database.generation
+  fresh : origin.nextFresh ≤ current.resolver.nextFresh
+  cut : origin.nextCutScope ≤ current.nextCutScope
+  exception : origin.nextExceptionScope ≤ current.nextExceptionScope
+  collection : origin.nextCollectionScope ≤ current.nextCollectionScope
+
+/-- The compact projection transports exactly along the already-proved
+session chronology relation. -/
+theorem ofSession_extends {before after : Session}
+    (chronology : SessionHighWatersExtend before after) :
+    Extends (ofSession before) after :=
+  ⟨chronology.generation, chronology.fresh, chronology.cut,
+    chronology.exception, chronology.collection⟩
+
+/-- The compact chronology is reflexive at the activation session. -/
+theorem ofSession_refl (session : Session) :
+    Extends (ofSession session) session :=
+  ofSession_extends (SessionHighWatersExtend.refl session)
+
+/-- A propositionally indexed session projection inherits any later session
+chronology without changing a frontier value. -/
+theorem ofSessionAt_extends {generation : Generation}
+    {before after : Session}
+    (exact : generation = before.resolver.database.generation)
+    (chronology : SessionHighWatersExtend before after) :
+    Extends (ofSessionAt before exact) after := by
+  refine
+    ⟨?_, chronology.fresh, chronology.cut, chronology.exception,
+      chronology.collection⟩
+  simpa [exact] using chronology.generation
+
+/-- Later non-backtrackable execution can only strengthen domination of a
+fixed historical activation origin. -/
+theorem Extends.transSession {generation : Generation}
+    {origin : CallActivationOrigin generation} {middle after : Session}
+    (before : Extends origin middle)
+    (chronology : SessionHighWatersExtend middle after) :
+    Extends origin after :=
+  ⟨Nat.le_trans before.generation chronology.generation,
+    Nat.le_trans before.fresh chronology.fresh,
+    Nat.le_trans before.cut chronology.cut,
+    Nat.le_trans before.exception chronology.exception,
+    Nat.le_trans before.collection chronology.collection⟩
+
+/-- Reindexing along exact cursor identity changes only the phantom generation
+and preserves a current-session domination certificate. -/
+theorem Extends.reindex {source target : Generation}
+    {origin : CallActivationOrigin source} {current : Session}
+    (before : Extends origin current) (exact : target = source) :
+    Extends (origin.reindex exact) current := by
+  subst target
+  exact before
+
+/-- Advancing both the logical-update generation and fresh high-water gives a
+strict, non-identity activation chronology witness.  This prevents `Extends`
+from being read as disguised equality. -/
+theorem strict_generation_and_fresh_witness (session : Session) :
+    let current : Session :=
+      { session with
+        resolver :=
+          { session.resolver with
+            database :=
+              { session.resolver.database with
+                generation :=
+                  session.resolver.database.generation + 1 }
+            nextFresh := session.resolver.nextFresh + 1 } }
+    Extends (ofSession session) current ∧
+      session.resolver.database.generation <
+        current.resolver.database.generation ∧
+      (ofSession session).nextFresh < current.resolver.nextFresh := by
+  dsimp
+  refine ⟨?_, Nat.lt_succ_self _, Nat.lt_succ_self _⟩
+  exact
+    ⟨Nat.le_succ _, Nat.le_succ _, Nat.le_refl _, Nat.le_refl _,
+      Nat.le_refl _⟩
+
+end CallActivationOrigin
+
 /-- Immutable pre-head logical payload owned by one retained predicate
 resource.
 
@@ -118,6 +262,13 @@ structure RetainedCallPayloadSnapshot
   canonical : TreeSubstitution
   referenceBase : Substitution
   referencePayload : List Term
+  /-- One-way, persistent-free projection of the literal call activation.
+  Its generation is indexed definitionally by the frozen cursor, so no
+  separate equality field or freely chosen generation exists. -/
+  activationOrigin : CallActivationOrigin cursor.callGeneration
+  /-- The activation's fresh frontier is exactly the end of the cursor's
+  eagerly reserved immutable clause bank. -/
+  activationFresh : activationOrigin.nextFresh = cursor.reservedUntil
   controlOrigin : RetainedCallControlOrigin
   controlOriginBarrier : controlOrigin.bodyBarrier = resource.barrier
   alphaIncluded :
@@ -270,6 +421,12 @@ def transportCursor
     RetainedCallPayloadSnapshot currentAlpha support resource after caller
       outer :=
   { snapshot with
+    activationOrigin :=
+      snapshot.activationOrigin.reindex context.generation
+    activationFresh := by
+      change snapshot.activationOrigin.nextFresh = after.reservedUntil
+      rw [reservedUntil]
+      exact snapshot.activationFresh
     cursorArguments := context.arguments_eq.trans snapshot.cursorArguments
     materialized := by
       simpa [context.bindings_eq] using snapshot.materialized
@@ -307,6 +464,8 @@ def afterPulledHead
       canonical := snapshot.canonical
       referenceBase := snapshot.referenceBase
       referencePayload := snapshot.referencePayload
+      activationOrigin := snapshot.activationOrigin
+      activationFresh := snapshot.activationFresh
       controlOrigin := by
         simpa
           [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
@@ -691,6 +850,156 @@ def endpointsBelow
       cursor.reservedUntil ≤ referenceFloor ∧
         resource.finalCounter ≤ executableFloor ∧
         endpointsBelow outerAgrees referenceFloor executableFloor
+
+/-! ## Current-session activation-origin domination
+
+The payload zipper is occurrence-indexed, so activation chronology must recurse
+over that same dependent object.  A separate list of origins could be permuted
+or paired with equal-looking cursors.  Each cell below therefore carries both
+monotone domination by the current persistent session and the exact predicate
+cut identity allocated by its historical call entry.
+-/
+
+/-- Every retained payload cell came from an activation no later than the
+current session, and its cut high-water is exactly one past that cell's typed
+predicate scope. -/
+def LocalActivationOriginSpineRelates
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (session : Session) :
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer) → Prop
+  | .nil _ _ => True
+  | .cons _ currentScope _ _ _ _ _ _ _ _ _ _ _ _ _ snapshot outerAgrees =>
+      snapshot.activationOrigin.Extends session ∧
+        snapshot.activationOrigin.nextCutScope = currentScope + 1 ∧
+        LocalActivationOriginSpineRelates session outerAgrees
+
+namespace LocalActivationOriginSpineRelates
+
+/-- The empty payload zipper contains no historical activation to dominate. -/
+theorem nil
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    (session : Session) (currentBarrier : Nat) (scope : CutScopeId) :
+    LocalActivationOriginSpineRelates session
+      (SourceControlResourcePayloadContextAgrees.nil
+        (alpha := alpha) (support := support) (qterm := qterm)
+        currentBarrier scope) :=
+  trivial
+
+/-- Prepend one exact historical activation to an already-related literal
+tail. -/
+theorem cons
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {currentScope nextScope outerScope : CutScopeId}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {cursor : PreparedCursor} {context : ActiveProductContext}
+    {segmentAgrees : segment.Agrees alpha}
+    {resourceRest :
+      resource.rest = segment.executables ++ flattenExecutables segments}
+    {resourceQuery : resource.qterm = qterm}
+    {resourceBarrier : resource.barrier = currentBarrier}
+    {resourceOwnership : resource.HasIndexedOwnershipAt alpha cursor}
+    {snapshot :
+      RetainedCallPayloadSnapshot alpha support resource cursor segment
+        segments}
+    {outerAgrees :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        segment.barrier segments resources nextScope context outerScope}
+    {session : Session}
+    (head : snapshot.activationOrigin.Extends session)
+    (cutExact : snapshot.activationOrigin.nextCutScope = currentScope + 1)
+    (tail : LocalActivationOriginSpineRelates session outerAgrees) :
+    LocalActivationOriginSpineRelates session
+      (SourceControlResourcePayloadContextAgrees.cons currentBarrier
+        currentScope nextScope outerScope segment segments resource resources
+        cursor context segmentAgrees resourceRest resourceQuery resourceBarrier
+        resourceOwnership snapshot outerAgrees) :=
+  ⟨head, cutExact, tail⟩
+
+/-- Popping the exact head occurrence preserves chronology for the literal
+older suffix. -/
+theorem tail
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {frame : ActiveProductFrame} {context : ActiveProductContext}
+    {session : Session}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources) inner
+        (frame :: context) outer)
+    (origins : LocalActivationOriginSpineRelates session agreement) :
+    LocalActivationOriginSpineRelates session agreement.tail := by
+  cases agreement
+  exact origins.2.2
+
+/-- A monotone current-session step preserves every older activation origin
+without altering the payload zipper. -/
+theorem advance
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {before after : Session}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer)
+    (origins : LocalActivationOriginSpineRelates before agreement)
+    (chronology : SessionHighWatersExtend before after) :
+    LocalActivationOriginSpineRelates after agreement := by
+  induction agreement with
+  | nil => trivial
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+      inductionHypothesis =>
+      exact
+        ⟨origins.1.transSession chronology, origins.2.1,
+          inductionHypothesis origins.2.2⟩
+
+/-- Ambient alpha growth changes proof annotations only and preserves every
+activation-origin value and typed cut equation. -/
+theorem mono
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {session : Session}
+    (included : ∀ pair, pair ∈ smaller → pair ∈ larger)
+    (gaps :
+      ∀ {resource cursor segment outerSegments},
+        RetainedCallPayloadSnapshot smaller support resource cursor segment
+            outerSegments →
+          AlphaAllocationGap larger cursor.reservationStart
+            cursor.reservedUntil resource.counter resource.finalCounter)
+    (agreement :
+      SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer)
+    (origins : LocalActivationOriginSpineRelates session agreement) :
+    LocalActivationOriginSpineRelates session
+      (agreement.mono included gaps) := by
+  induction agreement with
+  | nil => trivial
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+      inductionHypothesis =>
+      exact ⟨origins.1, origins.2.1, inductionHypothesis origins.2.2⟩
+
+end LocalActivationOriginSpineRelates
 
 /-! ## Exact historical control origins
 
@@ -1163,6 +1472,35 @@ def extendAbove
           (snapshot.allocationGap.extendAbove extension below.1 below.2.1))
         (extendAbove extension outerAgrees below.2.2)
 
+/-- Exact alpha extension preserves the occurrence-indexed activation origins
+because it changes neither cursor identity nor any historical frontier. -/
+theorem LocalActivationOriginSpineRelates.extendAbove
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {referenceFloor executableFloor : Nat}
+    {session : Session}
+    (extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor)
+    (agreement :
+      SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer)
+    (below : endpointsBelow agreement referenceFloor executableFloor)
+    (origins : LocalActivationOriginSpineRelates session agreement) :
+    LocalActivationOriginSpineRelates session
+      (extendAbove extension agreement below) := by
+  induction agreement with
+  | nil => trivial
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+      inductionHypothesis =>
+      exact
+        ⟨origins.1, origins.2.1,
+          inductionHypothesis below.2.2 origins.2.2⟩
+
 /-- Alpha transport changes proof annotations only; it cannot alter the
 barrier-cache chronology computed from retained call occurrences. -/
 theorem installedBarrierCache_extendAbove
@@ -1587,6 +1925,50 @@ def headCell
       resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
       exact ⟨cursor, rfl, rfl, rfl, resourceOwnership, snapshot⟩
 
+namespace LocalActivationOriginSpineRelates
+
+/-- The nonempty zipper exposes current-session domination for its literal
+head occurrence. -/
+theorem headExtends
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {frame : ActiveProductFrame} {context : ActiveProductContext}
+    {session : Session}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources) inner
+        (frame :: context) outer)
+    (origins : LocalActivationOriginSpineRelates session agreement) :
+    (headCell agreement).snapshot.activationOrigin.Extends session := by
+  cases agreement
+  exact origins.1
+
+/-- The head origin's cut frontier is tied to the literal typed predicate
+scope at that same zipper occurrence. -/
+theorem headCutScope
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {frame : ActiveProductFrame} {context : ActiveProductContext}
+    {session : Session}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources) inner
+        (frame :: context) outer)
+    (origins : LocalActivationOriginSpineRelates session agreement) :
+    (headCell agreement).snapshot.activationOrigin.nextCutScope = inner + 1 := by
+  cases agreement
+  exact origins.2.1
+
+end LocalActivationOriginSpineRelates
+
 namespace LocalControlOriginSpineRelates
 
 /-! The explicit-constructor lemmas above are convenient at creation sites.
@@ -1965,7 +2347,10 @@ theorem
                 (segmentExecutableRest ++ flattenExecutables outer)
                 qterm installed)) ∧
             _snapshot.residualRepresentative = representative ∧
-              _snapshot.controlOrigin.MatchesPendingControl pending := by
+              _snapshot.controlOrigin.MatchesPendingControl pending ∧
+                _snapshot.activationOrigin.Extends opened.session ∧
+                  _snapshot.activationOrigin.nextCutScope =
+                    opened.scope + 1 := by
   let advanced := finish.advance branch branchTail
   have advancedRemaining : advanced.remaining = branchTail := by
     simp [advanced, PreparedCursor.advance]
@@ -2064,6 +2449,14 @@ theorem
         canonical := canonical
         referenceBase := referenceBase
         referencePayload := referencePayload
+        activationOrigin :=
+          CallActivationOrigin.ofSessionAt opened.session
+            (advancedContext.generation.trans activation.callGeneration)
+        activationFresh := by
+          change opened.session.resolver.nextFresh = advanced.reservedUntil
+          rw [activation.sourceFresh]
+          simpa [advanced, PreparedCursor.advance] using
+            frontier.finishReservedUntil.symm
         controlOrigin :=
           { bodyBarrier := bodyBarrier
             outerAlts := pending.outer.alts
@@ -2133,6 +2526,14 @@ theorem
     simpa [caller] using payloadContext
   exact
     ⟨active, snapshot, payloadContextExact, rfl, stack, rfl,
-      ⟨rfl, rfl, rfl⟩⟩
+      ⟨rfl, rfl, rfl⟩,
+      by
+        simpa [snapshot] using
+          (CallActivationOrigin.ofSessionAt_extends
+            (advancedContext.generation.trans activation.callGeneration)
+            (SessionHighWatersExtend.refl opened.session)),
+      by
+        simpa [snapshot, CallActivationOrigin.ofSessionAt] using
+          activation.cutScopeAdvanced⟩
 
 end PLeaTTa.PrologRetainedPayloadSnapshotBridge

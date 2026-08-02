@@ -137,6 +137,64 @@ def headSnapshot
       outerAgrees =>
       exact snapshot
 
+/-- The literal consumed post-failure head retains the activation chronology
+carried by the corresponding zipper head.  This specialized eliminator keeps
+the advanced cursor index explicit and avoids any value-based lookup. -/
+theorem headSnapshot_activationExtends
+    {alpha support : List (LogicVar × String)}
+    {qterm : Atom}
+    {opened : OpenedCall}
+    {cursor : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch}
+    {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {remainingAlts : List PLeaTTa.Alt}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {session : Session}
+    (payloadContext :
+      PostFailurePayloadOffsetContext alpha support qterm opened cursor branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer resource remainingAlts resources callerScope
+        outerScope context)
+    (origins : LocalActivationOriginSpineRelates session payloadContext) :
+    (headSnapshot payloadContext).activationOrigin.Extends session := by
+  cases payloadContext
+  exact origins.1
+
+/-- The same literal head remembers the exact cut allocator immediately after
+its predicate scope was opened. -/
+theorem headSnapshot_activationCutScope
+    {alpha support : List (LogicVar × String)}
+    {qterm : Atom}
+    {opened : OpenedCall}
+    {cursor : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch}
+    {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {remainingAlts : List PLeaTTa.Alt}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {session : Session}
+    (payloadContext :
+      PostFailurePayloadOffsetContext alpha support qterm opened cursor branch
+        branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer resource remainingAlts resources callerScope
+        outerScope context)
+    (origins : LocalActivationOriginSpineRelates session payloadContext) :
+    (headSnapshot payloadContext).activationOrigin.nextCutScope =
+      opened.scope + 1 := by
+  cases payloadContext
+  exact origins.2.1
+
 end PostFailurePayloadOffsetContext
 
 namespace PulledHeadOffsetAgrees
@@ -513,6 +571,85 @@ def controlOrigins_afterRejectedPullsAndPulledHead
   rw [installed]
   exact rebuilt
 
+/-- Rejected-prefix motion and the eager pulled-head offset reindex only the
+phantom call generation of the active snapshot.  All four historical
+frontiers and the exact predicate cut identity remain unchanged; the literal
+outer activation-origin suffix is reused. -/
+theorem activationOrigins_afterRejectedPullsAndPulledHead
+    {alpha support : List (LogicVar × String)}
+    {qterm : Atom}
+    {opened : OpenedCall}
+    {finish : PreparedCursor} {selected : ClauseBranch}
+    {selectedTail : List ClauseBranch}
+    {next : PreparedCursor}
+    {nextBranch : ClauseBranch} {nextClause : PLeaTTa.Clause}
+    {nextBranchTail : List ClauseBranch}
+    {nextCopied : PLeaTTa.Clause}
+    {nextAltTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {session : Session}
+    (payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish selected
+        selectedTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context)
+    {count : Nat}
+    (pulls :
+      RejectedPullsN count (finish.advance selected selectedTail) next)
+    (offset :
+      PulledHeadOffsetAgrees alpha next nextBranch nextClause nextBranchTail
+        nextCopied active nextAltTail)
+    (origins :
+      LocalActivationOriginSpineRelates session payloadContext) :
+    LocalActivationOriginSpineRelates session
+      (afterRejectedPullsAndPulledHead payloadContext pulls offset) := by
+  cases payloadContext with
+  | cons currentBarrier currentScope nextScope finalScope segment segments
+      resource retainedResources before retainedContext segmentAgrees
+      resourceRest resourceQuery resourceBarrier resourceOwnership snapshot
+      outerAgrees =>
+      have pulledContext :=
+        PrologRetainedPayloadSnapshotBridge.RetainedCallPayloadSnapshot.RejectedPullsN.preserves_callContext
+          pulls
+      have atFinish :
+          (RetainedCallPayloadSnapshot.afterRejectedPulls snapshot
+            (RetainedAlternativeSegment.owns_wellFormed resourceOwnership)
+            pulls).activationOrigin.Extends session := by
+        exact origins.1.reindex pulledContext.generation
+      have advancedContext :
+          CursorCallContext (next.advance nextBranch nextBranchTail)
+            next.callGeneration next.predicate next.arguments next.bindings :=
+        (CursorCallContext.refl next).advance nextBranch nextBranchTail
+      have atAdvanced :
+          (RetainedCallPayloadSnapshot.transportCursor advancedContext
+            (RetainedCallPayloadSnapshot.advance_reservationStart_le
+              offset.cursorWellFormed offset.cursorRemaining)
+            rfl
+            (RetainedCallPayloadSnapshot.afterRejectedPulls snapshot
+              (RetainedAlternativeSegment.owns_wellFormed resourceOwnership)
+              pulls)).activationOrigin.Extends session := by
+        exact atFinish.reindex advancedContext.generation
+      exact
+        ⟨by
+            simpa [ActiveProductPayloadContext.afterRejectedPullsAndPulledHead,
+              RetainedCallPayloadSnapshot.afterRejectedPullsAndPulledHead,
+              RetainedCallPayloadSnapshot.afterPulledHead] using atAdvanced,
+          by
+            simpa [ActiveProductPayloadContext.afterRejectedPullsAndPulledHead,
+              RetainedCallPayloadSnapshot.afterRejectedPullsAndPulledHead,
+              RetainedCallPayloadSnapshot.afterRejectedPulls,
+              RetainedCallPayloadSnapshot.transportCursor,
+              RetainedCallPayloadSnapshot.afterPulledHead,
+              CallActivationOrigin.reindex] using origins.2.1,
+          origins.2.2⟩
+
 /-- Rejected pulls and eager head consumption preserve recursive allocation
 chronology.
 
@@ -785,6 +922,8 @@ structure SpinedPostFailureFrontierPayloadResourceRelatesAt
     endpointsBelow payloadContext session.resolver.nextFresh
       state.persistent.counter
   activationOrdered : ActivationOrdered payloadContext
+  activationOrigins :
+    LocalActivationOriginSpineRelates session payloadContext
   controlOrigins :
     LocalControlOriginSpineRelates baseAlts state.frames
       state.control.barriers payloadContext
@@ -960,6 +1099,13 @@ theorem afterUnifyFailureRetained
     ActiveProductPayloadContext.activationOrdered_afterRejectedPullsAndPulledHead
       payloadContext pulls post.resourceStack.offset
       agreement.activationOrdered
+  have activationOrigins :
+      LocalActivationOriginSpineRelates session
+        (ActiveProductPayloadContext.afterRejectedPullsAndPulledHead
+          payloadContext pulls post.resourceStack.offset) :=
+    ActiveProductPayloadContext.activationOrigins_afterRejectedPullsAndPulledHead
+      payloadContext pulls post.resourceStack.offset
+      agreement.activationOrigins
   have controlOriginsBefore :
       LocalControlOriginSpineRelates baseAlts state.frames
         state.control.barriers
@@ -983,7 +1129,7 @@ theorem afterUnifyFailureRetained
       pulls, post.resourceStack.offset, selectedTailEq, candidatesEq,
       branchCount, clauseCount, skippedRejected, sourceSteps, executableStep,
       ⟨post, endpointsAfter,
-        activationOrdered, controlOriginsAfter,
+        activationOrdered, activationOrigins, controlOriginsAfter,
         ActiveProductPayloadContext.activationChronology_afterRejectedPullsAndPulledHead
           payloadContext pulls post.resourceStack.offset,
         agreement.core.resourceStack.activeFinalCounter,

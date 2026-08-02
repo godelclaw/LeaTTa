@@ -356,6 +356,13 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.afterAssertion
         executableAfter.control.barriers payloadContext := by
     simpa [executableAfter] using agreement.controlOrigins
 
+  have nextActivationOrigins :
+      LocalActivationOriginSpineRelates
+        (session.withDatabase
+          (operation.update session.resolver.database referenceClause))
+        payloadContext :=
+    agreement.activationOrigins.advance payloadContext chronology
+
   have effectErasure :
       SourceDatabaseEffectErasure
         [.effect
@@ -371,6 +378,6 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.afterAssertion
   exact
     ⟨rfl, sourceStep, executableStep, effectErasure,
       ⟨nextCore, nextEndpoints, agreement.activationOrdered,
-        nextControlOrigins⟩⟩
+        nextActivationOrigins, nextControlOrigins⟩⟩
 
 end PLeaTTa.PrologCurrentSessionAssertionTransitionBridge

@@ -466,6 +466,23 @@ theorem
         nestedPending.outer.barriers currentPayloadContext := by
     rw [entry.frames, entry.outer]
     exact currentAgreement.controlOrigins
+  have callChronology :
+      SessionHighWatersExtend session
+        (openedFor session predicate referencePayload current).session := by
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · simp [openedFor, openLocalCall]
+    · simpa [openedFor] using
+        openLocalCall_nextFresh_mono session
+          (requestFor predicate referencePayload current)
+    · simp [openedFor, openLocalCall]
+    · simp [openedFor, openLocalCall]
+    · simp [openedFor, openLocalCall]
+  have outerActivationOrigins :
+      LocalActivationOriginSpineRelates
+        (openedFor session predicate referencePayload current).session
+        currentPayloadContext :=
+    currentAgreement.activationOrigins.advance currentPayloadContext
+      callChronology
   obtain
       ⟨nestedActive, nestedPayloadContext, nestedAgreement, payloadHandoff,
         _snapshotRepresentative⟩ :=
@@ -474,7 +491,7 @@ theorem
       materializedAtOpen (by rfl) (by rfl) queryReferenceBelow activation
       entry.sourceFresh
       currentPayloadContext outerEndpoints currentAgreement.activationOrdered
-      baseAlts outerAlts outerControlOrigins
+      outerActivationOrigins baseAlts outerAlts outerControlOrigins
   refine
     ⟨nestedActive, nestedPayloadContext, nestedAgreement, payloadHandoff, ?_⟩
   calc

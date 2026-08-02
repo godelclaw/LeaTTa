@@ -967,7 +967,7 @@ private theorem chronologyCallControl (barrier : Nat) :
       .nil
 
 private def chronologySnapshot
-    (seed resourceBarrier counter callerBarrier : Nat)
+    (seed activationCutScope resourceBarrier counter callerBarrier : Nat)
     (outer : List ControlSegment)
     (outerControl : ControlSpineAgrees [] outer)
     (outerExecutables : flattenExecutables outer = [])
@@ -996,6 +996,12 @@ private def chronologySnapshot
       canonical := []
       referenceBase := []
       referencePayload := [.integer 2]
+      activationOrigin :=
+        { nextFresh := (chronologyCursor seed).reservedUntil
+          nextCutScope := activationCutScope + 1
+          nextExceptionScope := 1
+          nextCollectionScope := 1 }
+      activationFresh := rfl
       controlOrigin :=
         { bodyBarrier := resourceBarrier
           outerAlts := []
@@ -1053,7 +1059,7 @@ control origin.  The logical payload comes from `chronologySnapshot`; only
 the deliberately non-persistent alternative/cache/frame provenance is
 replaced. -/
 private def chronologyOriginSnapshot
-    (seed resourceBarrier counter callerBarrier : Nat)
+    (seed activationCutScope resourceBarrier counter callerBarrier : Nat)
     (outer : List ControlSegment)
     (outerControl : ControlSpineAgrees [] outer)
     (outerExecutables : flattenExecutables outer = [])
@@ -1067,7 +1073,8 @@ private def chronologyOriginSnapshot
       (chronologyResource seed resourceBarrier counter)
       (chronologyCursor seed) (chronologySegment callerBarrier) outer := by
   let snapshot :=
-    chronologySnapshot seed resourceBarrier counter callerBarrier outer
+    chronologySnapshot seed activationCutScope resourceBarrier counter
+      callerBarrier outer
       outerControl outerExecutables resourceBarrierPositive
   exact
     { snapshot with
@@ -1104,7 +1111,7 @@ private def chronologyOriginZipper :
     [chronologyFrame 2 1 4, chronologyFrame 1 0 2]
     (chronologyCallerAgrees 9) (by rfl) (by rfl) (by rfl)
     (chronologyOwnership 6 10 6)
-    (chronologyOriginSnapshot 6 10 6 9
+    (chronologyOriginSnapshot 6 3 10 6 9
       [chronologySegment 8, chronologySegment 7]
       (.cons (chronologyCallerAgrees 8)
         (.cons (chronologyCallerAgrees 7) .nil))
@@ -1119,7 +1126,7 @@ private def chronologyOriginZipper :
       (chronologyCursor 4) [chronologyFrame 1 0 2]
       (chronologyCallerAgrees 8) (by rfl) (by rfl) (by rfl)
       (chronologyOwnership 4 9 4)
-      (chronologyOriginSnapshot 4 9 4 8 [chronologySegment 7]
+      (chronologyOriginSnapshot 4 2 9 4 8 [chronologySegment 7]
         (.cons (chronologyCallerAgrees 7) .nil) rfl (by omega)
         (flattenOwnedAlts [chronologyResource 2 8 2]
           chronologyControlBaseAlts)
@@ -1128,7 +1135,7 @@ private def chronologyOriginZipper :
         (chronologyResource 2 8 2) [] (chronologyCursor 2) []
         (chronologyCallerAgrees 7) (by rfl) (by rfl) (by rfl)
         (chronologyOwnership 2 8 2)
-        (chronologyOriginSnapshot 2 8 2 7 [] .nil rfl (by omega)
+        (chronologyOriginSnapshot 2 1 8 2 7 [] .nil rfl (by omega)
           chronologyControlBaseAlts (some 7) [] (by simp))
         (.nil 7 0)))
 
@@ -1212,7 +1219,7 @@ private def chronologyOrderedZipper :
     [chronologyFrame 2 1 4, chronologyFrame 1 0 2]
     (chronologyCallerAgrees 20) (by rfl) (by rfl) (by rfl)
     (chronologyOwnership 6 30 6)
-    (chronologySnapshot 6 30 6 20
+    (chronologySnapshot 6 3 30 6 20
       [chronologySegment 10, chronologySegment 0]
       (.cons (chronologyCallerAgrees 10)
         (.cons (chronologyCallerAgrees 0) .nil))
@@ -1223,13 +1230,13 @@ private def chronologyOrderedZipper :
       (chronologyCursor 4) [chronologyFrame 1 0 2]
       (chronologyCallerAgrees 10) (by rfl) (by rfl) (by rfl)
       (chronologyOwnership 4 20 4)
-      (chronologySnapshot 4 20 4 10 [chronologySegment 0]
+      (chronologySnapshot 4 2 20 4 10 [chronologySegment 0]
         (.cons (chronologyCallerAgrees 0) .nil) rfl (by omega))
       (.cons 10 1 0 0 (chronologySegment 0) []
         (chronologyResource 2 10 2) [] (chronologyCursor 2) []
         (chronologyCallerAgrees 0) (by rfl) (by rfl) (by rfl)
         (chronologyOwnership 2 10 2)
-        (chronologySnapshot 2 10 2 0 [] .nil rfl (by omega))
+        (chronologySnapshot 2 1 10 2 0 [] .nil rfl (by omega))
         (.nil 0 0)))
 
 private def chronologySwappedZipper :
@@ -1249,7 +1256,7 @@ private def chronologySwappedZipper :
     [chronologyFrame 2 1 2, chronologyFrame 1 0 4]
     (chronologyCallerAgrees 20) (by rfl) (by rfl) (by rfl)
     (chronologyOwnership 6 30 6)
-    (chronologySnapshot 6 30 6 20
+    (chronologySnapshot 6 3 30 6 20
       [chronologySegment 10, chronologySegment 0]
       (.cons (chronologyCallerAgrees 10)
         (.cons (chronologyCallerAgrees 0) .nil))
@@ -1260,13 +1267,13 @@ private def chronologySwappedZipper :
       (chronologyCursor 2) [chronologyFrame 1 0 4]
       (chronologyCallerAgrees 10) (by rfl) (by rfl) (by rfl)
       (chronologyOwnership 2 20 2)
-      (chronologySnapshot 2 20 2 10 [chronologySegment 0]
+      (chronologySnapshot 2 2 20 2 10 [chronologySegment 0]
         (.cons (chronologyCallerAgrees 0) .nil) rfl (by omega))
       (.cons 10 1 0 0 (chronologySegment 0) []
         (chronologyResource 4 10 4) [] (chronologyCursor 4) []
         (chronologyCallerAgrees 0) (by rfl) (by rfl) (by rfl)
         (chronologyOwnership 4 10 4)
-        (chronologySnapshot 4 10 4 0 [] .nil rfl (by omega))
+        (chronologySnapshot 4 1 10 4 0 [] .nil rfl (by omega))
         (.nil 0 0)))
 
 /-- Recursive allocation chronology is inhabited below the first surviving
@@ -1288,6 +1295,60 @@ theorem three_cell_activation_order_is_inhabited :
   exact
     ⟨ordered,
       ActivationOrdered.tail chronologyOrderedZipper ordered⟩
+
+/-- A current persistent session strictly later than every activation stored
+in the concrete three-cell zipper.  Generation and fresh-name chronology are
+both strict, while the three delimiter high-waters remain independently
+accounted for. -/
+private def chronologyLaterSession : Session :=
+  { resolver :=
+      { database := { generation := 1 }
+        nextFresh := 7 }
+    nextCutScope := 4
+    nextExceptionScope := 1
+    nextCollectionScope := 1 }
+
+private theorem chronologyActivationOriginSpine :
+    LocalActivationOriginSpineRelates chronologyLaterSession
+      chronologyOrderedZipper := by
+  unfold chronologyOrderedZipper
+  apply LocalActivationOriginSpineRelates.cons
+  · refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;>
+      simp [chronologySnapshot, chronologyLaterSession, chronologyCursor]
+  · rfl
+  · apply LocalActivationOriginSpineRelates.cons
+    · refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;>
+        simp [chronologySnapshot, chronologyLaterSession, chronologyCursor]
+    · rfl
+    · apply LocalActivationOriginSpineRelates.cons
+      · refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;>
+          simp [chronologySnapshot, chronologyLaterSession, chronologyCursor]
+      · rfl
+      · exact LocalActivationOriginSpineRelates.nil chronologyLaterSession 0 0
+
+/-- The activation-origin invariant is not equality in disguise and is not a
+singleton/zero-prefix artifact.
+
+The selected occurrence is the middle (therefore genuinely outer) cell of a
+three-cell retained zipper.  Its call-start generation and fresh frontier are
+strictly older than the current persistent session, while an actual local
+cursor separately performs one conservative rejected pull.  These facts are
+packaged together so the chronology and rejection axes cannot be dismissed as
+individually vacuous fixtures. -/
+theorem older_outer_activation_with_strict_current_and_rejection_is_inhabited :
+    LocalActivationOriginSpineRelates chronologyLaterSession
+        chronologyOrderedZipper ∧
+      (headCell (SourceControlResourcePayloadContextAgrees.tail
+        chronologyOrderedZipper)).cursor.callGeneration <
+          chronologyLaterSession.resolver.database.generation ∧
+      (headCell (SourceControlResourcePayloadContextAgrees.tail
+        chronologyOrderedZipper)).snapshot.activationOrigin.nextFresh <
+          chronologyLaterSession.resolver.nextFresh ∧
+      ∃ finish, RejectedPullsN 1 crossedRejectedCursor finish := by
+  refine ⟨chronologyActivationOriginSpine, ?_, ?_, ?_⟩
+  · decide
+  · decide
+  · exact ⟨crossedRejectedFinish, crossedRejectedPull⟩
 
 /-- Swapping the two older real cells leaves the zipper structurally valid
 but violates chronology at the recursive tail.

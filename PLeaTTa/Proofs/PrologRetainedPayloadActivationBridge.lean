@@ -229,6 +229,9 @@ def restoreSnapshot
       canonical := snapshot.canonical
       referenceBase := snapshot.referenceBase
       referencePayload := snapshot.referencePayload
+      activationOrigin := snapshot.activationOrigin
+      activationFresh := by
+        simpa [PreparedCursor.advance] using snapshot.activationFresh
       controlOrigin := by
         simpa [afterPulledHead] using snapshot.controlOrigin
       controlOriginBarrier := by
@@ -357,7 +360,8 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
       (∃ nextSnapshot : RetainedCallPayloadSnapshot nextAlpha support
           (afterPulledHead resource remainingAlts)
           (finish.advance branch branchTail) caller outer,
-        nextSnapshot.controlOrigin = snapshot.controlOrigin) ∧
+        nextSnapshot.controlOrigin = snapshot.controlOrigin ∧
+          nextSnapshot.activationOrigin = snapshot.activationOrigin) ∧
       ConfBelowResolutionCounter
         (unifySuccessor state (copied.body ++ resource.rest)
           installed).toConf ∧
@@ -549,6 +553,15 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
       RetainedCallPayloadSnapshot.mono,
       RetainedCallPayloadSnapshot.afterPulledHead,
       RetainedCallPayloadSnapshot.transportCursor]
+  have nextSnapshotActivationOrigin :
+      nextSnapshot.activationOrigin = snapshot.activationOrigin := by
+    simp [nextSnapshot, consumedSnapshot, snapshotAtAdvanced,
+      RetainedCallPayloadSnapshot.mono,
+      RetainedCallPayloadSnapshot.afterPulledHead,
+      RetainedCallPayloadSnapshot.transportCursor,
+      CallActivationOrigin.reindex]
+    cases snapshot.activationOrigin
+    rfl
   have successorBelow :
       ConfBelowResolutionCounter
         (unifySuccessor state (copied.body ++ resource.rest)
@@ -575,7 +588,9 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
       nextShared, alphaIncluded, extensionAbove, freshFrontier,
       independentShape,
       sourceOrdered, sourceStep, sealedStep, fineStep, cumulativeCopied,
-      taskCopied, ⟨nextSnapshot, nextSnapshotOrigin⟩, successorBelow,
+      taskCopied,
+      ⟨nextSnapshot, nextSnapshotOrigin, nextSnapshotActivationOrigin⟩,
+      successorBelow,
       ?_, ?_, ?_⟩
   · exact unifySuccessor_persistent state _ installed
   · rfl

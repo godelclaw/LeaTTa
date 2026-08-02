@@ -130,6 +130,18 @@ structure RepresentativeProductActivationCore
   persistentAgreement :
     SessionRelatesPersistent (AlphaFreshFrontier nextAlpha)
       opened.session pending.persistent
+  /-- The retained cursor belongs to the literal logical-update generation
+  of the historical activation session.  This survives after the persistent
+  session itself is projected away. -/
+  callGeneration :
+    opened.cursor.callGeneration =
+      opened.session.resolver.database.generation
+  /-- Preparing the call reserved the complete frozen clause bank before the
+  activation was retained. -/
+  sourceFresh :
+    opened.session.resolver.nextFresh = opened.cursor.reservedUntil
+  /-- The predicate cut identity was allocated by this literal call entry. -/
+  cutScopeAdvanced : opened.session.nextCutScope = opened.scope + 1
   independentShape :
     independentResult =
       TreeSubstitution.reify (sourceCanonical ++ canonical) ++ referenceBase
@@ -554,7 +566,9 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step_head_with
     ⟨nextAlpha, sourceCanonical, flattened, installed, ?_⟩
   exact
     ⟨nextShared, alphaIncluded, alphaExtension, freshFrontier, selectionFresh,
-      persistentAgreement, independentShape, sourceOrdered,
+      persistentAgreement, entry.entry.callGeneration,
+      entry.entry.sourceFresh, entry.entry.cutScopeAdvanced,
+      independentShape, sourceOrdered,
       pendingHeadMgu, sourceProductStep, executableStep, fineExecutableStep,
       cumulative, bodyPayload, materializedBodyHeads, retainedAlts,
       retainedCursorOwnership,

@@ -323,7 +323,9 @@ structure ScheduledSuccessfulHeadRelates
         transition.selectedPayloadCell.segment
         transition.selectedPayloadCell.outerSegments,
       snapshot.controlOrigin =
-        transition.selectedSnapshotAtFinish.controlOrigin
+          transition.selectedSnapshotAtFinish.controlOrigin ∧
+        snapshot.activationOrigin =
+          transition.selectedSnapshotAtFinish.activationOrigin
   successorBelow :
     ConfBelowResolutionCounter
       (successfulFineState transition installed).toConf

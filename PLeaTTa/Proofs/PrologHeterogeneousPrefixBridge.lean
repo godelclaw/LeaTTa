@@ -592,6 +592,7 @@ def beforeTruth
     { core := nextCore
       endpointsCurrent := oldAgreement.endpointsCurrent
       activationOrdered := oldAgreement.activationOrdered
+      activationOrigins := oldAgreement.activationOrigins
       controlOrigins := oldAgreement.controlOrigins }
   let nextCarrier := ActivePayloadState.ofAgreement nextAgreement
   { carrier := nextCarrier
@@ -1292,6 +1293,7 @@ def beforeUnify
         simpa [nextOpen, unifyPredecessorOpenConf] using
           oldAgreement.endpointsCurrent
       activationOrdered := oldAgreement.activationOrdered
+      activationOrigins := oldAgreement.activationOrigins
       controlOrigins := by
         simpa [nextOpen, unifyPredecessorOpenConf] using
           oldAgreement.controlOrigins }

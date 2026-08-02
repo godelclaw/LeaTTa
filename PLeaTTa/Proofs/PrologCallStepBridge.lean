@@ -62,6 +62,13 @@ structure CallEntryBankRelates
   database :
     DatabaseRelatesWorld opened.session.resolver.database
       pending.persistent.world
+  /-- The prepared cursor is indexed by the literal call-start logical-update
+  generation.  This equality is retained separately from database/world
+  agreement so later proof-only activation origins can be projected from the
+  real call without reconstructing a historical session. -/
+  callGeneration :
+    opened.cursor.callGeneration =
+      opened.session.resolver.database.generation
   arity : opened.cursor.arguments.length = args.length + 1
   bank :
     PreparedBankRelates opened.cursor argsv args res rest binding qterm
@@ -193,6 +200,7 @@ theorem openedFor_pendingCallOf_relates
   · rfl
   · simpa [openedFor, openLocalCall, requestFor, prepareCall, pendingCallOf]
       using database
+  · rfl
   · simpa [openedFor, openLocalCall, requestFor, prepareCall] using arity
   · have prepared :=
       PrologCallEntryBridge.DatabaseRelatesWorld.prepareCall_resolveAlts

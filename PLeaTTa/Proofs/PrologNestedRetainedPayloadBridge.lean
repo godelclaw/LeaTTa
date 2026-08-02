@@ -143,6 +143,8 @@ theorem
       endpointsBelow outerPayloads opened.cursor.reservationStart
         startCounter)
     (outerOrdered : ActivationOrdered outerPayloads)
+    (outerActivationOrigins :
+      LocalActivationOriginSpineRelates opened.session outerPayloads)
     (baseAlts : List PLeaTTa.Alt)
     (outerAlts :
       pending.outer.alts = flattenOwnedAlts resources baseAlts) :
@@ -173,6 +175,8 @@ theorem
               opened.session.resolver.nextFresh
               pending.persistent.counter ∧
             ActivationOrdered payloadContext ∧
+              LocalActivationOriginSpineRelates opened.session
+                payloadContext ∧
               ExtendsAboveAt branch.firstFresh startCounter
                 activation.alphaExtension outerPayloads
                 (SourceControlResourcePayloadContextAgrees.tail
@@ -217,6 +221,11 @@ theorem
     exact
       ActivationOrdered.extendAbove activation.alphaExtension outerPayloads
         outerAtSelected outerOrdered
+  have outerNextActivationOrigins :
+      LocalActivationOriginSpineRelates opened.session outerNext := by
+    exact
+      outerActivationOrigins.extendAbove activation.alphaExtension
+        outerPayloads outerAtSelected
   obtain ⟨active, snapshot, _existingContext, result⟩ :=
     PLeaTTa.PrologRetainedPayloadSnapshotBridge.SpinedRepresentativeProductActivation.activeResourceStackWithSnapshot
       retainedPosition positioned frontier preHeadPayload oldCumulative
@@ -236,7 +245,14 @@ theorem
   have snapshotRepresentative :
       snapshot.residualRepresentative = representative := result.2.2.1
   have snapshotOrigin :
-      snapshot.controlOrigin.MatchesPendingControl pending := result.2.2.2
+      snapshot.controlOrigin.MatchesPendingControl pending :=
+    result.2.2.2.1
+  have snapshotActivationExtends :
+      snapshot.activationOrigin.Extends opened.session :=
+    result.2.2.2.2.1
+  have snapshotCutExact :
+      snapshot.activationOrigin.nextCutScope = opened.scope + 1 :=
+    result.2.2.2.2.2
   have branchFirstBelowSession :
       branch.firstFresh ≤ opened.session.resolver.nextFresh := by
     calc
@@ -330,10 +346,16 @@ theorem
   have payloadContextExactOrdered :
       ActivationOrdered payloadContextExact := by
     exact ⟨outerNextAtActivation, outerNextOrdered⟩
+  have payloadContextExactActivationOrigins :
+      LocalActivationOriginSpineRelates opened.session
+        payloadContextExact := by
+    exact
+      ⟨snapshotActivationExtends, snapshotCutExact,
+        outerNextActivationOrigins⟩
   exact
     ⟨active, snapshot, payloadContextExact, payloadContextExactBelow,
-      payloadContextExactOrdered, outerPayloadExact, outerActivationEndpoints,
-      ⟨stack, by
+      payloadContextExactOrdered, payloadContextExactActivationOrigins,
+      outerPayloadExact, outerActivationEndpoints, ⟨stack, by
         simpa [payloadContextExact,
           SourceControlResourcePayloadContextAgrees.headCell] using
           snapshotRepresentative,
