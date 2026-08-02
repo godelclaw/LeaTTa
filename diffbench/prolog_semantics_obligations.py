@@ -396,6 +396,14 @@ PROLOG_SCHEDULED_PAYLOAD_POST_HEAD_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologScheduledPayloadPostHeadRegression.lean"
 )
+PROLOG_SCHEDULED_PAYLOAD_OPEN_CONF_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologScheduledPayloadOpenConfBridge.lean"
+)
+PROLOG_SCHEDULED_PAYLOAD_OPEN_CONF_REGRESSION = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologScheduledPayloadOpenConfRegression.lean"
+)
 PROLOG_ROOT_CLOSED_ANSWER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRootClosedAnswerBridge.lean"
@@ -788,6 +796,10 @@ def check() -> list[str]:
             digest(PROLOG_SCHEDULED_PAYLOAD_POST_HEAD_BRIDGE),
         "prolog_scheduled_payload_post_head_regression_sha256":
             digest(PROLOG_SCHEDULED_PAYLOAD_POST_HEAD_REGRESSION),
+        "prolog_scheduled_payload_open_conf_bridge_sha256":
+            digest(PROLOG_SCHEDULED_PAYLOAD_OPEN_CONF_BRIDGE),
+        "prolog_scheduled_payload_open_conf_regression_sha256":
+            digest(PROLOG_SCHEDULED_PAYLOAD_OPEN_CONF_REGRESSION),
         "prolog_root_closed_answer_bridge_sha256":
             digest(PROLOG_ROOT_CLOSED_ANSWER_BRIDGE),
         "prolog_root_closed_local_live_bridge_sha256":
