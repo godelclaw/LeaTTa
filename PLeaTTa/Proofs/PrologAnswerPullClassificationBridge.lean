@@ -326,33 +326,34 @@ theorem pullAux_append_of_none
       | catchDormant frame protectedAlts =>
           simp [PLeaTTa.pullAux] at empty
 
-/-- A marker-free bank whose pull is exhausted is literally empty.  This
-rules out treating a skipped marker as an exhausted owned clause region. -/
-theorem eq_nil_of_pullAux_none_of_barrierCount_zero
+/-- A bank consisting solely of resolution branches whose pull is exhausted
+is literally empty.  The stronger branch-only premise matters now that an
+active catch delimiter is intentionally invisible to barrier counting. -/
+theorem eq_nil_of_pullAux_none_of_all_branches
     {alts : List PLeaTTa.Alt}
-    (markerFree : PLeaTTa.barrierCount alts = 0)
+    (branchOnly :
+      ∀ alt ∈ alts,
+        ∃ goals binding, alt = PLeaTTa.Alt.br goals binding)
     (empty : PLeaTTa.pullAux alts = none) :
     alts = [] := by
   cases alts with
   | nil => rfl
   | cons head tail =>
-      cases head with
-      | barrier =>
-          simp at markerFree
-      | br goals binding =>
-          simp [PLeaTTa.pullAux] at empty
-      | catchActive frame =>
-          simp at markerFree
-      | catchDormant frame protectedAlts =>
-          simp [PLeaTTa.pullAux] at empty
+      rcases branchOnly head (by simp) with ⟨goals, binding, headEq⟩
+      subst head
+      simp [PLeaTTa.pullAux] at empty
 
-/-- In a marker-free bank, the branch selected by `pullAux` is the literal
-head and its returned remainder is the literal tail. -/
-theorem eq_cons_of_pullAux_some_of_barrierCount_zero
+/-- In a bank consisting solely of resolution branches, the branch selected
+by `pullAux` is the literal head and its returned remainder is the literal
+tail. -/
+theorem eq_cons_of_pullAux_some_of_all_branches
     {alts : List PLeaTTa.Alt}
     {goals : List PLeaTTa.Goal} {binding : Subst}
     {tail : List PLeaTTa.Alt}
-    (markerFree : PLeaTTa.barrierCount alts = 0)
+    (branchOnly :
+      ∀ alt ∈ alts,
+        ∃ branchGoals branchBinding,
+          alt = PLeaTTa.Alt.br branchGoals branchBinding)
     (selected :
       PLeaTTa.pullAux alts = some (.branch goals binding, tail)) :
     alts = .br goals binding :: tail := by
@@ -360,17 +361,12 @@ theorem eq_cons_of_pullAux_some_of_barrierCount_zero
   | nil =>
       simp [PLeaTTa.pullAux] at selected
   | cons head rest =>
-      cases head with
-      | barrier =>
-          simp at markerFree
-      | br branchGoals branchBinding =>
-          simp only [PLeaTTa.pullAux] at selected
-          cases selected
-          rfl
-      | catchActive frame =>
-          simp at markerFree
-      | catchDormant frame protectedAlts =>
-          simp [PLeaTTa.pullAux] at selected
+      rcases branchOnly head (by simp) with
+        ⟨branchGoals, branchBinding, headEq⟩
+      subst head
+      simp only [PLeaTTa.pullAux] at selected
+      cases selected
+      rfl
 
 /-- A bank consisting solely of resolution branches cannot produce a dormant
 catch-resumption target.  Unlike barrier counting, this discriminator also
@@ -575,8 +571,11 @@ theorem classifyPrefix
     (fun scope original cursor position resource ownership => by
       cases pullEq : PLeaTTa.pullAux resource.alts with
       | none =>
-          have empty := eq_nil_of_pullAux_none_of_barrierCount_zero
-            (resource.barrierCount_zero ownership) pullEq
+          have branchOnly :=
+            RetainedCursorAlternativeOwnership.alts_all_branches
+              ownership.scan
+          have empty := eq_nil_of_pullAux_none_of_all_branches
+            branchOnly pullEq
           exact .inr
             (.clauses scope original cursor position resource ownership empty
               pullEq)
@@ -584,8 +583,11 @@ theorem classifyPrefix
           rcases result with ⟨target, tail⟩
           cases target with
           | branch goals binding =>
-              have head := eq_cons_of_pullAux_some_of_barrierCount_zero
-                (resource.barrierCount_zero ownership) pullEq
+              have branchOnly :=
+                RetainedCursorAlternativeOwnership.alts_all_branches
+                  ownership.scan
+              have head := eq_cons_of_pullAux_some_of_all_branches
+                branchOnly pullEq
               exact .inl
                 ⟨goals, binding, tail,
                   .clauses scope original cursor position resource ownership

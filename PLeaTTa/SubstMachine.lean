@@ -142,7 +142,7 @@ theorem cutToCached_mapAlt {Source Target : Type} (map : Source → Target)
   | depth, .catchActive frame :: rest => by
       simp only [List.map_cons, mapAlt, cutToCached]
       split
-      · exact cutToCached_mapAlt map count (depth - 1) rest
+      · exact cutToCached_mapAlt map count depth rest
       · rfl
   | depth, .catchDormant frame protectedAlts :: rest => by
       simp only [List.map_cons, mapAlt, cutToCached]
@@ -217,7 +217,7 @@ theorem pullAuxCached_mapAlt {Source Target : Type} (map : Source → Target) :
   | depth, .barrier :: rest =>
       pullAuxCached_mapAlt map (depth - 1) rest
   | depth, .catchActive _ :: rest =>
-      pullAuxCached_mapAlt map (depth - 1) rest
+      pullAuxCached_mapAlt map depth rest
   | _, .br _ _ :: _ => rfl
   | _, .catchDormant _ _ :: _ => rfl
 

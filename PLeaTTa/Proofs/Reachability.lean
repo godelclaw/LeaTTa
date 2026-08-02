@@ -242,18 +242,15 @@ private theorem pull_preserves_topological_alts (alts : List Alt) :
       | catchActive frame =>
           have hrest : AltsTopological rest := haltsTopo.2
           have hc : ConfTopological
-              { c with alts := rest, barriers :=
-                  popBarrierCache c.barriers } := by
+              { c with alts := rest } := by
             constructor
             · intro goals b hactive
               exact hcur goals b (by simpa using hactive)
             · exact hrest
           have hpull := ih
-            { c with alts := rest, barriers :=
-                popBarrierCache c.barriers } rfl hc
+            { c with alts := rest } rfl hc
           have hpullEq : pull c =
-              pull { c with alts := rest, barriers :=
-                popBarrierCache c.barriers } := by
+              pull { c with alts := rest } := by
             unfold pull
             rw [halts]
             cases c.barriers <;> rfl
@@ -670,7 +667,7 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
           at hcur
         rcases hcur with ⟨rfl, rfl⟩
         exact hb
-      · exact htop.2.cons_catchActive hb
+      · exact (htop.2.cons_catchActive hb).cons_barrier
   | catch_stream_exit c template result rest b b' h hu =>
       have hb := htop.active h
       rcases hb with ⟨topological⟩

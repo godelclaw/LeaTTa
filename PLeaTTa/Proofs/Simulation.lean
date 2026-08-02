@@ -191,8 +191,7 @@ theorem pull_with_partialAlts (c : Conf) {left right : List Alt}
                   cur := none
                   alts := Alt.catchActive frame :: leftTail }
               let leftTailConf : Conf :=
-                { c with cur := none, alts := leftTail, barriers :=
-                    popBarrierCache c.barriers }
+                { c with cur := none, alts := leftTail }
               have hleft : pull leftHeadConf = pull leftTailConf := by
                 unfold pull
                 simp only [leftHeadConf, leftTailConf]
@@ -202,8 +201,7 @@ theorem pull_with_partialAlts (c : Conf) {left right : List Alt}
                   cur := none
                   alts := Alt.catchActive frame :: rightTail }
               let rightTailConf : Conf :=
-                { c with cur := none, alts := rightTail, barriers :=
-                    popBarrierCache c.barriers }
+                { c with cur := none, alts := rightTail }
               have hright : pull rightHeadConf = pull rightTailConf := by
                 unfold pull
                 simp only [rightHeadConf, rightTailConf]
@@ -211,7 +209,7 @@ theorem pull_with_partialAlts (c : Conf) {left right : List Alt}
               change PartialConfRel (pull leftHeadConf) (pull rightHeadConf)
               rw [hleft, hright]
               exact ih
-                (c := { c with barriers := popBarrierCache c.barriers })
+                (c := c)
           | catchDormant frame protectedAlts =>
               let leftHeadConf : Conf :=
                 { c with
@@ -222,7 +220,7 @@ theorem pull_with_partialAlts (c : Conf) {left right : List Alt}
                   cur := none
                   alts := protectedAlts ++ Alt.catchActive frame :: leftTail
                   barriers := addBarrierCache c.barriers
-                    (barrierCount protectedAlts + 1) }
+                    (barrierCount protectedAlts) }
               have hleft : pull leftHeadConf = leftNext := by
                 unfold pull
                 simp only [leftHeadConf, leftNext]
@@ -236,7 +234,7 @@ theorem pull_with_partialAlts (c : Conf) {left right : List Alt}
                   cur := none
                   alts := protectedAlts ++ Alt.catchActive frame :: rightTail
                   barriers := addBarrierCache c.barriers
-                    (barrierCount protectedAlts + 1) }
+                    (barrierCount protectedAlts) }
               have hright : pull rightHeadConf = rightNext := by
                 unfold pull
                 simp only [rightHeadConf, rightNext]

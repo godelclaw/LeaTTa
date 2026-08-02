@@ -96,7 +96,7 @@ theorem resolutionLiveVars_pull_subset
                     resolutionCatchFrameVars, List.append_assoc] at retained ⊢
                   aesop
               | some depth =>
-                  have retained := ih (barriers := some (depth - 1)) member
+                  have retained := ih (barriers := some depth) member
                   simp [PLeaTTa.pull, pullAux, pullAuxTracked,
                     pullAuxCached, resolutionLiveVars, resolutionAltVars,
                     resolutionCatchFrameVars, List.append_assoc] at retained ⊢
@@ -147,7 +147,7 @@ theorem resolutionLiveVars_pull_subset
                     resolutionCatchFrameVars, List.append_assoc] at retained ⊢
                   aesop
               | some depth =>
-                  have retained := ih (barriers := some (depth - 1)) member
+                  have retained := ih (barriers := some depth) member
                   simp [PLeaTTa.pull, pullAux, pullAuxTracked,
                     pullAuxCached, resolutionLiveVars, resolutionAltVars,
                     resolutionCatchFrameVars, List.append_assoc] at retained ⊢
@@ -1336,7 +1336,7 @@ theorem cutToCached_resolutionAltVars_subset (alts : List Alt) (cut depth : Nat)
           unfold cutToCached at member
           split at member
           · simp only [List.flatMap_cons, List.mem_append]
-            exact Or.inr (ih (depth := depth - 1) member)
+            exact Or.inr (ih (depth := depth) member)
           · exact member
       | catchDormant frame protectedAlts =>
           unfold cutToCached at member

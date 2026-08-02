@@ -58,13 +58,7 @@ private theorem barrierCount_foldl_raw {Binding : Type}
             _ = count + rest.foldl barrierCountStep 1 :=
               congrArg (count + ·) (ih 1).symm
       | catchActive frame =>
-          simp only [barrierCountStep]
-          calc
-            count + 1 + rest.foldl barrierCountStep 0 =
-                count + (1 + rest.foldl barrierCountStep 0) := by
-                  simp [Nat.add_assoc]
-            _ = count + rest.foldl barrierCountStep 1 :=
-              congrArg (count + ·) (ih 1).symm
+          simp [barrierCountStep]
       | catchDormant frame protectedAlts => simp [barrierCountStep]
 
 theorem barrierCount_foldl {Binding : Type}
@@ -98,26 +92,21 @@ theorem barrierCount_foldl {Binding : Type}
 
 @[simp] theorem barrierCount_cons_catchActive {Binding : Type}
     (frame : CatchFrame Binding) (rest : List (Alt Binding)) :
-    barrierCount (Alt.catchActive frame :: rest) = barrierCount rest + 1 := by
+    barrierCount (Alt.catchActive frame :: rest) = barrierCount rest := by
   unfold barrierCount
   rw [List.foldl_cons, barrierCount_foldl_raw]
-  simp [barrierCountStep, Nat.add_comm]
+  simp [barrierCountStep]
 
-/-- Regression witness for the pre-repair catch representation: when the
-active catch delimiter itself is counted as the protected call's cut barrier,
-a cut at that scope removes the delimiter.  The caller suffix survives, but
-the subsequent typed catch exit can no longer recover its frame. -/
-theorem catch_cut_currently_removes_active_delimiter {Binding : Type}
+/-- The explicit catch barrier is consumed by a protected cut while the
+non-counted active delimiter and the entire caller suffix survive.  Counting
+the active marker as the barrier would make this equation false by deleting
+the marker, which is the historical `CONTROL.catch_cut_opacity` defect. -/
+theorem catch_cut_retains_active_delimiter {Binding : Type}
     (frame : CatchFrame Binding) (outer : List (Alt Binding)) :
-    cutTo (barrierCount outer + 1) (Alt.catchActive frame :: outer) = outer := by
-  have below : cutTo (barrierCount outer + 1) outer = outer := by
-    cases outer with
-    | nil => rfl
-    | cons head tail =>
-        unfold cutTo
-        rw [if_neg (by omega)]
-  unfold cutTo
-  rw [if_pos (by simp), below]
+    cutTo (barrierCount outer + 1)
+      (Alt.barrier :: Alt.catchActive frame :: outer) =
+        Alt.catchActive frame :: outer := by
+  rw [cutTo, if_pos (by simp), cutTo, if_neg (by simp)]
 
 @[simp] theorem barrierCount_cons_catchDormant {Binding : Type}
     (frame : CatchFrame Binding) (protectedAlts rest : List (Alt Binding)) :
@@ -342,6 +331,18 @@ theorem cutToTracked_fst_of_coherent {Binding : Type} (cut : Nat)
       subst depth
       simpa [cutToTracked] using cutToCached_fst_exact cut alts
 
+/-- The cached executable cut follows the same delimiter-retention equation;
+cache coherence is then preserved by `cutToTracked_coherent` below. -/
+theorem catch_cut_tracked_retains_active_delimiter {Binding : Type}
+    (frame : CatchFrame Binding) (outer : List (Alt Binding)) :
+    (cutToTracked (barrierCount outer + 1)
+      (some (barrierCount outer + 1))
+      (Alt.barrier :: Alt.catchActive frame :: outer)).1 =
+        Alt.catchActive frame :: outer := by
+  rw [cutToTracked_fst_of_coherent]
+  · exact catch_cut_retains_active_delimiter frame outer
+  · simp
+
 theorem cutToTracked_coherent {Binding : Type} (cut : Nat)
     (cache : Option Nat) (alts : List (Alt Binding))
     (coherent : match cache with
@@ -444,7 +445,7 @@ theorem BarrierCacheCoherent.exitStreamingCatch {Binding : Type}
           unfold BarrierCacheCoherent
           simp only [cached, removeBarrierCache, Option.map,
             barrierCount_cons_catchDormant]
-          change depth - (barrierCount protectedAlts + 1) =
+          change depth - barrierCount protectedAlts =
             barrierCount outer
           omega
 

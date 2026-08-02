@@ -784,10 +784,12 @@ deriving Repr, Inhabited
 
 /-- One pending alternative or typed control marker.
 
-`catchActive` is both the live exception delimiter and a cut barrier while the
-protected goal executes.  `catchDormant` is an ordinary prunable choice point
-that owns the exact protected prefix while the caller continuation executes;
-its payload is inactive and therefore contributes no live cut barrier. -/
+`catchActive` is the persistent exception delimiter while the protected goal
+executes.  Its cut barrier is a distinct `barrier` immediately above it, so a
+protected cut consumes that barrier without deleting the delimiter needed by
+the typed exit.  `catchDormant` is an ordinary prunable choice point that owns
+the exact protected prefix while the caller continuation executes; neither
+catch marker contributes a live cut barrier. -/
 inductive Alt (Binding : Type := Subst) where
   | br (goals : List Goal) (bnd : Binding)
   | barrier
@@ -4944,7 +4946,6 @@ def unionReverseAltsForOp (op : String) (args : List Atom) (res : Atom)
 
 @[simp] def barrierCountStep {Binding : Type} (count : Nat) : Alt Binding → Nat
   | .barrier => count + 1
-  | .catchActive _ => count + 1
   | _ => count
 
 def barrierCount {Binding : Type} (alts : List (Alt Binding)) : Nat :=
@@ -4996,7 +4997,7 @@ def cutToCached {Binding : Type} (k : Nat) :
       if barriers ≥ k then
         let next := match alt with
           | .barrier => barriers - 1
-          | .catchActive _ => barriers - 1
+          | .catchActive _ => barriers
           | .br _ _ => barriers
           | .catchDormant _ _ => barriers
         cutToCached k next rest
@@ -5093,7 +5094,7 @@ def pullAuxCached {Binding : Type} : Nat → List (Alt Binding) →
   | barriers, .barrier :: rest =>
       pullAuxCached (barriers - 1) rest
   | barriers, .catchActive _ :: rest =>
-      pullAuxCached (barriers - 1) rest
+      pullAuxCached barriers rest
   | barriers, .br gs b :: rest =>
       (some (.branch gs b, rest), barriers)
   | barriers, .catchDormant frame protectedAlts :: rest =>
@@ -5104,7 +5105,7 @@ theorem pullAuxCached_fst {Binding : Type} :
       (pullAuxCached depth alts).1 = pullAux alts
   | _, [] => rfl
   | depth, .barrier :: rest => pullAuxCached_fst (depth - 1) rest
-  | depth, .catchActive _ :: rest => pullAuxCached_fst (depth - 1) rest
+  | depth, .catchActive _ :: rest => pullAuxCached_fst depth rest
   | _, .br _ _ :: _ => rfl
   | _, .catchDormant _ _ :: _ => rfl
 
@@ -5136,7 +5137,7 @@ def pull {Binding : Type} (c : Conf Binding) : Conf Binding :=
       { c with
         cur := none
         alts := protectedAlts ++ .catchActive frame :: rest
-        barriers := addBarrierCache result.2 (barrierCount protectedAlts + 1) }
+        barriers := addBarrierCache result.2 (barrierCount protectedAlts) }
 
 @[simp] theorem pull_barrier {Binding : Type} (c : Conf Binding)
     (rest : List (Alt Binding)) :
@@ -6563,9 +6564,9 @@ def transactionSub (tmpl : Atom) (sub : List Goal) : List Goal :=
   [Goal.onceg tmpl sub tmpl]
 
 /-- Enter the protected region of the streaming catch implementation.  The
-protected cuts are rebased to the fresh positional barrier represented by the
-active catch marker; the caller continuation is owned by the frame and is not
-present in the active goal list. -/
+protected cuts are rebased to a fresh explicit barrier immediately above the
+persistent active catch marker; the caller continuation is owned by the frame
+and is not present in the active goal list. -/
 def enterStreamingCatch {Binding : Type} (c : Conf Binding)
     (template : Atom) (sub : List Goal) (result : Atom) (rest : List Goal)
     (entry : Binding) : Conf Binding :=
@@ -6574,7 +6575,7 @@ def enterStreamingCatch {Binding : Type} (c : Conf Binding)
   { c with
     cur := some
       (retagCutsGoals cutScope sub ++ [Goal.catchExit template result], entry)
-    alts := .catchActive frame :: c.alts
+    alts := .barrier :: .catchActive frame :: c.alts
     barriers := pushBarrierCache c.barriers }
 
 /-- Leave the protected region after one successful protected answer.  The
@@ -6590,7 +6591,7 @@ def exitStreamingCatch {Binding : Type} (c : Conf Binding)
         cur := some (split.frame.rest, binding)
         alts := .catchDormant split.frame split.protectedAlts :: split.outer
         barriers := removeBarrierCache c.barriers
-          (barrierCount split.protectedAlts + 1) }
+          (barrierCount split.protectedAlts) }
 
 /-- Catch one currently escaping primitive error at the nearest active catch
 delimiter.  Protected bindings and alternatives unwind; persistent world and
