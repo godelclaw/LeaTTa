@@ -85,6 +85,18 @@ PROLOG_FINDALL_BAG_ALPHA_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologFindallBagAlphaBridge.lean"
 )
+PROLOG_RESIDUAL_FOREST_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologResidualForestBridge.lean"
+)
+PROLOG_GOAL_TERM_FOREST_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologGoalTermForestBridge.lean"
+)
+PROLOG_GOAL_CONTROL_CARRY_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologGoalControlCarryBridge.lean"
+)
+PROLOG_FINDALL_TAIL_FOREST_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologFindallTailForestBridge.lean"
+)
 PROLOG_ANSWER_ORIGIN_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologAnswerOriginBridge.lean"
 )
@@ -487,6 +499,7 @@ STRICT_AXIOM_AUDIT_ROWS = {
     "BISIM.answer_visibility_public",
     "BISIM.findall_collection_answer_general",
     "BISIM.findall_bag_alpha_support",
+    "BISIM.findall_tail_control_materialization",
 }
 
 
@@ -573,6 +586,14 @@ def check() -> list[str]:
             digest(PROLOG_FINDALL_VARIANT_EXIT_PAYLOAD_BRIDGE),
         "prolog_findall_bag_alpha_bridge_sha256":
             digest(PROLOG_FINDALL_BAG_ALPHA_BRIDGE),
+        "prolog_residual_forest_bridge_sha256":
+            digest(PROLOG_RESIDUAL_FOREST_BRIDGE),
+        "prolog_goal_term_forest_bridge_sha256":
+            digest(PROLOG_GOAL_TERM_FOREST_BRIDGE),
+        "prolog_goal_control_carry_bridge_sha256":
+            digest(PROLOG_GOAL_CONTROL_CARRY_BRIDGE),
+        "prolog_findall_tail_forest_bridge_sha256":
+            digest(PROLOG_FINDALL_TAIL_FOREST_BRIDGE),
         "prolog_answer_origin_bridge_sha256":
             digest(PROLOG_ANSWER_ORIGIN_BRIDGE),
         "prolog_answer_resource_bridge_sha256":
