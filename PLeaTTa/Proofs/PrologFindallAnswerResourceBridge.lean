@@ -404,9 +404,9 @@ theorem underChoice_endpoints
 end ActiveFindallAnswerResourceAgrees
 
 /-- Total, exact control projection of one executable `pull`.  Exhaustion,
-ordinary branch selection, and dormant-catch resumption remain distinct.
-The resumption case reinstalls the protected alternatives and active catch
-delimiter exactly as `pull` does; it is neither an answer nor exhaustion. -/
+ordinary branch selection, and dormant delimiter transitions remain distinct.
+Resumption reinstalls the protected alternatives and active delimiter exactly
+as `pull` does; it is neither an answer nor exhaustion. -/
 inductive PullOutcomeAgrees :
     List PLeaTTa.Alt -> Option (List PLeaTTa.Goal × Subst) ->
       List PLeaTTa.Alt -> Prop where
@@ -427,6 +427,26 @@ inductive PullOutcomeAgrees :
           some (.catchResume frame protectedAlts, rest)) :
       PullOutcomeAgrees beforeAlts none
         (protectedAlts ++ .catchActive frame :: rest)
+  | softcutElse {beforeAlts : List PLeaTTa.Alt}
+      (frame : PLeaTTa.SoftcutFrame) (rest : List PLeaTTa.Alt)
+      (outcome :
+        PLeaTTa.pullAux beforeAlts =
+          some (.softcutExhausted frame false, rest)) :
+      PullOutcomeAgrees beforeAlts
+        (some (frame.elseGoals ++ frame.rest, frame.entry)) rest
+  | softcutDone {beforeAlts : List PLeaTTa.Alt}
+      (frame : PLeaTTa.SoftcutFrame) (rest : List PLeaTTa.Alt)
+      (outcome :
+        PLeaTTa.pullAux beforeAlts =
+          some (.softcutExhausted frame true, rest)) :
+      PullOutcomeAgrees beforeAlts none rest
+  | softcutResumed {beforeAlts : List PLeaTTa.Alt}
+      (frame : PLeaTTa.SoftcutFrame) (protectedAlts rest : List PLeaTTa.Alt)
+      (outcome :
+        PLeaTTa.pullAux beforeAlts =
+          some (.softcutResume frame protectedAlts, rest)) :
+      PullOutcomeAgrees beforeAlts none
+        (protectedAlts ++ .softcutActive frame true :: rest)
 
 namespace PullOutcomeAgrees
 
@@ -453,6 +473,12 @@ theorem of_pull (conf : PLeaTTa.Conf) :
           exact .selected goals binding rest sameOutcome.symm
       | catchResume frame protectedAlts =>
           exact .catchResumed frame protectedAlts rest sameOutcome.symm
+      | softcutExhausted frame seenSuccess =>
+          cases seenSuccess with
+          | false => exact .softcutElse frame rest sameOutcome.symm
+          | true => exact .softcutDone frame rest sameOutcome.symm
+      | softcutResume frame protectedAlts =>
+          exact .softcutResumed frame protectedAlts rest sameOutcome.symm
 
 /-- A selected concrete pull fixes both post-pull control fields.  This is an
 inversion of the total pull classifier, not a second execution of `pullAux`,
@@ -477,6 +503,15 @@ theorem fields_of_pull_some
       cases selected
       exact ⟨rfl, rfl⟩
   | catchResumed frame protectedAlts actualRest actual =>
+      rw [actual] at selected
+      cases selected
+  | softcutElse frame actualRest actual =>
+      rw [actual] at selected
+      cases selected
+  | softcutDone frame actualRest actual =>
+      rw [actual] at selected
+      cases selected
+  | softcutResumed frame protectedAlts actualRest actual =>
       rw [actual] at selected
       cases selected
 

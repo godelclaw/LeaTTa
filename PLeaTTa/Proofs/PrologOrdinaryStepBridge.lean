@@ -2850,7 +2850,10 @@ control.  The dynamic world and global high-water remain current. -/
     | none => rfl
     | some pulled =>
         rcases pulled with ⟨target, rest⟩
-        cases target <;> rfl
+        cases target with
+        | softcutExhausted frame seenSuccess =>
+            cases seenSuccess <;> rfl
+        | _ => rfl
   have counter :
       (PLeaTTa.pull { state.toConf with cur := none }).counter =
         state.toConf.counter := by
@@ -2863,7 +2866,10 @@ control.  The dynamic world and global high-water remain current. -/
     | none => rfl
     | some pulled =>
         rcases pulled with ⟨target, rest⟩
-        cases target <;> rfl
+        cases target with
+        | softcutExhausted frame seenSuccess =>
+            cases seenSuccess <;> rfl
+        | _ => rfl
   change
     persistentOf (PLeaTTa.pull { state.toConf with cur := none }) =
       state.persistent
@@ -2889,7 +2895,10 @@ manufactures a nested-run answer. -/
   | none => rfl
   | some pulled =>
       rcases pulled with ⟨target, rest⟩
-      cases target <;> rfl
+      cases target with
+      | softcutExhausted frame seenSuccess =>
+          cases seenSuccess <;> rfl
+      | _ => rfl
 
 @[simp] theorem unifyFailureSuccessor_frames (state : OpenConf) :
     (unifyFailureSuccessor state).frames = state.frames := by

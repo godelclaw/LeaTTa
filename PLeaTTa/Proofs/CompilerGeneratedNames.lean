@@ -941,6 +941,16 @@ theorem compilerGoalNamesAllowed_catchExit {external : String → Prop}
     template.vars result.vars).2
   exact ⟨templateAllowed, resultAllowed⟩
 
+/-- The internal soft-cut transfer marker keeps its answer template live and
+therefore inherits the same compiler-origin discipline as that atom. -/
+theorem compilerGoalNamesAllowed_softcutExit {external : String → Prop}
+    {origin limit : Nat} {template : Atom}
+    (templateAllowed :
+      CompilerAtomNamesAllowed external origin limit template) :
+    CompilerGoalNamesAllowed external origin limit
+      (.softcutExit template) :=
+  templateAllowed
+
 theorem compileBranch_namesAllowed {external : String → Prop}
     {origin limit : Nat} {out term : Atom} {goals aliases : List Goal}
     {branch : Atom × List Goal}
@@ -1025,6 +1035,57 @@ theorem compilerGoalNamesAllowed_onceg {external : String → Prop}
     CompilerGoalNamesAllowed external origin limit
       (.onceg template sub result) :=
   compilerGoalNamesAllowed_nested templateAllowed subAllowed resultAllowed
+
+/-- Ordinary Prolog if-then-else is assembled from the name-safe streaming
+soft-cut and once delimiters, so the composition introduces no new names. -/
+theorem compilerGoalNamesAllowed_committedIfGoal {external : String → Prop}
+    {origin limit : Nat} {template : Atom}
+    {condition thenGoals elseGoals : List Goal}
+    (templateAllowed :
+      CompilerAtomNamesAllowed external origin limit template)
+    (conditionAllowed :
+      CompilerGoalsNamesAllowed external origin limit condition)
+    (thenAllowed :
+      CompilerGoalsNamesAllowed external origin limit thenGoals)
+    (elseAllowed :
+      CompilerGoalsNamesAllowed external origin limit elseGoals) :
+    CompilerGoalNamesAllowed external origin limit
+      (committedIfGoal template condition thenGoals elseGoals) := by
+  unfold committedIfGoal
+  apply compilerGoalNamesAllowed_softcut templateAllowed
+  · apply (compilerGoalsNamesAllowed_cons_iff external origin limit
+      (Goal.onceg template condition template) []).2
+    exact ⟨compilerGoalNamesAllowed_onceg templateAllowed conditionAllowed
+      templateAllowed, by simp⟩
+  · exact thenAllowed
+  · exact elseAllowed
+
+/-- The compiler's closed `True = False` goal contains no variable names. -/
+theorem compilerGoalNamesAllowed_failureGoal {external : String → Prop}
+    {origin limit : Nat} :
+    CompilerGoalNamesAllowed external origin limit compilerFailureGoal := by
+  unfold compilerFailureGoal
+  exact compilerGoalNamesAllowed_eq (by simp [compilerTrueA])
+    (by simp [compilerFalseA])
+
+/-- Negation-as-failure adds only its closed marker and canonical failure
+goal; every live variable therefore comes from the condition. -/
+theorem compilerGoalsNamesAllowed_negatedGoals {external : String → Prop}
+    {origin limit : Nat} {condition : List Goal}
+    (conditionAllowed :
+      CompilerGoalsNamesAllowed external origin limit condition) :
+    CompilerGoalsNamesAllowed external origin limit
+      (negatedGoals condition) := by
+  unfold negatedGoals
+  apply (compilerGoalsNamesAllowed_cons_iff external origin limit _ []).2
+  constructor
+  · apply compilerGoalNamesAllowed_committedIfGoal (by simp)
+      conditionAllowed
+    · apply (compilerGoalsNamesAllowed_cons_iff external origin limit
+        compilerFailureGoal []).2
+      exact ⟨compilerGoalNamesAllowed_failureGoal, by simp⟩
+    · simp
+  · simp
 
 theorem compilerGoalNamesAllowed_transactiong {external : String → Prop}
     {origin limit : Nat} {template : Atom} {sub : List Goal}
@@ -1244,6 +1305,10 @@ theorem compilerGoalNamesAllowed_substCompiled
       exact compilerGoalNamesAllowed_catchExit
         (CompilerAtomNamesAllowed.subst bindingAllowed parts.1)
         (CompilerAtomNamesAllowed.subst bindingAllowed parts.2)
+  case softcutExit template =>
+      intro allowed
+      exact compilerGoalNamesAllowed_softcutExit
+        (CompilerAtomNamesAllowed.subst bindingAllowed allowed)
   case findall template goals result goalsIH =>
       intro allowed
       change CompilerNamesAllowed external origin limit
@@ -1461,10 +1526,10 @@ theorem compilerCaseArmGoal_namesAllowed {external : String → Prop}
     (elseGoalsAllowed :
       CompilerGoalsNamesAllowed external origin limit elseGoals) :
     CompilerGoalNamesAllowed external origin limit
-      (.softcut (bindingTemplate compiledPattern [sourcePattern])
+      (committedIfGoal (bindingTemplate compiledPattern [sourcePattern])
         (patternGoals ++ [Goal.eq compiledPattern scrutinee])
         (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals) := by
-  apply compilerGoalNamesAllowed_softcut
+  apply compilerGoalNamesAllowed_committedIfGoal
   · apply bindingTemplate_namesAllowed compiledPatternAllowed
     apply (compilerAtomsNamesAllowed_cons_iff external origin limit
       sourcePattern []).2
@@ -2054,7 +2119,7 @@ theorem compileCaseArmDo_generatedNames (fuel : Nat)
         let (elseGoals, finalCounter) ←
           compileCaseArmsFuel fuel env scrutinee result middleBody more
         let carry := bindingTemplate compiledPattern [pattern]
-        .ok ([Goal.softcut carry
+        .ok ([committedIfGoal carry
           (patternGoals ++ [Goal.eq compiledPattern scrutinee])
           (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals],
           finalCounter)) = .ok (goals, next)) :
@@ -2091,7 +2156,7 @@ theorem compileCaseArmDo_generatedNames (fuel : Nat)
           ((moreAllowed.mono patternCounter).mono bodyCounter) elseEq
         rcases Except.ok.inj compiled with ⟨rfl, rfl⟩
         apply (compilerGoalsNamesAllowed_cons_iff external origin elseResult.2
-          (Goal.softcut (bindingTemplate patternResult.1 [pattern])
+          (committedIfGoal (bindingTemplate patternResult.1 [pattern])
             (patternResult.2.1 ++ [Goal.eq patternResult.1 scrutinee])
             (bodyResult.2.1 ++ [Goal.eq result bodyResult.1]) elseResult.1)
           []).2
@@ -4741,12 +4806,12 @@ private theorem compileCase_generatedNames (fuel : Nat)
             let (compiledBody, bodyGoals, finalCounter) ←
               compileExprFuel fuel env afterArms body
             let failGoals := bodyGoals ++ [Goal.eq result compiledBody]
-            let carry := bindingTemplate scrutineeValue [scrutinee]
+            let guard := scrutineeGoals ++
+              [Goal.eq scrutineeValue compiledScrutinee]
+            let positive := guard ++ armGoals
+            let fallback := negatedGoals guard ++ failGoals
             .ok (result,
-              [Goal.softcut carry
-                (scrutineeGoals ++
-                  [Goal.eq scrutineeValue compiledScrutinee])
-                armGoals failGoals],
+              [Goal.amb [(result, positive), (result, fallback)] result],
               finalCounter)
         | none =>
             .ok (result,
@@ -4863,43 +4928,84 @@ private theorem compileCase_generatedNames (fuel : Nat)
                     ((scrutineeNames.2.mono (by omega)).mono armsCounter).mono
                       toFinal
                   have armsGoalsFinal := armsNames.mono toFinal
+                  have guardAllowed : CompilerGoalsNamesAllowed external origin
+                      bodyResult.2.2
+                      (scrutineeResult.2.1 ++
+                        [Goal.eq
+                          (Atom.var (compilerGeneratedName
+                            scrutineeResult.2.2))
+                          scrutineeResult.1]) := by
+                    apply (compilerGoalsNamesAllowed_append_iff external origin
+                      bodyResult.2.2 scrutineeResult.2.1 _).2
+                    exact ⟨scrutineeGoalsFinal,
+                      by
+                        apply (compilerGoalsNamesAllowed_cons_iff external
+                          origin bodyResult.2.2 _ []).2
+                        exact ⟨compilerGoalNamesAllowed_eq
+                          scrutineeValueFinal compiledScrutineeFinal,
+                          by simp⟩⟩
+                  have positiveAllowed : CompilerGoalsNamesAllowed
+                      external origin bodyResult.2.2
+                      ((scrutineeResult.2.1 ++
+                        [Goal.eq
+                          (Atom.var (compilerGeneratedName
+                            scrutineeResult.2.2))
+                          scrutineeResult.1]) ++ armsResult.1) := by
+                    exact (compilerGoalsNamesAllowed_append_iff external origin
+                      bodyResult.2.2 _ _).2 ⟨guardAllowed, armsGoalsFinal⟩
+                  have failGoalsAllowed : CompilerGoalsNamesAllowed
+                      external origin bodyResult.2.2
+                      (bodyResult.2.1 ++
+                        [Goal.eq
+                          (Atom.var (compilerGeneratedName
+                            (scrutineeResult.2.2 + 1)))
+                          bodyResult.1]) := by
+                    apply (compilerGoalsNamesAllowed_append_iff external origin
+                      bodyResult.2.2 bodyResult.2.1 _).2
+                    exact ⟨bodyNames.2,
+                      by
+                        apply (compilerGoalsNamesAllowed_cons_iff external
+                          origin bodyResult.2.2 _ []).2
+                        exact ⟨compilerGoalNamesAllowed_eq resultFinal
+                          bodyNames.1, by simp⟩⟩
+                  have negatedAllowed : CompilerGoalsNamesAllowed
+                      external origin bodyResult.2.2
+                      (negatedGoals
+                        (scrutineeResult.2.1 ++
+                          [Goal.eq
+                            (Atom.var (compilerGeneratedName
+                              scrutineeResult.2.2))
+                            scrutineeResult.1])) :=
+                    compilerGoalsNamesAllowed_negatedGoals guardAllowed
+                  have fallbackAllowed : CompilerGoalsNamesAllowed
+                      external origin bodyResult.2.2
+                      (negatedGoals
+                          (scrutineeResult.2.1 ++
+                            [Goal.eq
+                              (Atom.var (compilerGeneratedName
+                                scrutineeResult.2.2))
+                              scrutineeResult.1]) ++
+                        (bodyResult.2.1 ++
+                          [Goal.eq
+                            (Atom.var (compilerGeneratedName
+                              (scrutineeResult.2.2 + 1)))
+                            bodyResult.1])) := by
+                    exact (compilerGoalsNamesAllowed_append_iff external origin
+                      bodyResult.2.2 _ _).2
+                      ⟨negatedAllowed, failGoalsAllowed⟩
                   constructor
                   · exact resultFinal
                   · apply (compilerGoalsNamesAllowed_cons_iff external origin
                       bodyResult.2.2 _ []).2
                     constructor
-                    · apply compilerGoalNamesAllowed_softcut
-                      · apply bindingTemplate_namesAllowed
-                          scrutineeValueFinal
-                        apply (compilerAtomsNamesAllowed_cons_iff external
-                          origin bodyResult.2.2 scrutinee []).2
-                        exact ⟨sourceScrutineeFinal, by simp⟩
-                      · apply (compilerGoalsNamesAllowed_append_iff external
-                          origin bodyResult.2.2 scrutineeResult.2.1
-                          [Goal.eq
-                            (Atom.var (compilerGeneratedName
-                              scrutineeResult.2.2))
-                            scrutineeResult.1]).2
-                        exact ⟨scrutineeGoalsFinal,
-                          by
-                            apply (compilerGoalsNamesAllowed_cons_iff external
-                              origin bodyResult.2.2 _ []).2
-                            exact ⟨compilerGoalNamesAllowed_eq
-                              scrutineeValueFinal compiledScrutineeFinal,
-                              by simp⟩⟩
-                      · exact armsGoalsFinal
-                      · apply (compilerGoalsNamesAllowed_append_iff external
-                          origin bodyResult.2.2 bodyResult.2.1
-                          [Goal.eq
-                            (Atom.var (compilerGeneratedName
-                              (scrutineeResult.2.2 + 1)))
-                            bodyResult.1]).2
-                        exact ⟨bodyNames.2,
-                          by
-                            apply (compilerGoalsNamesAllowed_cons_iff external
-                              origin bodyResult.2.2 _ []).2
-                            exact ⟨compilerGoalNamesAllowed_eq resultFinal
-                              bodyNames.1, by simp⟩⟩
+                    · apply compilerGoalNamesAllowed_amb
+                      · apply (compilerBranchesNamesAllowed_cons_iff external
+                          origin bodyResult.2.2 _ _ _).2
+                        refine ⟨resultFinal, positiveAllowed, ?_⟩
+                        apply (compilerBranchesNamesAllowed_cons_iff external
+                          origin bodyResult.2.2 _ _ []).2
+                        exact ⟨resultFinal, fallbackAllowed, by simp⟩
+                      · exact resultFinal
                     · simp
 
 private theorem compileUnifyList_generatedNames (fuel : Nat)

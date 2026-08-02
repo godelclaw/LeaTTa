@@ -587,6 +587,8 @@ private def partitionLiveGoals : List PLeaTTa.Goal :=
   | .barrier => []
   | .catchActive _ => []
   | .catchDormant _ _ => []
+  | .softcutActive _ _ => []
+  | .softcutDormant _ _ => []
 
 private theorem partitionLiveAlt_shape :
     partitionLiveAlt = .br partitionLiveGoals [] := by
@@ -1851,6 +1853,27 @@ inductive ExhaustedPostFailureCatchupResult
       ExhaustedPostFailureCatchupResult freshFrontier alpha opened pending
         qterm callerBarrier callerScope outerScope segments resources context
         baseAlts predecessor source successor
+  | baseSoftcutElse
+      (partition :
+        BaseSoftcutElseOuterResourceCatchupPartition alpha segments resources
+          context baseAlts) :
+      ExhaustedPostFailureCatchupResult freshFrontier alpha opened pending
+        qterm callerBarrier callerScope outerScope segments resources context
+        baseAlts predecessor source successor
+  | baseSoftcutDone
+      (partition :
+        BaseSoftcutDoneOuterResourceCatchupPartition alpha segments resources
+          context baseAlts) :
+      ExhaustedPostFailureCatchupResult freshFrontier alpha opened pending
+        qterm callerBarrier callerScope outerScope segments resources context
+        baseAlts predecessor source successor
+  | baseSoftcutResume
+      (partition :
+        BaseSoftcutResumeOuterResourceCatchupPartition alpha segments resources
+          context baseAlts) :
+      ExhaustedPostFailureCatchupResult freshFrontier alpha opened pending
+        qterm callerBarrier callerScope outerScope segments resources context
+        baseAlts predecessor source successor
   | terminal
       (partition :
         TerminalOuterResourceCatchupPartition alpha segments resources context
@@ -1913,6 +1936,12 @@ theorem SpinedExhaustedPostFailureOffsetRelates.catchupClassified
       exact .baseLive partition
   | baseCatchResume partition =>
       exact .baseCatchResume partition
+  | baseSoftcutElse partition =>
+      exact .baseSoftcutElse partition
+  | baseSoftcutDone partition =>
+      exact .baseSoftcutDone partition
+  | baseSoftcutResume partition =>
+      exact .baseSoftcutResume partition
   | terminal partition =>
       obtain ⟨sourceSteps, relation⟩ :=
         PLeaTTa.PrologBodyFailureOuterResourceCatchupBridge.SpinedExhaustedPostFailureOffsetRelates.catchupTerminal

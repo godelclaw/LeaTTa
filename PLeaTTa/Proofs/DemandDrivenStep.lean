@@ -395,7 +395,10 @@ fresh high-water. -/
   | none => rfl
   | some target =>
       rcases target with ⟨target, rest⟩
-      cases target <;> rfl
+      cases target with
+      | softcutExhausted frame seenSuccess =>
+          cases seenSuccess <;> rfl
+      | _ => rfl
 
 /-- World state is outside the backtrackable alternative bank. -/
 @[simp] theorem privateAnswer_pull_world (conf : Conf) :
@@ -407,7 +410,10 @@ fresh high-water. -/
   | none => rfl
   | some target =>
       rcases target with ⟨target, rest⟩
-      cases target <;> rfl
+      cases target with
+      | softcutExhausted frame seenSuccess =>
+          cases seenSuccess <;> rfl
+      | _ => rfl
 
 /-- The general-purpose fresh counter is likewise outside the alternative
 bank. -/
@@ -420,7 +426,10 @@ bank. -/
   | none => rfl
   | some target =>
       rcases target with ⟨target, rest⟩
-      cases target <;> rfl
+      cases target with
+      | softcutExhausted frame seenSuccess =>
+          cases seenSuccess <;> rfl
+      | _ => rfl
 
 /-- Pulling changes control position only; the observable query term remains
 the one installed when the private generator was entered. -/
@@ -433,7 +442,10 @@ the one installed when the private generator was entered. -/
   | none => rfl
   | some target =>
       rcases target with ⟨target, rest⟩
-      cases target <;> rfl
+      cases target with
+      | softcutExhausted frame seenSuccess =>
+          cases seenSuccess <;> rfl
+      | _ => rfl
 
 /-- Pulling cannot rewrite the reverse-discovery answer accumulator. -/
 @[simp] theorem privateAnswer_pull_answers (conf : Conf) :
@@ -445,7 +457,10 @@ the one installed when the private generator was entered. -/
   | none => rfl
   | some target =>
       rcases target with ⟨target, rest⟩
-      cases target <;> rfl
+      cases target with
+      | softcutExhausted frame seenSuccess =>
+          cases seenSuccess <;> rfl
+      | _ => rfl
 
 @[simp] theorem privateAnswerTarget_frames
     (state : OpenConf) (binding : Subst) :
@@ -2468,7 +2483,7 @@ theorem sealed_general_catch_step_is_stream_enter
     (notDirect : catchDirect? gt binding template sub = none)
     (step : PLeaTTa.Step prog gt outer next) :
     next = enterStreamingCatch outer template sub result rest binding := by
-  cases step <;> simp_all [subConfOf]
+  cases step <;> simp_all
 
 /-- The current sealed relation treats every outer findall step atomically:
 the step can exist only with a terminal nested `StepStar` premise. -/
@@ -2483,27 +2498,21 @@ theorem sealed_findall_step_has_terminal_subrun
       PLeaTTa.StepStar prog gt
         (subConfOf outer sub binding template) inner ∧
       PLeaTTa.Terminal inner := by
-  cases step <;> simp_all [subConfOf]
+  cases step <;> simp_all
   case findall => exact ⟨_, by assumption, by assumption⟩
 
-/-- The current sealed relation also treats either soft-cut branch atomically:
-the outer step can exist only after the condition has reached a terminal
-nested state.  This inversion is deliberately a mismatch witness, not a
-desired adequacy theorem: pinned PeTTa can expose the first successful branch
-before a later condition alternative diverges. -/
-theorem sealed_softcut_step_has_terminal_subrun
+/-- Every sealed step at a source soft-cut head is the demand-driven entry
+transition.  In particular no terminal nested-run premise can hide an open
+condition prefix. -/
+theorem sealed_softcut_step_is_stream_enter
     {prog : Prog} {gt : GroundingTable} (outer next : Conf)
     (template : Atom) (condition thenGoals elseGoals rest : List Goal)
     (binding : Subst)
     (head : outer.cur = some
       (Goal.softcut template condition thenGoals elseGoals :: rest, binding))
     (step : PLeaTTa.Step prog gt outer next) :
-    ∃ inner,
-      PLeaTTa.StepStar prog gt
-        (subConfOf outer condition binding template) inner ∧
-      PLeaTTa.Terminal inner := by
-  cases step <;> simp_all [subConfOf]
-  case softcut_some => exact ⟨_, by assumption, by assumption⟩
-  case softcut_none => exact ⟨_, by assumption, by assumption⟩
+    next = enterStreamingSoftcut outer template condition thenGoals elseGoals
+      rest binding := by
+  cases step <;> simp_all
 
 end PLeaTTa.DemandDrivenStep

@@ -1839,6 +1839,11 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.BarrierCacheCoherent.barrierDepth_eq
 #print axioms PLeaTTa.catch_cut_retains_active_delimiter
 #print axioms PLeaTTa.catch_cut_tracked_retains_active_delimiter
+#print axioms PLeaTTa.softcut_cut_retains_active_delimiter
+#print axioms PLeaTTa.softcut_cut_tracked_retains_active_delimiter
+#print axioms PLeaTTa.softcut_condition_cut_step_retains_active_delimiter
+#print axioms PLeaTTa.Step.softcut_stream_enter
+#print axioms PLeaTTa.Step.softcut_stream_exit
 #print axioms PLeaTTa.enabled_empty_barrierCacheCoherent
 #print axioms PLeaTTa.cutToCached_fst_exact
 #print axioms PLeaTTa.cutToTracked_fst_of_coherent
@@ -1994,7 +1999,8 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.DemandDrivenStep.findallExit_copy_expands_and_collapses
 #print axioms PLeaTTa.DemandDrivenStep.sealed_general_catch_step_is_stream_enter
 #print axioms PLeaTTa.DemandDrivenStep.sealed_findall_step_has_terminal_subrun
-#print axioms PLeaTTa.DemandDrivenStep.sealed_softcut_step_has_terminal_subrun
+#print axioms PLeaTTa.DemandDrivenStep.sealed_softcut_step_is_stream_enter
+#print axioms PLeaTTa.rootQuery_cut_prunes_root_barrier
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.assertz
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.asserta
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.generationClosed

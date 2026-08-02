@@ -276,6 +276,8 @@ def proofGoalEq : Goal → Goal → Bool
   | .cut, .cut => true
   | .catchExit template result, .catchExit template' result' =>
       proofAtomEq template template' && proofAtomEq result result'
+  | .softcutExit template, .softcutExit template' =>
+      proofAtomEq template template'
   | .cutAt n, .cutAt m => n == m
   | .findall tmpl sub res, .findall tmpl' sub' res'
   | .onceg tmpl sub res, .onceg tmpl' sub' res' =>
@@ -785,6 +787,7 @@ def specializationGoalVars : Goal → List String
         specializationGoalsVars thn ++ specializationGoalsVars els
   | .eq left right | .compileAlias left right => left.vars ++ right.vars
   | .catchExit template result => template.vars ++ result.vars
+  | .softcutExit template => template.vars
   | .cut | .cutAt _ => []
   | .transactiong tmpl sub => tmpl.vars ++ specializationGoalsVars sub
   | .amb branches res => specializationBranchVars branches ++ res.vars

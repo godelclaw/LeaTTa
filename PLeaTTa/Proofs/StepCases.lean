@@ -82,6 +82,31 @@ theorem step_cutAt (c : Conf) (k : Nat) (rest : List Goal) (b : Subst)
     unfold step; rw [h]
   rw [this]; exact Step.cut_at c k rest b h
 
+/-- A source cut at the CLI root is licensed by the sealed relation and
+consumes exactly the root barrier.  In particular it continues with the
+tagged caller tail instead of taking the untagged-cut failure transition. -/
+theorem rootQuery_cut_prunes_root_barrier (world : PWorld) (counter : Nat)
+    (qterm : Atom) (rest : List Goal) :
+    ∃ next,
+      Step prog gt (rootQueryConf world counter qterm (Goal.cut :: rest)) next ∧
+      next.cur = some (tagCutsGoals 1 rest, []) ∧
+      next.alts = [] ∧
+      next.barriers = some 0 := by
+  let root := rootQueryConf world counter qterm (Goal.cut :: rest)
+  let next : Conf :=
+    { root with
+      cur := some (tagCutsGoals 1 rest, [])
+      alts := []
+      barriers := some 0 }
+  refine ⟨next, ?_, rfl, rfl, rfl⟩
+  have current : root.cur =
+      some (Goal.cutAt 1 :: tagCutsGoals 1 rest, []) := by
+    simp [root, rootQueryConf, tagCutsGoals, tagCutsGoal]
+  have licensed := Step.cut_at (prog := prog) (gt := gt) root 1
+    (tagCutsGoals 1 rest) [] current
+  simpa [next, root, rootQueryConf, cutToTracked, cutToCached,
+    barrierCount] using licensed
+
 theorem step_amb (c : Conf) (branches : List (Atom × List Goal)) (res : Atom)
     (rest : List Goal) (b : Subst)
     (h : c.cur = some (Goal.amb branches res :: rest, b)) :
@@ -188,6 +213,33 @@ theorem step_catchExit (c : Conf) (template result : Atom)
         simp only [hu]
       rw [hstep]
       exact Step.catch_stream_exit c template result rest b b' h hu
+
+/-- Soft cut enters its condition in one ordinary, demand-driven step. -/
+theorem step_softcut (c : Conf) (template : Atom)
+    (condition thenGoals elseGoals rest : List Goal) (b : Subst)
+    (h : c.cur = some
+      (Goal.softcut template condition thenGoals elseGoals :: rest, b)) :
+    Step prog gt c (step prog gt fuel c) := by
+  have hstep : step prog gt fuel c =
+      enterStreamingSoftcut c template condition thenGoals elseGoals rest b := by
+    unfold step
+    rw [h]
+  rw [hstep]
+  exact Step.softcut_stream_enter c template condition thenGoals elseGoals
+    rest b h
+
+/-- The internal transfer marker exposes exactly one condition answer and
+retains the remaining condition search as a dormant resumption. -/
+theorem step_softcutExit (c : Conf) (template : Atom)
+    (rest : List Goal) (b : Subst)
+    (h : c.cur = some (Goal.softcutExit template :: rest, b)) :
+    Step prog gt c (step prog gt fuel c) := by
+  have hstep : step prog gt fuel c =
+      exitStreamingSoftcut c (subst b template) := by
+    unfold step
+    rw [h]
+  rw [hstep]
+  exact Step.softcut_stream_exit c template rest b h
 
 theorem step_onceg (c : Conf) (tmpl : Atom) (sub : List Goal) (res : Atom)
     (rest : List Goal) (b : Subst)
@@ -350,7 +402,7 @@ theorem step_call (c : Conf) (f : String) (args : List Atom) (res : Atom)
             ⟨f, args, res, rest, b, h, by
               simp [PWorld.needsTableCompute, hcan, hcache]⟩
           have hn : nestedRunHead c :=
-            Or.inr (Or.inr (Or.inl ht))
+            Or.inr (Or.inl ht)
           exact Or.inr hn
   | false =>
       cases he : (c.world.clauseHeadCandidates f).isEmpty with
@@ -820,7 +872,7 @@ theorem step_bin (c : Conf) (op : String) (args : List Atom) (res : Atom)
 
 /-- Every machine step on a live configuration is licensed by the `Step`
     relation — except when the head goal nests a fuel-bounded sub-run
-    (`findall`/`softcut`/`catchg`), which the relation licenses only for
+    (`findall`/transaction/table), which the relation licenses only for
     TERMINAL sub-runs (the fuel-honesty boundary, `nestedRunHead`). By cases
     on the current goal; each non-nested case is its lemma above. Zero sorry. -/
 theorem machineMirrorsSpec_proved : machineMirrorsSpec := by
@@ -855,9 +907,9 @@ theorem machineMirrorsSpec_proved : machineMirrorsSpec := by
       exact Or.inl
         (step_catchExit prog gt fuel c template result rest b hcur)
   | some (Goal.softcut tmpl sub thn els :: rest, b) =>
-      have hs : softcutRunHead c := ⟨tmpl, sub, thn, els, rest, b, hcur⟩
-      have hn : nestedRunHead c := Or.inr (Or.inl hs)
-      exact Or.inr hn
+      exact Or.inl (step_softcut prog gt fuel c tmpl sub thn els rest b hcur)
+  | some (Goal.softcutExit template :: rest, b) =>
+      exact Or.inl (step_softcutExit prog gt fuel c template rest b hcur)
   | some (Goal.findall tmpl sub res :: rest, b) =>
       have hf : findallRunHead c := ⟨tmpl, sub, res, rest, b, hcur⟩
       have hn : nestedRunHead c := Or.inl hf
@@ -867,7 +919,7 @@ theorem machineMirrorsSpec_proved : machineMirrorsSpec := by
   | some (Goal.transactiong tmpl sub :: rest, b) =>
       have ht : transactionRunHead c := ⟨tmpl, sub, rest, b, hcur⟩
       have hn : nestedRunHead c :=
-        Or.inr (Or.inr (Or.inr ht))
+        Or.inr (Or.inr ht)
       exact Or.inr hn
   | some (Goal.amb branches res :: rest, b) =>
       exact Or.inl (step_amb prog gt fuel c branches res rest b hcur)
@@ -922,7 +974,7 @@ theorem not_nested_call_of_not_table (c : Conf) (f : String)
     (hcan : c.world.canTableCall f (args.map (subst b)) = false) :
     ¬ nestedRunHead c := by
   intro hn
-  simp [nestedRunHead, findallRunHead, softcutRunHead,
+  simp [nestedRunHead, findallRunHead,
     tableRunHead, transactionRunHead, PWorld.needsTableCompute, hcur] at hn
   rcases hn with ⟨f1, args1, res1, rest1, b1, heq, hcan1, _hcache⟩
   rcases heq with ⟨⟨⟨hf, hargsres⟩, _hrest⟩, hb⟩
@@ -940,7 +992,7 @@ theorem not_nested_call_of_cache (c : Conf) (f : String)
     (hcache : c.world.tableLookup (tableKey f (args.map (subst b))) = some answers) :
     ¬ nestedRunHead c := by
   intro hn
-  simp [nestedRunHead, findallRunHead, softcutRunHead,
+  simp [nestedRunHead, findallRunHead,
     tableRunHead, transactionRunHead, PWorld.needsTableCompute, hcur] at hn
   rcases hn with ⟨f1, args1, res1, rest1, b1, heq, _hcan1, hcache1⟩
   rcases heq with ⟨⟨⟨hf, hargsres⟩, _hrest⟩, hb⟩
@@ -1142,37 +1194,22 @@ theorem clean_sound_fuel (prog : Prog) (gt : GroundingTable) :
                     | errored d err =>
                         simp [stepClean, hcur, txSub, hr] at hprog
                 | softcut tmpl sub thn els =>
-                    cases hr : runClean prog gt fuel
-                        (subConfOf c sub b tmpl) none with
-                    | done d =>
-                        have hrd0 := ih.done (subConfOf c sub b tmpl) none d hr
-                        have hrd :
-                            StepStar prog gt
-                              { cur := some (sub, b), alts := [], world := c.world,
-                                counter := c.counter, qterm := tmpl,
-                                barriers := resetBarrierCache c.barriers } d ∧
-                            Terminal d := by
-                          simpa [subConfOf] using hrd0
-                        cases he : d.answers with
-                        | nil =>
-                            have hstepEq := by
-                              simpa [stepClean, hcur, hr, he] using hprog
-                            have hs := Step.softcut_none (prog := prog) (gt := gt)
-                              c d tmpl sub thn els rest b hcur hrd.1 hrd.2 he
-                            simpa [hstepEq] using hs
-                        | cons a as =>
-                            have hne : d.answers ≠ [] := by simp [he]
-                            have hstepEq := by
-                              simpa [stepClean, hcur, hr, he] using hprog
-                            have hs := Step.softcut_some (prog := prog) (gt := gt)
-                              c d tmpl sub thn els rest b hcur hrd.1 hrd.2 hne
-                            simpa [he, hstepEq] using hs
-                    | limited d =>
-                        simp [stepClean, hcur, hr] at hprog
-                    | exhausted d =>
-                        simp [stepClean, hcur, hr] at hprog
-                    | errored d err =>
-                        simp [stepClean, hcur, hr] at hprog
+                    have hstepEq :
+                        enterStreamingSoftcut c tmpl sub thn els rest b = c' := by
+                      simpa [stepClean, hcur] using hprog
+                    have hs := Step.softcut_stream_enter
+                      (prog := prog) (gt := gt)
+                      c tmpl sub thn els rest b hcur
+                    rw [hstepEq] at hs
+                    exact hs
+                | softcutExit template =>
+                    have hstepEq :
+                        exitStreamingSoftcut c (subst b template) = c' := by
+                      simpa [stepClean, hcur] using hprog
+                    have hs := Step.softcut_stream_exit
+                      (prog := prog) (gt := gt) c template rest b hcur
+                    rw [hstepEq] at hs
+                    exact hs
                 | findall tmpl sub res =>
                     cases hr : runClean prog gt fuel
                         (subConfOf c sub b tmpl) none with
@@ -1434,22 +1471,9 @@ theorem clean_sound_fuel (prog : Prog) (gt : GroundingTable) :
                         exact Raises.transaction c d tmpl sub rest b err hcur
                           (by simpa [txSub, subConfOf] using hraise0)
                 | softcut tmpl sub thn els =>
-                    cases hr : runClean prog gt fuel
-                        (subConfOf c sub b tmpl) none with
-                    | done result =>
-                        by_cases he : result.answers = [] <;>
-                          simp [stepClean, hcur, hr, he] at herror
-                    | limited result => simp [stepClean, hcur, hr] at herror
-                    | exhausted result => simp [stepClean, hcur, hr] at herror
-                    | errored result raised =>
-                        have hout : StepOutcome.errored result raised =
-                            StepOutcome.errored d err := by
-                          simpa [stepClean, hcur, hr] using herror
-                        cases hout
-                        have hraise0 := ih.runError
-                          (subConfOf c sub b tmpl) none d err hr
-                        exact Raises.softcut c d tmpl sub thn els rest b err hcur
-                          (by simpa [subConfOf] using hraise0)
+                    simp [stepClean, hcur] at herror
+                | softcutExit template =>
+                    simp [stepClean, hcur] at herror
                 | findall tmpl sub res =>
                     cases hr : runClean prog gt fuel
                         (subConfOf c sub b tmpl) none with

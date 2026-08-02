@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: Apache-2.0
+
 import PLeaTTa.PersistentSubst
 import PLeaTTa.Semantics
 import PLeaTTa.Proofs.Unification
@@ -56,6 +58,16 @@ theorem ConfBelowResolutionCounter.of_origin {source target : Conf}
   · exact Nat.le_trans (below.name name hsource) counterMono
   · exact hbounded
 
+@[simp] theorem specializationGoalsVars_append
+    (left right : List Goal) :
+    specializationGoalsVars (left ++ right) =
+      specializationGoalsVars left ++ specializationGoalsVars right := by
+  induction left with
+  | nil => rfl
+  | cons goal goals ih =>
+      simp only [List.cons_append, specializationGoalsVars, ih,
+        List.append_assoc]
+
 theorem resolutionLiveVars_pull_subset
     (conf : Conf) (name : String)
     (member : name ∈ resolutionLiveVars (pull conf)) :
@@ -91,14 +103,12 @@ theorem resolutionLiveVars_pull_subset
               cases barriers with
               | none =>
                   have retained := ih (barriers := none) member
-                  simp [PLeaTTa.pull, pullAux, pullAuxTracked,
-                    resolutionLiveVars, resolutionAltVars,
+                  simp [resolutionLiveVars, resolutionAltVars,
                     resolutionCatchFrameVars, List.append_assoc] at retained ⊢
                   aesop
               | some depth =>
                   have retained := ih (barriers := some depth) member
-                  simp [PLeaTTa.pull, pullAux, pullAuxTracked,
-                    pullAuxCached, resolutionLiveVars, resolutionAltVars,
+                  simp [resolutionLiveVars, resolutionAltVars,
                     resolutionCatchFrameVars, List.append_assoc] at retained ⊢
                   aesop
           | catchDormant frame protectedAlts =>
@@ -106,6 +116,19 @@ theorem resolutionLiveVars_pull_subset
                 simp [PLeaTTa.pull, pullAux, pullAuxTracked, pullAuxCached,
                   resolutionLiveVars, resolutionAltVars,
                   resolutionCatchFrameVars, List.append_assoc] at member ⊢ <;>
+                aesop
+          | softcutActive frame seenSuccess =>
+              cases seenSuccess <;> cases barriers <;>
+                simp [PLeaTTa.pull, pullAux, pullAuxTracked, pullAuxCached,
+                  resolutionLiveVars, resolutionAltVars,
+                  resolutionSoftcutFrameVars, specializationGoalsVars_append,
+                  List.append_assoc] at member ⊢ <;>
+                aesop
+          | softcutDormant frame protectedAlts =>
+              cases barriers <;>
+                simp [PLeaTTa.pull, pullAux, pullAuxTracked, pullAuxCached,
+                  resolutionLiveVars, resolutionAltVars,
+                  resolutionSoftcutFrameVars, List.append_assoc] at member ⊢ <;>
                 aesop
   | some branch =>
       rcases branch with ⟨activeGoals, activeBinding⟩
@@ -142,14 +165,12 @@ theorem resolutionLiveVars_pull_subset
               cases barriers with
               | none =>
                   have retained := ih (barriers := none) member
-                  simp [PLeaTTa.pull, pullAux, pullAuxTracked,
-                    resolutionLiveVars, resolutionAltVars,
+                  simp [resolutionLiveVars, resolutionAltVars,
                     resolutionCatchFrameVars, List.append_assoc] at retained ⊢
                   aesop
               | some depth =>
                   have retained := ih (barriers := some depth) member
-                  simp [PLeaTTa.pull, pullAux, pullAuxTracked,
-                    pullAuxCached, resolutionLiveVars, resolutionAltVars,
+                  simp [resolutionLiveVars, resolutionAltVars,
                     resolutionCatchFrameVars, List.append_assoc] at retained ⊢
                   aesop
           | catchDormant frame protectedAlts =>
@@ -157,6 +178,19 @@ theorem resolutionLiveVars_pull_subset
                 simp [PLeaTTa.pull, pullAux, pullAuxTracked, pullAuxCached,
                   resolutionLiveVars, resolutionAltVars,
                   resolutionCatchFrameVars, List.append_assoc] at member ⊢ <;>
+                aesop
+          | softcutActive frame seenSuccess =>
+              cases seenSuccess <;> cases barriers <;>
+                simp [PLeaTTa.pull, pullAux, pullAuxTracked, pullAuxCached,
+                  resolutionLiveVars, resolutionAltVars,
+                  resolutionSoftcutFrameVars, specializationGoalsVars_append,
+                  List.append_assoc] at member ⊢ <;>
+                aesop
+          | softcutDormant frame protectedAlts =>
+              cases barriers <;>
+                simp [PLeaTTa.pull, pullAux, pullAuxTracked, pullAuxCached,
+                  resolutionLiveVars, resolutionAltVars,
+                  resolutionSoftcutFrameVars, List.append_assoc] at member ⊢ <;>
                 aesop
 
 theorem ConfBelowResolutionCounter.pull {conf : Conf}
@@ -170,7 +204,12 @@ theorem ConfBelowResolutionCounter.pull {conf : Conf}
     | none => exact Nat.le_refl _
     | some target =>
         rcases target with ⟨target, rest⟩
-        cases target <;> exact Nat.le_refl _)
+        cases target with
+        | branch => exact Nat.le_refl _
+        | catchResume => exact Nat.le_refl _
+        | softcutExhausted frame seenSuccess =>
+            cases seenSuccess <;> exact Nat.le_refl _
+        | softcutResume => exact Nat.le_refl _)
     (resolutionLiveVars_pull_subset conf)
 
 private theorem resolutionSeedHighWaterName_le_of_mem
@@ -460,6 +499,8 @@ theorem resolutionSeedHighWaterGoal_renameCompact_le
       simp only [renameGoalSuffix, specializationGoalVars,
         resolutionSeedHighWaterNames_append]
       omega
+  | softcutExit template =>
+      exact resolutionSeedHighWaterAtom_renameCompact_le template seed
   | eq left right =>
       have hleft := resolutionSeedHighWaterAtom_renameCompact_le left seed
       have hright := resolutionSeedHighWaterAtom_renameCompact_le right seed
@@ -698,16 +739,6 @@ theorem resolutionSeedHighWaterClause_freshen_le
             clause.body)) ≤ seed + 1
   simp only [resolutionSeedHighWaterNames_append]
   omega
-
-@[simp] theorem specializationGoalsVars_append
-    (left right : List Goal) :
-    specializationGoalsVars (left ++ right) =
-      specializationGoalsVars left ++ specializationGoalsVars right := by
-  induction left with
-  | nil => rfl
-  | cons goal goals ih =>
-      simp only [List.cons_append, specializationGoalsVars, ih,
-        List.append_assoc]
 
 private theorem flatten_map_eq_flatMap {α β : Type}
     (items : List α) (f : α → List β) :
@@ -1344,6 +1375,18 @@ theorem cutToCached_resolutionAltVars_subset (alts : List Alt) (cut depth : Nat)
           · simp only [List.flatMap_cons, List.mem_append]
             exact Or.inr (ih (depth := depth) member)
           · exact member
+      | softcutActive frame seenSuccess =>
+          unfold cutToCached at member
+          split at member
+          · simp only [List.flatMap_cons, List.mem_append]
+            exact Or.inr (ih (depth := depth) member)
+          · exact member
+      | softcutDormant frame protectedAlts =>
+          unfold cutToCached at member
+          split at member
+          · simp only [List.flatMap_cons, List.mem_append]
+            exact Or.inr (ih (depth := depth) member)
+          · exact member
 
 theorem cutToTracked_resolutionAltVars_subset (alts : List Alt) (cut : Nat)
     (cache : Option Nat) (name : String)
@@ -1624,7 +1667,11 @@ theorem smatchAlts_counter_mono (world : PWorld) (counter : Nat)
   | none => rfl
   | some target =>
       rcases target with ⟨target, rest⟩
-      cases target <;> rfl
+      cases target with
+      | branch => rfl
+      | catchResume => rfl
+      | softcutExhausted frame seenSuccess => cases seenSuccess <;> rfl
+      | softcutResume => rfl
 
 @[simp] theorem enterStreamingCatch_counter {Binding : Type}
     (conf : Conf Binding) (template : Atom) (sub : List Goal)
@@ -1637,6 +1684,21 @@ theorem smatchAlts_counter_mono (world : PWorld) (counter : Nat)
     (conf : Conf Binding) (binding : Binding) :
     (exitStreamingCatch conf binding).counter = conf.counter := by
   unfold exitStreamingCatch
+  split
+  · exact pull_counter _
+  · rfl
+
+@[simp] theorem enterStreamingSoftcut_counter {Binding : Type}
+    (conf : Conf Binding) (template : Atom) (sub thenGoals elseGoals rest : List Goal)
+    (entry : Binding) :
+    (enterStreamingSoftcut conf template sub thenGoals elseGoals rest entry).counter =
+      conf.counter := by
+  rfl
+
+@[simp] theorem exitStreamingSoftcut_counter {Binding : Type}
+    (conf : Conf Binding) (answer : Atom) :
+    (exitStreamingSoftcut conf answer).counter = conf.counter := by
+  unfold exitStreamingSoftcut
   split
   · exact pull_counter _
   · rfl
@@ -1839,6 +1901,67 @@ theorem ConfBelowResolutionCounter.exitStreamingCatch {conf : Conf}
       · exact Or.inl (Or.inr hqterm)
       · exact Or.inr hanswers
 
+theorem ConfBelowResolutionCounter.enterStreamingSoftcut {conf : Conf}
+    (below : ConfBelowResolutionCounter conf) (template : Atom)
+    (sub thenGoals elseGoals rest : List Goal) (entry : Subst)
+    (head : conf.cur =
+      some (Goal.softcut template sub thenGoals elseGoals :: rest, entry)) :
+    ConfBelowResolutionCounter
+      (PLeaTTa.enterStreamingSoftcut conf template sub thenGoals elseGoals rest
+        entry) := by
+  apply below.of_subset (by rfl)
+  intro name member
+  unfold PLeaTTa.enterStreamingSoftcut at member
+  simp [resolutionLiveVars, resolutionAltVars,
+    resolutionSoftcutFrameVars, specializationGoalsVars,
+    specializationGoalVars, head, List.append_assoc] at member ⊢
+  aesop
+
+theorem ConfBelowResolutionCounter.exitStreamingSoftcut {conf : Conf}
+    (below : ConfBelowResolutionCounter conf) (template : Atom)
+    (rest : List Goal) (binding : Subst)
+    (head : conf.cur = some (Goal.softcutExit template :: rest, binding)) :
+    ConfBelowResolutionCounter
+      (PLeaTTa.exitStreamingSoftcut conf (subst binding template)) := by
+  have answerOrigin (name : String)
+      (member : name ∈ (subst binding template).vars) :
+      name ∈ template.vars ∨ name ∈ resolutionSubstVars binding := by
+    rcases subst_vars_origin binding template name member with htemplate | hrange
+    · exact Or.inl htemplate
+    · apply Or.inr
+      simp only [resolutionSubstVars, List.mem_flatMap]
+      simp only [List.mem_flatMap] at hrange
+      obtain ⟨entry, hentry, hname⟩ := hrange
+      exact ⟨entry, hentry, by simp [hname]⟩
+  have answerCurrent (name : String)
+      (member : name ∈ (subst binding template).vars) :
+      name ∈ template.vars ∨ name ∈ specializationGoalsVars rest ∨
+        name ∈ resolutionSubstVars binding := by
+    rcases answerOrigin name member with htemplate | hbinding
+    · exact Or.inl htemplate
+    · exact Or.inr (Or.inr hbinding)
+  unfold PLeaTTa.exitStreamingSoftcut
+  cases found : splitSoftcutActive conf.alts with
+  | none => exact below.clearActive.pull
+  | some split =>
+      have reassembled := splitSoftcutActive_reassembles conf.alts
+      simp only [found] at reassembled
+      apply below.of_subset (by rfl)
+      intro name member
+      simp [resolutionLiveVars, resolutionAltVars,
+        resolutionSoftcutFrameVars, specializationGoalsVars,
+        specializationGoalVars, head, reassembled, List.append_assoc]
+        at member ⊢
+      rcases member with hframeTemplate | hanswer | hthen | hframeRest |
+        hframeEntry | hframeTemplate' | hthen' | helse | hframeRest' |
+        hframeEntry' | hprotected | houter | hqterm | hanswers
+      · aesop
+      · rcases answerCurrent name hanswer with htemplate | hrest | hbinding
+        · exact Or.inl htemplate
+        · exact Or.inr (Or.inl hrest)
+        · exact Or.inr (Or.inr (Or.inl hbinding))
+      all_goals aesop
+
 theorem ConfBelowResolutionCounter.catchErrorSuccessor {conf next : Conf}
     (below : ConfBelowResolutionCounter conf) (error : Atom)
     (caught : catchErrorSuccessor? conf error = some next) :
@@ -1868,7 +1991,7 @@ theorem ConfBelowResolutionCounter.catchErrorSuccessor {conf next : Conf}
       intro name member
       simp [resolutionLiveVars, resolutionAltVars,
         resolutionCatchFrameVars, specializationGoalsVars,
-        specializationGoalVars, reassembled, nextCounter,
+        specializationGoalVars, reassembled,
         List.append_assoc] at member ⊢
       aesop
 
@@ -1918,6 +2041,13 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
   case catch_stream_error =>
     intro c next op args result rest binding error head raised caught below
     exact below.catchErrorSuccessor error caught
+  case softcut_stream_enter =>
+    intro c template sub thenGoals elseGoals rest binding head below
+    exact below.enterStreamingSoftcut template sub thenGoals elseGoals rest
+      binding head
+  case softcut_stream_exit =>
+    intro c template rest binding head below
+    exact below.exitStreamingSoftcut template rest binding head
   case answer =>
     intro c binding hcur below
     have hactive := below.active [] binding hcur
@@ -2761,52 +2891,6 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
       exact Nat.max_le.mpr ⟨hbranches, below.alts⟩
     · exact below.qterm
     · exact below.answers
-  case softcut_some =>
-    intro c d template sub thenGoals elseGoals rest binding hcur hrun
-      hterminal hnonempty ih below
-    have nestedBelow : ConfBelowResolutionCounter
-        (Conf.mk (some (sub, binding)) [] c.world c.counter template []
-          [] (by rfl) (resetBarrierCache c.barriers)) :=
-      below.nested
-        (Goal.softcut template sub thenGoals elseGoals :: rest) sub binding
-        hcur c.world template (by
-          intro name member
-          simp only [specializationGoalsVars, specializationGoalVars,
-            List.mem_append] at member ⊢
-          rcases member with (hsub | hbinding) | htemplate
-          · simp [hsub]
-          · simp [hbinding]
-          · simp [htemplate])
-    have dBelow := ih nestedBelow
-    have hcounter : c.counter ≤ d.counter := by
-      simpa using hrun.counter_mono
-    have hqueued := below.enqueueEqAlts
-      (Goal.softcut template sub thenGoals elseGoals :: rest) binding hcur
-      template (thenGoals ++ rest) d.answerValues d.world d.counter hcounter (by
-        intro name member
-        simp only [specializationGoalsVars_append, specializationGoalsVars,
-          specializationGoalVars, List.mem_append] at member ⊢
-        rcases member with (htemplate | hthen | hrest) | hbinding
-        · simp [htemplate]
-        · simp [hthen]
-        · simp [hrest]
-        · simp [hbinding]) dBelow.answerValues
-    exact hqueued.pull
-  case softcut_none =>
-    intro c d template sub thenGoals elseGoals rest binding hcur hrun
-      hterminal hempty ih below
-    have hcounter : c.counter ≤ d.counter := by
-      simpa using hrun.counter_mono
-    have hactive := below.active
-      (Goal.softcut template sub thenGoals elseGoals :: rest) binding hcur
-    apply ConfBelowResolutionCounter.of_components
-    · simp only [resolutionCurVars, specializationGoalsVars_append,
-        specializationGoalsVars, specializationGoalVars,
-        resolutionSeedHighWaterNames_append] at hactive ⊢
-      omega
-    · exact Nat.le_trans below.alts hcounter
-    · exact Nat.le_trans below.qterm hcounter
-    · exact Nat.le_trans below.answers hcounter
   case transaction_some =>
     intro c d template sub rest binding hcur hrun hterminal hnonempty ih
       below
@@ -3005,19 +3089,6 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
             · rcases member with hbinding | htemplate
               · exact Or.inr (Or.inr (Or.inr hbinding))
               · exact Or.inl htemplate))
-  case softcut =>
-    intro c d tmpl sub thn els rest b err hcur hraise ih below
-    apply ih
-    have hactive := below.active (Goal.softcut tmpl sub thn els :: rest) b hcur
-    apply ConfBelowResolutionCounter.of_components
-    · simp only [resolutionCurVars, specializationGoalsVars,
-        specializationGoalVars, resolutionSeedHighWaterNames_append] at hactive ⊢
-      omega
-    · simp [resolutionSeedHighWaterNames]
-    · simp only [specializationGoalsVars, specializationGoalVars,
-        resolutionSeedHighWaterNames_append] at hactive ⊢
-      omega
-    · simp [resolutionSeedHighWaterNames]
   case table =>
     intro c d function args res rest binding tres err hcur hcan hcache htres
       hraise ih below

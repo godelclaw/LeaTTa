@@ -474,7 +474,10 @@ theorem leading_full_head_eq_failure_is_silent
     | none => rfl
     | some pulled =>
         rcases pulled with ⟨target, rest⟩
-        cases target <;> rfl
+        cases target with
+        | softcutExhausted frame seenSuccess =>
+            cases seenSuccess <;> rfl
+        | _ => rfl
   have world :
       (pull { conf with cur := none }).world = conf.world := by
     unfold pull
@@ -485,7 +488,10 @@ theorem leading_full_head_eq_failure_is_silent
     | none => rfl
     | some pulled =>
         rcases pulled with ⟨target, rest⟩
-        cases target <;> rfl
+        cases target with
+        | softcutExhausted frame seenSuccess =>
+            cases seenSuccess <;> rfl
+        | _ => rfl
   have counter :
       (pull { conf with cur := none }).counter = conf.counter := by
     unfold pull
@@ -496,7 +502,10 @@ theorem leading_full_head_eq_failure_is_silent
     | none => rfl
     | some pulled =>
         rcases pulled with ⟨target, rest⟩
-        cases target <;> rfl
+        cases target with
+        | softcutExhausted frame seenSuccess =>
+            cases seenSuccess <;> rfl
+        | _ => rfl
   exact ⟨answers, world, counter⟩
 
 /-! ## Anti-vacuity witnesses for the activation macro -/

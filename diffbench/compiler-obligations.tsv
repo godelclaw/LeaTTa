@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=87681de95982ad1e549ef8439312bde07475d9556f542c100215989e50c99d0b
+# compiler_sha256=d0b11e2d63ddecd72c0baff0960992ad00156b3c9fb68f64a26f1fe60728c79e
 # prolog_core_sha256=c971b21c94ec1c71a861ed4ce564d5a2b165c1ec7a3cc48929113b60927b77b0
 # compiler_adequacy_sha256=904f42d172e85e6474cd238eca65678e2f4e5877e838df8edb27e299d3da17e8
 # compiler_translation_support_adequacy_sha256=e660b57913f5c14e57b615661621cee8504cc7801374dcf8a71d5a3c81be4dfb
@@ -26,9 +26,9 @@ PAT.known_head	T9-12	X	-	N	GAP	native-fun-premise-unproved
 PAT.special_only	T2-14	S	-	N	FAIL	unregistered-special-heads-compiled
 PAT.data_tree	T13-14	X	-	N	GAP	no-pattern-reference
 HOOK.registered	T101-110	X	-	N	GAP	builtin-shadowing-differential-pass; typed-staging-proof-open
-CASE.nil	T399-406	S	-	N	GAP	explicit-failure-goal
-CASE.empty_arm	T163-176,T399-406	S	-	N	GAP	default-handling-unproved
-CASE.normal_arm	T399-406	S	-	N	GAP	softcut-IR-unproved
+CASE.nil	T399-406	S	compileCaseArmsFuel_nil_eq;PrologCoreAdequacy.unifyB_true_false_none	EQ	GAP	the exact empty-arm traversal emits one canonical closed failing equation and the executable unifier rejects it under every incoming substitution; independent translate_case base-clause adequacy and enclosing observation composition remain open
+CASE.empty_arm	T163-176,T399-406	S	negatedGoals;compilerGoalsNamesAllowed_negatedGoals	EQ	GAP	the compiler now emits pinned `(Gk,CaseGoal);(\+Gk,DefaultThen)` structure: a caller-transparent positive ambiguity branch plus a committed once-based negation branch with canonical failure, and exact runtime witnesses pin guard re-execution, binding isolation, persistent effects, fallback suppression, order, and multiplicity; independent source relation and compiler-to-open-machine composition remain open
+CASE.normal_arm	T399-406	S	committedIfGoal;compileCaseArmsFuel_var_pair_eq;compileCaseArmsFuel_gnd_pair_eq;compileCaseArmsFuel_expr_pair_eq;compileCaseArmsFuel_sym_pair_eq	EQ	GAP	each ordinary arm uses source-faithful committed if-then expressed structurally as streaming softcut over once, preserving first-match commitment without conflating genuine star-if; exact constructor equations and name-origin preservation are green, while independent recursive translate_case soundness/completeness and full observation composition remain open
 CASE.malformed	T399-406	X	-	N	GAP	explicit-error-vs-native-failure
 ARGS.nil	T362	X	TranslatesTypedArgs	SC	PASS	exact empty-mode-and-source traversal; pinned surplus-type tolerance is behaviorally probed but not represented by this relation
 ARGS.expression_typed	T363-365	X	TranslatesTypedArgs	SC	PASS	deep-source-quotation; no-goals-or-counter-change

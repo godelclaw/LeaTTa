@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: Apache-2.0
+
 import PLeaTTa.HostProtocol
 import PLeaTTa.SubstMachine
 
@@ -18,8 +20,6 @@ attribute [local reducible] SubstEngine.reference
     any depth without hiding IO in a pure function. -/
 inductive Frame (State : Type) where
   | transaction (outer : Conf State) (rest : List Goal) (tmpl : Atom)
-      (state : State)
-  | softcut (outer : Conf State) (rest thn els : List Goal) (tmpl : Atom)
       (state : State)
   | findall (outer : Conf State) (rest : List Goal) (res : Atom)
       (state : State)
@@ -97,8 +97,6 @@ def finishFrame {Binding : Type} (done : Conf Binding) :
     Frame Binding → Conf Binding
   | .transaction outer rest tmpl state =>
       finishTransaction outer done rest tmpl state
-  | .softcut outer rest thn els tmpl state =>
-      finishSoftcut outer done rest thn els tmpl state
   | .findall outer rest res state => finishFindall outer done rest res state
   | .table outer key rest res state => finishTable outer done key rest res state
 
@@ -147,8 +145,6 @@ def unwindFrames {Binding : Type} (core : Conf Binding)
           | .transaction outer _ _ _ :: rest =>
               unwindFrames
                 (restoreTransactionCallerForError outer core) host rest error
-          | .softcut outer _ _ _ _ _ :: rest =>
-              unwindFrames (restoreCallerForError outer core) host rest error
           | .findall outer _ _ _ :: rest =>
               unwindFrames (restoreCallerForError outer core) host rest error
           | .table outer _ _ _ _ :: rest =>
@@ -233,8 +229,6 @@ private theorem observe_unwindFrames_host_independent {Binding : Type}
           | transaction outer _ _ _ =>
               exact induction
                 (core := restoreTransactionCallerForError outer core)
-          | softcut outer _ _ _ _ _ =>
-              exact induction (core := restoreCallerForError outer core)
           | findall outer _ _ _ =>
               exact induction (core := restoreCallerForError outer core)
           | table outer _ _ _ _ =>
@@ -621,16 +615,16 @@ def stepWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable) :
                     unwindError state (marshallingErrorAtom
                       s!"translatePredicate goal: {reprStr (deepUnchain innerExpr)}")
             | _ => unwindError state (marshallingErrorAtom "translatePredicate arity")
-        | some (Goal.catchg tmpl sub res :: rest, binding) =>
+        | some (Goal.catchg _ _ _ :: _, _) =>
             fromCoreOutcome state
               (SubstEngine.stepCleanWith engine prog gt fuel core)
         | some (Goal.transactiong tmpl sub :: rest, binding) =>
             pushNested state
               (subConfOfWith engine core (transactionSub tmpl sub) binding tmpl)
               (.transaction core rest tmpl binding)
-        | some (Goal.softcut tmpl sub thn els :: rest, binding) =>
-            pushNested state (subConfOfWith engine core sub binding tmpl)
-              (.softcut core rest thn els tmpl binding)
+        | some (Goal.softcut _ _ _ _ :: _, _) =>
+            fromCoreOutcome state
+              (SubstEngine.stepCleanWith engine prog gt fuel core)
         | some (Goal.findall tmpl sub res :: rest, binding) =>
             pushNested state (subConfOfWith engine core sub binding tmpl)
               (.findall core rest res binding)
@@ -692,8 +686,6 @@ def mapFrame {Source Target : Type} (map : Source → Target) :
     Frame Source → Frame Target
   | .transaction outer rest tmpl state =>
       .transaction (mapConf map outer) rest tmpl (map state)
-  | .softcut outer rest thn els tmpl state =>
-      .softcut (mapConf map outer) rest thn els tmpl (map state)
   | .findall outer rest res state =>
       .findall (mapConf map outer) rest res (map state)
   | .table outer key rest res state =>
@@ -719,7 +711,6 @@ theorem mapConf_finishFrame {Source Target : Type} (map : Source → Target)
   cases frame <;>
     simp only [finishFrame, mapFrame,
       SubstEngine.mapConf_finishTransaction,
-      SubstEngine.mapConf_finishSoftcut,
       SubstEngine.mapConf_finishFindall,
       SubstEngine.mapConf_finishTable]
 
@@ -744,21 +735,14 @@ theorem mapStepOutcome_unwindFrames {Source Target : Type}
       | none =>
           cases frame with
           | transaction outer _ _ _ =>
-              simp only [Option.map_none, mapFrame,
-                mapConf_restoreTransactionCallerForError]
+              simp only [Option.map_none, mapFrame]
               exact induction
                 (core := restoreTransactionCallerForError outer core)
-          | softcut outer _ _ _ _ _ =>
-              simp only [Option.map_none, mapFrame,
-                mapConf_restoreCallerForError]
-              exact induction (core := restoreCallerForError outer core)
           | findall outer _ _ _ =>
-              simp only [Option.map_none, mapFrame,
-                mapConf_restoreCallerForError]
+              simp only [Option.map_none, mapFrame]
               exact induction (core := restoreCallerForError outer core)
           | table outer _ _ _ _ =>
-              simp only [Option.map_none, mapFrame,
-                mapConf_restoreCallerForError]
+              simp only [Option.map_none, mapFrame]
               exact induction (core := restoreCallerForError outer core)
 
 theorem mapStepOutcome_consumeResponse {Source Target : Type}
@@ -1268,15 +1252,13 @@ theorem checked_stepWith_simulation (engine : SubstEngine) (prog : Prog)
                 (.transaction source.core rest tmpl binding)
               simpa [stepWith, source, mapState, mapFrame, nestedEq] using mapped
             | softcut tmpl sub thn els =>
-              have nestedEq := SubstEngine.erase_subConfOfWith
-                (SubstEngine.checked engine) source.core sub binding tmpl
-              unfold SubstEngine.erase at nestedEq
-              have mapped := mapStepOutcome_pushNested
-                (SubstEngine.checked engine).denote source
-                (SubstEngine.subConfOfWith (SubstEngine.checked engine)
-                  source.core sub binding tmpl)
-                (.softcut source.core rest thn els tmpl binding)
-              simpa [stepWith, source, mapState, mapFrame, nestedEq] using mapped
+              simpa [stepWith, source, mapState, SubstEngine.mapConf] using
+                checked_fromCoreOutcome_step_simulation
+                  engine prog gt fuel source
+            | softcutExit template =>
+              simpa [stepWith, source, mapState, SubstEngine.mapConf] using
+                checked_fromCoreOutcome_step_simulation
+                  engine prog gt fuel source
             | findall tmpl sub res =>
               have nestedEq := SubstEngine.erase_subConfOfWith
                 (SubstEngine.checked engine) source.core sub binding tmpl

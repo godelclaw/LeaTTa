@@ -147,7 +147,10 @@ def pendingCallOf (state : OpenConf) (branches : List Alt)
   | none => rfl
   | some pulled =>
       rcases pulled with ⟨target, rest⟩
-      cases target <;> rfl
+      cases target with
+      | softcutExhausted frame seenSuccess =>
+          cases seenSuccess <;> rfl
+      | _ => rfl
 
 @[simp] theorem PendingCall.pulled_persistent (pending : PendingCall) :
     pending.pulled.persistent = pending.persistent := by

@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: Apache-2.0
+
 import PLeaTTa.HostMachine
 
 namespace PLeaTTa
@@ -92,9 +94,6 @@ theorem unwindError_aligned {Binding : Type} (transcript : List HostExchange)
               exact induction
                 (core := HostMachine.restoreTransactionCallerForError
                   outer core)
-          | softcut outer rest thn els tmpl binding =>
-              exact induction
-                (core := HostMachine.restoreCallerForError outer core)
           | findall outer rest res binding =>
               exact induction
                 (core := HostMachine.restoreCallerForError outer core)
@@ -124,9 +123,6 @@ theorem completeRecordedStep_unwindError (engine : SubstEngine)
               exact induction
                 (core := HostMachine.restoreTransactionCallerForError
                   outer core)
-          | softcut outer rest thn els tmpl binding =>
-              exact induction
-                (core := HostMachine.restoreCallerForError outer core)
           | findall outer rest res binding =>
               exact induction
                 (core := HostMachine.restoreCallerForError outer core)
@@ -692,14 +688,24 @@ theorem recordedStepWith_replay (engine : SubstEngine) (prog : Prog)
                       (engine.stepCleanWith prog gt fuel core)
                     simpa [recordedStepWith, HostMachine.stepWith, hdone, hcur,
                       fromCore, HostMachine.fromCoreOutcome] using aligned
+                | softcutExit =>
+                    have aligned := completeRecordedStep_fromCore_aligned
+                      engine prog gt transcript (fuel + 1) core frames
+                      liveTranscript cursor
+                      (engine.stepCleanWith prog gt fuel core)
+                    simpa [recordedStepWith, HostMachine.stepWith, hdone, hcur,
+                      fromCore, HostMachine.fromCoreOutcome] using aligned
                 | transactiong tmpl sub =>
                     simp [recordedStepWith, completeRecordedStep,
                       HostMachine.stepWith, HostMachine.pushNested, hcur,
                       StepAligned, StateAligned]
                 | softcut tmpl sub thn els =>
-                    simp [recordedStepWith, completeRecordedStep,
-                      HostMachine.stepWith, HostMachine.pushNested, hcur,
-                      StepAligned, StateAligned]
+                    have aligned := completeRecordedStep_fromCore_aligned
+                      engine prog gt transcript (fuel + 1) core frames
+                      liveTranscript cursor
+                      (engine.stepCleanWith prog gt fuel core)
+                    simpa [recordedStepWith, HostMachine.stepWith, hdone, hcur,
+                      fromCore, HostMachine.fromCoreOutcome] using aligned
                 | findall tmpl sub res =>
                     simp [recordedStepWith, completeRecordedStep,
                       HostMachine.stepWith, HostMachine.pushNested, hcur,

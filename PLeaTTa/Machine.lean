@@ -782,19 +782,41 @@ structure CatchFrame (Binding : Type := Subst) where
   entry : Binding
 deriving Repr, Inhabited
 
+/-- Backtrackable metadata for one streaming `softcut` activation.
+Persistent world and allocation state are deliberately absent.  The frame
+retains the caller entry state because each condition answer is transferred
+through `template` before the selected branch and caller tail execute. -/
+structure SoftcutFrame (Binding : Type := Subst) where
+  template : Atom
+  thenGoals : List Goal
+  elseGoals : List Goal
+  rest : List Goal
+  entry : Binding
+deriving Repr, Inhabited
+
 /-- One pending alternative or typed control marker.
 
 `catchActive` is the persistent exception delimiter while the protected goal
 executes.  Its cut barrier is a distinct `barrier` immediately above it, so a
 protected cut consumes that barrier without deleting the delimiter needed by
 the typed exit.  `catchDormant` is an ordinary prunable choice point that owns
-the exact protected prefix while the caller continuation executes; neither
-catch marker contributes a live cut barrier. -/
+the exact protected prefix while the caller continuation executes.
+
+`softcutActive` is the corresponding condition delimiter.  Its Boolean records
+whether any condition answer has already selected the then-arm.  A successful
+condition answer replaces it with `softcutDormant`, which owns the remaining
+condition search while the then-arm and caller continuation run.  Resumption
+reinstalls `softcutActive true`; therefore exhaustion can select the else-arm
+only before the first success.  None of the typed markers contributes a live
+cut barrier. -/
 inductive Alt (Binding : Type := Subst) where
   | br (goals : List Goal) (bnd : Binding)
   | barrier
   | catchActive (frame : CatchFrame Binding)
   | catchDormant (frame : CatchFrame Binding)
+      (protectedAlts : List (Alt Binding))
+  | softcutActive (frame : SoftcutFrame Binding) (seenSuccess : Bool)
+  | softcutDormant (frame : SoftcutFrame Binding)
       (protectedAlts : List (Alt Binding))
 deriving Repr, Inhabited
 
@@ -934,6 +956,11 @@ def resolutionCatchFrameVars (frame : CatchFrame) : List String :=
   frame.template.vars ++ frame.result.vars ++
     specializationGoalsVars frame.rest ++ resolutionSubstVars frame.entry
 
+def resolutionSoftcutFrameVars (frame : SoftcutFrame) : List String :=
+  frame.template.vars ++ specializationGoalsVars frame.thenGoals ++
+    specializationGoalsVars frame.elseGoals ++
+    specializationGoalsVars frame.rest ++ resolutionSubstVars frame.entry
+
 mutual
 
 def resolutionAltVars : Alt → List String
@@ -943,6 +970,9 @@ def resolutionAltVars : Alt → List String
   | .catchActive frame => resolutionCatchFrameVars frame
   | .catchDormant frame protectedAlts =>
       resolutionCatchFrameVars frame ++ resolutionAltsVars protectedAlts
+  | .softcutActive frame _ => resolutionSoftcutFrameVars frame
+  | .softcutDormant frame protectedAlts =>
+      resolutionSoftcutFrameVars frame ++ resolutionAltsVars protectedAlts
 
 def resolutionAltsVars : List Alt → List String
   | [] => []
@@ -1250,6 +1280,8 @@ private def goalAlphaAtom : Goal → Atom
   | .softcut tmpl sub thn els =>
       Atom.expr [Atom.sym "goal.softcut", tmpl, goalsAlphaAtom sub,
         goalsAlphaAtom thn, goalsAlphaAtom els]
+  | .softcutExit template =>
+      Atom.expr [Atom.sym "goal.softcutExit", template]
   | .eq a b => Atom.expr [Atom.sym "goal.eq", a, b]
   | .compileAlias a b => Atom.expr [Atom.sym "goal.compileAlias", a, b]
   | .cut => Atom.expr [Atom.sym "goal.cut"]
@@ -2152,6 +2184,7 @@ private def goalVarsFuel : Nat → Goal → VarSet → VarSet
   | k + 1, .softcut t sub thn els, acc =>
       goalsVarsFuel k els (goalsVarsFuel k thn
         (goalsVarsFuel k sub (addAtomVars acc t)))
+  | _ + 1, .softcutExit template, acc => addAtomVars acc template
   | _ + 1, .eq a b, acc => addAtomVars (addAtomVars acc a) b
   | _ + 1, .compileAlias a b, acc => addAtomVars (addAtomVars acc a) b
   | _ + 1, .cut, acc => acc
@@ -2194,6 +2227,7 @@ private def goalFuel : Goal → Nat
   | .catchExit _ _ => 1
   | .softcut _ sub thn els =>
       Nat.max (goalsFuel sub) (Nat.max (goalsFuel thn) (goalsFuel els)) + 1
+  | .softcutExit _ => 1
   | .eq _ _ => 1
   | .compileAlias _ _ => 1
   | .cut => 1
@@ -2794,6 +2828,8 @@ private theorem goalVarsFuel_preserves_contains (fuel : Nat)
             (goalsVarsFuel_preserves_contains fuel tracked thn _
               (goalsVarsFuel_preserves_contains fuel tracked sub _
                 (addAtomVars_preserves_contains tracked acc h tmpl)))
+      | softcutExit template =>
+          exact addAtomVars_preserves_contains tracked acc h template
       | eq left right | compileAlias left right =>
           exact addAtomVars_preserves_contains tracked _
             (addAtomVars_preserves_contains tracked acc h left) right
@@ -4387,6 +4423,7 @@ def tagCutsGoal (bc : Nat) : Goal → Goal
   | .catchExit template result => .catchExit template result
   | .softcut t sub thn els =>
       .softcut t (tagCutsGoals bc sub) (tagCutsGoals bc thn) (tagCutsGoals bc els)
+  | .softcutExit template => .softcutExit template
   | .eq a b => .eq a b
   | .compileAlias a b => .compileAlias a b
   | .cut => .cutAt bc
@@ -4411,6 +4448,19 @@ def tagCutsBranches (bc : Nat) : List (Atom × List Goal) →
   | (t, gs) :: bs => (t, tagCutsGoals bc gs) :: tagCutsBranches bc bs
 end
 
+/-- Construct one top-level query activation.  The root query is a genuine
+Prolog cut scope: source cuts are tagged to scope one and the matching barrier
+is installed exactly once.  Nested predicate activations allocate above this
+root through the ordinary `barrierDepth + 1` discipline. -/
+def rootQueryConf (world : PWorld) (counter : Nat) (qterm : Atom)
+    (goals : List Goal) : Conf :=
+  { cur := some (tagCutsGoals 1 goals, [])
+    alts := [.barrier]
+    world
+    counter
+    qterm
+    barriers := some 1 }
+
 mutual
 
 /-- Rebase every cut in a protected streaming-catch body to its newly opened
@@ -4426,6 +4476,7 @@ def retagCutsGoal (bc : Nat) : Goal → Goal
   | .softcut t sub thn els =>
       .softcut t (retagCutsGoals bc sub) (retagCutsGoals bc thn)
         (retagCutsGoals bc els)
+  | .softcutExit template => .softcutExit template
   | .eq a b => .eq a b
   | .compileAlias a b => .compileAlias a b
   | .cut => .cutAt bc
@@ -4696,6 +4747,8 @@ def renameGoalSuffix (suffix : String) (bc : Nat) : Goal → Goal
       .softcut (renameAtomSuffix suffix tmpl)
         (renameGoalsSuffix suffix bc sub) (renameGoalsSuffix suffix bc thn)
         (renameGoalsSuffix suffix bc els)
+  | .softcutExit template =>
+      .softcutExit (renameAtomSuffix suffix template)
   | .eq left right =>
       .eq (renameAtomSuffix suffix left) (renameAtomSuffix suffix right)
   | .compileAlias left right =>
@@ -5000,6 +5053,8 @@ def cutToCached {Binding : Type} (k : Nat) :
           | .catchActive _ => barriers
           | .br _ _ => barriers
           | .catchDormant _ _ => barriers
+          | .softcutActive _ _ => barriers
+          | .softcutDormant _ _ => barriers
         cutToCached k next rest
       else
         (alt :: rest, barriers)
@@ -5066,6 +5121,78 @@ theorem splitCatchActive_reassembles {Binding : Type}
                 congrArg
                   (fun tail => Alt.catchDormant frame protectedAlts :: tail)
                   restEquation
+          | softcutActive frame seenSuccess =>
+              simpa [splitCatchActive, found] using
+                congrArg
+                  (fun tail => Alt.softcutActive frame seenSuccess :: tail)
+                  restEquation
+          | softcutDormant frame protectedAlts =>
+              simpa [splitCatchActive, found] using
+                congrArg
+                  (fun tail => Alt.softcutDormant frame protectedAlts :: tail)
+                  restEquation
+
+/-- Exact decomposition at the nearest active streaming soft-cut delimiter.
+The protected prefix contains the condition's explicit cut barrier and every
+remaining condition choice point in their original stack order. -/
+structure SoftcutSplit (Binding : Type) where
+  frame : SoftcutFrame Binding
+  seenSuccess : Bool
+  protectedAlts : List (Alt Binding)
+  outer : List (Alt Binding)
+deriving Repr, Inhabited
+
+def splitSoftcutActive {Binding : Type} :
+    List (Alt Binding) → Option (SoftcutSplit Binding)
+  | [] => none
+  | .softcutActive frame seenSuccess :: outer =>
+      some { frame, seenSuccess, protectedAlts := [], outer }
+  | alternative :: rest =>
+      (splitSoftcutActive rest).map (fun split =>
+        { split with protectedAlts := alternative :: split.protectedAlts })
+
+/-- Splitting a live soft-cut delimiter is ownership preserving: no branch,
+barrier, or typed marker can be dropped, duplicated, or reordered. -/
+theorem splitSoftcutActive_reassembles {Binding : Type}
+    (alts : List (Alt Binding)) :
+    match splitSoftcutActive alts with
+    | none => True
+    | some split =>
+        alts = split.protectedAlts ++
+          .softcutActive split.frame split.seenSuccess :: split.outer := by
+  induction alts with
+  | nil => simp [splitSoftcutActive]
+  | cons alternative rest inductionHypothesis =>
+      cases found : splitSoftcutActive rest with
+      | none =>
+          cases alternative <;> simp [splitSoftcutActive, found]
+      | some split =>
+          have restEquation :
+              rest = split.protectedAlts ++
+                .softcutActive split.frame split.seenSuccess :: split.outer := by
+            simpa [found] using inductionHypothesis
+          cases alternative with
+          | br goals binding =>
+              simpa [splitSoftcutActive, found] using
+                congrArg (fun tail => Alt.br goals binding :: tail) restEquation
+          | barrier =>
+              simpa [splitSoftcutActive, found] using
+                congrArg (fun tail => (Alt.barrier : Alt Binding) :: tail)
+                  restEquation
+          | catchActive frame =>
+              simpa [splitSoftcutActive, found] using
+                congrArg (fun tail => Alt.catchActive frame :: tail) restEquation
+          | catchDormant frame protectedAlts =>
+              simpa [splitSoftcutActive, found] using
+                congrArg
+                  (fun tail => Alt.catchDormant frame protectedAlts :: tail)
+                  restEquation
+          | softcutActive frame seenSuccess => simp [splitSoftcutActive]
+          | softcutDormant frame protectedAlts =>
+              simpa [splitSoftcutActive, found] using
+                congrArg
+                  (fun tail => Alt.softcutDormant frame protectedAlts :: tail)
+                  restEquation
 
 /-- A structural pull either finds an ordinary branch or a dormant catch
 resumption.  Reinstalling a resumption is deliberately not hidden inside the
@@ -5073,6 +5200,9 @@ scan: `pull` exposes it as one state transition with `cur = none`. -/
 inductive PullTarget (Binding : Type) where
   | branch (goals : List Goal) (binding : Binding)
   | catchResume (frame : CatchFrame Binding)
+      (protectedAlts : List (Alt Binding))
+  | softcutExhausted (frame : SoftcutFrame Binding) (seenSuccess : Bool)
+  | softcutResume (frame : SoftcutFrame Binding)
       (protectedAlts : List (Alt Binding))
 deriving Repr, Inhabited
 
@@ -5085,6 +5215,10 @@ def pullAux {Binding : Type} :
   | .br gs b :: rest => some (.branch gs b, rest)
   | .catchDormant frame protectedAlts :: rest =>
       some (.catchResume frame protectedAlts, rest)
+  | .softcutActive frame seenSuccess :: rest =>
+      some (.softcutExhausted frame seenSuccess, rest)
+  | .softcutDormant frame protectedAlts :: rest =>
+      some (.softcutResume frame protectedAlts, rest)
 
 /-- Pull while decrementing the cached barrier depth for each skipped
 marker. Branch alternatives do not change the depth. -/
@@ -5099,6 +5233,10 @@ def pullAuxCached {Binding : Type} : Nat → List (Alt Binding) →
       (some (.branch gs b, rest), barriers)
   | barriers, .catchDormant frame protectedAlts :: rest =>
       (some (.catchResume frame protectedAlts, rest), barriers)
+  | barriers, .softcutActive frame seenSuccess :: rest =>
+      (some (.softcutExhausted frame seenSuccess, rest), barriers)
+  | barriers, .softcutDormant frame protectedAlts :: rest =>
+      (some (.softcutResume frame protectedAlts, rest), barriers)
 
 theorem pullAuxCached_fst {Binding : Type} :
     ∀ (depth : Nat) (alts : List (Alt Binding)),
@@ -5108,6 +5246,8 @@ theorem pullAuxCached_fst {Binding : Type} :
   | depth, .catchActive _ :: rest => pullAuxCached_fst depth rest
   | _, .br _ _ :: _ => rfl
   | _, .catchDormant _ _ :: _ => rfl
+  | _, .softcutActive _ _ :: _ => rfl
+  | _, .softcutDormant _ _ :: _ => rfl
 
 def pullAuxTracked {Binding : Type} : Option Nat → List (Alt Binding) →
     Option (PullTarget Binding × List (Alt Binding)) × Option Nat
@@ -5137,6 +5277,18 @@ def pull {Binding : Type} (c : Conf Binding) : Conf Binding :=
       { c with
         cur := none
         alts := protectedAlts ++ .catchActive frame :: rest
+        barriers := addBarrierCache result.2 (barrierCount protectedAlts) }
+  | some (.softcutExhausted frame false, rest) =>
+      { c with
+        cur := some (frame.elseGoals ++ frame.rest, frame.entry)
+        alts := rest
+        barriers := result.2 }
+  | some (.softcutExhausted _ true, rest) =>
+      { c with cur := none, alts := rest, barriers := result.2 }
+  | some (.softcutResume frame protectedAlts, rest) =>
+      { c with
+        cur := none
+        alts := protectedAlts ++ .softcutActive frame true :: rest
         barriers := addBarrierCache result.2 (barrierCount protectedAlts) }
 
 @[simp] theorem pull_barrier {Binding : Type} (c : Conf Binding)
@@ -6593,6 +6745,40 @@ def exitStreamingCatch {Binding : Type} (c : Conf Binding)
         barriers := removeBarrierCache c.barriers
           (barrierCount split.protectedAlts) }
 
+/-- Enter a demand-driven soft-cut condition.  Only the condition's cuts are
+retagged to the fresh explicit barrier; the selected arm, else arm, and caller
+tail retain their caller scopes inside the non-persistent frame. -/
+def enterStreamingSoftcut {Binding : Type} (c : Conf Binding)
+    (template : Atom) (sub thenGoals elseGoals rest : List Goal)
+    (entry : Binding) : Conf Binding :=
+  let cutScope := barrierDepth c + 1
+  let frame : SoftcutFrame Binding :=
+    { template, thenGoals, elseGoals, rest, entry }
+  { c with
+    cur := some
+      (retagCutsGoals cutScope sub ++ [Goal.softcutExit template], entry)
+    alts := .barrier :: .softcutActive frame false :: c.alts
+    barriers := pushBarrierCache c.barriers }
+
+/-- Transfer one condition answer into the selected arm.  The transfer starts
+from the caller entry state and exposes only the answer-time template value;
+condition-local bindings therefore cannot leak.  The entire remaining
+condition search becomes one prunable dormant resumption, which records that
+the else arm has been permanently suppressed. -/
+def exitStreamingSoftcut {Binding : Type} (c : Conf Binding)
+    (answer : Atom) : Conf Binding :=
+  match splitSoftcutActive c.alts with
+  | none => pull { c with cur := none }
+  | some split =>
+      { c with
+        cur := some
+          (Goal.eq split.frame.template answer ::
+            split.frame.thenGoals ++ split.frame.rest,
+            split.frame.entry)
+        alts := .softcutDormant split.frame split.protectedAlts :: split.outer
+        barriers := removeBarrierCache c.barriers
+          (barrierCount split.protectedAlts) }
+
 /-- Catch one currently escaping primitive error at the nearest active catch
 delimiter.  Protected bindings and alternatives unwind; persistent world and
 fresh allocation remain current.  Dormant inner resumptions in the discarded
@@ -6706,6 +6892,10 @@ def step (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf) : Conf :=
         match unifyB b result template with
         | some next => exitStreamingCatch c next
         | none => pull { c with cur := none }
+    | .softcut tmpl sub thn els =>
+        enterStreamingSoftcut c tmpl sub thn els rest b
+    | .softcutExit template =>
+        exitStreamingSoftcut c (subst b template)
     | .transactiong tmpl sub =>
         let txSub := transactionSub tmpl sub
         let subConf : Conf :=
@@ -6719,25 +6909,6 @@ def step (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf) : Conf :=
           pull { c with cur := none, world := d.world, counter := d.counter,
                         alts := d.answerValues.map (fun inst =>
                           Alt.br (Goal.eq tmpl inst :: rest) b) ++ c.alts }
-    | .softcut tmpl sub thn els =>
-        -- (sub *-> thn ; els): thn runs once PER solution of sub (bindings
-        -- re-imported via `tmpl ≐ instance`); els runs iff sub has none.
-        -- Unification subs have ≤1 solution (plain soft-cut); nondet
-        -- scrutinees (case) enumerate per solution. Fuel-bounded sub-run.
-        let subConf : Conf :=
-          { cur := some (sub, b), alts := [], world := c.world,
-            counter := c.counter, qterm := tmpl,
-            barriers := resetBarrierCache c.barriers }
-        let d := run prog gt fuel subConf none
-        (if d.answers.isEmpty then
-           { c with cur := some (els ++ rest, b),
-                    world := d.world, counter := d.counter }
-         else
-           pull { c with cur := none,
-                         world := d.world, counter := d.counter,
-                         alts := d.answerValues.map (fun inst =>
-                           Alt.br (Goal.eq tmpl inst :: thn ++ rest) b)
-                           ++ c.alts })
     | .call f args res =>
         let argsv := args.map (subst b)
         let key := tableKey f argsv
@@ -7054,13 +7225,14 @@ def stepClean (prog : Prog) (gt : GroundingTable) :
                       Alt.br (Goal.eq res inst :: rest) b) ++ c.alts })
           | none =>
               .progressed (enterStreamingCatch c tmpl sub res rest b)
+      | some (Goal.softcut tmpl sub thn els :: rest, b) =>
+          .progressed (enterStreamingSoftcut c tmpl sub thn els rest b)
+      | some (Goal.softcutExit template :: _, b) =>
+          .progressed (exitStreamingSoftcut c (subst b template))
       | some (Goal.transactiong tmpl sub :: rest, b) =>
           let txSub := transactionSub tmpl sub
           finishTransactionClean c rest tmpl b
             (runClean prog gt fuel (subConfOf c txSub b tmpl) none)
-      | some (Goal.softcut tmpl sub thn els :: rest, b) =>
-          finishSoftcutClean c rest thn els tmpl b
-            (runClean prog gt fuel (subConfOf c sub b tmpl) none)
       | some (Goal.findall tmpl sub res :: rest, b) =>
           finishFindallClean c rest res b
             (runClean prog gt fuel (subConfOf c sub b tmpl) none)

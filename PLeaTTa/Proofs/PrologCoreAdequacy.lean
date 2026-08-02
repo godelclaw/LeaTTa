@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: Apache-2.0
+
 /-
 Module: PLeaTTa.Proofs.PrologCoreAdequacy
 Purpose: Relate independently specified pure Prolog behavior to compiled
@@ -388,7 +390,8 @@ theorem cutTo_own_barrier {Binding : Type}
       unfold cutTo
       have hcount : barrierCount outer + 1 ≤
           barrierCount (head :: (tail ++ Alt.barrier :: outer)) := by
-        cases head <;> simp <;> omega
+        cases head <;> simp
+        all_goals omega
       rw [if_pos hcount]
       exact ih
 

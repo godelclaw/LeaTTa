@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: Apache-2.0
+
 import PLeaTTa.Semantics
 
 namespace PLeaTTa
@@ -60,6 +62,8 @@ private theorem barrierCount_foldl_raw {Binding : Type}
       | catchActive frame =>
           simp [barrierCountStep]
       | catchDormant frame protectedAlts => simp [barrierCountStep]
+      | softcutActive frame seenSuccess => simp [barrierCountStep]
+      | softcutDormant frame protectedAlts => simp [barrierCountStep]
 
 theorem barrierCount_foldl {Binding : Type}
     (alts : List (Alt Binding)) (count : Nat) :
@@ -111,6 +115,36 @@ theorem catch_cut_retains_active_delimiter {Binding : Type}
 @[simp] theorem barrierCount_cons_catchDormant {Binding : Type}
     (frame : CatchFrame Binding) (protectedAlts rest : List (Alt Binding)) :
     barrierCount (Alt.catchDormant frame protectedAlts :: rest) =
+      barrierCount rest := by
+  unfold barrierCount
+  rw [List.foldl_cons, barrierCount_foldl_raw]
+  simp [barrierCountStep]
+
+@[simp] theorem barrierCount_cons_softcutActive {Binding : Type}
+    (frame : SoftcutFrame Binding) (seenSuccess : Bool)
+    (rest : List (Alt Binding)) :
+    barrierCount (Alt.softcutActive frame seenSuccess :: rest) =
+      barrierCount rest := by
+  unfold barrierCount
+  rw [List.foldl_cons, barrierCount_foldl_raw]
+  simp [barrierCountStep]
+
+/-- A cut executed by the condition of a genuine soft-cut consumes the
+explicit condition barrier, but cannot consume the non-counted active
+soft-cut delimiter or any caller alternative.  This exact equation rejects
+the historical representation in which the delimiter itself doubled as the
+barrier and was therefore deleted by the cut. -/
+theorem softcut_cut_retains_active_delimiter {Binding : Type}
+    (frame : SoftcutFrame Binding) (seenSuccess : Bool)
+    (outer : List (Alt Binding)) :
+    cutTo (barrierCount outer + 1)
+      (Alt.barrier :: Alt.softcutActive frame seenSuccess :: outer) =
+        Alt.softcutActive frame seenSuccess :: outer := by
+  rw [cutTo, if_pos (by simp), cutTo, if_neg (by simp)]
+
+@[simp] theorem barrierCount_cons_softcutDormant {Binding : Type}
+    (frame : SoftcutFrame Binding) (protectedAlts rest : List (Alt Binding)) :
+    barrierCount (Alt.softcutDormant frame protectedAlts :: rest) =
       barrierCount rest := by
   unfold barrierCount
   rw [List.foldl_cons, barrierCount_foldl_raw]
@@ -289,6 +323,16 @@ theorem cutToCached_count_exact {Binding : Type} (cut : Nat) :
       split
       · simpa using cutToCached_count_exact cut rest
       · rfl
+  | .softcutActive frame seenSuccess :: rest => by
+      unfold cutToCached
+      split
+      · simpa using cutToCached_count_exact cut rest
+      · rfl
+  | .softcutDormant frame protectedAlts :: rest => by
+      unfold cutToCached
+      split
+      · simpa using cutToCached_count_exact cut rest
+      · rfl
 
 theorem cutToCached_fst_exact {Binding : Type} (cut : Nat) :
     ∀ alts : List (Alt Binding),
@@ -318,6 +362,18 @@ theorem cutToCached_fst_exact {Binding : Type} (cut : Nat) :
       split
       · simpa using cutToCached_fst_exact cut rest
       · rfl
+  | .softcutActive frame seenSuccess :: rest => by
+      unfold cutToCached cutTo
+      simp only [barrierCount_cons_softcutActive]
+      split
+      · simpa using cutToCached_fst_exact cut rest
+      · rfl
+  | .softcutDormant frame protectedAlts :: rest => by
+      unfold cutToCached cutTo
+      simp only [barrierCount_cons_softcutDormant]
+      split
+      · simpa using cutToCached_fst_exact cut rest
+      · rfl
 
 theorem cutToTracked_fst_of_coherent {Binding : Type} (cut : Nat)
     (cache : Option Nat) (alts : List (Alt Binding))
@@ -342,6 +398,58 @@ theorem catch_cut_tracked_retains_active_delimiter {Binding : Type}
   rw [cutToTracked_fst_of_coherent]
   · exact catch_cut_retains_active_delimiter frame outer
   · simp
+
+/-- The executable cached cut satisfies the same soft-cut delimiter-retention
+equation as the declarative cut. -/
+theorem softcut_cut_tracked_retains_active_delimiter {Binding : Type}
+    (frame : SoftcutFrame Binding) (seenSuccess : Bool)
+    (outer : List (Alt Binding)) :
+    (cutToTracked (barrierCount outer + 1)
+      (some (barrierCount outer + 1))
+      (Alt.barrier :: Alt.softcutActive frame seenSuccess :: outer)).1 =
+        Alt.softcutActive frame seenSuccess :: outer := by
+  rw [cutToTracked_fst_of_coherent]
+  · exact softcut_cut_retains_active_delimiter frame seenSuccess outer
+  · simp
+
+/-- Entering a genuine soft-cut really retags a source condition cut to the
+fresh condition barrier, and the sealed cut transition then removes exactly
+that barrier.  The active delimiter and the complete caller alternative stack
+remain in place.  This composes the retagging and cached-stack equations, so
+the opacity claim is not inferred from either mechanism in isolation. -/
+theorem softcut_condition_cut_step_retains_active_delimiter
+    {prog : Prog} {gt : GroundingTable}
+    (c : Conf) (template : Atom) (thenGoals elseGoals rest : List Goal)
+    (entry : Subst)
+    (cache : c.barriers = some (barrierCount c.alts)) :
+    let entered := enterStreamingSoftcut c template [Goal.cut]
+      thenGoals elseGoals rest entry
+    ∃ next,
+      Step prog gt entered next ∧
+      next.cur = some ([Goal.softcutExit template], entry) ∧
+      next.alts =
+        Alt.softcutActive
+          { template, thenGoals, elseGoals, rest, entry } false :: c.alts := by
+  let frame : SoftcutFrame :=
+    { template, thenGoals, elseGoals, rest, entry }
+  let entered := enterStreamingSoftcut c template [Goal.cut]
+    thenGoals elseGoals rest entry
+  let scope := barrierCount c.alts + 1
+  let next : Conf :=
+    { entered with
+      cur := some ([Goal.softcutExit template], entry)
+      alts := (cutToTracked scope entered.barriers entered.alts).1
+      barriers := (cutToTracked scope entered.barriers entered.alts).2 }
+  have current : entered.cur =
+      some (Goal.cutAt scope :: [Goal.softcutExit template], entry) := by
+    simp [entered, enterStreamingSoftcut, scope, barrierDepth, cache,
+      retagCutsGoals, retagCutsGoal]
+  refine ⟨next, Step.cut_at entered scope [Goal.softcutExit template] entry
+    current, rfl, ?_⟩
+  change (cutToTracked scope entered.barriers entered.alts).1 =
+    Alt.softcutActive frame false :: c.alts
+  simpa [entered, enterStreamingSoftcut, scope, frame, cache] using
+    softcut_cut_tracked_retains_active_delimiter frame false c.alts
 
 theorem cutToTracked_coherent {Binding : Type} (cut : Nat)
     (cache : Option Nat) (alts : List (Alt Binding))
@@ -371,6 +479,8 @@ theorem pullAuxCached_exact {Binding : Type} : ∀ alts : List (Alt Binding),
       simpa [pullAuxCached, pullAux] using
         pullAuxCached_exact rest
   | .catchDormant frame protectedAlts :: rest => rfl
+  | .softcutActive frame seenSuccess :: rest => rfl
+  | .softcutDormant frame protectedAlts :: rest => rfl
 
 theorem BarrierCacheCoherent.pull {Binding : Type} (conf : Conf Binding)
     (coherent : BarrierCacheCoherent conf) :
@@ -384,7 +494,13 @@ theorem BarrierCacheCoherent.pull {Binding : Type} (conf : Conf Binding)
       | none => simp
       | some result =>
           rcases result with ⟨target, rest⟩
-          cases target <;> simp
+          cases target with
+          | branch goals binding => simp
+          | catchResume frame protectedAlts => simp
+          | softcutExhausted frame seenSuccess =>
+              cases seenSuccess <;> simp
+          | softcutResume frame protectedAlts =>
+              simp
   | some depth =>
       have exactDepth := coherent.depth_eq cached
       subst depth
@@ -395,9 +511,14 @@ theorem BarrierCacheCoherent.pull {Binding : Type} (conf : Conf Binding)
       | none => simp [BarrierCacheCoherent, barrierCount]
       | some result =>
           rcases result with ⟨branch, rest⟩
-          cases branch <;>
-            simp [BarrierCacheCoherent, Nat.add_assoc, Nat.add_comm,
-              Nat.add_left_comm]
+          cases branch with
+          | branch goals binding => simp [BarrierCacheCoherent]
+          | catchResume frame protectedAlts =>
+              simp [BarrierCacheCoherent, Nat.add_comm]
+          | softcutExhausted frame seenSuccess =>
+              cases seenSuccess <;> simp [BarrierCacheCoherent]
+          | softcutResume frame protectedAlts =>
+              simp [BarrierCacheCoherent, Nat.add_comm]
 
 theorem BarrierCacheCoherent.cut {Binding : Type} (conf : Conf Binding)
     (cut : Nat) (coherent : BarrierCacheCoherent conf) :
@@ -443,8 +564,52 @@ theorem BarrierCacheCoherent.exitStreamingCatch {Binding : Type}
           rw [reassembled, barrierCount_append,
             barrierCount_cons_catchActive] at exactDepth
           unfold BarrierCacheCoherent
-          simp only [cached, removeBarrierCache, Option.map,
+          simp only [removeBarrierCache, Option.map,
             barrierCount_cons_catchDormant]
+          change depth - barrierCount protectedAlts =
+            barrierCount outer
+          omega
+
+theorem BarrierCacheCoherent.enterStreamingSoftcut {Binding : Type}
+    (conf : Conf Binding) (template : Atom)
+    (sub thenGoals elseGoals rest : List Goal) (entry : Binding)
+    (coherent : BarrierCacheCoherent conf) :
+    BarrierCacheCoherent
+      (enterStreamingSoftcut conf template sub thenGoals elseGoals rest
+        entry) := by
+  cases cached : conf.barriers with
+  | none =>
+      simp [BarrierCacheCoherent, PLeaTTa.enterStreamingSoftcut, cached]
+  | some depth =>
+      have exactDepth := coherent.depth_eq cached
+      simp [BarrierCacheCoherent, PLeaTTa.enterStreamingSoftcut, cached,
+        exactDepth]
+
+theorem BarrierCacheCoherent.exitStreamingSoftcut {Binding : Type}
+    (conf : Conf Binding) (answer : Atom)
+    (coherent : BarrierCacheCoherent conf) :
+    BarrierCacheCoherent (exitStreamingSoftcut conf answer) := by
+  unfold PLeaTTa.exitStreamingSoftcut
+  cases found : splitSoftcutActive conf.alts with
+  | none =>
+      apply BarrierCacheCoherent.pull
+      simpa [BarrierCacheCoherent] using coherent
+  | some split =>
+      have reassembled := splitSoftcutActive_reassembles conf.alts
+      simp only [found] at reassembled
+      rcases split with ⟨frame, seenSuccess, protectedAlts, outer⟩
+      cases cached : conf.barriers with
+      | none => trivial
+      | some depth =>
+          have exactDepth := coherent.depth_eq cached
+          change conf.alts =
+            protectedAlts ++
+              Alt.softcutActive frame seenSuccess :: outer at reassembled
+          rw [reassembled, barrierCount_append,
+            barrierCount_cons_softcutActive] at exactDepth
+          unfold BarrierCacheCoherent
+          simp only [removeBarrierCache, Option.map,
+            barrierCount_cons_softcutDormant]
           change depth - barrierCount protectedAlts =
             barrierCount outer
           omega
@@ -461,7 +626,7 @@ theorem BarrierCacheCoherent.catchErrorSuccessor {Binding : Type}
       injection successor with nextEq
       subst next
       cases cached : conf.barriers <;>
-        simp [BarrierCacheCoherent, exactBarrierCache, cached]
+        simp [BarrierCacheCoherent, exactBarrierCache]
 
 /-- Every formal transition preserves exactness of an enabled barrier cache. -/
 theorem Step.preserves_barrierCacheCoherent {prog : Prog}
@@ -519,11 +684,6 @@ theorem Step.preserves_barrierCacheCoherent {prog : Prog}
     intro c d template sub rest binding err hcur hraise ih coherent
     apply ih
     cases c.barriers <;> simp [BarrierCacheCoherent]
-  case softcut =>
-    intro c d template sub thenGoals elseGoals rest binding err hcur hraise ih
-      coherent
-    apply ih
-    cases c.barriers <;> simp [BarrierCacheCoherent]
   case findall =>
     intro c d template sub res rest binding err hcur hraise ih coherent
     apply ih
@@ -545,6 +705,13 @@ theorem Step.preserves_barrierCacheCoherent {prog : Prog}
   case catch_stream_error =>
     intro c next op args res rest binding error hcur herror hcatch coherent
     exact BarrierCacheCoherent.catchErrorSuccessor c next error hcatch
+  case softcut_stream_enter =>
+    intro c template sub thenGoals elseGoals rest entry hcur coherent
+    exact coherent.enterStreamingSoftcut c template sub thenGoals elseGoals
+      rest entry
+  case softcut_stream_exit =>
+    intro c template rest binding hcur coherent
+    exact coherent.exitStreamingSoftcut c (subst binding template)
   all_goals intros
   all_goals try assumption
   all_goals try
@@ -592,11 +759,6 @@ theorem Raises.preserves_barrierCacheCoherent {prog : Prog}
     exact ih (step.preserves_barrierCacheCoherent coherent)
   case transaction =>
     intro c d template sub rest binding error hcur raise ih coherent
-    apply ih
-    cases c.barriers <;> simp [BarrierCacheCoherent, barrierCount]
-  case softcut =>
-    intro c d template sub thenGoals elseGoals rest binding error hcur raise ih
-      coherent
     apply ih
     cases c.barriers <;> simp [BarrierCacheCoherent, barrierCount]
   case findall =>

@@ -48,7 +48,10 @@ theorem pull_qterm {Binding : Type} (conf : PLeaTTa.Conf Binding) :
       | none => rfl
       | some pulled =>
           rcases pulled with ⟨target, rest⟩
-          cases target <;> rfl
+          cases target with
+          | softcutExhausted frame seenSuccess =>
+              cases seenSuccess <;> rfl
+          | _ => rfl
 
 /-!
 `SegmentedActiveProductRelates` is intentionally insufficient here.  It gives

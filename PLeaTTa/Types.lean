@@ -54,12 +54,21 @@ inductive Goal where
       answer-time unification, then suspends the protected alternatives and
       leaves the catch region before the caller continuation begins. -/
   | catchExit (template result : Atom)
-  /-- Soft cut, Prolog's `(Sub -> Then ; Else)`: run `sub` to its FIRST
-      answer; on success re-bind `tmpl ≐ instance` in the caller and run
-      `thn`; on failure run `els`. Powers `unify/4` and first-match `case`
-      (including the `Empty` arm on scrutinee failure). -/
+  /-- Soft cut, Prolog's `(Sub *-> Then ; Else)`: expose every `sub` answer
+      demand-first and in order; on each success re-bind `tmpl ≐ instance` in
+      the caller and run `thn`; run `els` only when `sub` has no answer.
+      Ordinary first-answer `->` is represented structurally as `onceg`
+      inside this constructor, while caller-transparent disjunction remains
+      `amb`. [SPEC translator.pl:356,368] -/
   | softcut (tmpl : Atom) (sub : List Goal) (thn : List Goal)
             (els : List Goal)
+  /-- Internal condition-to-caller boundary for streaming soft cut.
+      The compiler never emits this constructor.  The template is the sole
+      condition-binding liveness root: at each condition success it is
+      materialized, the condition alternatives are suspended, and transfer
+      plus `Then` run from the saved entry binding outside the condition's
+      cut scope. -/
+  | softcutExit (template : Atom)
   /-- Unification. -/
   | eq (a b : Atom)
   /-- Translation-time variable sharing emitted by pinned `build_branch/4`.
@@ -122,6 +131,7 @@ def instantiateGoal (s : Subst) : Goal → Goal
   | .softcut tmpl sub thn els =>
       .softcut (Metta.Subst.apply s tmpl) (instantiateGoals s sub)
         (instantiateGoals s thn) (instantiateGoals s els)
+  | .softcutExit template => .softcutExit (Metta.Subst.apply s template)
   | .eq a b => .eq (Metta.Subst.apply s a) (Metta.Subst.apply s b)
   | .compileAlias a b =>
       .compileAlias (Metta.Subst.apply s a) (Metta.Subst.apply s b)

@@ -470,30 +470,20 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (herr : caughtBinErrorResolved? gt op (args.map (subst b)) = some err)
       (hc : catchErrorSuccessor? c err = some next) :
       Step prog gt c next
-  | softcut_some (c d : Conf) (tmpl : Atom) (sub thn els rest : List Goal)
-      (b : Subst)
-      (h : c.cur = some (Goal.softcut tmpl sub thn els :: rest, b))
-      (hrun : StepStar prog gt
-        { cur := some (sub, b), alts := [], world := c.world,
-          counter := c.counter, qterm := tmpl,
-          barriers := resetBarrierCache c.barriers } d)
-      (hdone : Terminal d) (hne : d.answers ≠ []) :
-      Step prog gt c
-        (pull { c with cur := none, world := d.world, counter := d.counter,
-                       alts := d.answerValues.map (fun inst =>
-                         Alt.br (Goal.eq tmpl inst :: thn ++ rest) b)
-                         ++ c.alts })
-  | softcut_none (c d : Conf) (tmpl : Atom) (sub thn els rest : List Goal)
-      (b : Subst)
-      (h : c.cur = some (Goal.softcut tmpl sub thn els :: rest, b))
-      (hrun : StepStar prog gt
-        { cur := some (sub, b), alts := [], world := c.world,
-          counter := c.counter, qterm := tmpl,
-          barriers := resetBarrierCache c.barriers } d)
-      (hdone : Terminal d) (he : d.answers = []) :
-      Step prog gt c
-        { c with cur := some (els ++ rest, b),
-                 world := d.world, counter := d.counter }
+  /-- Soft cut opens a demand-driven condition region.  It does not require a
+      terminal nested run, so a first condition answer is visible before a
+      later condition branch diverges. -/
+  | softcut_stream_enter (c : Conf) (tmpl : Atom)
+      (sub thn els rest : List Goal) (b : Subst)
+      (h : c.cur = some (Goal.softcut tmpl sub thn els :: rest, b)) :
+      Step prog gt c (enterStreamingSoftcut c tmpl sub thn els rest b)
+  /-- Each condition success transfers the answer-time template at the typed
+      boundary.  Remaining condition alternatives become a dormant,
+      caller-prunable resumption; the else branch is thereafter unreachable. -/
+  | softcut_stream_exit (c : Conf) (template : Atom)
+      (rest : List Goal) (b : Subst)
+      (h : c.cur = some (Goal.softcutExit template :: rest, b)) :
+      Step prog gt c (exitStreamingSoftcut c (subst b template))
   | transaction_some (c d : Conf) (tmpl : Atom) (sub rest : List Goal)
       (b : Subst)
       (h : c.cur = some (Goal.transactiong tmpl sub :: rest, b))
@@ -640,14 +630,6 @@ inductive Raises (prog : Prog) (gt : GroundingTable) :
           world := c.world, counter := c.counter, qterm := tmpl,
           barriers := resetBarrierCache c.barriers } d err) :
       Raises prog gt c d err
-  | softcut (c d : Conf) (tmpl : Atom) (sub thn els rest : List Goal)
-      (b : Subst) (err : Atom)
-      (h : c.cur = some (Goal.softcut tmpl sub thn els :: rest, b))
-      (hrun : Raises prog gt
-        { cur := some (sub, b), alts := [], world := c.world,
-          counter := c.counter, qterm := tmpl,
-          barriers := resetBarrierCache c.barriers } d err) :
-      Raises prog gt c d err
   | findall (c d : Conf) (tmpl : Atom) (sub : List Goal) (res : Atom)
       (rest : List Goal) (b : Subst) (err : Atom)
       (h : c.cur = some (Goal.findall tmpl sub res :: rest, b))
@@ -693,16 +675,16 @@ def tableRunHead (c : Conf) : Prop :=
     c.world.needsTableCompute f (args.map (subst b)) = true
 
 /-- The current branch's head goal nests a fuel-bounded sub-run (`findall`,
-    `softcut`, transaction, or uncached tabled call). These are the machine's
-    fuel-truncatable steps. -/
+    transaction, or an uncached tabled call).  Streaming soft cut is no longer
+    in this boundary: its condition opens in one ordinary step and remains
+    observable at every finite prefix. -/
 def nestedRunHead (c : Conf) : Prop :=
   findallRunHead c ∨
-    (softcutRunHead c ∨
-      (tableRunHead c ∨ transactionRunHead c))
+    (tableRunHead c ∨ transactionRunHead c)
 
 /-- Correspondence: whenever the executable makes progress on a goal that
     does not nest a sub-run, the relation licenses that exact step. Nested
-    heads (`findall`/`softcut`/transaction/table) are excluded per
+    heads (`findall`/transaction/table) are excluded per
     `nestedRunHead` —
     for those the relation demands terminal sub-runs, which fuel cannot
     promise. -/

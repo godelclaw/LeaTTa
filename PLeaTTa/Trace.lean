@@ -116,6 +116,7 @@ partial def projGoal (g : Goal) : StateM PJ (List WAtom) := do
   | .cut => pure []          -- guard-erased
   | .cutAt _ => pure []      -- guard-erased
   | .catchExit _ _ => pure []    -- internal streaming delimiter
+  | .softcutExit _ => pure []    -- internal streaming delimiter
   | .smatch pat =>
       match spacePatView pat with
       | (sp, p) =>
@@ -215,6 +216,7 @@ partial def varsOfGoal (g : Goal) : List String :=
   | .evalg v r => varsOfAtom v ++ varsOfAtom r
   | .catchg t sub r => varsOfAtom t ++ sub.flatMap varsOfGoal ++ varsOfAtom r
   | .catchExit template result => varsOfAtom template ++ varsOfAtom result
+  | .softcutExit template => varsOfAtom template
   | .softcut t sub thn els =>
       varsOfAtom t ++ (sub ++ thn ++ els).flatMap varsOfGoal
   | .eq a b | .compileAlias a b => varsOfAtom a ++ varsOfAtom b

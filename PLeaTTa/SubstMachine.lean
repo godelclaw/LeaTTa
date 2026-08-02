@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: Apache-2.0
+
 import PLeaTTa.SubstEngine
 
 namespace PLeaTTa
@@ -149,6 +151,16 @@ theorem cutToCached_mapAlt {Source Target : Type} (map : Source → Target)
       split
       · exact cutToCached_mapAlt map count depth rest
       · rfl
+  | depth, .softcutActive frame seenSuccess :: rest => by
+      simp only [List.map_cons, mapAlt, cutToCached]
+      split
+      · exact cutToCached_mapAlt map count depth rest
+      · rfl
+  | depth, .softcutDormant frame protectedAlts :: rest => by
+      simp only [List.map_cons, mapAlt, cutToCached]
+      split
+      · exact cutToCached_mapAlt map count depth rest
+      · rfl
 
 @[simp] theorem cutToTracked_mapAlt {Source Target : Type}
     (map : Source → Target) (count : Nat) (cache : Option Nat)
@@ -171,6 +183,13 @@ def mapCatchSplit {Source Target : Type} (map : Source → Target)
     protectedAlts := split.protectedAlts.map (mapAlt map)
     outer := split.outer.map (mapAlt map) }
 
+def mapSoftcutSplit {Source Target : Type} (map : Source → Target)
+    (split : SoftcutSplit Source) : SoftcutSplit Target :=
+  { frame := mapSoftcutFrame map split.frame
+    seenSuccess := split.seenSuccess
+    protectedAlts := split.protectedAlts.map (mapAlt map)
+    outer := split.outer.map (mapAlt map) }
+
 theorem splitCatchActive_mapAlt {Source Target : Type}
     (map : Source → Target) : ∀ alts : List (Alt Source),
     splitCatchActive (alts.map (mapAlt map)) =
@@ -189,12 +208,51 @@ theorem splitCatchActive_mapAlt {Source Target : Type}
       simp only [List.map_cons, mapAlt, splitCatchActive]
       rw [splitCatchActive_mapAlt map rest]
       cases splitCatchActive rest <;> rfl
+  | .softcutActive frame seenSuccess :: rest => by
+      simp only [List.map_cons, mapAlt, splitCatchActive]
+      rw [splitCatchActive_mapAlt map rest]
+      cases splitCatchActive rest <;> rfl
+  | .softcutDormant frame protectedAlts :: rest => by
+      simp only [List.map_cons, mapAlt, splitCatchActive]
+      rw [splitCatchActive_mapAlt map rest]
+      cases splitCatchActive rest <;> rfl
+
+theorem splitSoftcutActive_mapAlt {Source Target : Type}
+    (map : Source → Target) : ∀ alts : List (Alt Source),
+    splitSoftcutActive (alts.map (mapAlt map)) =
+      (splitSoftcutActive alts).map (mapSoftcutSplit map)
+  | [] => rfl
+  | .softcutActive frame seenSuccess :: rest => rfl
+  | .br goals state :: rest => by
+      simp only [List.map_cons, mapAlt, splitSoftcutActive]
+      rw [splitSoftcutActive_mapAlt map rest]
+      cases splitSoftcutActive rest <;> rfl
+  | .barrier :: rest => by
+      simp only [List.map_cons, mapAlt, splitSoftcutActive]
+      rw [splitSoftcutActive_mapAlt map rest]
+      cases splitSoftcutActive rest <;> rfl
+  | .catchActive frame :: rest => by
+      simp only [List.map_cons, mapAlt, splitSoftcutActive]
+      rw [splitSoftcutActive_mapAlt map rest]
+      cases splitSoftcutActive rest <;> rfl
+  | .catchDormant frame protectedAlts :: rest => by
+      simp only [List.map_cons, mapAlt, splitSoftcutActive]
+      rw [splitSoftcutActive_mapAlt map rest]
+      cases splitSoftcutActive rest <;> rfl
+  | .softcutDormant frame protectedAlts :: rest => by
+      simp only [List.map_cons, mapAlt, splitSoftcutActive]
+      rw [splitSoftcutActive_mapAlt map rest]
+      cases splitSoftcutActive rest <;> rfl
 
 def mapPullTarget {Source Target : Type} (map : Source → Target) :
     PullTarget Source → PullTarget Target
   | .branch goals state => .branch goals (map state)
   | .catchResume frame protectedAlts =>
       .catchResume (mapCatchFrame map frame) (mapAlts map protectedAlts)
+  | .softcutExhausted frame seenSuccess =>
+      .softcutExhausted (mapSoftcutFrame map frame) seenSuccess
+  | .softcutResume frame protectedAlts =>
+      .softcutResume (mapSoftcutFrame map frame) (mapAlts map protectedAlts)
 
 theorem pullAux_mapAlt {Source Target : Type} (map : Source → Target) :
     ∀ alts : List (Alt Source),
@@ -206,6 +264,8 @@ theorem pullAux_mapAlt {Source Target : Type} (map : Source → Target) :
   | .catchActive _ :: rest => pullAux_mapAlt map rest
   | .br _ _ :: _ => rfl
   | .catchDormant _ _ :: _ => rfl
+  | .softcutActive _ _ :: _ => rfl
+  | .softcutDormant _ _ :: _ => rfl
 
 theorem pullAuxCached_mapAlt {Source Target : Type} (map : Source → Target) :
     ∀ (depth : Nat) (alts : List (Alt Source)),
@@ -220,6 +280,8 @@ theorem pullAuxCached_mapAlt {Source Target : Type} (map : Source → Target) :
       pullAuxCached_mapAlt map depth rest
   | _, .br _ _ :: _ => rfl
   | _, .catchDormant _ _ :: _ => rfl
+  | _, .softcutActive _ _ :: _ => rfl
+  | _, .softcutDormant _ _ :: _ => rfl
 
 theorem pullAuxTracked_mapAlt {Source Target : Type}
     (map : Source → Target) (cache : Option Nat)
@@ -343,11 +405,11 @@ theorem answers_eq_of_erase_eq (engine : SubstEngine)
   rcases conf with ⟨cur, alts, world, counter, qterm, answers,
     answerKeys, answerKeys_sound, barriers⟩
   unfold pull
-  simp only [Conf.alts, Conf.barriers, mapConf_fields]
+  simp only [mapConf_fields]
   rw [pullAuxTracked_mapAlt]
   cases tracked : pullAuxTracked barriers alts with
   | mk pulled cache =>
-      simp only [tracked, Option.map]
+      simp only [Option.map]
       cases pulled with
       | none => rfl
       | some result =>
@@ -356,6 +418,12 @@ theorem answers_eq_of_erase_eq (engine : SubstEngine)
           | branch goals binding => rfl
           | catchResume frame protectedAlts =>
               simp [mapConf, mapPullTarget, mapCatchFrame,
+                mapAlt, List.map_append, barrierCount_mapAlt]
+          | softcutExhausted frame seenSuccess =>
+              cases seenSuccess <;>
+                simp [mapConf, mapPullTarget, mapSoftcutFrame]
+          | softcutResume frame protectedAlts =>
+              simp [mapConf, mapPullTarget, mapSoftcutFrame,
                 mapAlt, List.map_append, barrierCount_mapAlt]
 
 @[simp] theorem mapConf_enterStreamingCatch {Source Target : Type}
@@ -377,16 +445,16 @@ theorem answers_eq_of_erase_eq (engine : SubstEngine)
   rcases conf with ⟨cur, alts, world, counter, qterm, answers,
     answerKeys, answerKeys_sound, barriers⟩
   unfold exitStreamingCatch
-  simp only [Conf.alts, mapConf_fields]
+  simp only [mapConf_fields]
   rw [splitCatchActive_mapAlt]
   cases found : splitCatchActive alts with
   | none =>
-      simp only [found, Option.map_none]
+      simp only [Option.map_none]
       rw [mapConf_pull]
       rfl
   | some split =>
-      simp [found, mapConf, mapCatchSplit, mapCatchFrame, mapAlt,
-        List.map_append, barrierCount_mapAlt]
+      simp [mapConf, mapCatchSplit, mapCatchFrame, mapAlt,
+        barrierCount_mapAlt]
 
 theorem mapConf_catchErrorSuccessor {Source Target : Type}
     (map : Source → Target) (conf : Conf Source) (error : Atom) :
@@ -395,12 +463,43 @@ theorem mapConf_catchErrorSuccessor {Source Target : Type}
   rcases conf with ⟨cur, alts, world, counter, qterm, answers,
     answerKeys, answerKeys_sound, barriers⟩
   unfold catchErrorSuccessor?
-  simp only [Conf.alts, mapConf_fields]
+  simp only [mapConf_fields]
   rw [splitCatchActive_mapAlt]
   cases found : splitCatchActive alts with
-  | none => simp [found]
+  | none => simp
   | some split =>
-      simp [found, mapConf, mapCatchSplit, mapCatchFrame,
+      simp [mapConf, mapCatchSplit, mapCatchFrame,
+        barrierCount_mapAlt]
+
+@[simp] theorem mapConf_enterStreamingSoftcut {Source Target : Type}
+    (map : Source → Target) (conf : Conf Source) (template : Atom)
+    (sub thenGoals elseGoals rest : List Goal) (entry : Source) :
+    mapConf map
+        (enterStreamingSoftcut conf template sub thenGoals elseGoals rest entry) =
+      enterStreamingSoftcut (mapConf map conf) template sub thenGoals elseGoals
+        rest (map entry) := by
+  rcases conf with ⟨cur, alts, world, counter, qterm, answers,
+    answerKeys, answerKeys_sound, barriers⟩
+  cases barriers <;>
+    simp [enterStreamingSoftcut, mapConf, mapAlt, mapSoftcutFrame,
+      barrierDepth, barrierCount_mapAlt]
+
+@[simp] theorem mapConf_exitStreamingSoftcut {Source Target : Type}
+    (map : Source → Target) (conf : Conf Source) (answer : Atom) :
+    mapConf map (exitStreamingSoftcut conf answer) =
+      exitStreamingSoftcut (mapConf map conf) answer := by
+  rcases conf with ⟨cur, alts, world, counter, qterm, answers,
+    answerKeys, answerKeys_sound, barriers⟩
+  unfold exitStreamingSoftcut
+  simp only [mapConf_fields]
+  rw [splitSoftcutActive_mapAlt]
+  cases found : splitSoftcutActive alts with
+  | none =>
+      simp only [Option.map_none]
+      rw [mapConf_pull]
+      rfl
+  | some split =>
+      simp [mapConf, mapSoftcutSplit, mapSoftcutFrame, mapAlt,
         barrierCount_mapAlt]
 
 theorem mapConf_oncePull {Source Target : Type} (map : Source → Target)
@@ -459,6 +558,13 @@ theorem pullAux_valid (engine : SubstEngine) :
           engine.Valid frame.entry ∧
             (∀ alt ∈ protectedAlts, AltValid engine alt) ∧
             (∀ alt ∈ rest, AltValid engine alt)
+      | some (.softcutExhausted frame _, rest) =>
+          engine.Valid frame.entry ∧
+            (∀ alt ∈ rest, AltValid engine alt)
+      | some (.softcutResume frame protectedAlts, rest) =>
+          engine.Valid frame.entry ∧
+            (∀ alt ∈ protectedAlts, AltValid engine alt) ∧
+            (∀ alt ∈ rest, AltValid engine alt)
   | [], _ => trivial
   | .barrier :: rest, valid => by
       apply pullAux_valid engine rest
@@ -475,6 +581,14 @@ theorem pullAux_valid (engine : SubstEngine) :
         exact valid alt (by simp [member])
   | .catchDormant frame protectedAlts :: rest, valid => by
       have dormantValid := valid (.catchDormant frame protectedAlts) (by simp)
+      exact ⟨dormantValid.1,
+        (altForestValid_iff_forall engine protectedAlts).mp dormantValid.2,
+        fun alt member => valid alt (by simp [member])⟩
+  | .softcutActive frame seenSuccess :: rest, valid => by
+      exact ⟨valid (.softcutActive frame seenSuccess) (by simp),
+        fun alt member => valid alt (by simp [member])⟩
+  | .softcutDormant frame protectedAlts :: rest, valid => by
+      have dormantValid := valid (.softcutDormant frame protectedAlts) (by simp)
       exact ⟨dormantValid.1,
         (altForestValid_iff_forall engine protectedAlts).mp dormantValid.2,
         fun alt member => valid alt (by simp [member])⟩
@@ -508,7 +622,30 @@ theorem pull_valid (engine : SubstEngine) (conf : Conf engine.State)
           · exact auxiliary.2
       | catchResume frame protectedAlts =>
           simp only [result] at auxiliary
-          simp only [result]
+          constructor
+          · simp
+          · intro alt member
+            rcases List.mem_append.mp member with inside | activeOrRest
+            · exact auxiliary.2.1 alt inside
+            · rcases List.mem_cons.mp activeOrRest with rfl | outer
+              · exact auxiliary.1
+              · exact auxiliary.2.2 alt outer
+      | softcutExhausted frame seenSuccess =>
+          simp only [result] at auxiliary
+          cases seenSuccess with
+          | false =>
+              constructor
+              · intro currentGoals currentState equality
+                simp only [Option.some.injEq, Prod.mk.injEq] at equality
+                rcases equality with ⟨_, rfl⟩
+                exact auxiliary.1
+              · exact auxiliary.2
+          | true =>
+              constructor
+              · simp
+              · exact auxiliary.2
+      | softcutResume frame protectedAlts =>
+          simp only [result] at auxiliary
           constructor
           · simp
           · intro alt member
@@ -2706,15 +2843,15 @@ def stepWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable)
         match engine.unify state result template with
         | some next => exitStreamingCatch c next
         | none => pull { c with cur := none }
+    | .softcut tmpl sub thn els =>
+        enterStreamingSoftcut c tmpl sub thn els rest state
+    | .softcutExit template =>
+        exitStreamingSoftcut c (engine.subst state template).1
     | .transactiong tmpl sub =>
         let txSub := transactionSub tmpl sub
         let subConf := subConfOfWith engine c txSub state tmpl
         let done := runWith engine prog gt fuel subConf none
         finishTransaction c done rest tmpl state
-    | .softcut tmpl sub thn els =>
-        let subConf := subConfOfWith engine c sub state tmpl
-        let done := runWith engine prog gt fuel subConf none
-        finishSoftcut c done rest thn els tmpl state
     | .call f args res =>
         let argsResult := engine.substMany state args
         let argsv := argsResult.1
@@ -3119,14 +3256,16 @@ def stepCleanWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable) :
           | none =>
               .progressed
                 (enterStreamingCatch conf tmpl sub res rest state)
+      | some (Goal.softcut tmpl sub thn els :: rest, state) =>
+          .progressed
+            (enterStreamingSoftcut conf tmpl sub thn els rest state)
+      | some (Goal.softcutExit template :: _, state) =>
+          .progressed
+            (exitStreamingSoftcut conf (engine.subst state template).1)
       | some (Goal.transactiong tmpl sub :: rest, state) =>
           let nested := subConfOfWith engine conf (transactionSub tmpl sub)
             state tmpl
           finishTransactionOutcome conf rest tmpl state
-            (runCleanWith engine prog gt fuel nested none)
-      | some (Goal.softcut tmpl sub thn els :: rest, state) =>
-          let nested := subConfOfWith engine conf sub state tmpl
-          finishSoftcutOutcome conf rest thn els tmpl state
             (runCleanWith engine prog gt fuel nested none)
       | some (Goal.findall tmpl sub res :: rest, state) =>
           let nested := subConfOfWith engine conf sub state tmpl
@@ -3284,6 +3423,15 @@ theorem erase_stepWith_of_run (engine : SubstEngine) (prog : Prog)
                   rw [mapConf_exitStreamingCatch]
                   simp [mapConf]
                   rw [← hunify]
+                  rfl
+          | softcutExit template =>
+              have valueEq := engine.subst_value state template stateValid
+              cases valueResult : engine.subst state template with
+              | mk answer next =>
+                  simp only [valueResult] at valueEq
+                  simp only [stepWith, valueResult, erase, reference_subst]
+                  rw [mapConf_exitStreamingSoftcut]
+                  rw [valueEq]
                   rfl
           | cutAt count =>
               have hcut := cutToTracked_mapAlt engine.denote count barriers alts
@@ -3674,16 +3822,10 @@ theorem erase_stepWith_of_run (engine : SubstEngine) (prog : Prog)
                   answerKeys := answerKeys
                   answerKeys_sound := answerKeys_sound
                   barriers := barriers }
-              let nested := subConfOfWith engine base sub state tmpl
-              have nestedValid : ConfValid engine nested :=
-                subConfOfWith_valid engine base sub state tmpl stateValid
-              have doneErase := runErase nested none nestedValid
-              unfold erase at doneErase
               change erase engine (stepWith engine prog gt fuel base) =
                 stepWith reference prog gt fuel (erase engine base)
               simp only [stepWith, base, erase, reference_denote]
-              rw [mapConf_finishSoftcut]
-              rw [doneErase]
+              rw [mapConf_enterStreamingSoftcut]
               rfl
           | findall tmpl sub res =>
               let base : Conf engine.State :=
@@ -4136,9 +4278,9 @@ theorem checked_clean_run_step_simulation (engine : SubstEngine) (prog : Prog)
                                 have mappedError :=
                                   mapStepOutcome_catchErrorOutcome
                                     (checked engine).denote source error
-                                simpa [stepCleanWith, source, argsResult,
+                                simp [stepCleanWith, argsResult,
                                   localResult, referenceLocal, errorResult,
-                                  referenceError, erase] using mappedError
+                                  referenceError, erase]
                             | some goals =>
                                 have referenceLocal :
                                     localTranslatePredicateGoals? world gt op
@@ -4199,8 +4341,7 @@ theorem checked_clean_run_step_simulation (engine : SubstEngine) (prog : Prog)
                               (fuel + 1) source) =
                           stepCleanWith reference prog gt (fuel + 1)
                             (mapConf (checked engine).denote source)
-                        simp [stepCleanWith, source, direct, mapStepOutcome,
-                          erase]
+                        simp [stepCleanWith, source, direct, mapStepOutcome]
                         rfl
                     | some result =>
                         cases result with
@@ -4219,7 +4360,7 @@ theorem checked_clean_run_step_simulation (engine : SubstEngine) (prog : Prog)
                 | softcut tmpl sub thn els =>
                     let source : Conf (checked engine).State :=
                       { cur := some
-                          (Goal.softcut tmpl sub thn els :: rest, state)
+                            (Goal.softcut tmpl sub thn els :: rest, state)
                         alts := alts
                         world := world
                         counter := counter
@@ -4228,51 +4369,15 @@ theorem checked_clean_run_step_simulation (engine : SubstEngine) (prog : Prog)
                         answerKeys := answerKeys
                         answerKeys_sound := answerKeys_sound
                         barriers := barriers }
-                    let nested := subConfOfWith (checked engine) source sub
-                      state tmpl
-                    have nestedRun := induction.1 nested none
-                    change mapStepOutcome (checked engine).denote
-                        (stepCleanWith (checked engine) prog gt (fuel + 1)
-                          source) =
-                      stepCleanWith reference prog gt (fuel + 1)
-                        (mapConf (checked engine).denote source)
-                    calc
-                      _ = mapStepOutcome (checked engine).denote
-                          (finishSoftcutOutcome source rest thn els tmpl
-                            state
-                            (runCleanWith (checked engine) prog gt fuel
-                              nested none)) := by rfl
-                      _ = finishSoftcutOutcome
-                          (mapConf (checked engine).denote source) rest thn
-                          els tmpl ((checked engine).denote state)
-                          (mapRunOutcome (checked engine).denote
-                            (runCleanWith (checked engine) prog gt fuel
-                              nested none)) :=
-                            mapStepOutcome_finishSoftcutOutcome
-                              (checked engine).denote source rest thn els
-                              tmpl state _
-                      _ = finishSoftcutOutcome
-                          (mapConf (checked engine).denote source) rest thn
-                          els tmpl ((checked engine).denote state)
-                          (runCleanWith reference prog gt fuel
-                            (erase (checked engine) nested) none) := by
-                            unfold reference
-                            rw [nestedRun]
-                      _ = finishSoftcutOutcome
-                          (mapConf (checked engine).denote source) rest thn
-                          els tmpl ((checked engine).denote state)
-                          (runCleanWith reference prog gt fuel
-                            (subConfOfWith reference
-                              (mapConf (checked engine).denote source) sub
-                              ((checked engine).denote state) tmpl)
-                            none) := by
-                            unfold reference
-                            rw [erase_subConfOfWith]
-                            rfl
-                      _ = stepCleanWith reference prog gt (fuel + 1)
-                          (mapConf (checked engine).denote source) := by
-                            unfold reference
-                            rfl
+                    change StepOutcomeWith.progressed
+                        (mapConf (checked engine).denote
+                          (enterStreamingSoftcut source tmpl sub thn els rest
+                            state)) =
+                      StepOutcomeWith.progressed
+                        (enterStreamingSoftcut
+                          (mapConf (checked engine).denote source) tmpl sub thn
+                          els rest ((checked engine).denote state))
+                    rw [mapConf_enterStreamingSoftcut]
                 | eq left right =>
                     simpa [stepCleanWith, erase, mapConf] using
                       rawProgressed
@@ -4327,6 +4432,20 @@ theorem checked_clean_run_step_simulation (engine : SubstEngine) (prog : Prog)
                            answerKeys_sound := answerKeys_sound
                            barriers := barriers } :
                           Conf (checked engine).State)
+                | softcutExit template =>
+                    let source : Conf (checked engine).State :=
+                      { cur := some
+                            (Goal.softcutExit template :: rest, state)
+                        alts := alts
+                        world := world
+                        counter := counter
+                        qterm := qterm
+                        answers := answers
+                        answerKeys := answerKeys
+                        answerKeys_sound := answerKeys_sound
+                        barriers := barriers }
+                    simpa [stepCleanWith, stepWith, source, erase, mapConf] using
+                      rawProgressed source
                 | cutAt count =>
                     simpa [stepCleanWith, erase, mapConf] using
                       rawProgressed
@@ -4619,7 +4738,7 @@ theorem reference_run_step (prog : Prog) (gt : GroundingTable) :
             | cons goal rest =>
                 cases goal <;>
                   simp [stepWith, step, runZero, subConfOfWith,
-                    tableSubConfOfWith, finishCatch, finishSoftcut,
+                    tableSubConfOfWith,
                     finishFindall, finishTransaction, enqueueAnswers,
                     finishTable, finishResolution] <;>
                   repeat first | rfl | (split <;> simp_all)
@@ -4668,7 +4787,7 @@ theorem reference_run_step (prog : Prog) (gt : GroundingTable) :
             | cons goal rest =>
                 cases goal <;>
                   simp [stepWith, step, runCurrent, subConfOfWith,
-                    tableSubConfOfWith, finishCatch, finishSoftcut,
+                    tableSubConfOfWith,
                     finishFindall, finishTransaction, enqueueAnswers,
                     finishTable, finishResolution] <;>
                   repeat first | rfl | (split <;> simp_all)

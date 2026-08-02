@@ -29,6 +29,9 @@ def AltTopological : Alt → Prop
   | .catchActive frame => HasTopologicalSubst frame.entry
   | .catchDormant frame protectedAlts =>
       HasTopologicalSubst frame.entry ∧ AltsTopological protectedAlts
+  | .softcutActive frame _ => HasTopologicalSubst frame.entry
+  | .softcutDormant frame protectedAlts =>
+      HasTopologicalSubst frame.entry ∧ AltsTopological protectedAlts
 
 def AltsTopological : List Alt → Prop
   | [] => True
@@ -125,6 +128,25 @@ theorem AltsTopological.splitCatchActive {alts : List Alt}
     halts.of_append_right
   exact ⟨suffixTopological.1, protectedTopological, suffixTopological.2⟩
 
+/-- A live soft-cut split exposes the caller entry, protected condition
+search, and outer suffix as separately topological resources. -/
+theorem AltsTopological.splitSoftcutActive {alts : List Alt}
+    {split : SoftcutSplit Subst} (halts : AltsTopological alts)
+    (found : PLeaTTa.splitSoftcutActive alts = some split) :
+    HasTopologicalSubst split.frame.entry ∧
+      AltsTopological split.protectedAlts ∧
+      AltsTopological split.outer := by
+  have reassembled := PLeaTTa.splitSoftcutActive_reassembles alts
+  rw [found] at reassembled
+  rw [reassembled] at halts
+  have protectedTopological : AltsTopological split.protectedAlts :=
+    halts.of_append_left
+  have suffixTopological :
+      AltsTopological
+        (.softcutActive split.frame split.seenSuccess :: split.outer) :=
+    halts.of_append_right
+  exact ⟨suffixTopological.1, protectedTopological, suffixTopological.2⟩
+
 theorem AltsTopological.cons_barrier {alts : List Alt}
     (halts : AltsTopological alts) :
     AltsTopological (Alt.barrier :: alts) := by
@@ -148,6 +170,21 @@ theorem AltsTopological.cons_catchDormant {frame : CatchFrame}
     (hprotected : AltsTopological protectedAlts)
     (halts : AltsTopological alts) :
     AltsTopological (.catchDormant frame protectedAlts :: alts) := by
+  exact ⟨⟨hentry, hprotected⟩, halts⟩
+
+theorem AltsTopological.cons_softcutActive {frame : SoftcutFrame}
+    {alts : List Alt} (seenSuccess : Bool)
+    (hentry : HasTopologicalSubst frame.entry)
+    (halts : AltsTopological alts) :
+    AltsTopological (.softcutActive frame seenSuccess :: alts) := by
+  exact ⟨hentry, halts⟩
+
+theorem AltsTopological.cons_softcutDormant {frame : SoftcutFrame}
+    {protectedAlts alts : List Alt}
+    (hentry : HasTopologicalSubst frame.entry)
+    (hprotected : AltsTopological protectedAlts)
+    (halts : AltsTopological alts) :
+    AltsTopological (.softcutDormant frame protectedAlts :: alts) := by
   exact ⟨⟨hentry, hprotected⟩, halts⟩
 
 theorem altsTopological_map_branch {α : Type} (items : List α)
@@ -271,6 +308,54 @@ private theorem pull_preserves_topological_alts (alts : List Alt) :
           all_goals
             constructor
             · intro goals b hactive
+              simp at hactive
+            · exact hnew
+      | softcutActive frame seenSuccess =>
+          have hentry : HasTopologicalSubst frame.entry := haltsTopo.1
+          have hrest : AltsTopological rest := haltsTopo.2
+          cases seenSuccess with
+          | false =>
+              have hpull : pull c =
+                  { c with
+                    cur := some
+                      (frame.elseGoals ++ frame.rest, frame.entry)
+                    alts := rest } := by
+                unfold pull
+                rw [halts]
+                cases c.barriers <;> rfl
+              rw [hpull]
+              constructor
+              · intro goals binding hactive
+                simp only [Option.some.injEq, Prod.mk.injEq] at hactive
+                rcases hactive with ⟨_, rfl⟩
+                exact hentry
+              · exact hrest
+          | true =>
+              have hpull : pull c =
+                  { c with cur := none, alts := rest } := by
+                unfold pull
+                rw [halts]
+                cases c.barriers <;> rfl
+              rw [hpull]
+              constructor
+              · intro goals binding hactive
+                simp at hactive
+              · exact hrest
+      | softcutDormant frame protectedAlts =>
+          have hentry : HasTopologicalSubst frame.entry := haltsTopo.1.1
+          have hprotected : AltsTopological protectedAlts := haltsTopo.1.2
+          have hrest : AltsTopological rest := haltsTopo.2
+          have hnew : AltsTopological
+              (protectedAlts ++ .softcutActive frame true :: rest) :=
+            hprotected.append (hrest.cons_softcutActive true hentry)
+          unfold pull
+          rw [halts]
+          cases c.barriers <;>
+            simp only [pullAuxTracked, pullAuxCached, pullAux,
+              addBarrierCache, Option.map]
+          all_goals
+            constructor
+            · intro goals binding hactive
               simp at hactive
             · exact hnew
 
@@ -705,17 +790,32 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
             rcases hcur with ⟨rfl, rfl⟩
             exact pieces.1
           · exact pieces.2.2
-  | softcut_some c d tmpl sub thn els rest b h hrun hdone hne =>
+  | softcut_stream_enter c tmpl sub thn els rest b h =>
       have hb := htop.active h
-      have hnew := (altsTopological_map_branch d.answerValues
-        (fun inst => Goal.eq tmpl inst :: thn ++ rest) b hb).append htop.2
-      apply ConfTopological.pull
       constructor
-      · intro goals branchSubst hcur
-        simp at hcur
-      · exact hnew
-  | softcut_none c d tmpl sub thn els rest b h hrun hdone he =>
-      apply ConfTopological.frame (htop.replaceActive h) <;> rfl
+      · intro goals binding hcur
+        simp only [enterStreamingSoftcut, Option.some.injEq, Prod.mk.injEq]
+          at hcur
+        rcases hcur with ⟨rfl, rfl⟩
+        exact hb
+      · exact (htop.2.cons_softcutActive false hb).cons_barrier
+  | softcut_stream_exit c template rest b h =>
+      cases found : splitSoftcutActive c.alts with
+      | none =>
+          simp only [exitStreamingSoftcut, found]
+          exact ConfTopological.pull _ htop.clearActive
+      | some split =>
+          have pieces := htop.2.splitSoftcutActive found
+          simp only [exitStreamingSoftcut, found]
+          constructor
+          · intro goals binding hcur
+            simp only [Option.some.injEq, Prod.mk.injEq] at hcur
+            rcases hcur with ⟨rfl, rfl⟩
+            exact pieces.1
+          · exact AltsTopological.cons_softcutDormant
+              (frame := split.frame)
+              (protectedAlts := split.protectedAlts)
+              (alts := split.outer) pieces.1 pieces.2.1 pieces.2.2
   | transaction_some c d tmpl sub rest b h hrun hdone hne =>
       have hb := htop.active h
       have hnew := (altsTopological_map_branch d.answerValues

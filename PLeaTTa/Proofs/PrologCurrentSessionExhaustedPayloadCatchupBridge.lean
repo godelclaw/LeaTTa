@@ -834,6 +834,30 @@ inductive ExhaustedPayloadCatchupResult
         qterm cursor bodyBarrier callerBarrier callerReferences
         callerExecutables active callerScope outerScope segments resources
         context baseAlts predecessor source successor payloadContext
+  | baseSoftcutElse
+      (partition :
+        BaseSoftcutElseOuterResourceCatchupPartition alpha segments resources
+          context baseAlts) :
+      ExhaustedPayloadCatchupResult freshFrontier alpha support opened pending
+        qterm cursor bodyBarrier callerBarrier callerReferences
+        callerExecutables active callerScope outerScope segments resources
+        context baseAlts predecessor source successor payloadContext
+  | baseSoftcutDone
+      (partition :
+        BaseSoftcutDoneOuterResourceCatchupPartition alpha segments resources
+          context baseAlts) :
+      ExhaustedPayloadCatchupResult freshFrontier alpha support opened pending
+        qterm cursor bodyBarrier callerBarrier callerReferences
+        callerExecutables active callerScope outerScope segments resources
+        context baseAlts predecessor source successor payloadContext
+  | baseSoftcutResume
+      (partition :
+        BaseSoftcutResumeOuterResourceCatchupPartition alpha segments resources
+          context baseAlts) :
+      ExhaustedPayloadCatchupResult freshFrontier alpha support opened pending
+        qterm cursor bodyBarrier callerBarrier callerReferences
+        callerExecutables active callerScope outerScope segments resources
+        context baseAlts predecessor source successor payloadContext
   | terminal
       (partition :
         TerminalOuterResourceCatchupPartition alpha segments resources context
@@ -907,6 +931,12 @@ theorem catchupClassified
       exact .baseLive partition
   | baseCatchResume partition =>
       exact .baseCatchResume partition
+  | baseSoftcutElse partition =>
+      exact .baseSoftcutElse partition
+  | baseSoftcutDone partition =>
+      exact .baseSoftcutDone partition
+  | baseSoftcutResume partition =>
+      exact .baseSoftcutResume partition
   | terminal partition =>
       obtain ⟨sourceSteps, relation⟩ :=
         PLeaTTa.PrologCurrentSessionExhaustedPayloadCatchupBridge.SpinedExhaustedPayloadResourceRelatesAt.catchupTerminal

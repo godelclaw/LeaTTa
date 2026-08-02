@@ -306,6 +306,10 @@ theorem pullAux_append_of_some
           simpa [PLeaTTa.pullAux] using inductionHypothesis selected
       | catchDormant frame protectedAlts =>
           simp [PLeaTTa.pullAux] at selected
+      | softcutActive frame seenSuccess =>
+          simp [PLeaTTa.pullAux] at selected
+      | softcutDormant frame protectedAlts =>
+          simp [PLeaTTa.pullAux] at selected
 
 /-- A branch-free prefix contributes no result to `pullAux`; appending it is
 observationally identical to pulling the older suffix directly. -/
@@ -324,6 +328,10 @@ theorem pullAux_append_of_none
       | catchActive frame =>
           simpa [PLeaTTa.pullAux] using inductionHypothesis empty
       | catchDormant frame protectedAlts =>
+          simp [PLeaTTa.pullAux] at empty
+      | softcutActive frame seenSuccess =>
+          simp [PLeaTTa.pullAux] at empty
+      | softcutDormant frame protectedAlts =>
           simp [PLeaTTa.pullAux] at empty
 
 /-- A bank consisting solely of resolution branches whose pull is exhausted
@@ -379,6 +387,43 @@ theorem pullAux_catchResume_impossible_of_all_branches
         ∃ goals binding, alt = PLeaTTa.Alt.br goals binding) :
     PLeaTTa.pullAux alts ≠
       some (.catchResume frame protectedAlts, rest) := by
+  intro resumed
+  cases alts with
+  | nil => simp [PLeaTTa.pullAux] at resumed
+  | cons head tail =>
+      rcases branchOnly head (by simp) with ⟨goals, binding, headEq⟩
+      subst head
+      simp [PLeaTTa.pullAux] at resumed
+
+/-- A branch-only owned bank cannot expose a streaming soft-cut exhaustion
+target.  Such delimiters belong to an older ambient bank, never to a local
+clause cursor. -/
+theorem pullAux_softcutExhausted_impossible_of_all_branches
+    {alts : List PLeaTTa.Alt} {frame : PLeaTTa.SoftcutFrame}
+    {seenSuccess : Bool} {rest : List PLeaTTa.Alt}
+    (branchOnly :
+      ∀ alt ∈ alts,
+        ∃ goals binding, alt = PLeaTTa.Alt.br goals binding) :
+    PLeaTTa.pullAux alts ≠
+      some (.softcutExhausted frame seenSuccess, rest) := by
+  intro exhausted
+  cases alts with
+  | nil => simp [PLeaTTa.pullAux] at exhausted
+  | cons head tail =>
+      rcases branchOnly head (by simp) with ⟨goals, binding, headEq⟩
+      subst head
+      simp [PLeaTTa.pullAux] at exhausted
+
+/-- A branch-only owned bank likewise cannot resume a dormant streaming
+soft-cut delimiter. -/
+theorem pullAux_softcutResume_impossible_of_all_branches
+    {alts : List PLeaTTa.Alt} {frame : PLeaTTa.SoftcutFrame}
+    {protectedAlts rest : List PLeaTTa.Alt}
+    (branchOnly :
+      ∀ alt ∈ alts,
+        ∃ goals binding, alt = PLeaTTa.Alt.br goals binding) :
+    PLeaTTa.pullAux alts ≠
+      some (.softcutResume frame protectedAlts, rest) := by
   intro resumed
   cases alts with
   | nil => simp [PLeaTTa.pullAux] at resumed
@@ -597,6 +642,18 @@ theorem classifyPrefix
                 (pullAux_catchResume_impossible_of_all_branches
                   (RetainedCursorAlternativeOwnership.alts_all_branches
                     ownership.scan)
+                  pullEq)
+          | softcutExhausted frame seenSuccess =>
+              exact False.elim
+                (pullAux_softcutExhausted_impossible_of_all_branches
+                  (RetainedCursorAlternativeOwnership.alts_all_branches
+                    ownership.scan)
+                  pullEq)
+          | softcutResume frame protectedAlts =>
+              exact False.elim
+                (pullAux_softcutResume_impossible_of_all_branches
+                  (RetainedCursorAlternativeOwnership.alts_all_branches
+                    ownership.scan)
                   pullEq))
     (by
       intro callerScope callerTail leafScope bindings head next historyOrigin
@@ -677,7 +734,7 @@ theorem classifyPrefix
 
 end AnswerOriginResourceAgrees
 
-/-! ## Four-way answer-pull outcome -/
+/-! ## Total answer-pull outcome -/
 
 /-- Exact landing of one eager executable answer pull relative to the source
 origin zipper.
@@ -713,6 +770,25 @@ inductive OriginPullOutcome
       (basePull :
         PLeaTTa.pullAux afterAlts =
           some (.catchResume frame protectedAlts, rest)) :
+      OriginPullOutcome alpha agreement []
+  | baseSoftcutElse (falls : OriginPrefixFallsThrough alpha agreement)
+      (frame : PLeaTTa.SoftcutFrame) (rest : List PLeaTTa.Alt)
+      (basePull :
+        PLeaTTa.pullAux afterAlts =
+          some (.softcutExhausted frame false, rest)) :
+      OriginPullOutcome alpha agreement []
+  | baseSoftcutDone (falls : OriginPrefixFallsThrough alpha agreement)
+      (frame : PLeaTTa.SoftcutFrame) (rest : List PLeaTTa.Alt)
+      (basePull :
+        PLeaTTa.pullAux afterAlts =
+          some (.softcutExhausted frame true, rest)) :
+      OriginPullOutcome alpha agreement []
+  | baseSoftcutResume (falls : OriginPrefixFallsThrough alpha agreement)
+      (frame : PLeaTTa.SoftcutFrame)
+      (protectedAlts rest : List PLeaTTa.Alt)
+      (basePull :
+        PLeaTTa.pullAux afterAlts =
+          some (.softcutResume frame protectedAlts, rest)) :
       OriginPullOutcome alpha agreement []
   | terminal (falls : OriginPrefixFallsThrough alpha agreement)
       (basePull : PLeaTTa.pullAux afterAlts = none) :
@@ -750,13 +826,23 @@ theorem classifyPull
         | catchResume frame protectedAlts =>
             exact
               ⟨[], .baseCatchResume falls frame protectedAlts rest baseEq⟩
+        | softcutExhausted frame seenSuccess =>
+            cases seenSuccess with
+            | false =>
+                exact ⟨[], .baseSoftcutElse falls frame rest baseEq⟩
+            | true =>
+                exact ⟨[], .baseSoftcutDone falls frame rest baseEq⟩
+        | softcutResume frame protectedAlts =>
+            exact
+              ⟨[], .baseSoftcutResume falls frame protectedAlts rest baseEq⟩
 
 end AnswerOriginResourceAgrees
 
 namespace OriginPullOutcome
 
-/-- The four-way source classification reconstructs exactly the existing
-total executable pull classifier at the literal incoming bank. -/
+/-- The source classification reconstructs one exact total executable pull
+outcome at the literal incoming bank.  Completion occurs exactly for a real
+`pullAux = none`; every branch or delimiter transition is silent. -/
 theorem toPullOutcomeAgrees
     {alpha : List (LogicVar × String)}
     {leafScope : CutScopeId}
@@ -770,45 +856,71 @@ theorem toPullOutcomeAgrees
         beforeAlts afterAlts}
     {events : List Observation}
     (outcome : OriginPullOutcome alpha agreement events) :
-    (∃ goals binding rest,
-        events = [] ∧
-          PrologFindallAnswerResourceBridge.PullOutcomeAgrees beforeAlts
-            (some (goals, binding)) rest) ∨
-      (∃ frame protectedAlts rest,
-        events = [] ∧
-          PrologFindallAnswerResourceBridge.PullOutcomeAgrees beforeAlts none
-            (protectedAlts ++ .catchActive frame :: rest)) ∨
-        (events = [.completed] ∧
-          PrologFindallAnswerResourceBridge.PullOutcomeAgrees beforeAlts none
-            []) := by
+    ∃ cur afterAlts,
+      PrologFindallAnswerResourceBridge.PullOutcomeAgrees beforeAlts cur
+          afterAlts ∧
+        ((events = [.completed] ∧ PLeaTTa.pullAux beforeAlts = none) ∨
+          (events = [] ∧ PLeaTTa.pullAux beforeAlts ≠ none)) := by
   cases outcome with
   | localLive goals binding rest landing =>
-      exact .inl
-        ⟨goals, binding, rest, rfl,
+      exact
+        ⟨some (goals, binding), rest,
           .selected (beforeAlts := beforeAlts) goals binding rest
-            landing.pullAux_exact⟩
+            landing.pullAux_exact,
+          .inr ⟨rfl, by simp [landing.pullAux_exact]⟩⟩
   | baseLive falls goals binding rest basePull =>
       have pullExact :
           PLeaTTa.pullAux beforeAlts =
             some (.branch goals binding, rest) :=
         falls.pullAux_eq.trans basePull
-      exact .inl
-        ⟨goals, binding, rest, rfl,
-          .selected (beforeAlts := beforeAlts) goals binding rest pullExact⟩
+      exact
+        ⟨some (goals, binding), rest,
+          .selected (beforeAlts := beforeAlts) goals binding rest pullExact,
+          .inr ⟨rfl, by simp [pullExact]⟩⟩
   | baseCatchResume falls frame protectedAlts rest basePull =>
       have pullExact :
           PLeaTTa.pullAux beforeAlts =
             some (.catchResume frame protectedAlts, rest) :=
         falls.pullAux_eq.trans basePull
-      exact .inr (.inl
-        ⟨frame, protectedAlts, rest, rfl,
+      exact
+        ⟨none, protectedAlts ++ .catchActive frame :: rest,
           .catchResumed (beforeAlts := beforeAlts) frame protectedAlts rest
-            pullExact⟩)
+            pullExact,
+          .inr ⟨rfl, by simp [pullExact]⟩⟩
+  | baseSoftcutElse falls frame rest basePull =>
+      have pullExact :
+          PLeaTTa.pullAux beforeAlts =
+            some (.softcutExhausted frame false, rest) :=
+        falls.pullAux_eq.trans basePull
+      exact
+        ⟨some (frame.elseGoals ++ frame.rest, frame.entry), rest,
+          .softcutElse (beforeAlts := beforeAlts) frame rest pullExact,
+          .inr ⟨rfl, by simp [pullExact]⟩⟩
+  | baseSoftcutDone falls frame rest basePull =>
+      have pullExact :
+          PLeaTTa.pullAux beforeAlts =
+            some (.softcutExhausted frame true, rest) :=
+        falls.pullAux_eq.trans basePull
+      exact
+        ⟨none, rest,
+          .softcutDone (beforeAlts := beforeAlts) frame rest pullExact,
+          .inr ⟨rfl, by simp [pullExact]⟩⟩
+  | baseSoftcutResume falls frame protectedAlts rest basePull =>
+      have pullExact :
+          PLeaTTa.pullAux beforeAlts =
+            some (.softcutResume frame protectedAlts, rest) :=
+        falls.pullAux_eq.trans basePull
+      exact
+        ⟨none, protectedAlts ++ .softcutActive frame true :: rest,
+          .softcutResumed (beforeAlts := beforeAlts) frame protectedAlts rest
+            pullExact,
+          .inr ⟨rfl, by simp [pullExact]⟩⟩
   | terminal falls basePull =>
       have pullNone : PLeaTTa.pullAux beforeAlts = none :=
         falls.pullAux_eq.trans basePull
-      exact .inr (.inr
-        ⟨rfl, .exhausted (beforeAlts := beforeAlts) pullNone⟩)
+      exact
+        ⟨none, [], .exhausted (beforeAlts := beforeAlts) pullNone,
+          .inl ⟨rfl, pullNone⟩⟩
 
 /-- The classification fixes source-observation shape independently of any
 later step-count proof. -/

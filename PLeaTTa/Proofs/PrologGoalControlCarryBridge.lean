@@ -91,6 +91,7 @@ def materializedSoftCutControlsGoal (runtime : Subst) :
         (materializedSoftCutControlsGoals runtime condition ++
           (materializedSoftCutControlsGoals runtime thenGoals ++
             materializedSoftCutControlsGoals runtime elseGoals))
+  | .softcutExit _ => []
   | .findall _ goals _ => materializedSoftCutControlsGoals runtime goals
   | .onceg _ goals _ => materializedSoftCutControlsGoals runtime goals
   | .transactiong _ goals => materializedSoftCutControlsGoals runtime goals

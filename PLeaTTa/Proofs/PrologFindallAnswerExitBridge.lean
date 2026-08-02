@@ -457,6 +457,15 @@ theorem terminal_fields_of_pull_none
   | catchResumed frame protectedAlts rest resumed =>
       rw [empty] at resumed
       cases resumed
+  | softcutElse frame rest resumed =>
+      rw [empty] at resumed
+      cases resumed
+  | softcutDone frame rest resumed =>
+      rw [empty] at resumed
+      cases resumed
+  | softcutResumed frame protectedAlts rest resumed =>
+      rw [empty] at resumed
+      cases resumed
 
 end PullOutcomeAgrees
 

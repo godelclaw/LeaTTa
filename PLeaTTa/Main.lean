@@ -116,23 +116,6 @@ partial def stepCount (prog : Prog) (gt : Metta.GroundingTable)
                         alts := d.answerValues.map (fun inst =>
                           Alt.br (Goal.eq tmpl inst :: rest) b) ++ c.alts }
       (next, subSteps, maxSubst)
-  | some (Goal.softcut tmpl sub thn els :: rest, b) =>
-      let subConf : Conf :=
-        { cur := some (sub, b), alts := [], world := c.world,
-          counter := c.counter, qterm := tmpl,
-          barriers := resetBarrierCache c.barriers }
-      let (d, subSteps, maxSubst) := runCount prog gt fuel subConf none
-      let next :=
-        if d.answers.isEmpty then
-          { c with cur := some (els ++ rest, b),
-                   world := d.world, counter := d.counter }
-        else
-          PLeaTTa.pull { c with cur := none,
-                                world := d.world, counter := d.counter,
-                                alts := d.answerValues.map (fun inst =>
-                                  Alt.br (Goal.eq tmpl inst :: thn ++ rest) b)
-                                  ++ c.alts }
-      (next, subSteps, maxSubst)
   | some (Goal.findall tmpl sub res :: rest, b) =>
       let subConf : Conf :=
         { cur := some (sub, b), alts := [], world := c.world,
@@ -151,6 +134,7 @@ private def goalSummary : Goal → String
   | .catchg _ _ _ => "catch"
   | .catchExit _ _ => "catch-exit"
   | .softcut _ _ _ _ => "softcut"
+  | .softcutExit _ => "softcut-exit"
   | .eq _ _ => "unify"
   | .compileAlias _ _ => "compiler-alias"
   | .cut => "cut"
@@ -199,6 +183,9 @@ private def foldAltBindings {Binding Acc : Type}
   | current, .br _ binding => visit current binding
   | current, .catchActive frame => visit current frame.entry
   | current, .catchDormant frame protectedAlts =>
+      foldAltBindingsList visit (visit current frame.entry) protectedAlts
+  | current, .softcutActive frame _ => visit current frame.entry
+  | current, .softcutDormant frame protectedAlts =>
       foldAltBindingsList visit (visit current frame.entry) protectedAlts
 
 /-- List companion for `foldAltBindings`. -/
@@ -631,9 +618,8 @@ private def runProgramMain (args : List String) : IO UInt32 := do
             world := profileWorld
             if visible && observable then
               queries := queries ++ [(profileGoals, qterm)]
-            let unseededConf : Conf :=
-              { cur := some (profileGoals, []), alts := [],
-                world, counter, qterm, barriers := some 0 }
+            let unseededConf :=
+              rootQueryConf world counter qterm profileGoals
             let counterSeed :=
               max counter (resolutionLiveHighWater unseededConf)
             let conf : Conf := { unseededConf with counter := counterSeed }

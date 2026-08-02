@@ -191,6 +191,12 @@ def freshenTypeChain (counter : Nat) (chain : List Atom) : List Atom × Nat :=
 def compilerTrueA : Atom := Atom.sym "True"
 def compilerFalseA : Atom := Atom.sym "False"
 
+/-- Canonical impossible goal used where pinned Prolog emits `fail`.  Its two
+closed symbols are distinct; `PrologCoreAdequacy.unifyB_true_false_none`
+proves that the executable unifier rejects this equation under every binding. -/
+def compilerFailureGoal : Goal :=
+  Goal.eq compilerTrueA compilerFalseA
+
 def compileBinArity : String → Option Nat
   | "=" | "==" | "!=" | "+" | "-" | "*" | "/" | "%" | "<" | ">" | "<=" | ">="
   | "min" | "max"
@@ -225,6 +231,29 @@ private def partialValue? (a : Atom) : Option (String × List Atom) :=
 def bindingTemplate (base : Atom) (sources : List Atom) : Atom :=
   let vars := (sources.flatMap Atom.vars).eraseDups
   chainOf (base :: vars.map Atom.var)
+
+/-- Source-faithful ordinary Prolog if-then-else, `(Condition -> Then ; Else)`,
+expressed through the demand-driven soft-cut kernel.  `onceg` commits the
+condition to its first answer under its own cut barrier; the surrounding
+streaming soft cut transfers exactly that answer's template bindings and
+suppresses `Else` even when `Then` subsequently fails.
+
+Keeping this as a structural composition rather than a mode on `Goal.softcut`
+prevents ordinary `->` sites from accidentally inheriting `*->`'s remaining
+condition answers. [SPEC translator.pl:151-183,399-406] -/
+def committedIfGoal (template : Atom) (condition thenGoals elseGoals : List Goal) :
+    Goal :=
+  Goal.softcut template [Goal.onceg template condition template]
+    thenGoals elseGoals
+
+/-- Source-faithful Prolog negation-as-failure, `\+ Condition`.  The committed
+condition probe stops after its first answer; success enters an explicit
+failing branch, while exhaustion selects the empty success branch.  Condition
+bindings are therefore discarded, cuts are call-local, and persistent world
+effects remain threaded exactly as for `\+/1`. [SPEC translator.pl:171-172] -/
+def negatedGoals (condition : List Goal) : List Goal :=
+  [committedIfGoal (Atom.sym "#negation") condition
+    [compilerFailureGoal] []]
 
 /-- Whether pinned `translate_args_by_type/4` emits a post-translation
 `get-type`/`get-metatype` check for this declared type. -/
@@ -595,6 +624,7 @@ def substCompiledGoal (binding : Subst) : Goal → Goal
         (substCompiledGoals binding condition)
         (substCompiledGoals binding thenGoals)
         (substCompiledGoals binding elseGoals)
+  | .softcutExit template => .softcutExit (subst binding template)
   | .eq left right => .eq (subst binding left) (subst binding right)
   | .compileAlias left right =>
       .compileAlias (subst binding left) (subst binding right)
@@ -659,7 +689,8 @@ mutual
 left-to-right order in which its nested source expressions were translated. -/
 def collectCompileAliasesGoal : Goal → List (Atom × Atom)
   | .call _ _ _ | .bin _ _ _ | .callDyn _ _ _ | .evalg _ _
-  | .catchExit _ _ | .eq _ _ | .cut | .cutAt _ | .spread _ _ | .smatch _
+  | .catchExit _ _ | .softcutExit _ | .eq _ _ | .cut | .cutAt _
+  | .spread _ _ | .smatch _
   | .wact _ _ _ => []
   | .compileAlias left right => [(left, right)]
   | .catchg _ goals _ => collectCompileAliasesGoals goals
@@ -708,6 +739,7 @@ def eraseCompileAliasesGoal : Goal → Option Goal
         (eraseCompileAliasesGoals condition)
         (eraseCompileAliasesGoals thenGoals)
         (eraseCompileAliasesGoals elseGoals))
+  | .softcutExit template => some (.softcutExit template)
   | .eq left right => some (.eq left right)
   | .cut => some .cut
   | .cutAt barrier => some (.cutAt barrier)
@@ -1250,11 +1282,15 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
           | some body => do
               let (tb, gb, m) ← compileExprFuel fuel env n4 body
               let failGs := gb ++ [Goal.eq r tb]
-              -- [SPEC translator.pl:163-176] the `Empty` arm is selected only
-              -- when the scrutinee has no solution, so this path stays
-              -- failure-sensitive.
-              let carry := bindingTemplate sv [scrut]
-              .ok (r, [Goal.softcut carry (gs ++ [Goal.eq sv ts]) armGs failGs], m)
+              -- [SPEC translator.pl:163-176] This is deliberately the pinned
+              -- `(Gk, CaseGoal) ; (\+ Gk, DefaultThen)` tree, not a soft cut.
+              -- The positive guard is caller-cut-transparent; the fallback
+              -- re-runs the guard under call-local negation.  `amb` introduces
+              -- no barrier, and both nonempty branches already constrain `r`.
+              let guard := gs ++ [Goal.eq sv ts]
+              let positive := guard ++ armGs
+              let fallback := negatedGoals guard ++ failGs
+              .ok (r, [Goal.amb [(r, positive), (r, fallback)] r], m)
           | none =>
               -- [SPEC translator.pl:174-176] no-default `case` leaves the
               -- scrutinee goals in ordinary Prolog flow (`Gk, KeyGoal, IfGoal`);
@@ -1579,7 +1615,7 @@ def compileCaseArmsFuel : Nat → CEnv → Atom → Atom → Nat → List Atom �
         let (elseGoals, m3) ←
           compileCaseArmsFuel fuel env scrutinee result m2 more
         let carry := bindingTemplate compiledPattern [Atom.sym name]
-        .ok ([Goal.softcut carry
+        .ok ([committedIfGoal carry
           (patternGoals ++ [Goal.eq compiledPattern scrutinee])
           (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], m3)
   | fuel + 1, env, scrutinee, result, m,
@@ -1591,7 +1627,7 @@ def compileCaseArmsFuel : Nat → CEnv → Atom → Atom → Nat → List Atom �
       let (elseGoals, m3) ←
         compileCaseArmsFuel fuel env scrutinee result m2 more
       let carry := bindingTemplate compiledPattern [pattern]
-      .ok ([Goal.softcut carry
+      .ok ([committedIfGoal carry
         (patternGoals ++ [Goal.eq compiledPattern scrutinee])
         (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], m3)
   | _ + 1, _, _, _, _, _ :: _ => .error "case: malformed arm"
@@ -1721,7 +1757,7 @@ theorem compileCaseArmsFuel_var_pair_eq (fuel : Nat) (env : CEnv)
       let (elseGoals, nextCounter) ←
         compileCaseArmsFuel fuel env scrutinee result bodyCounter more
       let carry := bindingTemplate compiledPattern [Atom.var name]
-      .ok ([Goal.softcut carry
+      .ok ([committedIfGoal carry
         (patternGoals ++ [Goal.eq compiledPattern scrutinee])
         (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) := by
   change (do
@@ -1732,7 +1768,7 @@ theorem compileCaseArmsFuel_var_pair_eq (fuel : Nat) (env : CEnv)
     let (elseGoals, nextCounter) ←
       compileCaseArmsFuel fuel env scrutinee result bodyCounter more
     let carry := bindingTemplate compiledPattern [Atom.var name]
-    .ok ([Goal.softcut carry
+    .ok ([committedIfGoal carry
       (patternGoals ++ [Goal.eq compiledPattern scrutinee])
       (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) = _
   rfl
@@ -1750,7 +1786,7 @@ theorem compileCaseArmsFuel_gnd_pair_eq (fuel : Nat) (env : CEnv)
       let (elseGoals, nextCounter) ←
         compileCaseArmsFuel fuel env scrutinee result bodyCounter more
       let carry := bindingTemplate compiledPattern [Atom.gnd ground]
-      .ok ([Goal.softcut carry
+      .ok ([committedIfGoal carry
         (patternGoals ++ [Goal.eq compiledPattern scrutinee])
         (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) := by
   change (do
@@ -1761,7 +1797,7 @@ theorem compileCaseArmsFuel_gnd_pair_eq (fuel : Nat) (env : CEnv)
     let (elseGoals, nextCounter) ←
       compileCaseArmsFuel fuel env scrutinee result bodyCounter more
     let carry := bindingTemplate compiledPattern [Atom.gnd ground]
-    .ok ([Goal.softcut carry
+    .ok ([committedIfGoal carry
       (patternGoals ++ [Goal.eq compiledPattern scrutinee])
       (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) = _
   rfl
@@ -1779,7 +1815,7 @@ theorem compileCaseArmsFuel_expr_pair_eq (fuel : Nat) (env : CEnv)
       let (elseGoals, nextCounter) ←
         compileCaseArmsFuel fuel env scrutinee result bodyCounter more
       let carry := bindingTemplate compiledPattern [Atom.expr items]
-      .ok ([Goal.softcut carry
+      .ok ([committedIfGoal carry
         (patternGoals ++ [Goal.eq compiledPattern scrutinee])
         (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) := by
   change (do
@@ -1790,7 +1826,7 @@ theorem compileCaseArmsFuel_expr_pair_eq (fuel : Nat) (env : CEnv)
     let (elseGoals, nextCounter) ←
       compileCaseArmsFuel fuel env scrutinee result bodyCounter more
     let carry := bindingTemplate compiledPattern [Atom.expr items]
-    .ok ([Goal.softcut carry
+    .ok ([committedIfGoal carry
       (patternGoals ++ [Goal.eq compiledPattern scrutinee])
       (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) = _
   rfl
@@ -1809,7 +1845,7 @@ theorem compileCaseArmsFuel_sym_pair_eq (fuel : Nat) (env : CEnv)
       let (elseGoals, nextCounter) ←
         compileCaseArmsFuel fuel env scrutinee result bodyCounter more
       let carry := bindingTemplate compiledPattern [Atom.sym name]
-      .ok ([Goal.softcut carry
+      .ok ([committedIfGoal carry
         (patternGoals ++ [Goal.eq compiledPattern scrutinee])
         (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) := by
   change (if name == "Empty" then
@@ -1822,7 +1858,7 @@ theorem compileCaseArmsFuel_sym_pair_eq (fuel : Nat) (env : CEnv)
       let (elseGoals, nextCounter) ←
         compileCaseArmsFuel fuel env scrutinee result bodyCounter more
       let carry := bindingTemplate compiledPattern [Atom.sym name]
-      .ok ([Goal.softcut carry
+      .ok ([committedIfGoal carry
         (patternGoals ++ [Goal.eq compiledPattern scrutinee])
         (bodyGoals ++ [Goal.eq result compiledBody]) elseGoals], nextCounter)) = _
   simp [notEmpty]

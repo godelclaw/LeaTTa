@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: Apache-2.0
+
 /-
 Module: PLeaTTa.Proofs.ObservationAgreement
 Purpose: Relate independent Prolog-term denotation to executable Atom values
@@ -554,7 +556,11 @@ constructors of the small-step relation. -/
   | none => rfl
   | some branch =>
       rcases branch with ⟨target, rest⟩
-      cases target <;> rfl
+      cases target with
+      | branch => rfl
+      | catchResume => rfl
+      | softcutExhausted frame seenSuccess => cases seenSuccess <;> rfl
+      | softcutResume => rfl
 
 /-- Pulling the next alternative changes control only; it preserves the
 published answer sequence. -/
@@ -567,7 +573,11 @@ theorem pull_answerValues (c : Conf) :
   | none => rfl
   | some branch =>
       rcases branch with ⟨target, rest⟩
-      cases target <;> rfl
+      cases target with
+      | branch => rfl
+      | catchResume => rfl
+      | softcutExhausted frame seenSuccess => cases seenSuccess <;> rfl
+      | softcutResume => rfl
 
 @[simp] theorem enterStreamingCatch_answers (c : Conf)
     (template : Atom) (sub : List Goal) (result : Atom) (rest : List Goal)
@@ -581,6 +591,18 @@ theorem pull_answerValues (c : Conf) :
     (PLeaTTa.exitStreamingCatch c binding).answers = c.answers := by
   unfold PLeaTTa.exitStreamingCatch
   cases splitCatchActive c.alts <;> simp
+
+@[simp] theorem enterStreamingSoftcut_answers (c : Conf)
+    (template : Atom) (sub thenGoals elseGoals rest : List Goal)
+    (entry : Metta.Subst) :
+    (PLeaTTa.enterStreamingSoftcut c template sub thenGoals elseGoals rest
+      entry).answers = c.answers := by
+  rfl
+
+@[simp] theorem exitStreamingSoftcut_answers (c : Conf) (answer : Atom) :
+    (PLeaTTa.exitStreamingSoftcut c answer).answers = c.answers := by
+  unfold PLeaTTa.exitStreamingSoftcut
+  cases splitSoftcutActive c.alts <;> simp
 
 @[simp] theorem catchErrorSuccessor_answers {c next : Conf} (error : Atom)
     (successor : catchErrorSuccessor? c error = some next) :

@@ -1118,6 +1118,54 @@ structure BaseCatchResumeOuterResourceCatchupPartition
   baseResume :
     PLeaTTa.pullAux base = some (.catchResume frame protectedAlts, tail)
 
+/-- All aligned local resources are empty, while an unsuccessful streaming
+soft-cut in the arbitrary older base selects its Else continuation. -/
+structure BaseSoftcutElseOuterResourceCatchupPartition
+    (alpha : List (LogicVar × String))
+    (segments : List ControlSegment)
+    (resources : List RetainedAlternativeSegment)
+    (context : ActiveProductContext)
+    (base : List PLeaTTa.Alt) where
+  allLocal :
+    AllLocalResourcesExhausted alpha segments resources context
+  frame : PLeaTTa.SoftcutFrame
+  tail : List PLeaTTa.Alt
+  baseElse :
+    PLeaTTa.pullAux base = some (.softcutExhausted frame false, tail)
+
+/-- All aligned local resources are empty, while a streaming soft-cut that
+already succeeded exhausts in the arbitrary older base.  Else stays
+suppressed and control continues by pulling the remaining base. -/
+structure BaseSoftcutDoneOuterResourceCatchupPartition
+    (alpha : List (LogicVar × String))
+    (segments : List ControlSegment)
+    (resources : List RetainedAlternativeSegment)
+    (context : ActiveProductContext)
+    (base : List PLeaTTa.Alt) where
+  allLocal :
+    AllLocalResourcesExhausted alpha segments resources context
+  frame : PLeaTTa.SoftcutFrame
+  tail : List PLeaTTa.Alt
+  baseDone :
+    PLeaTTa.pullAux base = some (.softcutExhausted frame true, tail)
+
+/-- All aligned local resources are empty, while the arbitrary older base
+resumes a dormant streaming soft-cut.  Its protected condition alternatives
+and successful-delimiter state remain literal. -/
+structure BaseSoftcutResumeOuterResourceCatchupPartition
+    (alpha : List (LogicVar × String))
+    (segments : List ControlSegment)
+    (resources : List RetainedAlternativeSegment)
+    (context : ActiveProductContext)
+    (base : List PLeaTTa.Alt) where
+  allLocal :
+    AllLocalResourcesExhausted alpha segments resources context
+  frame : PLeaTTa.SoftcutFrame
+  protectedAlts : List PLeaTTa.Alt
+  tail : List PLeaTTa.Alt
+  baseResume :
+    PLeaTTa.pullAux base = some (.softcutResume frame protectedAlts, tail)
+
 /-- Exhaustive constructive outcome of eager catch-up across the aligned
 local resources and the arbitrary older executable base. -/
 inductive OuterResourceCatchupOutcome
@@ -1136,6 +1184,18 @@ inductive OuterResourceCatchupOutcome
   | baseCatchResume
       (partition :
         BaseCatchResumeOuterResourceCatchupPartition alpha segments resources
+          context base)
+  | baseSoftcutElse
+      (partition :
+        BaseSoftcutElseOuterResourceCatchupPartition alpha segments resources
+          context base)
+  | baseSoftcutDone
+      (partition :
+        BaseSoftcutDoneOuterResourceCatchupPartition alpha segments resources
+          context base)
+  | baseSoftcutResume
+      (partition :
+        BaseSoftcutResumeOuterResourceCatchupPartition alpha segments resources
           context base)
   | terminal
       (partition :
@@ -1314,6 +1374,27 @@ theorem SourceControlResourceContextAgrees.classifyCatchup
                   baseLive := basePull }
           | catchResume frame protectedAlts =>
               exact .baseCatchResume
+                { allLocal := partition
+                  frame := frame
+                  protectedAlts := protectedAlts
+                  tail := tail
+                  baseResume := basePull }
+          | softcutExhausted frame seenSuccess =>
+              cases seenSuccess with
+              | false =>
+                  exact .baseSoftcutElse
+                    { allLocal := partition
+                      frame := frame
+                      tail := tail
+                      baseElse := basePull }
+              | true =>
+                  exact .baseSoftcutDone
+                    { allLocal := partition
+                      frame := frame
+                      tail := tail
+                      baseDone := basePull }
+          | softcutResume frame protectedAlts =>
+              exact .baseSoftcutResume
                 { allLocal := partition
                   frame := frame
                   protectedAlts := protectedAlts

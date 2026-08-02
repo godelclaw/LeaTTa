@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: Apache-2.0
+
 import PLeaTTa.PersistentSubst
 
 namespace PLeaTTa
@@ -220,6 +222,14 @@ def mapCatchFrame {Source Target : Type} (f : Source → Target)
     rest := frame.rest
     entry := f frame.entry }
 
+def mapSoftcutFrame {Source Target : Type} (f : Source → Target)
+    (frame : SoftcutFrame Source) : SoftcutFrame Target :=
+  { template := frame.template
+    thenGoals := frame.thenGoals
+    elseGoals := frame.elseGoals
+    rest := frame.rest
+    entry := f frame.entry }
+
 mutual
 
 /-- Map every substitution representation owned by an alternative, including
@@ -231,6 +241,10 @@ def mapAlt {Source Target : Type} (f : Source → Target) :
   | .catchActive frame => .catchActive (mapCatchFrame f frame)
   | .catchDormant frame protectedAlts =>
       .catchDormant (mapCatchFrame f frame) (mapAlts f protectedAlts)
+  | .softcutActive frame seenSuccess =>
+      .softcutActive (mapSoftcutFrame f frame) seenSuccess
+  | .softcutDormant frame protectedAlts =>
+      .softcutDormant (mapSoftcutFrame f frame) (mapAlts f protectedAlts)
 
 def mapAlts {Source Target : Type} (f : Source → Target) :
     List (Alt Source) → List (Alt Target)
@@ -267,6 +281,9 @@ def AltValid (engine : SubstEngine) : Alt engine.State → Prop
   | .catchActive frame => engine.Valid frame.entry
   | .catchDormant frame protectedAlts =>
       engine.Valid frame.entry ∧ AltForestValid engine protectedAlts
+  | .softcutActive frame _ => engine.Valid frame.entry
+  | .softcutDormant frame protectedAlts =>
+      engine.Valid frame.entry ∧ AltForestValid engine protectedAlts
 
 def AltForestValid (engine : SubstEngine) : List (Alt engine.State) → Prop
   | [] => True
@@ -297,6 +314,11 @@ mutual
       simp only [mapAlt, mapAlts_id]
       cases frame
       rfl
+  | softcutActive frame seenSuccess => cases frame; rfl
+  | softcutDormant frame protectedAlts =>
+      simp only [mapAlt, mapAlts_id]
+      cases frame
+      rfl
 
 @[simp] theorem mapAlts_id (alts : List Alt) : mapAlts id alts = alts := by
   cases alts with
@@ -322,6 +344,11 @@ theorem mapAlt_comp {A B C : Type} (f : A → B) (g : B → C)
   | barrier => rfl
   | catchActive frame => cases frame; rfl
   | catchDormant frame protectedAlts =>
+      simp only [mapAlt, mapAlts_comp]
+      cases frame
+      rfl
+  | softcutActive frame seenSuccess => cases frame; rfl
+  | softcutDormant frame protectedAlts =>
       simp only [mapAlt, mapAlts_comp]
       cases frame
       rfl
@@ -368,6 +395,11 @@ theorem mapAlt_ofDenote_valid (engine : SubstEngine) (alt : Alt) :
   | catchDormant frame protectedAlts =>
       exact ⟨engine.ofDenote_valid frame.entry,
         mapAlts_ofDenote_forest_valid engine protectedAlts⟩
+  | softcutActive frame seenSuccess =>
+      exact engine.ofDenote_valid frame.entry
+  | softcutDormant frame protectedAlts =>
+      exact ⟨engine.ofDenote_valid frame.entry,
+        mapAlts_ofDenote_forest_valid engine protectedAlts⟩
 
 theorem mapAlts_ofDenote_forest_valid (engine : SubstEngine)
     (alts : List Alt) :
@@ -392,6 +424,10 @@ theorem mapAlt_valid_of {Source : Type} (engine : SubstEngine)
   | catchDormant frame protectedAlts =>
       exact ⟨mappedValid frame.entry,
         mapAlts_forest_valid_of engine f mappedValid protectedAlts⟩
+  | softcutActive frame seenSuccess => exact mappedValid frame.entry
+  | softcutDormant frame protectedAlts =>
+      exact ⟨mappedValid frame.entry,
+        mapAlts_forest_valid_of engine f mappedValid protectedAlts⟩
 
 theorem mapAlts_forest_valid_of {Source : Type} (engine : SubstEngine)
     (f : Source → engine.State) (mappedValid : ∀ source, engine.Valid (f source))
@@ -414,6 +450,10 @@ theorem altValid_of_all (engine : SubstEngine)
   | barrier => trivial
   | catchActive frame => exact allValid frame.entry
   | catchDormant frame protectedAlts =>
+      exact ⟨allValid frame.entry,
+        altForestValid_of_all engine allValid protectedAlts⟩
+  | softcutActive frame seenSuccess => exact allValid frame.entry
+  | softcutDormant frame protectedAlts =>
       exact ⟨allValid frame.entry,
         altForestValid_of_all engine allValid protectedAlts⟩
 

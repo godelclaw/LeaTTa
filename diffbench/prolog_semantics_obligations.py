@@ -494,6 +494,7 @@ REQUIRED_PREFIXES = {
 # separated reference must be an actual `#print axioms` target.
 STRICT_AXIOM_AUDIT_ROWS = {
     "BISIM.catch_macro_prefix",
+    "BISIM.softcut_macro_prefix",
     "BISIM.root_closed_answer_pull",
     "BISIM.root_closed_local_live_answer",
     "BISIM.root_closed_public_answer_value",

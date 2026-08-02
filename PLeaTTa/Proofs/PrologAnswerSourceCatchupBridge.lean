@@ -1267,13 +1267,37 @@ def SourcePhase
                 some (.catchResume frame protectedAlts, rest) /\
             StepsN count (.running session next) [.completed]
               (.terminal session .completed)) \/
+    (events = [] /\
+      exists count,
+        ∃ frame : PLeaTTa.SoftcutFrame,
+          ∃ rest : List PLeaTTa.Alt,
+            PLeaTTa.pullAux afterAlts =
+                some (.softcutExhausted frame false, rest) /\
+            StepsN count (.running session next) [.completed]
+              (.terminal session .completed)) \/
+    (events = [] /\
+      exists count,
+        ∃ frame : PLeaTTa.SoftcutFrame,
+          ∃ rest : List PLeaTTa.Alt,
+            PLeaTTa.pullAux afterAlts =
+                some (.softcutExhausted frame true, rest) /\
+            StepsN count (.running session next) [.completed]
+              (.terminal session .completed)) \/
+    (events = [] /\
+      exists count,
+        ∃ frame : PLeaTTa.SoftcutFrame,
+          ∃ protectedAlts rest : List PLeaTTa.Alt,
+            PLeaTTa.pullAux afterAlts =
+                some (.softcutResume frame protectedAlts, rest) /\
+            StepsN count (.running session next) [.completed]
+              (.terminal session .completed)) \/
     (events = [.completed] /\
       exists count,
         PLeaTTa.pullAux afterAlts = none /\
         StepsN count (.running session next) [.completed]
           (.terminal session .completed))
 
-/-- Exact first source phase corresponding to the four-way executable pull
+/-- Exact first source phase corresponding to the executable pull
 classification.
 
 * a local branch reaches its branch-indexed conservative cursor silently;
@@ -1281,13 +1305,15 @@ classification.
   source context must consume that completion before selecting the base;
 * an older dormant catch likewise completes the child origin before its
   protected continuation is resumed by the enclosing executable context;
+* the three soft-cut delimiter transitions likewise remain distinct while
+  the child-origin phase records the same exact completion;
 * total exhaustion completes the child origin and that completion is the
   classified terminal observation.
 
-The two context-pending disjuncts are intentionally distinct from the
-terminal one even though all three child phases end in `.completed`: only the
-executable older-bank equation distinguishes ordinary selection, catch
-resumption, and total exhaustion. -/
+The context-pending disjuncts are intentionally distinct from the terminal
+one even though every child phase ends in `.completed`: only the executable
+older-bank equation distinguishes ordinary selection, delimiter transitions,
+and total exhaustion. -/
 theorem sourcePhase
     {alpha : List (LogicVar × String)}
     {leafScope : CutScopeId} {bindings : OpenSubstitution.Substitution}
@@ -1319,11 +1345,30 @@ theorem sourcePhase
           falls session
       exact .inr (.inr (.inl
         ⟨rfl, count, frame, protectedAlts, rest, basePull, steps⟩))
+  | baseSoftcutElse falls frame rest basePull =>
+      obtain ⟨count, steps⟩ :=
+        PLeaTTa.PrologAnswerSourceCatchupBridge.OriginPrefixFallsThrough.sourceStepsN
+          falls session
+      exact .inr (.inr (.inr (.inl
+        ⟨rfl, count, frame, rest, basePull, steps⟩)))
+  | baseSoftcutDone falls frame rest basePull =>
+      obtain ⟨count, steps⟩ :=
+        PLeaTTa.PrologAnswerSourceCatchupBridge.OriginPrefixFallsThrough.sourceStepsN
+          falls session
+      exact .inr (.inr (.inr (.inr (.inl
+        ⟨rfl, count, frame, rest, basePull, steps⟩))))
+  | baseSoftcutResume falls frame protectedAlts rest basePull =>
+      obtain ⟨count, steps⟩ :=
+        PLeaTTa.PrologAnswerSourceCatchupBridge.OriginPrefixFallsThrough.sourceStepsN
+          falls session
+      exact .inr (.inr (.inr (.inr (.inr (.inl
+        ⟨rfl, count, frame, protectedAlts, rest, basePull, steps⟩)))))
   | terminal falls basePull =>
       obtain ⟨count, steps⟩ :=
         PLeaTTa.PrologAnswerSourceCatchupBridge.OriginPrefixFallsThrough.sourceStepsN
           falls session
-      exact .inr (.inr (.inr ⟨rfl, count, basePull, steps⟩))
+      exact .inr (.inr (.inr (.inr (.inr (.inr
+        ⟨rfl, count, basePull, steps⟩)))))
 
 end OriginPullOutcome
 
