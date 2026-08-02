@@ -970,7 +970,8 @@ private def chronologySnapshot
     (seed resourceBarrier counter callerBarrier : Nat)
     (outer : List ControlSegment)
     (outerControl : ControlSpineAgrees [] outer)
-    (outerExecutables : flattenExecutables outer = []) :
+    (outerExecutables : flattenExecutables outer = [])
+    (resourceBarrierPositive : 0 < resourceBarrier) :
     RetainedCallPayloadSnapshot [] []
       (chronologyResource seed resourceBarrier counter)
       (chronologyCursor seed) (chronologySegment callerBarrier) outer := by
@@ -995,6 +996,16 @@ private def chronologySnapshot
       canonical := []
       referenceBase := []
       referencePayload := [.integer 2]
+      controlOrigin :=
+        { bodyBarrier := resourceBarrier
+          outerAlts := []
+          outerBarriers := some (resourceBarrier - 1)
+          frames := []
+          bodyBarrierTag := by
+            simp only [PLeaTTa.barrierCount, List.foldl_nil,
+              Option.getD_some]
+            omega }
+      controlOriginBarrier := rfl
       alphaIncluded := ?_
       allocationGap := ?_
       cursorArguments := rfl
@@ -1037,6 +1048,153 @@ private def chronologySnapshot
   · simpa [chronologyCursor, chronologyResource, chronologySegment] using
       payload
 
+/-- Give the concrete chronology fixture an independently chosen, exact
+control origin.  The logical payload comes from `chronologySnapshot`; only
+the deliberately non-persistent alternative/cache/frame provenance is
+replaced. -/
+private def chronologyOriginSnapshot
+    (seed resourceBarrier counter callerBarrier : Nat)
+    (outer : List ControlSegment)
+    (outerControl : ControlSpineAgrees [] outer)
+    (outerExecutables : flattenExecutables outer = [])
+    (resourceBarrierPositive : 0 < resourceBarrier)
+    (outerAlts : List PLeaTTa.Alt) (outerBarriers : Option Nat)
+    (frames : List Frame)
+    (bodyBarrierTag :
+      resourceBarrier =
+        outerBarriers.getD (PLeaTTa.barrierCount outerAlts) + 1) :
+    RetainedCallPayloadSnapshot [] []
+      (chronologyResource seed resourceBarrier counter)
+      (chronologyCursor seed) (chronologySegment callerBarrier) outer := by
+  let snapshot :=
+    chronologySnapshot seed resourceBarrier counter callerBarrier outer
+      outerControl outerExecutables resourceBarrierPositive
+  exact
+    { snapshot with
+      controlOrigin :=
+        { bodyBarrier := resourceBarrier
+          outerAlts := outerAlts
+          outerBarriers := outerBarriers
+          frames := frames
+          bodyBarrierTag := bodyBarrierTag }
+      controlOriginBarrier := rfl }
+
+private def chronologyControlBaseAlts : List PLeaTTa.Alt :=
+  [chronologyAlt 7 0]
+
+/-- Three literal retained-call cells whose stored cache origins are
+successively `some 9`, `some 8`, and `some 7` above a nonempty base bank.
+
+This fixture is separate from `chronologyOrderedZipper`: the latter stresses
+allocator separation, while this one stresses exact control-origin recovery. -/
+private def chronologyOriginZipper :
+    SourceControlResourcePayloadContextAgrees [] [] (.sym "query") 10
+      [chronologySegment 9, chronologySegment 8, chronologySegment 7]
+      [chronologyResource 6 10 6, chronologyResource 4 9 4,
+        chronologyResource 2 8 2]
+      3
+      [chronologyFrame 3 2 6, chronologyFrame 2 1 4,
+        chronologyFrame 1 0 2]
+      0 :=
+  .cons 10 3 2 0 (chronologySegment 9)
+    [chronologySegment 8, chronologySegment 7]
+    (chronologyResource 6 10 6)
+    [chronologyResource 4 9 4, chronologyResource 2 8 2]
+    (chronologyCursor 6)
+    [chronologyFrame 2 1 4, chronologyFrame 1 0 2]
+    (chronologyCallerAgrees 9) (by rfl) (by rfl) (by rfl)
+    (chronologyOwnership 6 10 6)
+    (chronologyOriginSnapshot 6 10 6 9
+      [chronologySegment 8, chronologySegment 7]
+      (.cons (chronologyCallerAgrees 8)
+        (.cons (chronologyCallerAgrees 7) .nil))
+      rfl (by omega)
+      (flattenOwnedAlts
+        [chronologyResource 4 9 4, chronologyResource 2 8 2]
+        chronologyControlBaseAlts)
+      (some 9) [] (by simp))
+    (.cons 9 2 1 0 (chronologySegment 8)
+      [chronologySegment 7]
+      (chronologyResource 4 9 4) [chronologyResource 2 8 2]
+      (chronologyCursor 4) [chronologyFrame 1 0 2]
+      (chronologyCallerAgrees 8) (by rfl) (by rfl) (by rfl)
+      (chronologyOwnership 4 9 4)
+      (chronologyOriginSnapshot 4 9 4 8 [chronologySegment 7]
+        (.cons (chronologyCallerAgrees 7) .nil) rfl (by omega)
+        (flattenOwnedAlts [chronologyResource 2 8 2]
+          chronologyControlBaseAlts)
+        (some 8) [] (by simp))
+      (.cons 8 1 0 0 (chronologySegment 7) []
+        (chronologyResource 2 8 2) [] (chronologyCursor 2) []
+        (chronologyCallerAgrees 7) (by rfl) (by rfl) (by rfl)
+        (chronologyOwnership 2 8 2)
+        (chronologyOriginSnapshot 2 8 2 7 [] .nil rfl (by omega)
+          chronologyControlBaseAlts (some 7) [] (by simp))
+        (.nil 7 0)))
+
+private def chronologyOriginSpine :
+    LocalControlOriginSpineRelates chronologyControlBaseAlts [] (some 10)
+      chronologyOriginZipper := by
+  unfold chronologyOriginZipper
+  apply LocalControlOriginSpineRelates.cons (outerInstalled := some 9)
+  · apply LocalControlOriginSpineRelates.cons (outerInstalled := some 8)
+    · apply LocalControlOriginSpineRelates.cons (outerInstalled := some 7)
+      · exact
+          LocalControlOriginSpineRelates.nil 7 0
+            chronologyControlBaseAlts [] (some 7)
+      · rfl
+      · rfl
+      · rfl
+    · rfl
+    · rfl
+    · rfl
+  · rfl
+  · rfl
+  · rfl
+
+/-- The recursive control-origin relation is inhabited nondegenerately.
+
+There are three cells, the older executable bank is nonempty, and the stored
+cache origins differ at every occurrence.  The recorded-base traversal and
+the installed-cache traversal therefore both perform real recursive work. -/
+theorem three_cell_control_origin_spine_is_inhabited :
+    LocalControlOriginSpineRelates chronologyControlBaseAlts [] (some 10)
+        chronologyOriginZipper ∧
+      chronologyControlBaseAlts ≠ [] ∧
+      recordedBaseBarrierCache (some 10) chronologyOriginZipper = some 7 ∧
+      installedBarrierCache (some 7) chronologyOriginZipper = some 10 ∧
+      (headCell chronologyOriginZipper).snapshot.controlOrigin.outerBarriers =
+        some 9 ∧
+      (headCell (SourceControlResourcePayloadContextAgrees.tail
+        chronologyOriginZipper)).snapshot.controlOrigin.outerBarriers =
+        some 8 := by
+  refine ⟨chronologyOriginSpine, ?_, ?_, ?_, ?_, ?_⟩
+  · simp [chronologyControlBaseAlts]
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+
+/-- The same stored three-cell chain cannot be paired with a different live
+cache.  This rejects a shape-compatible but historically stale control
+state. -/
+theorem three_cell_control_origin_rejects_wrong_live_cache :
+    ¬ LocalControlOriginSpineRelates chronologyControlBaseAlts [] (some 11)
+        chronologyOriginZipper := by
+  intro wrong
+  have installed := wrong.origins.2
+  simp [recordedBaseBarrierCache, installedBarrierCache, chronologyOriginZipper,
+    chronologyOriginSnapshot] at installed
+
+/-- Enabled stored origins cannot be laundered into disabled-cache mode. -/
+theorem three_cell_control_origin_rejects_disabled_live_cache :
+    ¬ LocalControlOriginSpineRelates chronologyControlBaseAlts [] none
+        chronologyOriginZipper := by
+  intro wrong
+  have installed := wrong.origins.2
+  simp [recordedBaseBarrierCache, installedBarrierCache, chronologyOriginZipper,
+    chronologyOriginSnapshot] at installed
+
 private def chronologyOrderedZipper :
     SourceControlResourcePayloadContextAgrees [] [] (.sym "query") 30
       [chronologySegment 20, chronologySegment 10, chronologySegment 0]
@@ -1058,7 +1216,7 @@ private def chronologyOrderedZipper :
       [chronologySegment 10, chronologySegment 0]
       (.cons (chronologyCallerAgrees 10)
         (.cons (chronologyCallerAgrees 0) .nil))
-      rfl)
+      rfl (by omega))
     (.cons 20 2 1 0 (chronologySegment 10)
       [chronologySegment 0]
       (chronologyResource 4 20 4) [chronologyResource 2 10 2]
@@ -1066,12 +1224,12 @@ private def chronologyOrderedZipper :
       (chronologyCallerAgrees 10) (by rfl) (by rfl) (by rfl)
       (chronologyOwnership 4 20 4)
       (chronologySnapshot 4 20 4 10 [chronologySegment 0]
-        (.cons (chronologyCallerAgrees 0) .nil) rfl)
+        (.cons (chronologyCallerAgrees 0) .nil) rfl (by omega))
       (.cons 10 1 0 0 (chronologySegment 0) []
         (chronologyResource 2 10 2) [] (chronologyCursor 2) []
         (chronologyCallerAgrees 0) (by rfl) (by rfl) (by rfl)
         (chronologyOwnership 2 10 2)
-        (chronologySnapshot 2 10 2 0 [] .nil rfl)
+        (chronologySnapshot 2 10 2 0 [] .nil rfl (by omega))
         (.nil 0 0)))
 
 private def chronologySwappedZipper :
@@ -1095,7 +1253,7 @@ private def chronologySwappedZipper :
       [chronologySegment 10, chronologySegment 0]
       (.cons (chronologyCallerAgrees 10)
         (.cons (chronologyCallerAgrees 0) .nil))
-      rfl)
+      rfl (by omega))
     (.cons 20 2 1 0 (chronologySegment 10)
       [chronologySegment 0]
       (chronologyResource 2 20 2) [chronologyResource 4 10 4]
@@ -1103,12 +1261,12 @@ private def chronologySwappedZipper :
       (chronologyCallerAgrees 10) (by rfl) (by rfl) (by rfl)
       (chronologyOwnership 2 20 2)
       (chronologySnapshot 2 20 2 10 [chronologySegment 0]
-        (.cons (chronologyCallerAgrees 0) .nil) rfl)
+        (.cons (chronologyCallerAgrees 0) .nil) rfl (by omega))
       (.cons 10 1 0 0 (chronologySegment 0) []
         (chronologyResource 4 10 4) [] (chronologyCursor 4) []
         (chronologyCallerAgrees 0) (by rfl) (by rfl) (by rfl)
         (chronologyOwnership 4 10 4)
-        (chronologySnapshot 4 10 4 0 [] .nil rfl)
+        (chronologySnapshot 4 10 4 0 [] .nil rfl (by omega))
         (.nil 0 0)))
 
 /-- Recursive allocation chronology is inhabited below the first surviving

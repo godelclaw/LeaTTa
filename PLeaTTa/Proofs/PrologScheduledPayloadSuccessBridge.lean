@@ -316,12 +316,14 @@ structure ScheduledSuccessfulHeadRelates
         selection.selected.resource.qterm installed)
       transition.branch.body transition.copied.body
   nextSnapshot :
-    Nonempty
-      (RetainedCallPayloadSnapshot nextAlpha before.carrier.index.support
+    ∃ snapshot :
+      RetainedCallPayloadSnapshot nextAlpha before.carrier.index.support
         (afterPulledHead selection.selected.resource selection.localTail)
         (transition.finish.advance transition.branch transition.branchTail)
         transition.selectedPayloadCell.segment
-        transition.selectedPayloadCell.outerSegments)
+        transition.selectedPayloadCell.outerSegments,
+      snapshot.controlOrigin =
+        transition.selectedSnapshotAtFinish.controlOrigin
   successorBelow :
     ConfBelowResolutionCounter
       (successfulFineState transition installed).toConf

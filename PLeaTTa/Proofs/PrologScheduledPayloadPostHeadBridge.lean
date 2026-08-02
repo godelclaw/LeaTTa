@@ -12,6 +12,7 @@ Main exports:
 -/
 import PLeaTTa.Proofs.PrologScheduledPayloadLandingBridge
 import PLeaTTa.Proofs.PrologAnswerSelectedHeadOffsetBridge
+import PLeaTTa.Proofs.PrologRetainedPayloadActivationBridge
 import PLeaTTa.Proofs.PrologRetainedPayloadSnapshotBridge
 
 namespace PLeaTTa.PrologScheduledPayloadPostHeadBridge
@@ -27,6 +28,7 @@ open PLeaTTa.PrologBodyFailureResourceTransitionBridge
 open PLeaTTa.PrologControlSegmentSpineBridge
 open PLeaTTa.PrologPrefilterScanBridge
 open PLeaTTa.PrologProductResourceContextBridge
+open PLeaTTa.PrologRetainedPayloadActivationBridge
 open PLeaTTa.PrologRetainedPayloadSnapshotBridge
 open PLeaTTa.PrologRetainedPayloadSnapshotBridge.SourceControlResourcePayloadContextAgrees
 open PLeaTTa.PrologScheduledAnswerPropagationBridge
@@ -220,6 +222,23 @@ structure ScheduledSelectedHeadTransition
       (afterPulledHead selection.selected.resource selection.localTail)
       (finish.advance branch branchTail)
       selectedPayloadCell.segment selectedPayloadCell.outerSegments
+  /-- The exact pre-pull allocation chronology intentionally weakened by
+  `consumedSnapshot`.
+
+  This proof-only token is produced from the same selected occurrence,
+  rejected prefix, and eager pull as `consumedSnapshot`.  It carries no
+  world, session, frame, or alternative bank; retaining it prevents later
+  reactivation from attempting to reconstruct historical relative bounds
+  from current high-water domination, which is insufficient. -/
+  activationChronology :
+    SelectedHeadActivationChronology consumedSnapshot
+  /-- Rejection transport and eager head consumption preserve the compact
+  call-control origin of this exact occurrence.  This equality is retained
+  explicitly because the post-pull snapshot weakens other indexed fields and
+  consumers must not recover an outer call origin by value search. -/
+  controlOriginExact :
+    consumedSnapshot.controlOrigin =
+      selectedPayloadCell.snapshot.controlOrigin
   postLaterResources : List RetainedAlternativeSegment
   postLaterContext : ActiveProductContext
   postLaterContextExact :
@@ -1011,10 +1030,14 @@ theorem selectAndAdvanceHead
     congrArg ScheduledHistoryCell.resource headHistoryExact
   have cursorExact : head.cursor = selection.selected.cursor :=
     congrArg ScheduledHistoryCell.cursor headHistoryExact
-  have selectedSnapshot :
-      RetainedCallPayloadSnapshot alpha support selection.selected.resource
-        selection.selected.cursor head.segment head.laterSegments := by
-    simpa only [resourceExact, cursorExact] using head.snapshot
+  obtain ⟨selectedSnapshot, selectedSnapshotOriginExact⟩ :
+      ∃ selectedSnapshot :
+          RetainedCallPayloadSnapshot alpha support
+            selection.selected.resource selection.selected.cursor head.segment
+            head.laterSegments,
+        selectedSnapshot.controlOrigin = head.snapshot.controlOrigin := by
+    rw [← resourceExact, ← cursorExact]
+    exact ⟨head.snapshot, rfl⟩
   let selectedPayloadCell : PayloadCell alpha support :=
     { currentBarrier := route.route.suffixBarrier
       currentScope := head.currentScope
@@ -1155,6 +1178,17 @@ theorem selectAndAdvanceHead
        tailOwnershipExact := tailOwnershipExact
        consumedSnapshot := by
          simpa [selectedPayloadCell] using consumedSnapshot
+       activationChronology := by
+         simpa [selectedPayloadCell, consumedSnapshot] using
+           (SelectedHeadActivationChronology.ofRejectedPullsAndBeforePull
+             selectedSnapshot beforeWellFormed frontier.rejectedPulls offset)
+       controlOriginExact := by
+         simpa [selectedPayloadCell, consumedSnapshot,
+           RetainedCallPayloadSnapshot.afterRejectedPullsAndPulledHead,
+           RetainedCallPayloadSnapshot.afterRejectedPulls,
+           RetainedCallPayloadSnapshot.transportCursor,
+           RetainedCallPayloadSnapshot.afterPulledHead] using
+             selectedSnapshotOriginExact
        postLaterResources := head.laterResources
        postLaterContext := head.laterContext
        postLaterContextExact := rfl

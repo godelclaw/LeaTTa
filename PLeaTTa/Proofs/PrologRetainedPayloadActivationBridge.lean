@@ -229,6 +229,10 @@ def restoreSnapshot
       canonical := snapshot.canonical
       referenceBase := snapshot.referenceBase
       referencePayload := snapshot.referencePayload
+      controlOrigin := by
+        simpa [afterPulledHead] using snapshot.controlOrigin
+      controlOriginBarrier := by
+        simpa [afterPulledHead] using snapshot.controlOriginBarrier
       alphaIncluded := snapshot.alphaIncluded
       allocationGap := chronology.allocationGap
       cursorArguments := ?_
@@ -350,9 +354,10 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
         (PLeaTTa.trimFor (copied.body ++ resource.rest)
           resource.qterm installed)
         branch.body copied.body ∧
-      Nonempty (RetainedCallPayloadSnapshot nextAlpha support
-        (afterPulledHead resource remainingAlts)
-        (finish.advance branch branchTail) caller outer) ∧
+      (∃ nextSnapshot : RetainedCallPayloadSnapshot nextAlpha support
+          (afterPulledHead resource remainingAlts)
+          (finish.advance branch branchTail) caller outer,
+        nextSnapshot.controlOrigin = snapshot.controlOrigin) ∧
       ConfBelowResolutionCounter
         (unifySuccessor state (copied.body ++ resource.rest)
           installed).toConf ∧
@@ -518,7 +523,7 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
         finish.callGeneration finish.predicate finish.arguments
         finish.bindings :=
     (CursorCallContext.refl finish).advance branch branchTail
-  have snapshotAtAdvanced :
+  let snapshotAtAdvanced :
       RetainedCallPayloadSnapshot currentAlpha support resource
         (finish.advance branch branchTail) caller outer :=
     RetainedCallPayloadSnapshot.transportCursor advancedContext
@@ -526,18 +531,24 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
         offset.cursorWellFormed offset.cursorRemaining)
       rfl
       snapshot
-  have consumedSnapshot :
+  let consumedSnapshot :
       RetainedCallPayloadSnapshot currentAlpha support
         (afterPulledHead resource remainingAlts)
         (finish.advance branch branchTail) caller outer :=
     RetainedCallPayloadSnapshot.afterPulledHead remainingAlts
       snapshotAtAdvanced
-  have nextSnapshot :
+  let nextSnapshot :
       RetainedCallPayloadSnapshot nextAlpha support
         (afterPulledHead resource remainingAlts)
         (finish.advance branch branchTail) caller outer :=
     consumedSnapshot.mono alphaIncluded (by
       simpa [PreparedCursor.advance, afterPulledHead] using allocationGap)
+  have nextSnapshotOrigin :
+      nextSnapshot.controlOrigin = snapshot.controlOrigin := by
+    simp [nextSnapshot, consumedSnapshot, snapshotAtAdvanced,
+      RetainedCallPayloadSnapshot.mono,
+      RetainedCallPayloadSnapshot.afterPulledHead,
+      RetainedCallPayloadSnapshot.transportCursor]
   have successorBelow :
       ConfBelowResolutionCounter
         (unifySuccessor state (copied.body ++ resource.rest)
@@ -564,7 +575,8 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
       nextShared, alphaIncluded, extensionAbove, freshFrontier,
       independentShape,
       sourceOrdered, sourceStep, sealedStep, fineStep, cumulativeCopied,
-      taskCopied, ⟨nextSnapshot⟩, successorBelow, ?_, ?_, ?_⟩
+      taskCopied, ⟨nextSnapshot, nextSnapshotOrigin⟩, successorBelow,
+      ?_, ?_, ?_⟩
   · exact unifySuccessor_persistent state _ installed
   · rfl
   · rfl

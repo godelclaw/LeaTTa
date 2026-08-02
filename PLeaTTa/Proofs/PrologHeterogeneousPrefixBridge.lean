@@ -591,7 +591,8 @@ def beforeTruth
         state.carrier.index.openConf state.carrier.payloadContext :=
     { core := nextCore
       endpointsCurrent := oldAgreement.endpointsCurrent
-      activationOrdered := oldAgreement.activationOrdered }
+      activationOrdered := oldAgreement.activationOrdered
+      controlOrigins := oldAgreement.controlOrigins }
   let nextCarrier := ActivePayloadState.ofAgreement nextAgreement
   { carrier := nextCarrier
     representative := state.representative
@@ -1290,7 +1291,10 @@ def beforeUnify
       endpointsCurrent := by
         simpa [nextOpen, unifyPredecessorOpenConf] using
           oldAgreement.endpointsCurrent
-      activationOrdered := oldAgreement.activationOrdered }
+      activationOrdered := oldAgreement.activationOrdered
+      controlOrigins := by
+        simpa [nextOpen, unifyPredecessorOpenConf] using
+          oldAgreement.controlOrigins }
   let nextCarrier := ActivePayloadState.ofAgreement nextAgreement
   { carrier := nextCarrier
     representative := state.representative

@@ -461,6 +461,11 @@ theorem
         flattenOwnedAlts (currentActive :: currentResources) baseAlts :=
     callEntry_pendingOuterAlts_of_activeResourceStack entry
       currentAgreement.core.resourceStack
+  have outerControlOrigins :
+      LocalControlOriginSpineRelates baseAlts nestedPending.frames
+        nestedPending.outer.barriers currentPayloadContext := by
+    rw [entry.frames, entry.outer]
+    exact currentAgreement.controlOrigins
   obtain
       ⟨nestedActive, nestedPayloadContext, nestedAgreement, payloadHandoff,
         _snapshotRepresentative⟩ :=
@@ -469,7 +474,7 @@ theorem
       materializedAtOpen (by rfl) (by rfl) queryReferenceBelow activation
       entry.sourceFresh
       currentPayloadContext outerEndpoints currentAgreement.activationOrdered
-      baseAlts outerAlts
+      baseAlts outerAlts outerControlOrigins
   refine
     ⟨nestedActive, nestedPayloadContext, nestedAgreement, payloadHandoff, ?_⟩
   calc

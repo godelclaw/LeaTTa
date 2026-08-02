@@ -439,6 +439,80 @@ theorem tail_afterRejectedPullsAndPulledHead
   cases payloadContext
   rfl
 
+/-- Rejected-prefix cursor transport and eager head consumption preserve the
+historical control origin of every exact payload occurrence.  Only the head's
+operational resource and cursor indices change; its origin and the literal
+outer zipper remain frozen. -/
+def controlOrigins_afterRejectedPullsAndPulledHead
+    {alpha support : List (LogicVar × String)}
+    {qterm : Atom}
+    {opened : OpenedCall}
+    {finish : PreparedCursor} {selected : ClauseBranch}
+    {selectedTail : List ClauseBranch}
+    {next : PreparedCursor}
+    {nextBranch : ClauseBranch} {nextClause : PLeaTTa.Clause}
+    {nextBranchTail : List ClauseBranch}
+    {nextCopied : PLeaTTa.Clause}
+    {nextAltTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt} {frames : List Frame}
+    {barriers : Option Nat}
+    (payloadContext :
+      ActiveProductPayloadContext alpha support qterm opened finish selected
+        selectedTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context)
+    {count : Nat}
+    (pulls :
+      RejectedPullsN count (finish.advance selected selectedTail) next)
+    (offset :
+      PulledHeadOffsetAgrees alpha next nextBranch nextClause nextBranchTail
+        nextCopied active nextAltTail)
+    (origins :
+      LocalControlOriginSpineRelates baseAlts frames barriers payloadContext) :
+    LocalControlOriginSpineRelates baseAlts frames barriers
+      (afterRejectedPullsAndPulledHead payloadContext pulls offset) := by
+  let nextPayload :=
+    afterRejectedPullsAndPulledHead payloadContext pulls offset
+  have headOrigin :
+      (SourceControlResourcePayloadContextAgrees.headCell nextPayload).snapshot.controlOrigin =
+        (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.controlOrigin := by
+    cases payloadContext
+    rfl
+  have tailOrigins :=
+    LocalControlOriginSpineRelates.pop payloadContext origins
+  have nextTailOrigins :
+      LocalControlOriginSpineRelates baseAlts frames
+        (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.controlOrigin.outerBarriers
+        (SourceControlResourcePayloadContextAgrees.tail nextPayload) := by
+    rw [tail_afterRejectedPullsAndPulledHead payloadContext pulls offset]
+    exact tailOrigins
+  have headOuterAlts :=
+    LocalControlOriginSpineRelates.headOuterAlts_eq payloadContext origins
+  have headFrames :=
+    LocalControlOriginSpineRelates.headFrames_eq payloadContext origins
+  have rebuilt :
+      LocalControlOriginSpineRelates baseAlts frames
+        (PLeaTTa.pushBarrierCache
+          (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.controlOrigin.outerBarriers)
+        nextPayload :=
+    LocalControlOriginSpineRelates.prepend nextPayload nextTailOrigins
+      (by rw [headOrigin]; exact headOuterAlts)
+      (by rw [headOrigin])
+      (by rw [headOrigin]; exact headFrames)
+  have installed :=
+    LocalControlOriginSpineRelates.installedBarriers_eq_push_headOuter
+      payloadContext origins
+  rw [installed]
+  exact rebuilt
+
 /-- Rejected pulls and eager head consumption preserve recursive allocation
 chronology.
 
@@ -711,6 +785,9 @@ structure SpinedPostFailureFrontierPayloadResourceRelatesAt
     endpointsBelow payloadContext session.resolver.nextFresh
       state.persistent.counter
   activationOrdered : ActivationOrdered payloadContext
+  controlOrigins :
+    LocalControlOriginSpineRelates baseAlts state.frames
+      state.control.barriers payloadContext
   activationChronology :
     SelectedHeadActivationChronology
       (PostFailurePayloadOffsetContext.headSnapshot payloadContext)
@@ -883,13 +960,30 @@ theorem afterUnifyFailureRetained
     ActiveProductPayloadContext.activationOrdered_afterRejectedPullsAndPulledHead
       payloadContext pulls post.resourceStack.offset
       agreement.activationOrdered
+  have controlOriginsBefore :
+      LocalControlOriginSpineRelates baseAlts state.frames
+        state.control.barriers
+        (ActiveProductPayloadContext.afterRejectedPullsAndPulledHead
+          payloadContext pulls post.resourceStack.offset) := by
+    exact
+      ActiveProductPayloadContext.controlOrigins_afterRejectedPullsAndPulledHead
+        payloadContext pulls post.resourceStack.offset agreement.controlOrigins
+  have controlOriginsAfter :
+      LocalControlOriginSpineRelates baseAlts
+        (unifyFailureSuccessor state).frames
+        (unifyFailureSuccessor state).control.barriers
+        (ActiveProductPayloadContext.afterRejectedPullsAndPulledHead
+          payloadContext pulls post.resourceStack.offset) := by
+    simpa only [agreement.core.control.retainedBarriers,
+      agreement.core.control.frames, post.control.retainedBarriers,
+      post.control.frames] using controlOriginsBefore
   exact
     ⟨count, skippedBranches, skippedClauses, candidates, next, nextBranch,
       nextClause, nextBranchTail, nextClauseTail, nextAltTail, nextCopied,
       pulls, post.resourceStack.offset, selectedTailEq, candidatesEq,
       branchCount, clauseCount, skippedRejected, sourceSteps, executableStep,
       ⟨post, endpointsAfter,
-        activationOrdered,
+        activationOrdered, controlOriginsAfter,
         ActiveProductPayloadContext.activationChronology_afterRejectedPullsAndPulledHead
           payloadContext pulls post.resourceStack.offset,
         agreement.core.resourceStack.activeFinalCounter,

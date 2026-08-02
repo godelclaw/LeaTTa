@@ -317,7 +317,7 @@ theorem afterAdministrativeSteps
   exact
     ⟨sourceSteps, .zero (.ready state),
       ⟨nextCore, agreement.endpointsCurrent,
-        agreement.activationOrdered⟩,
+        agreement.activationOrdered, agreement.controlOrigins⟩,
       steps.rank_exact⟩
 
 end SpinedActiveProductPayloadResourceRelatesAt

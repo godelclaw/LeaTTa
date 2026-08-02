@@ -840,6 +840,13 @@ theorem qMaterializedReadyAfterP
     rfl
   have outerAlts : pPending.outer.alts = flattenOwnedAlts [] [] := by
     rfl
+  have outerControlOrigins :
+      LocalControlOriginSpineRelates [] pPending.frames
+        pPending.outer.barriers outerPayloads := by
+    simpa [outerPayloads] using
+      (LocalControlOriginSpineRelates.nil
+        (alpha := rootAlpha) (support := rootAlpha) (qterm := queryAtom)
+        0 rootScope [] pPending.frames pPending.outer.barriers)
   have finishPositioned :
       CallScopedCursorPosition
         (openedFor initialSession "p" [queryTerm] []).cursor finish 0 :=
@@ -867,7 +874,7 @@ theorem qMaterializedReadyAfterP
       (by simp [openedFor, openLocalCall, requestFor, prepareCall])
       (by simp [openedFor, openLocalCall, requestFor, prepareCall])
       referenceBelow activation sourceFresh outerPayloads outerEndpoints
-      outerOrdered [] outerAlts
+      outerOrdered [] outerAlts outerControlOrigins
   let carrier := ActivePayloadState.ofAgreement agreement
   have carrierCumulative :
       AlphaCumulativeResidualVariantAgreesOnWith carrier.index.alpha

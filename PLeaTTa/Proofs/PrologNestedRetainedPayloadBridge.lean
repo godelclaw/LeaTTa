@@ -191,7 +191,10 @@ theorem
                   qterm installed)) ∧
               (SourceControlResourcePayloadContextAgrees.headCell
                 payloadContext).snapshot.residualRepresentative =
-                  representative := by
+                  representative ∧
+                (SourceControlResourcePayloadContextAgrees.headCell
+                  payloadContext).snapshot.controlOrigin.MatchesPendingControl
+                    pending := by
   have branchMember : branch ∈ finish.remaining := by
     rw [frontier.finishRemaining]
     simp
@@ -231,7 +234,9 @@ theorem
           (segmentExecutableRest ++ flattenExecutables outer)
           qterm installed) := result.2.1
   have snapshotRepresentative :
-      snapshot.residualRepresentative = representative := result.2.2
+      snapshot.residualRepresentative = representative := result.2.2.1
+  have snapshotOrigin :
+      snapshot.controlOrigin.MatchesPendingControl pending := result.2.2.2
   have branchFirstBelowSession :
       branch.firstFresh ≤ opened.session.resolver.nextFresh := by
     calc
@@ -331,6 +336,10 @@ theorem
       ⟨stack, by
         simpa [payloadContextExact,
           SourceControlResourcePayloadContextAgrees.headCell] using
-          snapshotRepresentative⟩⟩
+          snapshotRepresentative,
+        by
+          simpa [payloadContextExact,
+            SourceControlResourcePayloadContextAgrees.headCell] using
+            snapshotOrigin⟩⟩
 
 end PLeaTTa.PrologNestedRetainedPayloadBridge

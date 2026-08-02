@@ -320,6 +320,14 @@ theorem RepresentativeSupportedCallEntryRelates.activate_literal_root
   have outerAlts : pending.outer.alts = flattenOwnedAlts [] [] := by
     rw [entry.entry.outer]
     simp [rootAlts]
+  have outerControlOrigins :
+      LocalControlOriginSpineRelates [] pending.frames
+        pending.outer.barriers outerPayloads := by
+    simpa [outerPayloads] using
+      (LocalControlOriginSpineRelates.nil
+        (alpha := alpha) (support := support)
+        (qterm := before.control.qterm) callerBarrier scope []
+        pending.frames pending.outer.barriers)
   have finishPositioned :
       CallScopedCursorPosition opened.cursor finish rejects := by
     simpa using
@@ -344,7 +352,7 @@ theorem RepresentativeSupportedCallEntryRelates.activate_literal_root
       (rejects + 1) retainedPositioned frontier payload oldCumulative
       materializedAtOpen (by rfl) (by rfl) queryReferenceBelow activation
       entry.entry.sourceFresh outerPayloads
-      outerEndpoints outerOrdered [] outerAlts
+      outerEndpoints outerOrdered [] outerAlts outerControlOrigins
   let carrier := ActivePayloadState.ofAgreement agreement
   have carrierCumulative :
       AlphaCumulativeResidualVariantAgreesOnWith carrier.index.alpha

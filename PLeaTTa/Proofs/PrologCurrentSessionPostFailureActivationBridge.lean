@@ -177,7 +177,7 @@ theorem activateSelectedHead
         nextShared, alphaIncluded, extension,
         freshFrontier,
         independentShape, sourceOrdered, sourceLeaf, sealedStep, fineStep,
-        cumulative, bodyPayload, nextSnapshotNonempty, successorBelow,
+        cumulative, bodyPayload, nextSnapshotExists, successorBelow,
         persistentExact, framesExact, altsExact⟩ :=
     RetainedCallPayloadSnapshot.activateSelectedHead
       (prog := prog) (gt := gt) restored agreement.core.resourceStack.offset
@@ -272,7 +272,7 @@ theorem activateSelectedHead
             |>.member_first_le_next branchMember)
       (by simp [afterPulledHead])
 
-  rcases nextSnapshotNonempty with ⟨nextSnapshot⟩
+  rcases nextSnapshotExists with ⟨nextSnapshot, nextSnapshotOrigin⟩
   have callerAgrees :
       ({ barrier := callerBarrier
          references := callerReferences
@@ -298,6 +298,11 @@ theorem activateSelectedHead
       (by simpa [afterPulledHead] using agreement.core.control.resourceQuery)
       (by simpa [afterPulledHead] using agreement.core.control.resourceBarrier)
       activeOwnership nextSnapshot outerNext
+  have nextHeadOrigin :
+      (SourceControlResourcePayloadContextAgrees.headCell
+        nextPayloadContext).snapshot.controlOrigin =
+        nextSnapshot.controlOrigin := by
+    rfl
   have nextEndpointsCurrent :
       endpointsBelow nextPayloadContext session.resolver.nextFresh
         (unifySuccessor state (copied.body ++ resource.rest)
@@ -332,6 +337,63 @@ theorem activateSelectedHead
   have nextActivationOrdered :
       ActivationOrdered nextPayloadContext := by
     exact ⟨outerNextAtActivation, outerNextOrdered⟩
+  have consumedOrigin :
+      consumed.controlOrigin =
+        (SourceControlResourcePayloadContextAgrees.headCell
+          payloadContext).snapshot.controlOrigin := by
+    dsimp [consumed]
+    cases payloadContext
+    rfl
+  have restoredOrigin :
+      restored.controlOrigin =
+        (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.controlOrigin := by
+    simpa [restored,
+      SelectedHeadActivationChronology.restoreSnapshot] using consumedOrigin
+  have nextOriginOld :
+      nextSnapshot.controlOrigin =
+        (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.controlOrigin :=
+    nextSnapshotOrigin.trans restoredOrigin
+  have oldTailOrigins :=
+    LocalControlOriginSpineRelates.pop payloadContext agreement.controlOrigins
+  have outerControlNext :
+      LocalControlOriginSpineRelates baseAlts state.frames
+        (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.controlOrigin.outerBarriers
+        outerNext := by
+    exact
+      oldTailOrigins.extendAbove extension
+        (SourceControlResourcePayloadContextAgrees.tail payloadContext)
+        agreement.outerActivationEndpoints baseAlts state.frames
+        (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.controlOrigin.outerBarriers
+  have headOuterAlts :=
+    LocalControlOriginSpineRelates.headOuterAlts_eq payloadContext
+      agreement.controlOrigins
+  have headFrames :=
+    LocalControlOriginSpineRelates.headFrames_eq payloadContext
+      agreement.controlOrigins
+  have rebuiltOrigins :
+      LocalControlOriginSpineRelates baseAlts state.frames
+        (PLeaTTa.pushBarrierCache
+          (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.controlOrigin.outerBarriers)
+        nextPayloadContext :=
+    LocalControlOriginSpineRelates.prepend nextPayloadContext outerControlNext
+      (by rw [nextHeadOrigin, nextOriginOld]; exact headOuterAlts)
+      (by rw [nextHeadOrigin, nextOriginOld])
+      (by rw [nextHeadOrigin, nextOriginOld]; exact headFrames)
+  have installedOrigins :=
+    LocalControlOriginSpineRelates.installedBarriers_eq_push_headOuter
+      payloadContext agreement.controlOrigins
+  have originsAtState :
+      LocalControlOriginSpineRelates baseAlts state.frames
+        state.control.barriers nextPayloadContext := by
+    rw [installedOrigins]
+    exact rebuiltOrigins
+  have nextControlOrigins :
+      LocalControlOriginSpineRelates baseAlts
+        (unifySuccessor state (copied.body ++ resource.rest) installed).frames
+        (unifySuccessor state (copied.body ++ resource.rest)
+          installed).control.barriers nextPayloadContext := by
+    rw [unifySuccessor_frames, unifySuccessor_barriers]
+    exact originsAtState
 
   have bodyPayloadAtCurrentQuery :
       TaskPayloadAgrees nextAlpha support bodyBarrier
@@ -465,7 +527,8 @@ theorem activateSelectedHead
             independentResult callerReferences))
         (unifySuccessor state (copied.body ++ resource.rest) installed)
         nextPayloadContext :=
-    ⟨targetCore, nextEndpointsCurrent, nextActivationOrdered⟩
+    ⟨targetCore, nextEndpointsCurrent, nextActivationOrdered,
+      nextControlOrigins⟩
   have cumulativeAtStateQuery :
       AlphaCumulativeResidualVariantAgreesOnWith
         nextAlpha support (sourceCanonical ++ restored.canonical)

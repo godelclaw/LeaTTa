@@ -334,6 +334,9 @@ structure SpinedScheduledProductPayloadResourceRelatesAt
     endpointsBelow payloadContext session.resolver.nextFresh
       state.persistent.counter
   activationOrdered : ActivationOrdered payloadContext
+  controlOrigins :
+    LocalControlOriginSpineRelates baseAlts state.frames
+      state.control.barriers payloadContext
 
 /-- Current-session committed state whose payload zipper is exactly the outer
 tail left after the active resource has been consumed. -/
@@ -368,6 +371,9 @@ structure SpinedCommittedProductPayloadResourceRelatesAt
     endpointsBelow payloadContext session.resolver.nextFresh
       state.persistent.counter
   activationOrdered : ActivationOrdered payloadContext
+  controlOrigins :
+    LocalControlOriginSpineRelates baseAlts state.frames
+      state.control.barriers payloadContext
 
 namespace SpinedScheduledProductPayloadResourceRelatesAt
 
@@ -476,7 +482,8 @@ def reindex
     ⟨nextCore,
       endpointsBelow_mono payloadContext agreement.endpointsCurrent
         advanced.fresh (Nat.le_refl _),
-      agreement.activationOrdered⟩
+      agreement.activationOrdered,
+      agreement.controlOrigins⟩
 
 /-- A scheduled successor cannot be indexed by a fresh allocator below its
 opener. -/
@@ -615,7 +622,8 @@ def reindex
     ⟨nextCore,
       endpointsBelow_mono payloadContext agreement.endpointsCurrent
         advanced.fresh (Nat.le_refl _),
-      agreement.activationOrdered⟩
+      agreement.activationOrdered,
+      agreement.controlOrigins⟩
 
 /-- A committed successor cannot be indexed by a fresh allocator below its
 opener. -/
@@ -711,7 +719,8 @@ theorem afterBodyAnswer
   exact
     ⟨sourceStep, executableSteps,
       ⟨scheduled, agreement.endpointsCurrent,
-        agreement.activationOrdered⟩⟩
+        agreement.activationOrdered,
+        agreement.controlOrigins⟩⟩
 
 /-- Clause-local cut consumes the exact head payload cell while preserving the
 literal outer payload tail at the same persistent high-waters. -/
@@ -812,9 +821,43 @@ theorem afterCut
         (ActiveProductPayloadContext.outerPayload payloadContext) := by
     rw [ActiveProductPayloadContext.outerPayload_eq_tail payloadContext]
     exact ActivationOrdered.tail payloadContext agreement.activationOrdered
+  let nextState :=
+    cutSuccessor state bodyBarrier
+      (bodyExecutableTail ++
+        (callerExecutables ++ flattenExecutables outer))
+      runtime
+  have nextBarriers :
+      nextState.control.barriers = pending.outer.barriers := by
+    change
+      (PLeaTTa.cutToTracked bodyBarrier state.toConf.barriers
+        state.toConf.alts).2 = pending.outer.barriers
+    exact
+      agreement.core.control.resources.cutToTracked_barriers_eq_outer coherent
+  have nextFrames : nextState.frames = pending.frames := by
+    simpa [nextState] using committed.control.frames
+  have liveOrigins :
+      LocalControlOriginSpineRelates baseAlts state.frames
+        (PLeaTTa.pushBarrierCache pending.outer.barriers) payloadContext := by
+    simpa only [agreement.core.control.retainedBarriers] using
+      agreement.controlOrigins
+  have headOuterBarriers :
+      (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.controlOrigin.outerBarriers =
+        pending.outer.barriers :=
+    LocalControlOriginSpineRelates.headOuterBarriers_eq_of_installedPush
+      payloadContext liveOrigins
+  have poppedOrigins :=
+    LocalControlOriginSpineRelates.pop payloadContext agreement.controlOrigins
+  have outerOrigins :
+      LocalControlOriginSpineRelates baseAlts nextState.frames
+        nextState.control.barriers
+        (ActiveProductPayloadContext.outerPayload payloadContext) := by
+    rw [ActiveProductPayloadContext.outerPayload_eq_tail payloadContext]
+    simpa only [headOuterBarriers, nextBarriers,
+      agreement.core.control.frames, nextFrames] using
+      poppedOrigins
   exact
     ⟨executableHead, sourceStep, executableStep,
-      ⟨committed, outerEndpoints, outerOrdered⟩,
+      ⟨committed, outerEndpoints, outerOrdered, outerOrigins⟩,
       ActiveProductPayloadContext.cellCount_outerPayload payloadContext,
       countDrop⟩
 

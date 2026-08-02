@@ -263,6 +263,51 @@ theorem RetainedProductResources.cutToTracked_alts_eq_outer
   exact
     PLeaTTa.PrologCoreAdequacy.cutTo_own_barrier altTail pending.outer.alts
 
+/-- A coherent own-barrier cut restores not only the suspended caller's
+alternative stack but its exact optional barrier cache.  This strengthens
+post-cut coherence to the identity needed when a retained payload occurrence
+is popped: cached execution returns the caller's recorded cache, while the
+uncached lane remains `none` throughout. -/
+theorem RetainedProductResources.cutToTracked_barriers_eq_outer
+    {barrier : Nat} {pending : DemandDrivenCallStep.PendingCall}
+    {altTail : List PLeaTTa.Alt} {state : OpenConf}
+    (resources :
+      RetainedProductResources barrier pending altTail state)
+    (coherent : PLeaTTa.BarrierCacheCoherent state.toConf) :
+    (PLeaTTa.cutToTracked barrier state.toConf.barriers state.toConf.alts).2 =
+      pending.outer.barriers := by
+  have trackedAlts := resources.cutToTracked_alts_eq_outer coherent
+  cases cached : pending.outer.barriers with
+  | none =>
+      have stateCache : state.toConf.barriers = none := by
+        change state.control.barriers = none
+        rw [resources.retainedBarriers, cached]
+        rfl
+      simp [stateCache, PLeaTTa.cutToTracked]
+  | some depth =>
+      have outerDepth :
+          depth = PLeaTTa.barrierCount pending.outer.alts := by
+        simpa [cached] using resources.outerBarrierCacheCoherent coherent
+      have stateCache : state.toConf.barriers = some (depth + 1) := by
+        change state.control.barriers = some (depth + 1)
+        rw [resources.retainedBarriers, cached]
+        rfl
+      have resultCoherent :=
+        PLeaTTa.cutToTracked_coherent barrier state.toConf.barriers
+          state.toConf.alts coherent
+      generalize resultEq :
+          (PLeaTTa.cutToTracked barrier state.toConf.barriers
+            state.toConf.alts).2 = resultCache at resultCoherent ⊢
+      cases resultCache with
+      | none =>
+          rw [stateCache] at resultEq
+          simp [PLeaTTa.cutToTracked] at resultEq
+      | some resultDepth =>
+          rw [trackedAlts] at resultCoherent
+          have resultDepthEq : resultDepth = depth := by
+            simpa [outerDepth] using resultCoherent
+          simp [resultDepthEq]
+
 /-! ## Tracked barrier reconstruction -/
 
 /-- Coherence of the active state recovers coherence of the suspended outer

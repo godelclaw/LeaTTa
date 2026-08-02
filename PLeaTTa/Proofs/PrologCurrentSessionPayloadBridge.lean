@@ -116,6 +116,13 @@ structure SpinedActiveProductPayloadResourceRelatesAt
   that cell's own allocation seeds.  Unlike a one-level head certificate,
   this survives arbitrary nested-call exhaustion and payload popping. -/
   activationOrdered : ActivationOrdered payloadContext
+  /-- Every retained occurrence owns the exact historical alternatives and
+  barrier cache outside its call.  The separate frame conjunct explicitly
+  states the current local-call build has no typed delimiter interleaved
+  between cells. -/
+  controlOrigins :
+    LocalControlOriginSpineRelates baseAlts state.frames
+      state.control.barriers payloadContext
 
 namespace SpinedActiveProductPayloadResourceRelatesAt
 
@@ -396,7 +403,8 @@ def reindex
   ⟨agreement.core.reindex persistent advanced,
     endpointsBelow_mono payloadContext agreement.endpointsCurrent
       advanced.fresh (Nat.le_refl _),
-    agreement.activationOrdered⟩
+    agreement.activationOrdered,
+    agreement.controlOrigins⟩
 
 /-- The payload-coupled relation genuinely admits a strictly later fresh
 session when the frontier relates that high-water to the unchanged executable
@@ -583,7 +591,10 @@ theorem
     (outerOrdered : ActivationOrdered outerPayloads)
     (baseAlts : List PLeaTTa.Alt)
     (outerAlts :
-      pending.outer.alts = flattenOwnedAlts resources baseAlts) :
+      pending.outer.alts = flattenOwnedAlts resources baseAlts)
+    (outerControlOrigins :
+      LocalControlOriginSpineRelates baseAlts pending.frames
+        pending.outer.barriers outerPayloads) :
     ∃ active : RetainedAlternativeSegment,
       ∃ payloadContext :
           ActiveProductPayloadContext nextAlpha support qterm opened finish
@@ -633,8 +644,12 @@ theorem
           installed) := result.2.2.2.2.1
   have snapshotRepresentative :
       (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.residualRepresentative =
-        representative :=
-    result.2.2.2.2.2
+      representative :=
+    result.2.2.2.2.2.1
+  have snapshotOrigin :
+      (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.controlOrigin.MatchesPendingControl
+        pending :=
+    result.2.2.2.2.2.2
   have counterExact :
       (activatedOpenSuccessor pending copied
         (segmentExecutableRest ++ flattenExecutables outer) qterm
@@ -650,13 +665,67 @@ theorem
           installed).persistent.counter := by
     rw [counterExact]
     exact endpoints
+  have outerControlNext :
+      LocalControlOriginSpineRelates baseAlts pending.frames
+        pending.outer.barriers
+        (SourceControlResourcePayloadContextAgrees.tail payloadContext) := by
+    rw [outerPayloadExact.exact]
+    exact
+      outerControlOrigins.extendAbove activation.alphaExtension outerPayloads
+        outerPayloadExact.below baseAlts pending.frames
+        pending.outer.barriers
+  have activeControl :
+      SpinedActiveProductRelatesAt (AlphaFreshFrontier nextAlpha) nextAlpha
+        support (sourceCanonical ++ canonical) referenceBase opened
+        opened.session pending finish branch branchTail altTail bodyBarrier
+        callerBarrier branch.body copied.body segmentReferenceRest
+        segmentExecutableRest outer independentResult
+        (PLeaTTa.trimFor
+          (copied.body ++
+            (segmentExecutableRest ++ flattenExecutables outer))
+          qterm installed)
+        qterm
+        (activatedOpenSuccessor pending copied
+          (segmentExecutableRest ++ flattenExecutables outer) qterm
+          installed) :=
+    _root_.PLeaTTa.PrologProductResourceTransitionBridge.SpinedRepresentativeProductActivation.spinedActiveProductRelates
+      activation
+  have core :
+      SpinedActiveProductResourceRelatesAt (AlphaFreshFrontier nextAlpha)
+        nextAlpha support (sourceCanonical ++ canonical) referenceBase opened
+        opened.session pending finish branch branchTail altTail bodyBarrier
+        callerBarrier branch.body copied.body segmentReferenceRest
+        segmentExecutableRest outer independentResult
+        (PLeaTTa.trimFor
+          (copied.body ++
+            (segmentExecutableRest ++ flattenExecutables outer))
+          qterm installed)
+        qterm active resources callerScope outerScope context baseAlts
+        (ActiveProductContext.plug context
+          (activatedSourceProduct callerScope opened finish branch branchTail
+            independentResult segmentReferenceRest))
+        (activatedOpenSuccessor pending copied
+          (segmentExecutableRest ++ flattenExecutables outer) qterm installed) :=
+    ⟨activeControl, resourceStack, rfl⟩
+  have controlOriginsAtPending :
+      LocalControlOriginSpineRelates baseAlts pending.frames
+        (PLeaTTa.pushBarrierCache pending.outer.barriers) payloadContext :=
+    LocalControlOriginSpineRelates.prepend payloadContext outerControlNext
+      (snapshotOrigin.outerAlts.trans outerAlts)
+      snapshotOrigin.outerBarriers snapshotOrigin.frames
+  have controlOrigins :
+      LocalControlOriginSpineRelates baseAlts
+        (activatedOpenSuccessor pending copied
+          (segmentExecutableRest ++ flattenExecutables outer) qterm
+          installed).frames
+        (activatedOpenSuccessor pending copied
+          (segmentExecutableRest ++ flattenExecutables outer) qterm
+          installed).control.barriers
+        payloadContext := by
+    simpa only [core.control.frames, core.control.retainedBarriers] using
+      controlOriginsAtPending
   refine
     ⟨active, payloadContext, ?_, outerPayloadExact, snapshotRepresentative⟩
-  refine ⟨?_, endpointsCurrent, activationOrdered⟩
-  refine ⟨?_, resourceStack, ?_⟩
-  · exact
-      _root_.PLeaTTa.PrologProductResourceTransitionBridge.SpinedRepresentativeProductActivation.spinedActiveProductRelates
-        activation
-  · rfl
+  exact ⟨core, endpointsCurrent, activationOrdered, controlOrigins⟩
 
 end PLeaTTa.PrologCurrentSessionPayloadBridge

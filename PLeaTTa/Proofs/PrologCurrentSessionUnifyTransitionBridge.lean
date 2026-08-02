@@ -339,13 +339,19 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.afterUnifySuccessWithLive
         executableAfter.persistent.counter := by
     simpa [executableAfter] using agreement.endpointsCurrent
 
+  have nextControlOrigins :
+      LocalControlOriginSpineRelates baseAlts executableAfter.frames
+        executableAfter.control.barriers payloadContext := by
+    simpa [executableAfter] using agreement.controlOrigins
+
   exact
     ⟨spelling, executableLeft, executableRight, bodyExecutableTail,
       sourceExtension, executableExtension, generated, installed,
       leftAgreement, rightAgreement,
       executableHead, by simpa [installed] using selectedSuccess,
       sourceStep, executableStep,
-      ⟨nextCore, nextEndpoints, agreement.activationOrdered⟩,
+      ⟨nextCore, nextEndpoints, agreement.activationOrdered,
+        nextControlOrigins⟩,
       by simpa [executableTail] using nextSelected⟩
 
 /-- Compatibility entry point for callers carrying the older conservative

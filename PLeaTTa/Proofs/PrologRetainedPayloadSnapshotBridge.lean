@@ -6,7 +6,14 @@ Purpose: Preserve the pre-head cumulative logical payload required to
   reactivate one retained local-clause resource after later backtracking.
 Trusted boundary: none
 Main exports:
+  RetainedCallControlOrigin,
   RetainedCallPayloadSnapshot,
+  installedBarrierCache,
+  recordedBaseBarrierCache,
+  ControlOriginSpineAgrees,
+  ControlOriginSpineRelates,
+  LocalCallFramesUninterleaved,
+  LocalControlOriginSpineRelates,
   RetainedCallPayloadSnapshot.mono,
   RetainedCallPayloadSnapshot.transportCursor,
   RetainedCallPayloadSnapshot.afterRejectedPulls,
@@ -53,9 +60,41 @@ cumulative source/runtime valuation which justified the call.
 This module packages that missing proof data at the only sound point: the
 original call activation, where the pre-head `TaskSpinePayloadAgrees` and the
 literal retained cursor are both present.  The snapshot contains no world,
-database, frame stack, or fresh allocator.  Those persistent components must
-always come from the current state when the resource is reactivated.
+database, or fresh allocator.  It retains only a compact control origin: the
+outer alternatives, barrier-cache mode/value, frame stack, and exact cut-tag
+equation needed to reactivate this occurrence.  Persistent world and allocator
+state must always come from the current state.
 -/
+
+/-- Compact, non-persistent control provenance for one retained call.
+
+The full historical `PendingCall` must not be retained: it contains a stale
+world and allocation counter which would be unsound to restore after dynamic
+updates or nested calls.  These are exactly the backtrack/control components
+consumed by the active-product relation.  `bodyBarrierTag` records the actual
+call-entry barrier equation rather than reconstructing it later from the
+current cache, whose mode may differ after enclosing control has run. -/
+structure RetainedCallControlOrigin where
+  bodyBarrier : Nat
+  outerAlts : List PLeaTTa.Alt
+  outerBarriers : Option Nat
+  frames : List Frame
+  bodyBarrierTag :
+    bodyBarrier =
+      outerBarriers.getD (PLeaTTa.barrierCount outerAlts) + 1
+
+namespace RetainedCallControlOrigin
+
+/-- The compact origin was copied from the literal pending control at call
+entry.  Persistent state is intentionally absent from both sides. -/
+structure MatchesPendingControl
+    (origin : RetainedCallControlOrigin)
+    (pending : DemandDrivenCallStep.PendingCall) : Prop where
+  outerAlts : origin.outerAlts = pending.outer.alts
+  outerBarriers : origin.outerBarriers = pending.outer.barriers
+  frames : origin.frames = pending.frames
+
+end RetainedCallControlOrigin
 
 /-- Immutable pre-head logical payload owned by one retained predicate
 resource.
@@ -79,6 +118,8 @@ structure RetainedCallPayloadSnapshot
   canonical : TreeSubstitution
   referenceBase : Substitution
   referencePayload : List Term
+  controlOrigin : RetainedCallControlOrigin
+  controlOriginBarrier : controlOrigin.bodyBarrier = resource.barrier
   alphaIncluded :
     ∀ pair, pair ∈ snapshotAlpha → pair ∈ currentAlpha
   /-- Current alpha entries avoid every source interval and executable seed
@@ -266,6 +307,14 @@ def afterPulledHead
       canonical := snapshot.canonical
       referenceBase := snapshot.referenceBase
       referencePayload := snapshot.referencePayload
+      controlOrigin := by
+        simpa
+          [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
+          using snapshot.controlOrigin
+      controlOriginBarrier := by
+        simpa
+          [_root_.PLeaTTa.PrologBodyFailureResourceTransitionBridge.afterPulledHead]
+          using snapshot.controlOriginBarrier
       alphaIncluded := snapshot.alphaIncluded
       allocationGap := by
         have advanced :=
@@ -643,6 +692,286 @@ def endpointsBelow
         resource.finalCounter ≤ executableFloor ∧
         endpointsBelow outerAgrees referenceFloor executableFloor
 
+/-! ## Exact historical control origins
+
+Each payload snapshot stores the backtrackable control immediately outside
+its local predicate call.  The fields are useful only when they are tied to
+the literal older zipper suffix: otherwise a caller could pair a perfectly
+well-formed logical snapshot with a forged alternative bank, barrier cache,
+or frame stack.  The definitions below make that tie recursive and
+occurrence-indexed.
+
+The base barrier cache is computed by `recordedBaseBarrierCache`, walking the
+literal snapshots to the outer boundary.  It is not guessed existentially and
+no inverse of `pushBarrierCache` is used.  On a nonempty zipper the outermost
+snapshot fixes the base cache, every inner snapshot fixes the next installed
+cache, and the final equality fixes the live cache.  In disabled-cache mode
+`pushBarrierCache none = none`, so uncached execution stays honestly uncached.
+-/
+
+/-- Barrier cache installed after entering every retained call in a payload
+zipper, starting from the older base cache below the zipper. -/
+def installedBarrierCache
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (baseBarriers : Option Nat) :
+    SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer →
+      Option Nat
+  | .nil _ _ => baseBarriers
+  | .cons _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ outerAgrees =>
+      PLeaTTa.pushBarrierCache
+        (installedBarrierCache baseBarriers outerAgrees)
+
+/-- Adding one retained-call marker is injective even though disabled cache
+mode remains `none`.  This lets a live installed cache identify the exact
+outer cache without inventing a partial inverse. -/
+theorem pushBarrierCache_injective :
+    Function.Injective PLeaTTa.pushBarrierCache := by
+  intro left right equal
+  cases left with
+  | none =>
+      cases right with
+      | none => rfl
+      | some right => simp at equal
+  | some left =>
+      cases right with
+      | none => simp at equal
+      | some right =>
+          simp only [PLeaTTa.pushBarrierCache, Option.some.injEq] at equal
+          congr
+          omega
+
+/-- Compute the unique recorded cache below a zipper by following its exact
+outer-occurrence snapshots.  The live cache is used only for the empty case;
+for a nonempty zipper every recursive step replaces it with the cache stored
+by that occurrence. -/
+def recordedBaseBarrierCache
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (liveBarriers : Option Nat) :
+    SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer →
+      Option Nat
+  | .nil _ _ => liveBarriers
+  | .cons _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ snapshot outerAgrees =>
+      recordedBaseBarrierCache snapshot.controlOrigin.outerBarriers outerAgrees
+
+/-- Every retained occurrence records exactly the alternatives and cache
+immediately outside that call.
+
+`resources` in the head equation is the literal dependent tail of the same
+zipper constructor.  Thus neither an equal-looking resource list nor a
+snapshot found by value search can satisfy the invariant for another
+occurrence. -/
+def ControlOriginSpineAgrees
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (baseAlts : List PLeaTTa.Alt) (baseBarriers : Option Nat) :
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer) → Prop
+  | .nil _ _ => True
+  | .cons _ _ _ _ _ _ _ resources _ _ _ _ _ _ _ snapshot outerAgrees =>
+      snapshot.controlOrigin.outerAlts =
+          flattenOwnedAlts resources baseAlts ∧
+        snapshot.controlOrigin.outerBarriers =
+          installedBarrierCache baseBarriers outerAgrees ∧
+        ControlOriginSpineAgrees baseAlts baseBarriers outerAgrees
+
+/-- The current local-call build has no typed delimiter boundary interleaved
+between its retained predicate cells.
+
+This restriction is deliberately separate from `ControlOriginSpineAgrees`:
+the generic payload zipper can represent future chains crossing collection or
+exception frames, while the present scheduled-history build proves that every
+cell in one local chain saw the same literal frame stack. -/
+def LocalCallFramesUninterleaved
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (frames : List Frame) :
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer) → Prop
+  | .nil _ _ => True
+  | .cons _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ snapshot outerAgrees =>
+      snapshot.controlOrigin.frames = frames ∧
+        LocalCallFramesUninterleaved frames outerAgrees
+
+/-- A complete payload zipper is tied to one live installed barrier cache.
+Its older base is computed from the occurrence-indexed snapshots, never
+chosen by a consumer. -/
+def ControlOriginSpineRelates
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (baseAlts : List PLeaTTa.Alt) (installedBarriers : Option Nat)
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer) : Prop :=
+  let baseBarriers :=
+    recordedBaseBarrierCache installedBarriers agreement
+  ControlOriginSpineAgrees baseAlts baseBarriers agreement ∧
+    installedBarrierCache baseBarriers agreement = installedBarriers
+
+/-- Exact origin layout plus the explicit no-interleaved-frame property of
+the current local-call chain.  Naming the restriction keeps catch/findall
+extensions from silently inheriting a false global frame-constancy claim. -/
+structure LocalControlOriginSpineRelates
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (baseAlts : List PLeaTTa.Alt) (frames : List Frame)
+    (installedBarriers : Option Nat)
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer) : Prop where
+  origins :
+    ControlOriginSpineRelates baseAlts installedBarriers agreement
+  framesUninterleaved : LocalCallFramesUninterleaved frames agreement
+
+namespace LocalControlOriginSpineRelates
+
+/-- The empty zipper relates any literal base control to itself. -/
+def nil
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    (currentBarrier : Nat) (scope : CutScopeId)
+    (baseAlts : List PLeaTTa.Alt) (frames : List Frame)
+    (baseBarriers : Option Nat) :
+    LocalControlOriginSpineRelates baseAlts frames baseBarriers
+      (SourceControlResourcePayloadContextAgrees.nil
+        (alpha := alpha) (support := support) (qterm := qterm)
+        currentBarrier scope) :=
+  { origins := by
+      exact
+        ⟨by simp [ControlOriginSpineAgrees], rfl⟩
+    framesUninterleaved := by
+      simp [LocalCallFramesUninterleaved] }
+
+/-- Prepending one real call origin installs exactly one additional cache
+level while preserving the older proof history literally. -/
+def cons
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {currentScope nextScope outerScope : CutScopeId}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {cursor : PreparedCursor} {context : ActiveProductContext}
+    {segmentAgrees : segment.Agrees alpha}
+    {resourceRest :
+      resource.rest = segment.executables ++ flattenExecutables segments}
+    {resourceQuery : resource.qterm = qterm}
+    {resourceBarrier : resource.barrier = currentBarrier}
+    {resourceOwnership : resource.HasIndexedOwnershipAt alpha cursor}
+    {snapshot :
+      RetainedCallPayloadSnapshot alpha support resource cursor segment
+        segments}
+    {outerAgrees :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        segment.barrier segments resources nextScope context outerScope}
+    {baseAlts : List PLeaTTa.Alt} {frames : List Frame}
+    {outerInstalled : Option Nat}
+    (tail :
+      LocalControlOriginSpineRelates baseAlts frames outerInstalled
+        outerAgrees)
+    (outerAltsExact :
+      snapshot.controlOrigin.outerAlts =
+        flattenOwnedAlts resources baseAlts)
+    (outerBarriersExact :
+      snapshot.controlOrigin.outerBarriers = outerInstalled)
+    (framesExact : snapshot.controlOrigin.frames = frames) :
+    LocalControlOriginSpineRelates baseAlts frames
+      (PLeaTTa.pushBarrierCache outerInstalled)
+      (SourceControlResourcePayloadContextAgrees.cons currentBarrier
+        currentScope nextScope outerScope segment segments resource resources
+        cursor context segmentAgrees resourceRest resourceQuery resourceBarrier
+        resourceOwnership snapshot outerAgrees) := by
+  rcases tail.origins with ⟨tailOrigins, tailInstalled⟩
+  refine
+    { origins := ?_
+      framesUninterleaved := ⟨framesExact, tail.framesUninterleaved⟩ }
+  change
+    ControlOriginSpineAgrees baseAlts
+        (recordedBaseBarrierCache
+          snapshot.controlOrigin.outerBarriers outerAgrees)
+        (SourceControlResourcePayloadContextAgrees.cons currentBarrier
+          currentScope nextScope outerScope segment segments resource
+          resources cursor context segmentAgrees resourceRest resourceQuery
+          resourceBarrier resourceOwnership snapshot outerAgrees) ∧
+      installedBarrierCache
+          (recordedBaseBarrierCache
+            snapshot.controlOrigin.outerBarriers outerAgrees)
+          (SourceControlResourcePayloadContextAgrees.cons currentBarrier
+            currentScope nextScope outerScope segment segments resource
+            resources cursor context segmentAgrees resourceRest resourceQuery
+            resourceBarrier resourceOwnership snapshot outerAgrees) =
+        PLeaTTa.pushBarrierCache outerInstalled
+  rw [outerBarriersExact]
+  exact
+    ⟨⟨outerAltsExact,
+        outerBarriersExact.trans tailInstalled.symm,
+        tailOrigins⟩,
+      by
+        simp only [installedBarrierCache]
+        rw [tailInstalled]⟩
+
+/-- Popping the exact head cell recovers the historical control immediately
+outside that occurrence.  No inverse of `pushBarrierCache` is used. -/
+def tail
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {currentScope nextScope outerScope : CutScopeId}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {cursor : PreparedCursor} {context : ActiveProductContext}
+    {segmentAgrees : segment.Agrees alpha}
+    {resourceRest :
+      resource.rest = segment.executables ++ flattenExecutables segments}
+    {resourceQuery : resource.qterm = qterm}
+    {resourceBarrier : resource.barrier = currentBarrier}
+    {resourceOwnership : resource.HasIndexedOwnershipAt alpha cursor}
+    {snapshot :
+      RetainedCallPayloadSnapshot alpha support resource cursor segment
+        segments}
+    {outerAgrees :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        segment.barrier segments resources nextScope context outerScope}
+    {baseAlts : List PLeaTTa.Alt} {frames : List Frame}
+    {installedBarriers : Option Nat}
+    (whole :
+      LocalControlOriginSpineRelates baseAlts frames installedBarriers
+        (SourceControlResourcePayloadContextAgrees.cons currentBarrier
+          currentScope nextScope outerScope segment segments resource resources
+          cursor context segmentAgrees resourceRest resourceQuery
+          resourceBarrier resourceOwnership snapshot outerAgrees)) :
+    LocalControlOriginSpineRelates baseAlts frames
+      snapshot.controlOrigin.outerBarriers outerAgrees := by
+  rcases whole.origins with ⟨origins, _installed⟩
+  refine
+    { origins := ?_
+      framesUninterleaved := whole.framesUninterleaved.2 }
+  exact ⟨origins.2.2, origins.2.1.symm⟩
+
+end LocalControlOriginSpineRelates
+
 /-- Expose all three domination components of a nonempty payload zipper.
 
 The tail in the result is the exact linear eliminator applied to the supplied
@@ -833,6 +1162,174 @@ def extendAbove
         (snapshot.mono extension.included
           (snapshot.allocationGap.extendAbove extension below.1 below.2.1))
         (extendAbove extension outerAgrees below.2.2)
+
+/-- Alpha transport changes proof annotations only; it cannot alter the
+barrier-cache chronology computed from retained call occurrences. -/
+theorem installedBarrierCache_extendAbove
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {referenceFloor executableFloor : Nat}
+    (extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor)
+    (agreement :
+      SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer)
+    (below : endpointsBelow agreement referenceFloor executableFloor)
+    (baseBarriers : Option Nat) :
+    installedBarrierCache baseBarriers
+        (extendAbove extension agreement below) =
+      installedBarrierCache baseBarriers agreement := by
+  induction agreement with
+  | nil => rfl
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+      inductionHypothesis =>
+      simp only [extendAbove, installedBarrierCache]
+      rw [inductionHypothesis below.2.2]
+
+/-- The computed outer base cache is invariant under alpha-only transport. -/
+theorem recordedBaseBarrierCache_extendAbove
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {referenceFloor executableFloor : Nat}
+    (extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor)
+    (agreement :
+      SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer)
+    (below : endpointsBelow agreement referenceFloor executableFloor)
+    (liveBarriers : Option Nat) :
+    recordedBaseBarrierCache liveBarriers
+        (extendAbove extension agreement below) =
+      recordedBaseBarrierCache liveBarriers agreement := by
+  induction agreement generalizing liveBarriers with
+  | nil => rfl
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+      inductionHypothesis =>
+      simp only [extendAbove, recordedBaseBarrierCache]
+      simpa [RetainedCallPayloadSnapshot.mono] using
+        inductionHypothesis below.2.2 snapshot.controlOrigin.outerBarriers
+
+/-- Alpha-only transport preserves every occurrence-indexed alternative and
+cache-origin equation. -/
+theorem ControlOriginSpineAgrees.extendAbove
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {referenceFloor executableFloor : Nat}
+    (extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor)
+    (agreement :
+      SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer)
+    (below : endpointsBelow agreement referenceFloor executableFloor)
+    (baseAlts : List PLeaTTa.Alt) (baseBarriers : Option Nat)
+    (origins :
+      ControlOriginSpineAgrees baseAlts baseBarriers agreement) :
+    ControlOriginSpineAgrees baseAlts baseBarriers
+      (extendAbove extension agreement below) := by
+  induction agreement with
+  | nil => trivial
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+      inductionHypothesis =>
+      simp only [ControlOriginSpineAgrees] at origins ⊢
+      exact
+        ⟨origins.1,
+          origins.2.1.trans
+            (installedBarrierCache_extendAbove extension outerAgrees
+              below.2.2 baseBarriers).symm,
+          inductionHypothesis below.2.2 origins.2.2⟩
+
+/-- Alpha-only transport cannot insert a typed delimiter between retained
+local-call cells. -/
+theorem LocalCallFramesUninterleaved.extendAbove
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {referenceFloor executableFloor : Nat}
+    (extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor)
+    (agreement :
+      SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer)
+    (below : endpointsBelow agreement referenceFloor executableFloor)
+    (frames : List Frame)
+    (uninterleaved : LocalCallFramesUninterleaved frames agreement) :
+    LocalCallFramesUninterleaved frames
+      (extendAbove extension agreement below) := by
+  induction agreement with
+  | nil => trivial
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+      inductionHypothesis =>
+      exact
+        ⟨uninterleaved.1,
+          inductionHypothesis below.2.2 uninterleaved.2⟩
+
+/-- Transport the complete local origin relation through an exact alpha
+extension without changing alternatives, cache mode, or frame identity. -/
+theorem LocalControlOriginSpineRelates.extendAbove
+    {smaller larger support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {referenceFloor executableFloor : Nat}
+    (extension :
+      AlphaExtendsAbove smaller larger referenceFloor executableFloor)
+    (agreement :
+      SourceControlResourcePayloadContextAgrees smaller support qterm
+        currentBarrier segments resources inner context outer)
+    (below : endpointsBelow agreement referenceFloor executableFloor)
+    (baseAlts : List PLeaTTa.Alt) (frames : List Frame)
+    (installedBarriers : Option Nat)
+    (control :
+      LocalControlOriginSpineRelates baseAlts frames installedBarriers
+        agreement) :
+    LocalControlOriginSpineRelates baseAlts frames installedBarriers
+      (extendAbove extension agreement below) := by
+  refine
+    { origins := ?_
+      framesUninterleaved :=
+        control.framesUninterleaved.extendAbove extension agreement below
+          frames }
+  rcases control.origins with ⟨origins, installed⟩
+  change
+    ControlOriginSpineAgrees baseAlts
+        (recordedBaseBarrierCache installedBarriers
+          (SourceControlResourcePayloadContextAgrees.extendAbove extension
+            agreement below))
+        (SourceControlResourcePayloadContextAgrees.extendAbove extension
+          agreement below) ∧
+      installedBarrierCache
+          (recordedBaseBarrierCache installedBarriers
+            (SourceControlResourcePayloadContextAgrees.extendAbove extension
+              agreement below))
+          (SourceControlResourcePayloadContextAgrees.extendAbove extension
+            agreement below) = installedBarriers
+  rw [recordedBaseBarrierCache_extendAbove extension agreement below]
+  exact
+    ⟨origins.extendAbove extension agreement below baseAlts
+        (recordedBaseBarrierCache installedBarriers agreement),
+      (installedBarrierCache_extendAbove extension agreement below
+        (recordedBaseBarrierCache installedBarriers agreement)).trans
+        installed⟩
 
 /-- Proof-relevant handoff between two exact payload zippers across one
 ambient-alpha extension.
@@ -1090,6 +1587,218 @@ def headCell
       resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
       exact ⟨cursor, rfl, rfl, rfl, resourceOwnership, snapshot⟩
 
+namespace LocalControlOriginSpineRelates
+
+/-! The explicit-constructor lemmas above are convenient at creation sites.
+The two wrappers below eliminate an arbitrary nonempty dependent zipper once,
+so downstream path consumers never rebuild or equality-search its head. -/
+
+/-- Reattach one exact head occurrence to an already-related literal tail. -/
+def prepend
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {frame : ActiveProductFrame} {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt} {frames : List Frame}
+    {outerInstalled : Option Nat}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources) inner
+        (frame :: context) outer)
+    (tailRelates :
+      LocalControlOriginSpineRelates baseAlts frames outerInstalled
+        (SourceControlResourcePayloadContextAgrees.tail agreement))
+    (outerAltsExact :
+      (headCell agreement).snapshot.controlOrigin.outerAlts =
+        flattenOwnedAlts resources baseAlts)
+    (outerBarriersExact :
+      (headCell agreement).snapshot.controlOrigin.outerBarriers =
+        outerInstalled)
+    (framesExact :
+      (headCell agreement).snapshot.controlOrigin.frames = frames) :
+    LocalControlOriginSpineRelates baseAlts frames
+      (PLeaTTa.pushBarrierCache outerInstalled) agreement := by
+  cases agreement with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
+      exact
+        cons tailRelates outerAltsExact outerBarriersExact framesExact
+
+/-- Remove one exact head occurrence and recover its recorded outer cache. -/
+def pop
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {frame : ActiveProductFrame} {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt} {frames : List Frame}
+    {installedBarriers : Option Nat}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources) inner
+        (frame :: context) outer)
+    (whole :
+      LocalControlOriginSpineRelates baseAlts frames installedBarriers
+        agreement) :
+    LocalControlOriginSpineRelates baseAlts frames
+      (headCell agreement).snapshot.controlOrigin.outerBarriers
+      (SourceControlResourcePayloadContextAgrees.tail agreement) := by
+  cases agreement with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
+      exact tail whole
+
+/-- The exact head occurrence records the literal alternative bank owned by
+its dependent resource tail. -/
+theorem headOuterAlts_eq
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {frame : ActiveProductFrame} {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt} {frames : List Frame}
+    {installedBarriers : Option Nat}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources) inner
+        (frame :: context) outer)
+    (whole :
+      LocalControlOriginSpineRelates baseAlts frames installedBarriers
+        agreement) :
+    (headCell agreement).snapshot.controlOrigin.outerAlts =
+      flattenOwnedAlts resources baseAlts := by
+  cases agreement with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
+      exact whole.origins.1.1
+
+/-- The exact head occurrence saw the same non-interleaved frame stack as the
+complete current local-call chain. -/
+theorem headFrames_eq
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {frame : ActiveProductFrame} {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt} {frames : List Frame}
+    {installedBarriers : Option Nat}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources) inner
+        (frame :: context) outer)
+    (whole :
+      LocalControlOriginSpineRelates baseAlts frames installedBarriers
+        agreement) :
+    (headCell agreement).snapshot.controlOrigin.frames = frames := by
+  cases agreement with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
+      exact whole.framesUninterleaved.1
+
+/-- A nonempty exact spine's live cache is precisely one push above its head
+occurrence's recorded outer cache.  This is the forward equation used when a
+cursor-only payload transform retains that occurrence. -/
+theorem installedBarriers_eq_push_headOuter
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {frame : ActiveProductFrame} {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt} {frames : List Frame}
+    {installedBarriers : Option Nat}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources) inner
+        (frame :: context) outer)
+    (whole :
+      LocalControlOriginSpineRelates baseAlts frames installedBarriers
+        agreement) :
+    installedBarriers =
+      PLeaTTa.pushBarrierCache
+        (headCell agreement).snapshot.controlOrigin.outerBarriers := by
+  cases agreement with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
+      rcases whole.origins with ⟨origins, installed⟩
+      change
+        ControlOriginSpineAgrees baseAlts
+          (recordedBaseBarrierCache snapshot.controlOrigin.outerBarriers
+            outerAgrees)
+          (SourceControlResourcePayloadContextAgrees.cons currentBarrier
+            inner nextScope outer segment segments resource
+            resources cursor context segmentAgrees resourceRest resourceQuery
+            resourceBarrier resourceOwnership snapshot outerAgrees) at origins
+      change
+        installedBarrierCache
+            (recordedBaseBarrierCache snapshot.controlOrigin.outerBarriers
+              outerAgrees)
+            (SourceControlResourcePayloadContextAgrees.cons currentBarrier
+              inner nextScope outer segment segments resource
+              resources cursor context segmentAgrees resourceRest resourceQuery
+              resourceBarrier resourceOwnership snapshot outerAgrees) =
+          installedBarriers at installed
+      calc
+        installedBarriers =
+            PLeaTTa.pushBarrierCache
+              (installedBarrierCache
+                (recordedBaseBarrierCache
+                  snapshot.controlOrigin.outerBarriers outerAgrees)
+                outerAgrees) := by
+          simpa only [installedBarrierCache] using installed.symm
+        _ = PLeaTTa.pushBarrierCache
+              snapshot.controlOrigin.outerBarriers := by
+          exact congrArg PLeaTTa.pushBarrierCache origins.2.1.symm
+
+/-- If the live cache is known to be one pushed outer cache, the exact head
+occurrence records that outer cache.  This is derived from the recursive
+spine relation and injectivity, not retained as a duplicate field. -/
+theorem headOuterBarriers_eq_of_installedPush
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segment : ControlSegment} {segments : List ControlSegment}
+    {resource : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {frame : ActiveProductFrame} {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt} {frames : List Frame}
+    {outerInstalled : Option Nat}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier (segment :: segments) (resource :: resources) inner
+        (frame :: context) outer)
+    (whole :
+      LocalControlOriginSpineRelates baseAlts frames
+        (PLeaTTa.pushBarrierCache outerInstalled) agreement) :
+    (headCell agreement).snapshot.controlOrigin.outerBarriers =
+      outerInstalled := by
+  cases agreement with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
+      rcases whole.origins with ⟨origins, installed⟩
+      apply pushBarrierCache_injective
+      simp only [installedBarrierCache] at installed
+      exact
+        (congrArg PLeaTTa.pushBarrierCache origins.2.1).trans installed
+
+end LocalControlOriginSpineRelates
+
 end SourceControlResourcePayloadContextAgrees
 
 /-- Move one currently active resource into the typed outer context of a
@@ -1255,7 +1964,8 @@ theorem
               (activatedOpenSuccessor pending copied
                 (segmentExecutableRest ++ flattenExecutables outer)
                 qterm installed)) ∧
-            _snapshot.residualRepresentative = representative := by
+            _snapshot.residualRepresentative = representative ∧
+              _snapshot.controlOrigin.MatchesPendingControl pending := by
   let advanced := finish.advance branch branchTail
   have advancedRemaining : advanced.remaining = branchTail := by
     simp [advanced, PreparedCursor.advance]
@@ -1354,6 +2064,14 @@ theorem
         canonical := canonical
         referenceBase := referenceBase
         referencePayload := referencePayload
+        controlOrigin :=
+          { bodyBarrier := bodyBarrier
+            outerAlts := pending.outer.alts
+            outerBarriers := pending.outer.barriers
+            frames := pending.frames
+            bodyBarrierTag := activation.barrierTag }
+        controlOriginBarrier := by
+          rfl
         alphaIncluded := activation.alphaIncluded
         allocationGap := by
           apply AlphaAllocationGap.of_frontier
@@ -1413,6 +2131,8 @@ theorem
          context)
         outerScope := by
     simpa [caller] using payloadContext
-  exact ⟨active, snapshot, payloadContextExact, rfl, stack, rfl⟩
+  exact
+    ⟨active, snapshot, payloadContextExact, rfl, stack, rfl,
+      ⟨rfl, rfl, rfl⟩⟩
 
 end PLeaTTa.PrologRetainedPayloadSnapshotBridge
