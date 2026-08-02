@@ -41,26 +41,30 @@ as independent compatible witnesses.
 [SPEC metta.pl:251-256, translator.pl:320-321] -/
 theorem rejected_prefix_root_pull_selects_exact_payload_occurrence
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    exists before : RepresentativeScheduledPayloadState,
+  exists before : RepresentativeScheduledPayloadState,
       exists ready : RootClosedAnswerReady before,
-        exists path : ScheduledHistoryBuild.Path ready.result.historyBuild,
-          exists goals binding rest,
-            exists landing :
+        exists selection :
+            ScheduledLocalSelection ready.result.historyBuild.cells,
+          exists landing :
                 OriginPrefixLanding before.carrier.index.alpha
-                  ready.result.history.resourceAgreement goals binding rest,
+                  ready.result.history.resourceAgreement selection.goals
+                    selection.binding selection.rest,
               PLeaTTa.PrologScheduledPayloadLandingBridge.ScheduledPayloadAlignment.classifyPull
                   ready.payloadAlignment =
-                  ScheduledPayloadPullOutcome.localLive path goals binding
-                    rest landing /\
+                  ScheduledPayloadPullOutcome.localLive selection landing /\
                 ScheduledPayloadPullOutcome.selectedPayloadPath?
                     (PLeaTTa.PrologScheduledPayloadLandingBridge.ScheduledPayloadAlignment.classifyPull
                       ready.payloadAlignment) =
-                  some (ready.payloadAlignment.payloadPath path) /\
-                (ready.payloadAlignment.payloadPath path).cell.historyCell =
-                  path.cell /\
+                  some
+                    (ready.payloadAlignment.payloadPath selection.path) /\
+                (ready.payloadAlignment.payloadPath
+                    selection.path).cell.historyCell =
+                  selection.path.cell /\
                 PLeaTTa.pullAux
                     before.carrier.index.openConf.control.alts =
-                  some (.branch goals binding, rest) := by
+                  some
+                    (.branch selection.goals selection.binding,
+                      selection.rest) := by
   obtain
     ⟨before, ready, retainedGoals, retainedBinding, _selectedGoals,
       _selectedBinding, _selectedTail, _count, _target, _relation, bankShape,
@@ -72,10 +76,11 @@ theorem rejected_prefix_root_pull_selects_exact_payload_occurrence
     PLeaTTa.PrologScheduledPayloadLandingBridge.ScheduledPayloadAlignment.classifyPull
       ready.payloadAlignment = outcome
   cases outcome with
-  | localLive path goals binding rest landing =>
-      refine ⟨before, ready, path, goals, binding, rest, landing,
+  | localLive selection landing =>
+      refine ⟨before, ready, selection, landing,
         outcomeExact, ?_,
-        ready.payloadAlignment.selected_history_cell_exact path, ?_⟩
+        ready.payloadAlignment.selected_history_cell_exact selection.path,
+        ?_⟩
       · rw [outcomeExact]
         rfl
       · rw [ready.bankExact]

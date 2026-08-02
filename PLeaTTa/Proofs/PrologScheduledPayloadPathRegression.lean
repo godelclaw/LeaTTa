@@ -65,6 +65,61 @@ theorem ground_depth_two_payload_paths_are_exact
   rw [← payloadCells_map_identity]
   simp [first, second, third, PayloadPath.cell, cellsExact]
 
+/-- The same reachable depth-two carrier forces the structural-route
+conversion to expose dependent suffixes of lengths three, two, and one.
+
+This is the anti-drift witness for the route layer: a conversion which reused
+the full zipper, dropped the selected cell, or closed over an equal resource
+at another occurrence would fail at least one exact suffix length. -/
+theorem ground_depth_two_payload_routes_drop_exact_prefixes
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ∃ state : ActivePayloadState,
+      ∃ first second third : PayloadPath state.payloadContext,
+        let firstRoute := first.route
+        let secondRoute := second.route
+        let thirdRoute := third.route
+        (payloadCells firstRoute.suffix).length = 3 ∧
+          (payloadCells secondRoute.suffix).length = 2 ∧
+          (payloadCells thirdRoute.suffix).length = 1 ∧
+          payloadCells firstRoute.suffix =
+            first.cell ::
+              (payloadCells state.payloadContext).drop
+                (first.position.val + 1) ∧
+          payloadCells secondRoute.suffix =
+            second.cell ::
+              (payloadCells state.payloadContext).drop
+                (second.position.val + 1) ∧
+          payloadCells thirdRoute.suffix =
+            third.cell ::
+              (payloadCells state.payloadContext).drop
+                (third.position.val + 1) := by
+  obtain
+    ⟨state, first, second, third, _outerLength, firstPosition,
+      secondPosition, thirdPosition, identities⟩ :=
+    ground_depth_two_payload_paths_are_exact (prog := prog) (gt := gt)
+  have payloadLength : (payloadCells state.payloadContext).length = 3 := by
+    have cellListExact :
+        [first.cell.identity, second.cell.identity, third.cell.identity] =
+          (payloadCells state.payloadContext).map PayloadCell.identity := by
+      rw [payloadCells_map_identity]
+      exact identities
+    have exactLength := congrArg List.length cellListExact
+    simpa using exactLength.symm
+  refine ⟨state, first, second, third, ?_⟩
+  dsimp only
+  constructor
+  · rw [first.route.cellsExact, firstPosition]
+    simp [payloadLength]
+  constructor
+  · rw [second.route.cellsExact, secondPosition]
+    simp [payloadLength]
+  constructor
+  · rw [third.route.cellsExact, thirdPosition]
+    simp [payloadLength]
+  exact
+    ⟨first.route.cellsExact, second.route.cellsExact,
+      third.route.cellsExact⟩
+
 /-- The path abstraction refuses the known unsound replacement of occurrence
 identity by resource equality.  Whenever two cells share one executable bank
 but retain different source cursors, their zipper-indexed paths differ. -/

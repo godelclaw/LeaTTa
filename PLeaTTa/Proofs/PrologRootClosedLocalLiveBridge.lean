@@ -10,6 +10,7 @@ Main exports: RootClosedLocalLiveAnswerRelates,
 -/
 import PLeaTTa.Proofs.PrologRootClosedAnswerBridge
 import PLeaTTa.Proofs.PrologAnswerSourceCatchupBridge
+import PLeaTTa.Proofs.BarrierCache
 
 namespace PLeaTTa.PrologRootClosedLocalLiveBridge
 
@@ -100,6 +101,38 @@ structure RootClosedLocalLiveAnswerRelates
       PLeaTTa.subst before.carrier.index.runtime
           before.carrier.index.openConf.control.qterm ::
         before.carrier.index.openConf.control.answers
+
+namespace RootClosedLocalLiveAnswerRelates
+
+/-- The eager answer-and-pull step updates an enabled barrier cache to the
+exact residual alternative bank.  This is inherited from the sealed answer
+step, so a post-answer payload transition cannot silently retain the
+pre-prefix cache depth. -/
+theorem fineBarrierCacheCoherent
+    {prog : Prog} {gt : Metta.GroundingTable}
+    {before : RepresentativeScheduledPayloadState}
+    {ready : RootClosedAnswerReady before}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {selectedTail : List PLeaTTa.Alt}
+    {count : Nat} {target : Search}
+    (_relation :
+      RootClosedLocalLiveAnswerRelates prog gt before ready selectedGoals
+        selectedBinding selectedTail count target)
+    (coherent : PLeaTTa.BarrierCacheCoherent
+      before.carrier.index.openConf.toConf) :
+    PLeaTTa.BarrierCacheCoherent
+      (privateAnswerTarget before.carrier.index.openConf
+        before.carrier.index.runtime).toConf := by
+  have sealed :
+      PLeaTTa.Step prog gt before.carrier.index.openConf.toConf
+        (answerSuccessor before.carrier.index.openConf.toConf
+          before.carrier.index.runtime) :=
+    .answer before.carrier.index.openConf.toConf
+      before.carrier.index.runtime ready.fineHead
+  simpa [privateAnswerTarget] using
+    sealed.preserves_barrierCacheCoherent coherent
+
+end RootClosedLocalLiveAnswerRelates
 
 namespace RootClosedAnswerReady
 

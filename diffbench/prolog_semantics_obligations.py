@@ -123,6 +123,10 @@ PROLOG_ANSWER_SOURCE_CATCHUP_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologAnswerSourceCatchupBridge.lean"
 )
+PROLOG_ANSWER_SELECTED_HEAD_OFFSET_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologAnswerSelectedHeadOffsetBridge.lean"
+)
 PROLOG_FINDALL_LOCAL_LIVE_CATCHUP_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologFindallLocalLiveCatchupBridge.lean"
@@ -384,6 +388,14 @@ PROLOG_SCHEDULED_PAYLOAD_LANDING_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologScheduledPayloadLandingRegression.lean"
 )
+PROLOG_SCHEDULED_PAYLOAD_POST_HEAD_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologScheduledPayloadPostHeadBridge.lean"
+)
+PROLOG_SCHEDULED_PAYLOAD_POST_HEAD_REGRESSION = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologScheduledPayloadPostHeadRegression.lean"
+)
 PROLOG_ROOT_CLOSED_ANSWER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRootClosedAnswerBridge.lean"
@@ -635,6 +647,8 @@ def check() -> list[str]:
             digest(PROLOG_FINDALL_ANSWER_EXIT_BRIDGE),
         "prolog_answer_source_catchup_bridge_sha256":
             digest(PROLOG_ANSWER_SOURCE_CATCHUP_BRIDGE),
+        "prolog_answer_selected_head_offset_bridge_sha256":
+            digest(PROLOG_ANSWER_SELECTED_HEAD_OFFSET_BRIDGE),
         "prolog_findall_local_live_catchup_bridge_sha256":
             digest(PROLOG_FINDALL_LOCAL_LIVE_CATCHUP_BRIDGE),
         "prolog_alpha_fresh_frontier_bridge_sha256":
@@ -770,6 +784,10 @@ def check() -> list[str]:
             digest(PROLOG_SCHEDULED_PAYLOAD_LANDING_BRIDGE),
         "prolog_scheduled_payload_landing_regression_sha256":
             digest(PROLOG_SCHEDULED_PAYLOAD_LANDING_REGRESSION),
+        "prolog_scheduled_payload_post_head_bridge_sha256":
+            digest(PROLOG_SCHEDULED_PAYLOAD_POST_HEAD_BRIDGE),
+        "prolog_scheduled_payload_post_head_regression_sha256":
+            digest(PROLOG_SCHEDULED_PAYLOAD_POST_HEAD_REGRESSION),
         "prolog_root_closed_answer_bridge_sha256":
             digest(PROLOG_ROOT_CLOSED_ANSWER_BRIDGE),
         "prolog_root_closed_local_live_bridge_sha256":

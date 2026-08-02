@@ -307,8 +307,13 @@ structure SelectedReadyFrontier
     (selectedGoals : List PLeaTTa.Goal) (selectedBinding : Subst)
     (selectedTail : List PLeaTTa.Alt)
     (callStart original finish : PreparedCursor) (startPosition : Nat)
-    (candidates : List PLeaTTa.Clause) : Prop where
+    (candidates : List PLeaTTa.Clause) : Type where
   ownership : resource.Owns alpha callStart original startPosition
+  rejectedCount : Nat
+  rejectedPulls : RejectedPullsN rejectedCount original finish
+  positioned :
+    CallScopedCursorPosition callStart finish
+      (startPosition + rejectedCount)
   selected :
     resource.alts = .br selectedGoals selectedBinding :: selectedTail
   context :
@@ -320,6 +325,9 @@ structure SelectedReadyFrontier
       resource.res resource.rest resource.binding resource.qterm
       resource.barrier finish.remaining candidates resource.counter
       resource.alts resource.finalCounter
+  readyArities :
+    ∀ clause, clause ∈ candidates →
+      clause.params.length = resource.argsv.length
 
 namespace SelectedReadyFrontier
 
@@ -421,16 +429,17 @@ theorem catchupSelectedAt
     {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
     {selectedTail : List PLeaTTa.Alt}
     (ownership : resource.Owns alpha callStart cursor position)
-    (selected :
+  (selected :
       resource.alts = .br selectedGoals selectedBinding :: selectedTail)
     (scope : CutScopeId) (session : Session) :
-    exists count finish,
-      exists readyClauses,
-        SilentStepsN session count (.clauses scope cursor)
-          (.clauses scope finish) /\
-        CallScopedCursorPosition callStart finish (position + count) /\
+    exists finish readyClauses,
+      exists frontier :
           SelectedReadyFrontier alpha resource selectedGoals selectedBinding
-            selectedTail callStart cursor finish position readyClauses := by
+            selectedTail callStart cursor finish position readyClauses,
+        SilentStepsN session frontier.rejectedCount (.clauses scope cursor)
+          (.clauses scope finish) /\
+        CallScopedCursorPosition callStart finish
+          (position + frontier.rejectedCount) := by
   rcases ownership.scan with
     ⟨candidates, wellFormed, query, substitutedArgs, supported, arities,
       scan⟩
@@ -450,14 +459,23 @@ theorem catchupSelectedAt
         resource.alts resource.finalCounter := by
     simpa only [finishRemaining] using ready
   exact
-    ⟨count, finish, readyClauses,
-      PLeaTTa.PrologAnswerSourceCatchupBridge.RejectedPullsN.toSilentStepsN
-        pulls scope session,
-      CallScopedCursorPosition.afterRejected pulls ownership.positioned,
+    ⟨finish, readyClauses,
       { ownership := ownership
+        rejectedCount := count
+        rejectedPulls := pulls
+        positioned :=
+          CallScopedCursorPosition.afterRejected pulls ownership.positioned
         selected := selected
         context := finishContext
-        ready := readyAtFinish }⟩
+        ready := readyAtFinish
+        readyArities := by
+          intro clause member
+          apply arities clause
+          rw [clausesEq]
+          simp [member] },
+      PLeaTTa.PrologAnswerSourceCatchupBridge.RejectedPullsN.toSilentStepsN
+        pulls scope session,
+      CallScopedCursorPosition.afterRejected pulls ownership.positioned⟩
 
 /-- An owned marker-free resource with no executable branch consumes every
 prepared occurrence silently and then performs one genuine exhausted-cursor
@@ -787,13 +805,14 @@ private theorem realizeRightClauses
     RightLandingRealizes session
       (.clauses scope callStart cursor position resource ownership
         goals binding tail head pullExact) := by
-  obtain ⟨count, finish, candidates, steps, finishPosition, frontier⟩ :=
+  obtain ⟨finish, candidates, frontier, steps, finishPosition⟩ :=
     PLeaTTa.PrologAnswerSourceCatchupBridge.RetainedAlternativeSegment.catchupSelectedAt
       ownership head scope session
   exact
-    ⟨count, .clauses scope finish, steps,
+    ⟨frontier.rejectedCount, .clauses scope finish, steps,
       ConservativeReadyPullTarget.exact
-        (.clauses scope callStart cursor finish position (position + count)
+        (.clauses scope callStart cursor finish position
+          (position + frontier.rejectedCount)
           finishPosition resource tail candidates frontier)⟩
 
 private theorem realizeRightScheduled

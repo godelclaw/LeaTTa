@@ -6,11 +6,13 @@ Purpose: Classify one rooted local scheduled pull while selecting the exact
   immutable payload occurrence by position
 Trusted boundary: none
 Main exports:
+  ScheduledLocalSelection,
   ScheduledCellBankPull,
   ScheduledPayloadPullOutcome,
   ScheduledPayloadAlignment.classifyPull
 -/
 import PLeaTTa.Proofs.PrologRootClosedAnswerBridge
+import PLeaTTa.Proofs.PrologBodyFailureExhaustedResourceTransitionBridge
 
 namespace PLeaTTa.PrologScheduledPayloadLandingBridge
 
@@ -19,6 +21,8 @@ open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.GoalSemantics
 open PrologAnswerPullClassificationBridge
 open PrologAnswerResourceBridge
+open PrologBodyFailureExhaustedResourceTransitionBridge
+open PrologBodyFailureResourceTransitionBridge
 open PrologProductResourceContextBridge
 open PrologRootClosedAnswerBridge
 open PrologScheduledAnswerPropagationBridge
@@ -35,20 +39,140 @@ from the exact local-history occurrence cells.  The source landing remains a
 proof field; no source proposition is eliminated to generate data.
 -/
 
+/-- Structural decomposition selected by one eager pull over an ordered list
+of locally owned history cells.
+
+The cells before `selected` are explicitly empty, the selected resource owns
+the displayed branch at its literal head, and `rest` is the exact executable
+bank obtained by consuming that head while preserving the selected marker and
+every later cell.  This proof-relevant decomposition is the post-answer
+zipper transform; the ordinal path below is only a derived view. -/
+structure ScheduledLocalSelection
+    {alpha : List (LogicVar × String)}
+    (cells : List (ScheduledHistoryCell alpha)) : Type where
+  earlier : List (ScheduledHistoryCell alpha)
+  selected : ScheduledHistoryCell alpha
+  suffix : List (ScheduledHistoryCell alpha)
+  goals : List PLeaTTa.Goal
+  binding : Subst
+  localTail : List PLeaTTa.Alt
+  rest : List PLeaTTa.Alt
+  cellsExact : cells = earlier ++ selected :: suffix
+  earlierEmpty : ∀ cell ∈ earlier, cell.resource.alts = []
+  selectedHead : selected.resource.alts = .br goals binding :: localTail
+  restExact :
+    rest =
+      localTail ++ PLeaTTa.Alt.barrier ::
+        flattenOwnedAlts (suffix.map ScheduledHistoryCell.resource) []
+  pullExact :
+    PLeaTTa.pullAux
+        (flattenOwnedAlts (cells.map ScheduledHistoryCell.resource) []) =
+      some (.branch goals binding, rest)
+
+namespace ScheduledLocalSelection
+
+/-- Executable resource zipper after the eager pull: every earlier empty
+descriptor is dropped, the selected descriptor consumes exactly one head,
+and every later descriptor is preserved literally. -/
+def postResources
+    {alpha : List (LogicVar × String)}
+    {cells : List (ScheduledHistoryCell alpha)}
+    (selection : ScheduledLocalSelection cells) :
+    List RetainedAlternativeSegment :=
+  afterPulledHead selection.selected.resource selection.localTail ::
+    selection.suffix.map ScheduledHistoryCell.resource
+
+/-- Flattening the post-resource zipper is exactly the residual bank returned
+by the real eager pull. -/
+theorem rest_eq_flatten_postResources
+    {alpha : List (LogicVar × String)}
+    {cells : List (ScheduledHistoryCell alpha)}
+    (selection : ScheduledLocalSelection cells) :
+    selection.rest = flattenOwnedAlts selection.postResources [] := by
+  simp [postResources, flattenOwnedAlts, afterPulledHead,
+    selection.restExact]
+
+/-- The selected ordinal is derived from the structural prefix, so the
+coordinate cannot drift from the drop-prefix equation. -/
+def position
+    {alpha : List (LogicVar × String)}
+    {cells : List (ScheduledHistoryCell alpha)}
+    (selection : ScheduledLocalSelection cells) : Fin cells.length :=
+  ⟨selection.earlier.length, by
+    have lengths := congrArg List.length selection.cellsExact
+    simp at lengths
+    omega⟩
+
+@[simp] theorem position_val
+    {alpha : List (LogicVar × String)}
+    {cells : List (ScheduledHistoryCell alpha)}
+    (selection : ScheduledLocalSelection cells) :
+    selection.position.val = selection.earlier.length := rfl
+
+/-- The corresponding coordinate in one exact scheduled-history build. -/
+def path
+    {alpha : List (LogicVar × String)}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    (selection : ScheduledLocalSelection build.cells) :
+    ScheduledHistoryBuild.Path build :=
+  ⟨selection.position⟩
+
+/-- The derived coordinate names the structural selected cell exactly. -/
+theorem path_cell_exact
+    {alpha : List (LogicVar × String)}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    (selection : ScheduledLocalSelection build.cells) :
+    selection.path.cell = selection.selected := by
+  simpa [path, ScheduledHistoryBuild.Path.cell, position,
+    selection.cellsExact, List.get_eq_getElem]
+
+/-- An enabled barrier cache must drop exactly one marker per crossed empty
+cell.  The selected marker remains behind the selected resource's local
+tail; dropping it too would violate this equation. -/
+theorem barrierCount_drop_exact
+    {alpha : List (LogicVar × String)}
+    {cells : List (ScheduledHistoryCell alpha)}
+    (selection : ScheduledLocalSelection cells) :
+    PLeaTTa.barrierCount
+        (flattenOwnedAlts (cells.map ScheduledHistoryCell.resource) []) =
+      PLeaTTa.barrierCount selection.rest + selection.earlier.length := by
+  have cellsResources :
+      cells.map ScheduledHistoryCell.resource =
+        selection.earlier.map ScheduledHistoryCell.resource ++
+          selection.selected.resource ::
+            selection.suffix.map ScheduledHistoryCell.resource := by
+    simpa using
+      congrArg (List.map ScheduledHistoryCell.resource)
+        selection.cellsExact
+  have earlierEmpty :
+      ∀ resource ∈
+          selection.earlier.map ScheduledHistoryCell.resource,
+        resource.alts = [] := by
+    intro resource member
+    rcases List.mem_map.mp member with ⟨cell, cellMember, rfl⟩
+    exact selection.earlierEmpty cell cellMember
+  rw [cellsResources]
+  simpa [selection.restExact] using
+    (flattenOwnedAlts_first_nonempty_barrierCount
+      (selection.earlier.map ScheduledHistoryCell.resource)
+      selection.selected.resource
+      (selection.suffix.map ScheduledHistoryCell.resource) []
+      selection.goals selection.binding selection.localTail earlierEmpty
+      selection.selectedHead)
+
+end ScheduledLocalSelection
+
 /-- Exact eager-pull result for an ordered list of locally owned history
-cells.  The selected coordinate is a `Fin` into that literal list. -/
+cells.  The live constructor exposes the complete structural selection. -/
 inductive ScheduledCellBankPull
     {alpha : List (LogicVar × String)}
     (cells : List (ScheduledHistoryCell alpha)) : Type where
   | localLive
-      (position : Fin cells.length)
-      (goals : List PLeaTTa.Goal) (binding : Subst)
-      (rest : List PLeaTTa.Alt)
-      (pullExact :
-        PLeaTTa.pullAux
-            (flattenOwnedAlts
-              (cells.map ScheduledHistoryCell.resource) []) =
-          some (.branch goals binding, rest)) :
+      (selection : ScheduledLocalSelection cells) :
       ScheduledCellBankPull cells
   | exhausted
       (pullNone :
@@ -84,12 +208,28 @@ def classifyScheduledCellBank
       cases altsExact : cell.resource.alts with
       | nil =>
           cases classifyScheduledCellBank cells with
-          | localLive position goals binding rest pullExact =>
+          | localLive selection =>
               exact .localLive
-                ⟨position.val + 1, by simpa using position.isLt⟩
-                goals binding rest (by
-                  simpa [flattenOwnedAlts, altsExact, PLeaTTa.pullAux] using
-                    pullExact)
+                { earlier := cell :: selection.earlier
+                  selected := selection.selected
+                  suffix := selection.suffix
+                  goals := selection.goals
+                  binding := selection.binding
+                  localTail := selection.localTail
+                  rest := selection.rest
+                  cellsExact := by
+                    simpa using
+                      congrArg (List.cons cell) selection.cellsExact
+                  earlierEmpty := by
+                    intro item member
+                    rcases List.mem_cons.mp member with rfl | member
+                    · exact altsExact
+                    · exact selection.earlierEmpty item member
+                  selectedHead := selection.selectedHead
+                  restExact := selection.restExact
+                  pullExact := by
+                    simpa [flattenOwnedAlts, altsExact, PLeaTTa.pullAux] using
+                      selection.pullExact }
           | exhausted pullNone =>
               exact .exhausted (by
                 simpa [flattenOwnedAlts, altsExact, PLeaTTa.pullAux] using
@@ -97,12 +237,23 @@ def classifyScheduledCellBank
       | cons alt resourceTail =>
           cases alt with
           | br goals binding =>
-              exact .localLive ⟨0, by simp⟩ goals binding
-                (resourceTail ++
-                  PLeaTTa.Alt.barrier ::
-                    flattenOwnedAlts
-                      (cells.map ScheduledHistoryCell.resource) [])
-                (by simp [altsExact, PLeaTTa.pullAux])
+              exact .localLive
+                { earlier := []
+                  selected := cell
+                  suffix := cells
+                  goals := goals
+                  binding := binding
+                  localTail := resourceTail
+                  rest :=
+                    resourceTail ++
+                      PLeaTTa.Alt.barrier ::
+                        flattenOwnedAlts
+                          (cells.map ScheduledHistoryCell.resource) []
+                  cellsExact := rfl
+                  earlierEmpty := by simp
+                  selectedHead := altsExact
+                  restExact := rfl
+                  pullExact := by simp [altsExact, PLeaTTa.pullAux] }
           | barrier =>
               exact False.elim
                 (owned_nonbranch_head_impossible cell altsExact
@@ -199,18 +350,298 @@ inductive ScheduledPayloadPullOutcome
     {build : ScheduledHistoryBuild history}
     (alignment : ScheduledPayloadAlignment payload build) : Type where
   | localLive
-      (path : ScheduledHistoryBuild.Path build)
-      (goals : List PLeaTTa.Goal) (binding : Subst)
-      (rest : List PLeaTTa.Alt)
+      (selection : ScheduledLocalSelection build.cells)
       (landing :
-        OriginPrefixLanding alpha history.resourceAgreement goals binding
-          rest) :
+        OriginPrefixLanding alpha history.resourceAgreement selection.goals
+          selection.binding selection.rest) :
       ScheduledPayloadPullOutcome alignment
   | terminal
       (falls : OriginPrefixFallsThrough alpha history.resourceAgreement) :
       ScheduledPayloadPullOutcome alignment
 
 namespace ScheduledPayloadAlignment
+
+/-- Exact structural coupling of one eager history selection to the dependent
+payload suffix at the same occurrence.
+
+The earlier and later history cells are the erasures of the literal payload
+prefix and suffix.  The selected payload cell erases to the selected history
+cell.  Thus consumers may pattern-match `route.suffix` to recover its exact
+dependent `outerAgrees` without searching for a resource-equal occurrence. -/
+structure SelectionRoute
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat}
+    {segments : List PrologControlSegmentSpineBridge.ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : PrologSourceProductContextBridge.ActiveProductContext}
+    {payload :
+      PrologRetainedPayloadSnapshotBridge.SourceControlResourcePayloadContextAgrees
+        alpha support qterm currentBarrier segments resources inner context
+        outer}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    (alignment : ScheduledPayloadAlignment payload build)
+    (selection : ScheduledLocalSelection build.cells) : Type where
+  route :
+    PayloadRoute payload (alignment.payloadPath selection.path)
+  earlierExact :
+    selection.earlier =
+      ((payloadCells payload).take selection.path.position.val).map
+        PayloadCell.historyCell
+  selectedExact :
+    (alignment.payloadPath selection.path).cell.historyCell =
+      selection.selected
+  suffixExact :
+    selection.suffix =
+      ((payloadCells payload).drop (selection.path.position.val + 1)).map
+        PayloadCell.historyCell
+
+/-- Build the structural route from the two exact list equations already
+carried by the selection and alignment. -/
+def selectionRoute
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat}
+    {segments : List PrologControlSegmentSpineBridge.ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : PrologSourceProductContextBridge.ActiveProductContext}
+    {payload :
+      PrologRetainedPayloadSnapshotBridge.SourceControlResourcePayloadContextAgrees
+        alpha support qterm currentBarrier segments resources inner context
+        outer}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    (alignment : ScheduledPayloadAlignment payload build)
+    (selection : ScheduledLocalSelection build.cells) :
+    SelectionRoute alignment selection := by
+  let historyPath := selection.path
+  let payloadPath := alignment.payloadPath historyPath
+  have historyTakeRaw :=
+    congrArg (List.take historyPath.position.val) selection.cellsExact
+  have historyTake :
+      build.cells.take historyPath.position.val = selection.earlier := by
+    simpa [historyPath, ScheduledLocalSelection.path,
+      ScheduledLocalSelection.position] using historyTakeRaw
+  have alignmentTakeRaw :=
+    congrArg (List.take historyPath.position.val) alignment.cellsExact
+  have alignmentTake :
+      build.cells.take historyPath.position.val =
+        ((payloadCells payload).take historyPath.position.val).map
+          PayloadCell.historyCell := by
+    simpa using alignmentTakeRaw
+  have historyDropRaw :=
+    congrArg (List.drop (historyPath.position.val + 1)) selection.cellsExact
+  have historyDrop :
+      build.cells.drop (historyPath.position.val + 1) =
+        selection.suffix := by
+    simpa [historyPath, ScheduledLocalSelection.path,
+      ScheduledLocalSelection.position] using historyDropRaw
+  have alignmentDropRaw :=
+    congrArg (List.drop (historyPath.position.val + 1)) alignment.cellsExact
+  have alignmentDrop :
+      build.cells.drop (historyPath.position.val + 1) =
+        ((payloadCells payload).drop (historyPath.position.val + 1)).map
+          PayloadCell.historyCell := by
+    simpa using alignmentDropRaw
+  exact
+    { route := payloadPath.route
+      earlierExact := historyTake.symm.trans alignmentTake
+      selectedExact :=
+        (alignment.selected_history_cell_exact historyPath).trans
+          selection.path_cell_exact
+      suffixExact := historyDrop.symm.trans alignmentDrop }
+
+/-- The structural selection splits the executable resource spine at exactly
+the same occurrence as the dependent payload route. -/
+theorem selection_resources_exact
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat}
+    {segments : List PrologControlSegmentSpineBridge.ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : PrologSourceProductContextBridge.ActiveProductContext}
+    {payload :
+      PrologRetainedPayloadSnapshotBridge.SourceControlResourcePayloadContextAgrees
+        alpha support qterm currentBarrier segments resources inner context
+        outer}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    (alignment : ScheduledPayloadAlignment payload build)
+    (selection : ScheduledLocalSelection build.cells) :
+    resources =
+      selection.earlier.map
+          (fun cell : ScheduledHistoryCell alpha => cell.resource) ++
+        selection.selected.resource ::
+          selection.suffix.map
+            (fun cell : ScheduledHistoryCell alpha => cell.resource) := by
+  calc
+    resources = (payloadCells payload).map PayloadCell.resource :=
+      (payloadCells_map_resource payload).symm
+    _ = build.cells.map ScheduledHistoryCell.resource := by
+      rw [alignment.cellsExact]
+      simp
+    _ =
+        selection.earlier.map ScheduledHistoryCell.resource ++
+          selection.selected.resource ::
+            selection.suffix.map ScheduledHistoryCell.resource := by
+      simpa using
+        congrArg (List.map ScheduledHistoryCell.resource)
+          selection.cellsExact
+
+/-- A list has a unique first element which violates an empty-prefix
+predicate.  This is the generic maximal-prefix fact coupling the independent
+payload classifier to the executable classifier without comparing resource
+values after the fact. -/
+private theorem first_live_resource_decomposition_unique
+    (leftPrefix : List RetainedAlternativeSegment)
+    (leftFirst : RetainedAlternativeSegment)
+    (leftSuffix : List RetainedAlternativeSegment)
+    (rightPrefix : List RetainedAlternativeSegment)
+    (rightFirst : RetainedAlternativeSegment)
+    (rightSuffix : List RetainedAlternativeSegment)
+    (same :
+      leftPrefix ++ leftFirst :: leftSuffix =
+        rightPrefix ++ rightFirst :: rightSuffix)
+    (leftEmpty : ∀ resource ∈ leftPrefix, resource.alts = [])
+    (rightEmpty : ∀ resource ∈ rightPrefix, resource.alts = [])
+    (leftLive : leftFirst.alts ≠ [])
+    (rightLive : rightFirst.alts ≠ []) :
+    leftPrefix = rightPrefix ∧ leftFirst = rightFirst ∧
+      leftSuffix = rightSuffix := by
+  induction leftPrefix generalizing rightPrefix with
+  | nil =>
+      cases rightPrefix with
+      | nil =>
+          simpa using List.cons.inj same
+      | cons rightHead rightPrefix =>
+          have headEq : leftFirst = rightHead := by
+            simpa using congrArg List.head? same
+          exact False.elim
+            (leftLive ((congrArg RetainedAlternativeSegment.alts headEq).trans
+              (rightEmpty rightHead (by simp))))
+  | cons leftHead leftPrefix inductionHypothesis =>
+      cases rightPrefix with
+      | nil =>
+          have headEq : leftHead = rightFirst := by
+            simpa using congrArg List.head? same
+          exact False.elim
+            (rightLive
+              ((congrArg RetainedAlternativeSegment.alts headEq).symm.trans
+                (leftEmpty leftHead (by simp))))
+      | cons rightHead rightPrefix =>
+          have consEq :
+              leftHead ::
+                  (leftPrefix ++ leftFirst :: leftSuffix) =
+                rightHead ::
+                  (rightPrefix ++ rightFirst :: rightSuffix) := by
+            simpa using same
+          have headEq := (List.cons.inj consEq).1
+          have tailEq := (List.cons.inj consEq).2
+          have leftTailEmpty :
+              ∀ resource ∈ leftPrefix, resource.alts = [] := by
+            intro resource member
+            exact leftEmpty resource (by simp [member])
+          have rightTailEmpty :
+              ∀ resource ∈ rightPrefix, resource.alts = [] := by
+            intro resource member
+            exact rightEmpty resource (by simp [member])
+          obtain ⟨prefixEq, firstEq, suffixEq⟩ :=
+            inductionHypothesis rightPrefix tailEq leftTailEmpty
+              rightTailEmpty
+          exact ⟨by simp [headEq, prefixEq], firstEq, suffixEq⟩
+
+/-- The generic owned-resource classifier selects exactly the structural
+history/payload coordinate already computed by `ScheduledLocalSelection`.
+
+This theorem additionally supplies ranked source-exhaustion work for every
+earlier empty cell.  The live partition is therefore ready for the existing
+source rejected-prefix and immutable-snapshot activation machinery. -/
+theorem selection_partition
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat}
+    {segments : List PrologControlSegmentSpineBridge.ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : PrologSourceProductContextBridge.ActiveProductContext}
+    {payload :
+      PrologRetainedPayloadSnapshotBridge.SourceControlResourcePayloadContextAgrees
+        alpha support qterm currentBarrier segments resources inner context
+        outer}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    (alignment : ScheduledPayloadAlignment payload build)
+    (selection : ScheduledLocalSelection build.cells) :
+    ∃ partition :
+        OuterResourceCatchupPartition alpha segments resources context,
+      partition.crossedResources =
+          selection.earlier.map ScheduledHistoryCell.resource ∧
+        partition.first = selection.selected.resource ∧
+        partition.survivingResources =
+          selection.suffix.map ScheduledHistoryCell.resource ∧
+        partition.tail = selection.localTail := by
+  have resourcesExact :=
+    PLeaTTa.PrologScheduledPayloadLandingBridge.ScheduledPayloadAlignment.selection_resources_exact
+      alignment selection
+  have earlierEmpty :
+      ∀ resource ∈
+          selection.earlier.map ScheduledHistoryCell.resource,
+        resource.alts = [] := by
+    intro resource member
+    rcases List.mem_map.mp member with ⟨cell, cellMember, rfl⟩
+    exact selection.earlierEmpty cell cellMember
+  have selectedLive : selection.selected.resource.alts ≠ [] := by
+    rw [selection.selectedHead]
+    simp
+  cases
+      PrologBodyFailureExhaustedResourceTransitionBridge.SourceControlResourceContextAgrees.classifyLocal
+        payload.alignment with
+  | firstLive partition =>
+      have partitionEmpty := partition.crossedWork.all_empty
+      have partitionLive : partition.first.alts ≠ [] := by
+        rw [partition.firstHead]
+        simp
+      have same :
+          selection.earlier.map ScheduledHistoryCell.resource ++
+              selection.selected.resource ::
+                selection.suffix.map ScheduledHistoryCell.resource =
+            partition.crossedResources ++
+              partition.first :: partition.survivingResources :=
+        resourcesExact.symm.trans partition.resourcesEq
+      obtain ⟨crossedEq, firstEq, survivingEq⟩ :=
+        first_live_resource_decomposition_unique
+          (selection.earlier.map ScheduledHistoryCell.resource)
+          selection.selected.resource
+          (selection.suffix.map ScheduledHistoryCell.resource)
+          partition.crossedResources partition.first
+          partition.survivingResources same earlierEmpty partitionEmpty
+          selectedLive partitionLive
+      have tailEq : partition.tail = selection.localTail := by
+        have heads :
+            PLeaTTa.Alt.br partition.goals partition.binding ::
+                partition.tail =
+              PLeaTTa.Alt.br selection.goals selection.binding ::
+                selection.localTail := by
+          calc
+            _ = partition.first.alts := partition.firstHead.symm
+            _ = selection.selected.resource.alts := by rw [firstEq]
+            _ = _ := selection.selectedHead
+        exact (List.cons.inj heads).2
+      exact
+        ⟨partition, crossedEq.symm, firstEq.symm, survivingEq.symm,
+          tailEq⟩
+  | allEmpty partition =>
+      have selectedMember : selection.selected.resource ∈ resources := by
+        rw [resourcesExact]
+        simp
+      have selectedEmpty :=
+        partition.crossedWork.all_empty selection.selected.resource
+          selectedMember
+      exact False.elim (selectedLive selectedEmpty)
 
 /-- Total Type-valued classification of one exact local scheduled history. -/
 def classifyPull
@@ -230,14 +661,15 @@ def classifyPull
     (alignment : ScheduledPayloadAlignment payload build) :
     ScheduledPayloadPullOutcome alignment := by
   cases bankPull : classifyScheduledCellBank build.cells with
-  | localLive position goals binding rest pullExact =>
-      let path : ScheduledHistoryBuild.Path build := ⟨position⟩
+  | localLive selection =>
       have historyPull :
           PLeaTTa.pullAux (flattenOwnedAlts history.resources []) =
-            some (.branch goals binding, rest) := by
+            some
+              (PLeaTTa.PullTarget.branch selection.goals selection.binding,
+                selection.rest) := by
         rw [← build.cells_map_resource]
-        exact pullExact
-      exact .localLive path goals binding rest
+        exact selection.pullExact
+      exact .localLive selection
         (sourceLanding_of_pull historyPull)
   | exhausted pullNone =>
       have historyPull :
@@ -270,7 +702,8 @@ def selectedPayloadPath?
     (outcome : ScheduledPayloadPullOutcome alignment) :
     Option (PayloadPath payload) :=
   match outcome with
-  | .localLive path _ _ _ _ => some (alignment.payloadPath path)
+  | .localLive selection _ =>
+      some (alignment.payloadPath selection.path)
   | .terminal _ => none
 
 end ScheduledPayloadPullOutcome

@@ -79,6 +79,16 @@ def historyCell
     cursor := cell.cursor
     ownership := cell.ownership }
 
+@[simp] theorem historyCell_resource
+    {alpha support : List (LogicVar × String)}
+    (cell : PayloadCell alpha support) :
+    cell.historyCell.resource = cell.resource := rfl
+
+@[simp] theorem historyCell_cursor
+    {alpha support : List (LogicVar × String)}
+    (cell : PayloadCell alpha support) :
+    cell.historyCell.cursor = cell.cursor := rfl
+
 end PayloadCell
 
 /-- Preserve every dependent snapshot while exposing the payload zipper as an
@@ -130,6 +140,26 @@ theorem payloadCells_map_identity
       inductionHypothesis =>
       simp only [payloadCells, List.map_cons, PayloadCell.identity,
         PrologNestedCallChainBridge.SourceControlResourcePayloadContextAgrees.cellIdentities]
+      rw [inductionHypothesis]
+
+/-- The snapshot-preserving cells expose exactly the executable resource
+spine indexed by the dependent zipper. -/
+theorem payloadCells_map_resource
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer) :
+    (payloadCells agreement).map PayloadCell.resource = resources := by
+  induction agreement with
+  | nil => rfl
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+      inductionHypothesis =>
+      simp only [payloadCells, List.map_cons]
       rw [inductionHypothesis]
 
 /-- The snapshot-preserving list and the dependent zipper have the same
@@ -443,6 +473,340 @@ theorem same_resource_distinct_paths_of_cursor_ne
   ⟨sameResource, ne_of_cursor_ne left right differentCursor⟩
 
 end PayloadPath
+
+/-! ## Structural dependent suffix at an exact path -/
+
+/-- A dependent payload is structurally nonempty exactly when its value is a
+`cons` cell.  Indexing the view by the payload value makes the head's
+`outerAgrees` available without an equality search or a cast through an
+ordinary resource list. -/
+inductive PayloadHeadView
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom} :
+    {currentBarrier : Nat} →
+    {segments : List ControlSegment} →
+    {resources : List RetainedAlternativeSegment} →
+    {inner outer : CutScopeId} →
+    {context : ActiveProductContext} →
+    SourceControlResourcePayloadContextAgrees alpha support qterm
+      currentBarrier segments resources inner context outer → Type where
+  | cons
+      (currentBarrier : Nat)
+      (currentScope nextScope outerScope : CutScopeId)
+      (segment : ControlSegment) (segments : List ControlSegment)
+      (resource : RetainedAlternativeSegment)
+      (resources : List RetainedAlternativeSegment)
+      (cursor : PreparedCursor) (context : ActiveProductContext)
+      (segmentAgrees : segment.Agrees alpha)
+      (resourceRest :
+        resource.rest = segment.executables ++ flattenExecutables segments)
+      (resourceQuery : resource.qterm = qterm)
+      (resourceBarrier : resource.barrier = currentBarrier)
+      (resourceOwnership : resource.HasIndexedOwnershipAt alpha cursor)
+      (snapshot :
+        RetainedCallPayloadSnapshot alpha support resource cursor segment
+          segments)
+      (outerAgrees :
+        SourceControlResourcePayloadContextAgrees alpha support qterm
+          segment.barrier segments resources nextScope context outerScope) :
+      PayloadHeadView
+        (.cons currentBarrier currentScope nextScope outerScope segment
+          segments resource resources cursor context segmentAgrees
+          resourceRest resourceQuery resourceBarrier resourceOwnership
+          snapshot outerAgrees)
+
+/-- Constructor data exposed from a nonempty dependent payload without
+requiring a consumer to eliminate equations between computed list drops.
+
+The three spine equalities and `cellsExact` are part of the data package, so
+the extracted tail cannot be paired with a different segment/resource/frame
+suffix. -/
+structure PayloadHeadData
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer) : Type where
+  currentScope : CutScopeId
+  nextScope : CutScopeId
+  segment : ControlSegment
+  laterSegments : List ControlSegment
+  resource : RetainedAlternativeSegment
+  laterResources : List RetainedAlternativeSegment
+  cursor : PreparedCursor
+  laterContext : ActiveProductContext
+  segmentAgrees : segment.Agrees alpha
+  resourceRest :
+    resource.rest = segment.executables ++ flattenExecutables laterSegments
+  resourceQuery : resource.qterm = qterm
+  resourceBarrier : resource.barrier = currentBarrier
+  resourceOwnership : resource.HasIndexedOwnershipAt alpha cursor
+  snapshot :
+    RetainedCallPayloadSnapshot alpha support resource cursor segment
+      laterSegments
+  outerAgrees :
+    SourceControlResourcePayloadContextAgrees alpha support qterm
+      segment.barrier laterSegments laterResources nextScope laterContext outer
+  segmentsExact : segments = segment :: laterSegments
+  resourcesExact : resources = resource :: laterResources
+  innerExact : inner = currentScope
+  contextExact :
+    context =
+      { callerScope := nextScope
+        predicateScope := currentScope
+        retained := .clauses currentScope cursor
+        callerRest := segment.references } :: laterContext
+  cellsExact :
+    payloadCells payload =
+      { currentBarrier := currentBarrier
+        currentScope := currentScope
+        nextScope := nextScope
+        outerScope := outer
+        segment := segment
+        outerSegments := laterSegments
+        resource := resource
+        cursor := cursor
+        ownership := resourceOwnership
+        snapshot := snapshot } :: payloadCells outerAgrees
+
+namespace PayloadHeadView
+
+/-- Eliminate an indexed head view into explicit constructor data.  The
+eliminator's payload index is a variable, so callers never need to solve
+dependent equations for computed `drop` expressions. -/
+def data
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    (view : PayloadHeadView payload) : PayloadHeadData payload := by
+  cases view with
+  | cons currentBarrier nextScope _ segment laterSegments
+      resource laterResources cursor laterContext segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
+      exact
+        { currentScope := inner
+          nextScope := nextScope
+          segment := segment
+          laterSegments := laterSegments
+          resource := resource
+          laterResources := laterResources
+          cursor := cursor
+          laterContext := laterContext
+          segmentAgrees := segmentAgrees
+          resourceRest := resourceRest
+          resourceQuery := resourceQuery
+          resourceBarrier := resourceBarrier
+          resourceOwnership := resourceOwnership
+          snapshot := snapshot
+          outerAgrees := outerAgrees
+          segmentsExact := rfl
+          resourcesExact := rfl
+          innerExact := rfl
+          contextExact := rfl
+          cellsExact := rfl }
+
+end PayloadHeadView
+
+/-- Compute the exact constructor view of any payload whose cell list is
+nonempty.  The impossible nil case is discharged from the supplied list fact;
+no proposition is used to choose any payload data. -/
+def payloadHeadViewOfCellsNonempty
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer)
+    (nonempty : payloadCells payload ≠ []) : PayloadHeadView payload := by
+  cases payload with
+  | nil currentBarrier scope =>
+      exact False.elim (nonempty rfl)
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
+      exact .cons currentBarrier inner nextScope outer segment
+        segments resource resources cursor context segmentAgrees resourceRest
+        resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+
+/-- Dropping an aligned dependent prefix drops exactly the same number of
+snapshot-preserving cells.
+
+The returned suffix is the one computed by the existing dependent zipper
+eliminator.  This theorem rules out a proof-compatible reconstruction whose
+ordinary cell spelling differs from the literal dropped suffix. -/
+theorem payloadCells_dropAlignedPrefix
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer)
+    (count : Nat) (within : count ≤ segments.length) :
+    let dropped :=
+      SourceControlResourcePayloadContextAgrees.dropAlignedPrefix payload
+        count within
+    payloadCells dropped.2.2 = (payloadCells payload).drop count := by
+  induction count generalizing currentBarrier segments resources inner
+      context with
+  | zero =>
+      rfl
+  | succ count inductionHypothesis =>
+      cases payload with
+      | nil currentBarrier scope =>
+          simp at within
+      | cons currentBarrier currentScope nextScope outerScope segment
+          segments resource resources cursor context segmentAgrees
+          resourceRest resourceQuery resourceBarrier resourceOwnership
+          snapshot outerAgrees =>
+          have withinTail : count ≤ segments.length := by
+            simpa using Nat.le_of_succ_le_succ within
+          simpa [SourceControlResourcePayloadContextAgrees.dropAlignedPrefix,
+            payloadCells] using
+            inductionHypothesis outerAgrees withinTail
+
+/-- A structural route from an ordinal payload path to the exact dependent
+zipper suffix beginning at that path.
+
+`cellsExact` couples all three views at once: the original path's selected
+cell is the suffix head, the rest of the dependent zipper is the literal list
+drop after that coordinate, and there is no second independently supplied
+position which could drift. -/
+structure PayloadRoute
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer)
+    (path : PayloadPath payload) : Type where
+  suffixBarrier : Nat
+  suffixInner : CutScopeId
+  suffix :
+    SourceControlResourcePayloadContextAgrees alpha support qterm
+      suffixBarrier (segments.drop path.position.val)
+      (resources.drop path.position.val) suffixInner
+      (context.drop path.position.val) outer
+  cellsExact :
+    payloadCells suffix =
+      path.cell ::
+        (payloadCells payload).drop (path.position.val + 1)
+  head : PayloadHeadView suffix
+
+namespace PayloadPath
+
+/-- Convert the exact ordinal to its exact dependent suffix.  The conversion
+uses the already-audited aligned-prefix eliminator; it does not search for an
+equal resource or cursor. -/
+def route
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    (path : PayloadPath payload) : PayloadRoute payload path := by
+  have within : path.position.val ≤ segments.length := by
+    have cellsSpines := payloadCells_length_eq_spines payload
+    omega
+  let dropped :=
+    SourceControlResourcePayloadContextAgrees.dropAlignedPrefix payload
+      path.position.val within
+  have cellsExact :
+      payloadCells dropped.2.2 =
+        path.cell ::
+          (payloadCells payload).drop (path.position.val + 1) := by
+    calc
+      payloadCells dropped.2.2 =
+        (payloadCells payload).drop path.position.val :=
+        payloadCells_dropAlignedPrefix payload path.position.val within
+      _ =
+        path.cell ::
+          (payloadCells payload).drop (path.position.val + 1) := by
+        simpa [PayloadPath.cell] using
+          (List.cons_get_drop_succ
+            (l := payloadCells payload) (n := path.position)).symm
+  refine
+    { suffixBarrier := dropped.1
+      suffixInner := dropped.2.1
+      suffix := dropped.2.2
+      cellsExact := cellsExact
+      head := payloadHeadViewOfCellsNonempty dropped.2.2 (by
+        rw [cellsExact]
+        simp) }
+
+end PayloadPath
+
+namespace PayloadRoute
+
+/-- A route suffix is structurally nonempty: its head is the exact selected
+cell rather than a postulated compatible occurrence. -/
+theorem suffix_ne_nil
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {path : PayloadPath payload}
+    (route : PayloadRoute payload path) :
+    payloadCells route.suffix ≠ [] := by
+  rw [route.cellsExact]
+  simp
+
+/-- Removing the selected head from the dependent route leaves exactly the
+ordinary payload cells after the original ordinal. -/
+theorem laterCells_exact
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {path : PayloadPath payload}
+    (route : PayloadRoute payload path) :
+    (payloadCells route.suffix).drop 1 =
+      (payloadCells payload).drop (path.position.val + 1) := by
+  rw [route.cellsExact]
+  simp
+
+/-- A route has no independently chosen coordinate; projecting it back
+returns its index path definitionally. -/
+def toPath
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {path : PayloadPath payload}
+    (_route : PayloadRoute payload path) : PayloadPath payload :=
+  path
+
+@[simp] theorem toPath_position
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {path : PayloadPath payload}
+    (route : PayloadRoute payload path) :
+    route.toPath.position.val = path.position.val := rfl
+
+end PayloadRoute
 
 /-! ## Exact alignment with local scheduled-history construction -/
 
