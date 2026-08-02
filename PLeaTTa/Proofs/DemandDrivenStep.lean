@@ -2486,4 +2486,24 @@ theorem sealed_findall_step_has_terminal_subrun
   cases step <;> simp_all [subConfOf]
   case findall => exact ⟨_, by assumption, by assumption⟩
 
+/-- The current sealed relation also treats either soft-cut branch atomically:
+the outer step can exist only after the condition has reached a terminal
+nested state.  This inversion is deliberately a mismatch witness, not a
+desired adequacy theorem: pinned PeTTa can expose the first successful branch
+before a later condition alternative diverges. -/
+theorem sealed_softcut_step_has_terminal_subrun
+    {prog : Prog} {gt : GroundingTable} (outer next : Conf)
+    (template : Atom) (condition thenGoals elseGoals rest : List Goal)
+    (binding : Subst)
+    (head : outer.cur = some
+      (Goal.softcut template condition thenGoals elseGoals :: rest, binding))
+    (step : PLeaTTa.Step prog gt outer next) :
+    ∃ inner,
+      PLeaTTa.StepStar prog gt
+        (subConfOf outer condition binding template) inner ∧
+      PLeaTTa.Terminal inner := by
+  cases step <;> simp_all [subConfOf]
+  case softcut_some => exact ⟨_, by assumption, by assumption⟩
+  case softcut_none => exact ⟨_, by assumption, by assumption⟩
+
 end PLeaTTa.DemandDrivenStep
