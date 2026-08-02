@@ -266,6 +266,245 @@ structure ScheduledSelectedHeadTransition
 
 namespace ScheduledSelectedHeadTransition
 
+/-- The selected dependent payload cell erases to the exact scheduled-history
+occurrence chosen by the executable pull.
+
+This projection is intentionally occurrence-sensitive: it follows the typed
+payload path and never searches for an equal resource or cursor. -/
+theorem selectedHistoryCellExact
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    {alignment : ScheduledPayloadAlignment payload build}
+    {selection : ScheduledLocalSelection build.cells}
+    {scope : CutScopeId} {session : Session}
+    (transition :
+      ScheduledSelectedHeadTransition alignment selection scope session) :
+    transition.selectedPayloadCell.historyCell = selection.selected := by
+  exact
+    (congrArg PayloadCell.historyCell
+      transition.selectedPayloadCellExact).trans
+      transition.route.selectedExact
+
+/-- Resource identity at the selected payload coordinate. -/
+theorem selectedResourceExact
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    {alignment : ScheduledPayloadAlignment payload build}
+    {selection : ScheduledLocalSelection build.cells}
+    {scope : CutScopeId} {session : Session}
+    (transition :
+      ScheduledSelectedHeadTransition alignment selection scope session) :
+    transition.selectedPayloadCell.resource = selection.selected.resource :=
+  congrArg ScheduledHistoryCell.resource transition.selectedHistoryCellExact
+
+/-- Cursor identity at the selected payload coordinate. -/
+theorem selectedCursorExact
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    {alignment : ScheduledPayloadAlignment payload build}
+    {selection : ScheduledLocalSelection build.cells}
+    {scope : CutScopeId} {session : Session}
+    (transition :
+      ScheduledSelectedHeadTransition alignment selection scope session) :
+    transition.selectedPayloadCell.cursor = selection.selected.cursor :=
+  congrArg ScheduledHistoryCell.cursor transition.selectedHistoryCellExact
+
+/-- The immutable snapshot immediately before the selected resource's
+conservative rejection prefix.
+
+Both dependent resource and cursor indices are transported from the same
+typed payload occurrence; neither can be supplied independently. -/
+def selectedSnapshot
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    {alignment : ScheduledPayloadAlignment payload build}
+    {selection : ScheduledLocalSelection build.cells}
+    {scope : CutScopeId} {session : Session}
+    (transition :
+      ScheduledSelectedHeadTransition alignment selection scope session) :
+    RetainedCallPayloadSnapshot alpha support selection.selected.resource
+      selection.selected.cursor transition.selectedPayloadCell.segment
+      transition.selectedPayloadCell.outerSegments := by
+  simpa only [transition.selectedResourceExact,
+    transition.selectedCursorExact] using
+    transition.selectedPayloadCell.snapshot
+
+/-- The selected source cursor is well formed before its counted conservative
+rejection prefix. -/
+theorem selectedCursorWellFormed
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    {alignment : ScheduledPayloadAlignment payload build}
+    {selection : ScheduledLocalSelection build.cells}
+    {scope : CutScopeId} {session : Session}
+    (transition :
+      ScheduledSelectedHeadTransition alignment selection scope session) :
+    selection.selected.cursor.WellFormed := by
+  rcases transition.frontier.ownership.scan with
+    ⟨_candidates, wellFormed, _query, _substitutedArgs, _supported,
+      _arities, _scan⟩
+  exact wellFormed
+
+/-- The immutable payload transported through exactly the rejected prefix,
+stopping immediately before the selected head is consumed. -/
+def selectedSnapshotAtFinish
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    {alignment : ScheduledPayloadAlignment payload build}
+    {selection : ScheduledLocalSelection build.cells}
+    {scope : CutScopeId} {session : Session}
+    (transition :
+      ScheduledSelectedHeadTransition alignment selection scope session) :
+    RetainedCallPayloadSnapshot alpha support selection.selected.resource
+      transition.finish transition.selectedPayloadCell.segment
+      transition.selectedPayloadCell.outerSegments :=
+  RetainedCallPayloadSnapshot.afterRejectedPulls transition.selectedSnapshot
+    transition.selectedCursorWellFormed transition.frontier.rejectedPulls
+
+/-- The selected resource retains the payload zipper's observable query. -/
+theorem selectedResourceQueryExact
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    {alignment : ScheduledPayloadAlignment payload build}
+    {selection : ScheduledLocalSelection build.cells}
+    {scope : CutScopeId} {session : Session}
+    (transition :
+      ScheduledSelectedHeadTransition alignment selection scope session) :
+    selection.selected.resource.qterm = qterm := by
+  let head := transition.route.route.head.data
+  have headCellExact : head.cell = transition.selectedPayloadCell :=
+    transition.route.route.headCell_exact.trans
+      transition.selectedPayloadCellExact.symm
+  have headResourceExact :
+      head.resource = selection.selected.resource := by
+    calc
+      head.resource = transition.selectedPayloadCell.resource := by
+        simpa [PayloadHeadData.cell] using
+          congrArg PayloadCell.resource headCellExact
+      _ = selection.selected.resource := transition.selectedResourceExact
+  calc
+    selection.selected.resource.qterm = head.resource.qterm := by
+      rw [headResourceExact]
+    _ = qterm := head.resourceQuery
+
+/-- Persistent allocator domination for the exact selected occurrence,
+transported through its counted rejected prefix.
+
+The proof starts from the complete pre-answer dependent zipper and uses the
+typed selection path, so duplicate-shaped resources cannot borrow each
+other's high-water bounds. -/
+theorem selectedEndpointBounds
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    {source next : Search}
+    {history : ScheduledAnswerHistory alpha source next}
+    {build : ScheduledHistoryBuild history}
+    {alignment : ScheduledPayloadAlignment payload build}
+    {selection : ScheduledLocalSelection build.cells}
+    {scope : CutScopeId} {session : Session}
+    (transition :
+      ScheduledSelectedHeadTransition alignment selection scope session)
+    {referenceFloor executableFloor : Nat}
+    (below :
+      SourceControlResourcePayloadContextAgrees.endpointsBelow payload
+        referenceFloor executableFloor) :
+    transition.finish.reservedUntil ≤ referenceFloor ∧
+      selection.selected.resource.finalCounter ≤ executableFloor := by
+  have pathBounds :=
+    (alignment.payloadPath selection.path).endpointsBelow below
+  have cellBounds :
+      transition.selectedPayloadCell.cursor.reservedUntil ≤ referenceFloor ∧
+        transition.selectedPayloadCell.resource.finalCounter ≤
+          executableFloor := by
+    simpa only [transition.selectedPayloadCellExact] using pathBounds
+  constructor
+  · calc
+      transition.finish.reservedUntil =
+          selection.selected.cursor.reservedUntil :=
+        PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_reservedUntil
+          transition.frontier.rejectedPulls
+      _ = transition.selectedPayloadCell.cursor.reservedUntil := by
+        rw [transition.selectedCursorExact]
+      _ ≤ referenceFloor := cellBounds.1
+  · simpa only [← transition.selectedResourceExact] using cellBounds.2
+
 /-- Exact source catch-up partition at the same typed payload occurrence as a
 selected-head transition.
 

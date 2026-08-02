@@ -207,6 +207,47 @@ theorem payloadCells_length_eq_spines
         And.intro (congrArg Nat.succ inductionHypothesis.1)
           (congrArg Nat.succ inductionHypothesis.2)
 
+/-- Every snapshot-preserving cell inherits the allocator domination carried
+by the exact dependent zipper which contains that occurrence.
+
+The membership premise is over `payloadCells agreement`, not over a separate
+resource or cursor list.  Consequently the two endpoint inequalities cannot
+be paired with a duplicate-shaped occurrence at another payload depth. -/
+theorem SourceControlResourcePayloadContextAgrees.cell_endpointsBelow
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    (agreement :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer)
+    {referenceFloor executableFloor : Nat}
+    (below :
+      SourceControlResourcePayloadContextAgrees.endpointsBelow agreement
+        referenceFloor executableFloor)
+    {cell : PayloadCell alpha support}
+    (member : cell ∈ payloadCells agreement) :
+    cell.cursor.reservedUntil ≤ referenceFloor ∧
+      cell.resource.finalCounter ≤ executableFloor := by
+  induction agreement with
+  | nil =>
+      simp [payloadCells] at member
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees
+      inductionHypothesis =>
+      simp only [payloadCells, List.mem_cons] at member
+      have headBounds :=
+        SourceControlResourcePayloadContextAgrees.endpointsBelow_head
+          (.cons currentBarrier currentScope nextScope outerScope segment
+            segments resource resources cursor context segmentAgrees
+            resourceRest resourceQuery resourceBarrier resourceOwnership
+            snapshot outerAgrees)
+          below
+      rcases member with rfl | member
+      · exact ⟨headBounds.1, headBounds.2.1⟩
+      · exact inductionHypothesis headBounds.2.2 member
+
 /-- A position whose type names the literal payload zipper it indexes.
 
 The payload value is an explicit type parameter, not merely a length proof.
@@ -237,6 +278,31 @@ def cell
         currentBarrier segments resources inner context outer}
     (path : PayloadPath payload) : PayloadCell alpha support :=
   (payloadCells payload).get path.position
+
+/-- The exact ordinal payload coordinate inherits both persistent allocator
+bounds from its containing dependent zipper.
+
+This is the occurrence-indexed form consumed by scheduled head activation:
+the path chooses the cell, while `endpointsBelow` supplies chronology for the
+same zipper. -/
+theorem endpointsBelow
+    {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
+    {currentBarrier : Nat} {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId} {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    (path : PayloadPath payload)
+    {referenceFloor executableFloor : Nat}
+    (below :
+      SourceControlResourcePayloadContextAgrees.endpointsBelow payload
+        referenceFloor executableFloor) :
+    path.cell.cursor.reservedUntil ≤ referenceFloor ∧
+      path.cell.resource.finalCounter ≤ executableFloor := by
+  apply
+    SourceControlResourcePayloadContextAgrees.cell_endpointsBelow payload below
+  exact List.get_mem (payloadCells payload) path.position
 
 /-- The selected runtime identity is literally the same-position entry in the
 existing identity spine. -/

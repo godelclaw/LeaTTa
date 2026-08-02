@@ -412,6 +412,14 @@ PROLOG_SCHEDULED_PAYLOAD_REJECTION_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologScheduledPayloadRejectionRegression.lean"
 )
+PROLOG_SCHEDULED_PAYLOAD_SUCCESS_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologScheduledPayloadSuccessBridge.lean"
+)
+PROLOG_SCHEDULED_PAYLOAD_SUCCESS_REGRESSION = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologScheduledPayloadSuccessRegression.lean"
+)
 PROLOG_ROOT_CLOSED_ANSWER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRootClosedAnswerBridge.lean"
@@ -551,6 +559,7 @@ STRICT_AXIOM_AUDIT_ROWS = {
     "BISIM.root_closed_local_live_answer",
     "BISIM.scheduled_payload_landing",
     "BISIM.scheduled_payload_rejected_head",
+    "BISIM.scheduled_payload_successful_head",
     "BISIM.root_closed_public_answer_value",
     "BISIM.answer_visibility_public",
     "BISIM.findall_collection_answer_general",
@@ -813,6 +822,10 @@ def check() -> list[str]:
             digest(PROLOG_SCHEDULED_PAYLOAD_REJECTION_BRIDGE),
         "prolog_scheduled_payload_rejection_regression_sha256":
             digest(PROLOG_SCHEDULED_PAYLOAD_REJECTION_REGRESSION),
+        "prolog_scheduled_payload_success_bridge_sha256":
+            digest(PROLOG_SCHEDULED_PAYLOAD_SUCCESS_BRIDGE),
+        "prolog_scheduled_payload_success_regression_sha256":
+            digest(PROLOG_SCHEDULED_PAYLOAD_SUCCESS_REGRESSION),
         "prolog_root_closed_answer_bridge_sha256":
             digest(PROLOG_ROOT_CLOSED_ANSWER_BRIDGE),
         "prolog_root_closed_local_live_bridge_sha256":
