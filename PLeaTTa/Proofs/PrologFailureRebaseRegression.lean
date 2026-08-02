@@ -7,7 +7,7 @@ Purpose: Inhabit the exact failure-rebase prefix with a reachable two-clause
 Trusted boundary: none
 Main export: concrete_nonempty_failure_rebases_and_retries
 -/
-import PLeaTTa.Proofs.PrologFailureRebasePrefixBridge
+import PLeaTTa.Proofs.PrologResolverReadinessBridge
 
 namespace PLeaTTa.PrologFailureRebaseRegression
 
@@ -41,6 +41,7 @@ open PrologPrefilterScanBridge
 open PrologProductResourceContextBridge
 open PrologRepresentativeCallFrontierBridge
 open PrologRecursiveCallPayloadBridge
+open PrologResolverReadinessBridge
 open PrologRootCallReadyBridge
 open PrologStateBridge
 open PrologSupportedCursorAlternativeBridge
@@ -836,6 +837,48 @@ private theorem singleton_failure_selects_retained
     ⟨zeroAndSame.1, zeroAndSame.2, headAndTail.1.symm,
       headAndTail.2.symm⟩
 
+/-- A reachable failure/retry cycle together with the exact readiness packets
+that generate both resolver transitions.
+
+The packets contain only producer premises.  Their `Produces` fields pin the
+literal post-failure midpoint and reactivated endpoint to the independently
+generated successor packages. -/
+structure ConcreteNonemptyFailureReadyCycle
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable) where
+  before : RepresentativeActivePayloadState
+  failure : RetainedFailureSuccessor prog gt before
+  activation : RetainedActivationSuccessor prog gt failure.after
+  failureReady : ResolverStepReady (.ordinary (.active before))
+  activationReady : ResolverStepReady (.postFailure failure.after)
+  failureProduces :
+    failureReady.Produces prog gt (.postFailure failure.after)
+  activationProduces :
+    activationReady.Produces prog gt (.ordinary (.active activation.after))
+  activationResultExact : activation.independentResult = retainedResult
+  sourceRun :
+    StepsN 4
+      (.running initialSession
+        (.task rootScope [.call "p" [queryTerm]] []))
+      [.opened (requestFor "p" [queryTerm] [])]
+      activation.after.carrier.sourceState
+  fineRun :
+    DemandDrivenCallStep.StepsN prog gt 5 (.ready initialOpenConf)
+      activation.after.carrier.fineState
+  beforeNonempty : before.representative ≠ []
+  failureCount : failure.count = 0
+  snapshotEmpty : failure.after.representative = []
+  retainedSource : failure.after.index.branch.sourceId = retainedVersion.id
+  retainedBody : failure.after.index.branch.body = []
+  retryRepresentative :
+    activation.after.representative = activation.flattened
+  retryStates :
+    (ResolverCertifiedPrefix.failureThenActivation failure activation).states =
+      [.ordinary (.active before), .postFailure failure.after,
+        .ordinary (.active activation.after)]
+  notExtension :
+    ¬ ∃ extension : TreeSubstitution,
+        failure.after.representative = extension ++ before.representative
+
 /-- A fully reachable failure/retry prefix from the literal root query.
 
 The first selected clause contributes a genuine nonempty head MGU, its body
@@ -845,31 +888,9 @@ representative rather than extending the failed one; activation then prepends
 exactly its newly certified residual.  The source and fine lanes are counted
 from the same root state through the same dependent midpoint.
 [SPEC metta.pl:251-256; translator.pl:117; ISO:unification] -/
-theorem concrete_nonempty_failure_rebases_and_retries
+theorem concrete_nonempty_failure_ready_cycle
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    ∃ before : RepresentativeActivePayloadState,
-      ∃ failure : RetainedFailureSuccessor prog gt before,
-        ∃ activation :
-            RetainedActivationSuccessor prog gt failure.after,
-          StepsN 4
-              (.running initialSession
-                (.task rootScope [.call "p" [queryTerm]] []))
-              [.opened (requestFor "p" [queryTerm] [])]
-              activation.after.carrier.sourceState ∧
-            DemandDrivenCallStep.StepsN prog gt 5 (.ready initialOpenConf)
-              activation.after.carrier.fineState ∧
-            before.representative ≠ [] ∧
-            failure.count = 0 ∧
-            failure.after.representative = [] ∧
-            failure.after.index.branch.sourceId = retainedVersion.id ∧
-            failure.after.index.branch.body = [] ∧
-            activation.after.representative = activation.flattened ∧
-            (ResolverCertifiedPrefix.failureThenActivation failure activation).states =
-              [.ordinary (.active before), .postFailure failure.after,
-                .ordinary (.active activation.after)] ∧
-            ¬ ∃ extension : TreeSubstitution,
-                failure.after.representative =
-                  extension ++ before.representative := by
+    Nonempty (ConcreteNonemptyFailureReadyCycle prog gt) := by
   obtain
       ⟨nextAlpha, sourceCanonical, flattened, installed, before, facts⟩ :=
     first_selected_retained_exact (prog := prog) (gt := gt)
@@ -902,12 +923,24 @@ theorem concrete_nonempty_failure_rebases_and_retries
   have activeNonempty : before.carrier.index.active.alts ≠ [] := by
     rw [facts.activeAltsExact]
     simp
+  let failureReady : ResolverStepReady (.ordinary (.active before)) :=
+    .retainedFailure before referenceHead leftSupported rightSupported
+      currentSafe leftAliasSafe rightAliasSafe
+      (ground_two_three_do_not_unify before.carrier.index.current)
+      facts.freshFrontierExact activeNonempty
   obtain ⟨failure⟩ :=
     PrologFailureRebasePrefixBridge.RepresentativeActivePayloadState.retainedFailureSuccessor
       (prog := prog) (gt := gt) before referenceHead leftSupported
       rightSupported currentSafe leftAliasSafe rightAliasSafe
       (ground_two_three_do_not_unify before.carrier.index.current)
       facts.freshFrontierExact activeNonempty
+  have failureProduces :
+      failureReady.Produces prog gt (.postFailure failure.after) := by
+    exact
+      .retainedFailure before referenceHead leftSupported rightSupported
+        currentSafe leftAliasSafe rightAliasSafe
+        (ground_two_three_do_not_unify before.carrier.index.current)
+        facts.freshFrontierExact activeNonempty failure
   have retainedSingleton :
       (before.carrier.index.finish.advance before.carrier.index.branch
           before.carrier.index.branchTail).remaining = [retainedPrepared] := by
@@ -949,9 +982,17 @@ theorem concrete_nonempty_failure_rebases_and_retries
     change HeadResolution failure.nextBranch retainedResult
     rw [selected.2.2.1]
     exact retainedPrepared_resolves
-  obtain ⟨activation⟩ :=
+  let activationReady : ResolverStepReady (.postFailure failure.after) :=
+    .retainedActivation failure.after currentShared below live resolved
+  obtain ⟨activation, activationResultExact⟩ :=
     PrologFailureRebasePrefixBridge.PostFailurePayloadState.retainedActivationSuccessor
       (prog := prog) (gt := gt) failure.after currentShared below live resolved
+  have activationProduces :
+      activationReady.Produces prog gt
+        (.ordinary (.active activation.after)) := by
+    exact
+      .retainedActivation failure.after currentShared below live resolved
+        activation activationResultExact
   let retry :=
     ResolverCertifiedPrefix.failureThenActivation failure activation
   have sourceRun :
@@ -994,9 +1035,59 @@ theorem concrete_nonempty_failure_rebases_and_retries
     ResolverCertifiedPrefix.retainedFailure_not_representativeExtension_of_empty_snapshot
       failure beforeNonempty snapshotEmpty
   exact
-    ⟨before, failure, activation, sourceRun, fineRun, beforeNonempty,
-      selected.1, snapshotEmpty, retainedSource, retainedBody,
-      retryRepresentative, by rfl, notExtension⟩
+    ⟨{ before := before
+       failure := failure
+       activation := activation
+       failureReady := failureReady
+       activationReady := activationReady
+       failureProduces := failureProduces
+       activationProduces := activationProduces
+       activationResultExact := activationResultExact
+       sourceRun := sourceRun
+       fineRun := fineRun
+       beforeNonempty := beforeNonempty
+       failureCount := selected.1
+       snapshotEmpty := snapshotEmpty
+       retainedSource := retainedSource
+       retainedBody := retainedBody
+       retryRepresentative := retryRepresentative
+       retryStates := by rfl
+       notExtension := notExtension }⟩
+
+/-- The original endpoint-and-trace formulation follows from the stronger
+readiness-indexed cycle without exposing the packet implementation. -/
+theorem concrete_nonempty_failure_rebases_and_retries
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ∃ before : RepresentativeActivePayloadState,
+      ∃ failure : RetainedFailureSuccessor prog gt before,
+        ∃ activation :
+            RetainedActivationSuccessor prog gt failure.after,
+          StepsN 4
+              (.running initialSession
+                (.task rootScope [.call "p" [queryTerm]] []))
+              [.opened (requestFor "p" [queryTerm] [])]
+              activation.after.carrier.sourceState ∧
+            DemandDrivenCallStep.StepsN prog gt 5 (.ready initialOpenConf)
+              activation.after.carrier.fineState ∧
+            before.representative ≠ [] ∧
+            failure.count = 0 ∧
+            failure.after.representative = [] ∧
+            failure.after.index.branch.sourceId = retainedVersion.id ∧
+            failure.after.index.branch.body = [] ∧
+            activation.after.representative = activation.flattened ∧
+            (ResolverCertifiedPrefix.failureThenActivation failure activation).states =
+              [.ordinary (.active before), .postFailure failure.after,
+                .ordinary (.active activation.after)] ∧
+            ¬ ∃ extension : TreeSubstitution,
+                failure.after.representative =
+                  extension ++ before.representative := by
+  obtain ⟨cycle⟩ :=
+    concrete_nonempty_failure_ready_cycle (prog := prog) (gt := gt)
+  exact
+    ⟨cycle.before, cycle.failure, cycle.activation, cycle.sourceRun,
+      cycle.fineRun, cycle.beforeNonempty, cycle.failureCount,
+      cycle.snapshotEmpty, cycle.retainedSource, cycle.retainedBody,
+      cycle.retryRepresentative, cycle.retryStates, cycle.notExtension⟩
 
 /-- The concrete nonempty rollback inhabits the single global resolver-prefix
 vocabulary with genuine forward work on both sides, not merely the isolated

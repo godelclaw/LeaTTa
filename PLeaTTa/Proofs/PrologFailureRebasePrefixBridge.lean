@@ -650,7 +650,9 @@ namespace PostFailurePayloadState
 
 /-- Produce one exact activation from this midpoint.  The wrapper consumes
 this state's own agreement and returns a successor indexed by this state's
-own restored snapshot; there is no snapshot argument. -/
+own restored snapshot; there is no snapshot argument.  The returned data
+equality also pins the successor's independent head resolution to the exact
+`resolvedResult` named by the producer premise. -/
 theorem retainedActivationSuccessor
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {resolvedResult : Substitution}
@@ -663,7 +665,8 @@ theorem retainedActivationSuccessor
         before.index.resource.qterm)
     (resolved :
       HeadResolution before.index.branch resolvedResult) :
-    Nonempty (RetainedActivationSuccessor prog gt before) := by
+    ∃ facts : RetainedActivationSuccessor prog gt before,
+      facts.independentResult = resolvedResult := by
   have exactAgreement := before.agreement
   dsimp only [PostFailurePayloadIndex.Relates] at exactAgreement
   rw [before.exactFresh] at exactAgreement
@@ -674,22 +677,23 @@ theorem retainedActivationSuccessor
     PrologCurrentSessionPostFailureActivationBridge.SpinedPostFailureFrontierPayloadResourceRelatesAt.activateSelectedHead
       (prog := prog) (gt := gt) exactAgreement currentShared below live
       resolved
-  exact
-    ⟨{ independentResult := resolvedResult
-       nextAlpha := nextAlpha
-       sourceCanonical := sourceCanonical
-       flattened := flattened
-       installed := installed
-       extension := extension
-       nextPayloadContext := nextPayloadContext
-       shared := shared
-       alphaIncluded := alphaIncluded
-       outerPayloadExact := outerPayloadExact
-       sourceStep := sourceStep
-       sealedStep := sealedStep
-       fineStep := fineStep
-       cumulative := cumulative
-       targetAgreement := targetAgreement }⟩
+  let facts : RetainedActivationSuccessor prog gt before :=
+    { independentResult := resolvedResult,
+       nextAlpha := nextAlpha,
+       sourceCanonical := sourceCanonical,
+       flattened := flattened,
+       installed := installed,
+       extension := extension,
+       nextPayloadContext := nextPayloadContext,
+       shared := shared,
+       alphaIncluded := alphaIncluded,
+       outerPayloadExact := outerPayloadExact,
+       sourceStep := sourceStep,
+       sealedStep := sealedStep,
+       fineStep := fineStep,
+       cumulative := cumulative,
+       targetAgreement := targetAgreement }
+  exact ⟨facts, rfl⟩
 
 end PostFailurePayloadState
 

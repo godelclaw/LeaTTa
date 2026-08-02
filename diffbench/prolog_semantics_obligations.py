@@ -421,6 +421,10 @@ PROLOG_FAILURE_REBASE_PREFIX_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologFailureRebasePrefixBridge.lean"
 )
+PROLOG_RESOLVER_READINESS_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologResolverReadinessBridge.lean"
+)
 PROLOG_FAILURE_REBASE_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologFailureRebaseRegression.lean"
@@ -764,6 +768,8 @@ def check() -> list[str]:
             digest(PROLOG_CURRENT_SESSION_POST_FAILURE_ACTIVATION_BRIDGE),
         "prolog_failure_rebase_prefix_bridge_sha256":
             digest(PROLOG_FAILURE_REBASE_PREFIX_BRIDGE),
+        "prolog_resolver_readiness_bridge_sha256":
+            digest(PROLOG_RESOLVER_READINESS_BRIDGE),
         "prolog_failure_rebase_regression_sha256":
             digest(PROLOG_FAILURE_REBASE_REGRESSION),
         "prolog_current_session_exhausted_payload_catchup_bridge_sha256":
