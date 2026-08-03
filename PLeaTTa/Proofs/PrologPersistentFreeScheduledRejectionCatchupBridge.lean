@@ -20,6 +20,7 @@ open PeTTaSpec.PrologCore.GoalSemantics
 open PeTTaSpec.PrologCore.Resolver
 open DemandDrivenStep
 open PrologActivationMacro
+open PrologAnswerSourceCatchupBridge
 open PrologBodyFailureExhaustedResourceTransitionBridge
 open PrologBodyFailureOuterResourceActivationBridge
 open PrologBodyFailureOuterResourceCatchupBridge
@@ -704,6 +705,69 @@ theorem PayloadLocalSelection.catchupToSelectedReady
       cursorSplit, candidatesSplit, branchCount, clauseCount, ?_,
       rejectedPrefix, headExact⟩
   simpa [Nat.add_assoc] using combined
+
+/-- Provenance-preserving form of `catchupToSelectedReady`.
+
+The older theorem exposes the pulled-head offset consumed by downstream
+execution.  This companion retains the stronger `SelectedReadyFrontier`,
+including the original supported candidate spine and the exact maximal
+prefilter-rejected prefix.  That information is necessary to distinguish
+duplicate-valued occurrences and to prove exact source-only catch-up counts;
+it is derived from the same owned resource and scan, never reconstructed from
+the selected result. -/
+theorem PayloadLocalSelection.catchupToSelectedFrontier
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {currentBarrier : Nat}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {inner outer : CutScopeId}
+    {context : ActiveProductContext}
+    {payload :
+      SourceControlResourcePayloadContextAgrees alpha support qterm
+        currentBarrier segments resources inner context outer}
+    (selection : PayloadLocalSelection payload)
+    (session : Session) :
+    ∃ (partition :
+          OuterResourceCatchupPartition alpha segments resources context)
+        (callStart : PreparedCursor) (startPosition : Nat)
+        (finish : PreparedCursor) (readyClauses : List PLeaTTa.Clause)
+        (frontier :
+          SelectedReadyFrontier alpha partition.first
+            partition.goals partition.binding partition.tail
+            callStart partition.firstCursor finish
+            startPosition readyClauses),
+      PayloadLocalPartitionAgrees selection partition ∧
+      StepsN
+        (partition.rejectionSteps + partition.crossedFrames.length +
+          frontier.rejectedCount)
+        (.running session
+          (PLeaTTa.PrologPersistentFreeScheduledRejectionCatchupBridge.PayloadLocalSelection.enteredSourceFrontier
+            selection))
+        []
+        (.running session
+          (firstLiveReadySourceFrontier partition finish)) := by
+  obtain ⟨partition, partitionExact⟩ :=
+    PLeaTTa.PrologPersistentFreeScheduledRejectionCatchupBridge.PayloadLocalSelection.partitionExact
+      selection
+  rcases partition.firstOwnership with
+    ⟨callStart, startPosition, ownership⟩
+  obtain ⟨finish, readyClauses, frontier, _sourceSteps, _positioned⟩ :=
+    PLeaTTa.PrologAnswerSourceCatchupBridge.RetainedAlternativeSegment.catchupSelectedAt
+      ownership partition.firstHead partition.firstFrame.predicateScope
+      session
+  have crossed :=
+    PLeaTTa.PrologPersistentFreeScheduledRejectionCatchupBridge.PayloadLocalSelection.catchupToFirstLive
+      selection partition session
+  have rejected :=
+    PLeaTTa.PrologBodyFailureOuterResourceCatchupBridge.RejectedPullsN.frameRetainedFrontierContextStepsN
+      frontier.rejectedPulls partition.survivingContext partition.firstFrame
+      session
+  have combined := crossed.trans rejected
+  exact
+    ⟨partition, callStart, startPosition, finish, readyClauses, frontier,
+      partitionExact,
+      by
+        simpa [Nat.add_assoc, firstLiveReadySourceFrontier] using combined⟩
 
 /-! ## Instantiation at the real scheduled rejection frontier -/
 

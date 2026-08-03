@@ -309,8 +309,28 @@ structure SelectedReadyFrontier
     (callStart original finish : PreparedCursor) (startPosition : Nat)
     (candidates : List PLeaTTa.Clause) : Type where
   ownership : resource.Owns alpha callStart original startPosition
+  /-- The exact executable candidate bank owned at this cursor before the
+  rejected source prefix is consumed.  Naming it here prevents the ready
+  suffix below from being supplied independently of the scan which produced
+  `resource.alts`. -/
+  originalCandidates : List PLeaTTa.Clause
+  skippedCandidates : List PLeaTTa.Clause
+  originalSupported :
+    List.Forall₂
+      (SupportedPreparedCandidateAgrees original.callGeneration
+        original.predicate original.arguments original.bindings)
+      original.remaining originalCandidates
+  originalArities :
+    ∀ clause, clause ∈ originalCandidates →
+      clause.params.length = resource.argsv.length
+  originalScan :
+    ResolutionScan resource.argsv resource.args resource.res resource.rest
+      resource.binding resource.qterm resource.barrier originalCandidates
+      resource.counter resource.alts resource.finalCounter
   rejectedCount : Nat
   rejectedPulls : RejectedPullsN rejectedCount original finish
+  originalCandidatesExact :
+    originalCandidates = skippedCandidates ++ candidates
   positioned :
     CallScopedCursorPosition callStart finish
       (startPosition + rejectedCount)
@@ -330,6 +350,124 @@ structure SelectedReadyFrontier
       clause.params.length = resource.argsv.length
 
 namespace SelectedReadyFrontier
+
+/-- The executable prefix removed by the shared scan has exactly the same
+length as the independently executed source rejection prefix.  The equality
+is derived from the two positional spines rather than stored as a second
+potentially drifting assertion. -/
+theorem skippedCandidates_count
+    {alpha : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {selectedTail : List PLeaTTa.Alt}
+    {callStart original finish : PreparedCursor} {startPosition : Nat}
+    {candidates : List PLeaTTa.Clause}
+    (frontier :
+      SelectedReadyFrontier alpha resource selectedGoals selectedBinding
+        selectedTail callStart original finish startPosition candidates) :
+    frontier.skippedCandidates.length = frontier.rejectedCount := by
+  have sourceLength :
+      original.remaining.length = frontier.originalCandidates.length :=
+    frontier.originalSupported.length_eq
+  have finishRemaining := frontier.rejectedPulls.remaining_eq_drop
+  have readyLength : finish.remaining.length = candidates.length :=
+    frontier.ready.length_eq
+  have splitLength := congrArg List.length frontier.originalCandidatesExact
+  simp only [List.length_append] at splitLength
+  have countBound := frontier.rejectedPulls.count_le_remaining_length
+  rw [finishRemaining, List.length_drop] at readyLength
+  omega
+
+/-- Every executable occurrence in the removed positional prefix was truly
+skipped by the conservative scan.  This maximality fact is derived by
+comparing the full scan and ready-suffix scan at the same counter and output;
+a retained prefix occurrence would necessarily advance the counter. -/
+theorem skippedCandidates_retainedCount_zero
+    {alpha : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {selectedTail : List PLeaTTa.Alt}
+    {callStart original finish : PreparedCursor} {startPosition : Nat}
+    {candidates : List PLeaTTa.Clause}
+    (frontier :
+      SelectedReadyFrontier alpha resource selectedGoals selectedBinding
+        selectedTail callStart original finish startPosition candidates) :
+    retainedClauseCount resource.argsv
+        (PLeaTTa.subst resource.binding resource.res)
+        frontier.skippedCandidates = 0 := by
+  have fullCounter := frontier.originalScan.counter_exact
+  have suffixCounter := frontier.ready.scan.counter_exact
+  rw [frontier.originalCandidatesExact] at fullCounter
+  simp only [retainedClauseCount, List.filter_append,
+    List.length_append] at fullCounter
+  simp only [retainedClauseCount] at suffixCounter
+  change
+    (frontier.skippedCandidates.filter
+      (resolutionClauseRetained resource.argsv
+        (PLeaTTa.subst resource.binding resource.res))).length = 0
+  omega
+
+/-- Pointwise form of `skippedCandidates_retainedCount_zero`: membership in
+the removed executable prefix carries the literal Boolean rejection used by
+the scan. -/
+theorem skippedCandidate_rejected
+    {alpha : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {selectedTail : List PLeaTTa.Alt}
+    {callStart original finish : PreparedCursor} {startPosition : Nat}
+    {candidates : List PLeaTTa.Clause}
+    (frontier :
+      SelectedReadyFrontier alpha resource selectedGoals selectedBinding
+        selectedTail callStart original finish startPosition candidates)
+    {clause : PLeaTTa.Clause}
+    (member : clause ∈ frontier.skippedCandidates) :
+    resolutionClauseRetained resource.argsv
+        (PLeaTTa.subst resource.binding resource.res) clause = false := by
+  cases retained : resolutionClauseRetained resource.argsv
+      (PLeaTTa.subst resource.binding resource.res) clause with
+  | false => rfl
+  | true =>
+      have inFilter :
+          clause ∈ frontier.skippedCandidates.filter
+            (resolutionClauseRetained resource.argsv
+              (PLeaTTa.subst resource.binding resource.res)) := by
+        exact List.mem_filter.mpr ⟨member, by simp [retained]⟩
+      have positive :
+          0 <
+            (frontier.skippedCandidates.filter
+              (resolutionClauseRetained resource.argsv
+                (PLeaTTa.subst resource.binding resource.res))).length :=
+        List.length_pos_of_mem inFilter
+      exact False.elim
+        (by
+          have zero :
+              (frontier.skippedCandidates.filter
+                (resolutionClauseRetained resource.argsv
+                  (PLeaTTa.subst resource.binding resource.res))).length = 0 := by
+            simpa [retainedClauseCount] using
+              frontier.skippedCandidates_retainedCount_zero
+          omega)
+
+/-- The source cursor and executable candidate bank advance by the same
+occurrence count.  This is an equality of literal suffixes, so duplicate
+candidate values remain distinguished by their position in the frozen bank.
+-/
+theorem candidate_remaining_eq_drop
+    {alpha : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
+    {selectedTail : List PLeaTTa.Alt}
+    {callStart original finish : PreparedCursor} {startPosition : Nat}
+    {candidates : List PLeaTTa.Clause}
+    (frontier :
+      SelectedReadyFrontier alpha resource selectedGoals selectedBinding
+        selectedTail callStart original finish startPosition candidates) :
+    candidates =
+      frontier.originalCandidates.drop frontier.rejectedCount := by
+  rw [frontier.originalCandidatesExact,
+    ← frontier.skippedCandidates_count]
+  simp
 
 /-- A selected bank rules out the exhausted ready constructor and exposes the
 exact source branch/executable clause occurrence at the frontier. -/
@@ -461,8 +599,14 @@ theorem catchupSelectedAt
   exact
     ⟨finish, readyClauses,
       { ownership := ownership
+        originalCandidates := candidates
+        skippedCandidates := skippedClauses
+        originalSupported := supported
+        originalArities := arities
+        originalScan := scan
         rejectedCount := count
         rejectedPulls := pulls
+        originalCandidatesExact := clausesEq
         positioned :=
           CallScopedCursorPosition.afterRejected pulls ownership.positioned
         selected := selected

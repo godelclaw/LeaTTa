@@ -196,9 +196,15 @@ theorem
               (SourceControlResourcePayloadContextAgrees.headCell
                 payloadContext).snapshot.residualRepresentative =
                   representative ∧
-                (SourceControlResourcePayloadContextAgrees.headCell
-                  payloadContext).snapshot.controlOrigin.MatchesPendingControl
-                    pending := by
+              (SourceControlResourcePayloadContextAgrees.headCell
+                payloadContext).snapshot.controlOrigin.MatchesPendingControl
+                    pending ∧
+                active =
+                  retainedTailResource (finish.advance branch branchTail)
+                    (args.map (PLeaTTa.subst binding)) args res
+                    (segmentExecutableRest ++ flattenExecutables outer)
+                    binding qterm bodyBarrier startCounter altTail
+                    pending.persistent.counter := by
   have branchMember : branch ∈ finish.remaining := by
     rw [frontier.finishRemaining]
     simp
@@ -233,6 +239,14 @@ theorem
       openedBindings queryReferenceBelow activation
       outerNext baseAlts outerAlts
   have activeCounter : active.counter = startCounter + 1 := result.1
+  have activeExact :
+      active =
+        retainedTailResource (finish.advance branch branchTail)
+          (args.map (PLeaTTa.subst binding)) args res
+          (segmentExecutableRest ++ flattenExecutables outer) binding qterm
+          bodyBarrier startCounter altTail pending.persistent.counter :=
+    by
+      simpa only [frontier.substitutedArgs] using result.2.1
   have stack :
       ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
         callerBarrier pending (finish.advance branch branchTail)
@@ -241,18 +255,18 @@ theorem
         baseAlts
         (activatedOpenSuccessor pending copied
           (segmentExecutableRest ++ flattenExecutables outer)
-          qterm installed) := result.2.1
+          qterm installed) := result.2.2.1
   have snapshotRepresentative :
-      snapshot.residualRepresentative = representative := result.2.2.1
+      snapshot.residualRepresentative = representative := result.2.2.2.1
   have snapshotOrigin :
       snapshot.controlOrigin.MatchesPendingControl pending :=
-    result.2.2.2.1
+    result.2.2.2.2.1
   have snapshotActivationExtends :
       snapshot.activationOrigin.Extends opened.session :=
-    result.2.2.2.2.1
+    result.2.2.2.2.2.1
   have snapshotCutExact :
       snapshot.activationOrigin.nextCutScope = opened.scope + 1 :=
-    result.2.2.2.2.2
+    result.2.2.2.2.2.2
   have branchFirstBelowSession :
       branch.firstFresh ≤ opened.session.resolver.nextFresh := by
     calc
@@ -362,6 +376,7 @@ theorem
         by
           simpa [payloadContextExact,
             SourceControlResourcePayloadContextAgrees.headCell] using
-            snapshotOrigin⟩⟩
+            snapshotOrigin,
+        activeExact⟩⟩
 
 end PLeaTTa.PrologNestedRetainedPayloadBridge

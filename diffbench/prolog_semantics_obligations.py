@@ -440,6 +440,10 @@ PROLOG_PERSISTENT_FREE_SCHEDULED_REJECTION_CATCHUP_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologPersistentFreeScheduledRejectionCatchupRegression.lean"
 )
+PROLOG_SCHEDULED_REJECTION_REACHABILITY_REGRESSION = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologScheduledRejectionReachabilityRegression.lean"
+)
 PROLOG_SCHEDULED_PAYLOAD_SUCCESS_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologScheduledPayloadSuccessRegression.lean"
@@ -862,6 +866,8 @@ def check() -> list[str]:
             digest(
                 PROLOG_PERSISTENT_FREE_SCHEDULED_REJECTION_CATCHUP_REGRESSION
             ),
+        "prolog_scheduled_rejection_reachability_regression_sha256":
+            digest(PROLOG_SCHEDULED_REJECTION_REACHABILITY_REGRESSION),
         "prolog_scheduled_payload_success_regression_sha256":
             digest(PROLOG_SCHEDULED_PAYLOAD_SUCCESS_REGRESSION),
         "prolog_root_closed_answer_bridge_sha256":

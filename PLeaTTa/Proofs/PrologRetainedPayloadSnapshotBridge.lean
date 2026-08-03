@@ -2512,6 +2512,72 @@ def ActiveProductResourceStackAgrees.prependPayloadContext
 
 /-! ## Construction at the real activation site -/
 
+/-- The complete retained-resource value produced after one selected clause
+head has been consumed.  Naming this constructor keeps every observable scan
+coordinate recoverable from producer theorems; downstream proofs need not
+reconstruct `argsv`, arguments, result, binding, or seed from existential
+ownership evidence. -/
+def retainedTailResource
+    (cursor : PreparedCursor) (argsv args : List Atom) (res : Atom)
+    (rest : List PLeaTTa.Goal) (binding : Subst) (qterm : Atom)
+    (barrier startCounter : Nat) (alts : List PLeaTTa.Alt)
+    (finalCounter : Nat) : RetainedAlternativeSegment :=
+  { callIdentity := PreparedCallIdentity.ofCursor cursor
+    argsv := argsv
+    args := args
+    res := res
+    rest := rest
+    binding := binding
+    qterm := qterm
+    barrier := barrier
+    counter := startCounter + 1
+    alts := alts
+    finalCounter := finalCounter }
+
+/- These projection equations are an anti-erasure guard for the producer
+API below.  Each is definitional: if the retained-resource constructor ever
+stops preserving one scan coordinate literally, its downstream adequacy
+proofs fail here rather than reconstructing a merely compatible value. -/
+@[simp] theorem retainedTailResource_argsv
+    (cursor : PreparedCursor) (argsv args : List Atom) (res : Atom)
+    (rest : List PLeaTTa.Goal) (binding : Subst) (qterm : Atom)
+    (barrier startCounter : Nat) (alts : List PLeaTTa.Alt)
+    (finalCounter : Nat) :
+    (retainedTailResource cursor argsv args res rest binding qterm barrier
+      startCounter alts finalCounter).argsv = argsv := rfl
+
+@[simp] theorem retainedTailResource_args
+    (cursor : PreparedCursor) (argsv args : List Atom) (res : Atom)
+    (rest : List PLeaTTa.Goal) (binding : Subst) (qterm : Atom)
+    (barrier startCounter : Nat) (alts : List PLeaTTa.Alt)
+    (finalCounter : Nat) :
+    (retainedTailResource cursor argsv args res rest binding qterm barrier
+      startCounter alts finalCounter).args = args := rfl
+
+@[simp] theorem retainedTailResource_res
+    (cursor : PreparedCursor) (argsv args : List Atom) (res : Atom)
+    (rest : List PLeaTTa.Goal) (binding : Subst) (qterm : Atom)
+    (barrier startCounter : Nat) (alts : List PLeaTTa.Alt)
+    (finalCounter : Nat) :
+    (retainedTailResource cursor argsv args res rest binding qterm barrier
+      startCounter alts finalCounter).res = res := rfl
+
+@[simp] theorem retainedTailResource_binding
+    (cursor : PreparedCursor) (argsv args : List Atom) (res : Atom)
+    (rest : List PLeaTTa.Goal) (binding : Subst) (qterm : Atom)
+    (barrier startCounter : Nat) (alts : List PLeaTTa.Alt)
+    (finalCounter : Nat) :
+    (retainedTailResource cursor argsv args res rest binding qterm barrier
+      startCounter alts finalCounter).binding = binding := rfl
+
+@[simp] theorem retainedTailResource_counter
+    (cursor : PreparedCursor) (argsv args : List Atom) (res : Atom)
+    (rest : List PLeaTTa.Goal) (binding : Subst) (qterm : Atom)
+    (barrier startCounter : Nat) (alts : List PLeaTTa.Alt)
+    (finalCounter : Nat) :
+    (retainedTailResource cursor argsv args res rest binding qterm barrier
+      startCounter alts finalCounter).counter = startCounter + 1 := rfl
+
 /-- One real spined activation creates the active retained resource and its
 immutable pre-head payload in the same construction, using the exact residual
 representative selected for that activation.
@@ -2613,6 +2679,12 @@ theorem
                context)
               outerScope,
           active.counter = startCounter + 1 ∧
+            active =
+              retainedTailResource (finish.advance branch branchTail) argsv
+                args res
+                (segmentExecutableRest ++ flattenExecutables outer) binding
+                qterm bodyBarrier startCounter altTail
+                pending.persistent.counter ∧
             (ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
               callerBarrier pending (finish.advance branch branchTail)
               (segmentExecutableRest ++ flattenExecutables outer)
@@ -2652,17 +2724,9 @@ theorem
       frontier.substitutedArgs frontier.tailSupported frontier.tailArities
       frontier.tailScan
   let active : RetainedAlternativeSegment :=
-    { callIdentity := PreparedCallIdentity.ofCursor advanced
-      argsv := argsv
-      args := args
-      res := res
-      rest := segmentExecutableRest ++ flattenExecutables outer
-      binding := binding
-      qterm := qterm
-      barrier := bodyBarrier
-      counter := startCounter + 1
-      alts := altTail
-      finalCounter := pending.persistent.counter }
+    retainedTailResource advanced argsv args res
+      (segmentExecutableRest ++ flattenExecutables outer) binding qterm
+      bodyBarrier startCounter altTail pending.persistent.counter
   have activeOwnership :
       active.Owns nextAlpha opened.cursor advanced retainedPosition :=
     ⟨rfl,
@@ -2685,6 +2749,7 @@ theorem
           active.alts ++ PLeaTTa.Alt.barrier ::
             flattenOwnedAlts resources baseAlts
     rw [activation.retainedAlts, outerAlts]
+    rfl
   have stack :
       ActiveProductResourceStackAgrees nextAlpha qterm bodyBarrier
         callerBarrier pending advanced
@@ -2743,14 +2808,16 @@ theorem
         alphaIncluded := activation.alphaIncluded
         allocationGap := by
           apply AlphaAllocationGap.of_frontier
-          simpa [active, advanced, PreparedCursor.advance] using
+          simpa [active, retainedTailResource, advanced,
+            PreparedCursor.advance] using
             activation.selectionFresh
         cursorArguments := advancedArguments
         residualRepresentative := representative
         cumulative := by
-          simpa [active] using oldCumulative
+          simpa [active, retainedTailResource] using oldCumulative
         materialized := by
-          simpa [active, advancedBindings] using materializedAtOpen
+          simpa [active, retainedTailResource, advancedBindings] using
+            materializedAtOpen
         queryReferenceBelow := advancedBelow
         queryExecutableBelow := ?_
         resourceRest := rfl
@@ -2763,10 +2830,10 @@ theorem
                 binding qterm) ≤
             startCounter := by
         simpa only [frontier.substitutedArgs] using frontier.highWater
-      simpa [active] using
+      simpa [active, retainedTailResource] using
         Nat.le_trans oldBound (Nat.le_succ startCounter)
-    · simpa [active, advancedContext.predicate_eq, advancedBindings] using
-        preHeadPayload
+    · simpa [active, retainedTailResource, advancedContext.predicate_eq,
+        advancedBindings] using preHeadPayload
   let caller : ControlSegment :=
     { barrier := callerBarrier
       references := segmentReferenceRest
@@ -2800,7 +2867,7 @@ theorem
         outerScope := by
     simpa [caller] using payloadContext
   exact
-    ⟨active, snapshot, payloadContextExact, rfl, stack, rfl,
+    ⟨active, snapshot, payloadContextExact, rfl, rfl, stack, rfl,
       ⟨rfl, rfl, rfl⟩,
       by
         simpa [snapshot] using

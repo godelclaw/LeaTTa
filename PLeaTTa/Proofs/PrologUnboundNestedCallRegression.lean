@@ -867,7 +867,7 @@ theorem qMaterializedReadyAfterP
     simpa using finishPositioned.advance frontier.finishRemaining
   obtain
       ⟨active, payloadContext, agreement, _outerExact,
-        _snapshotRepresentative⟩ :=
+        _snapshotRepresentative, _activeExact⟩ :=
     SpinedRepresentativeProductActivation.spinedProductPayloadResourceRelates
       (prog := prog) (gt := gt) (alpha := rootAlpha) (support := rootAlpha)
       (canonical := []) (referenceBase := []) (referenceBindings := [])

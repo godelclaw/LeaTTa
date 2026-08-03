@@ -485,7 +485,7 @@ theorem
       callChronology
   obtain
       ⟨nestedActive, nestedPayloadContext, nestedAgreement, payloadHandoff,
-        _snapshotRepresentative⟩ :=
+        _snapshotRepresentative, _activeExact⟩ :=
     SpinedRepresentativeProductActivation.spinedProductPayloadResourceRelates
       retainedPosition positioned frontier preHeadPayload oldCumulative
       materializedAtOpen (by rfl) (by rfl) queryReferenceBelow activation

@@ -653,7 +653,13 @@ theorem
             activation.alphaExtension outerPayloads
             (SourceControlResourcePayloadContextAgrees.tail payloadContext) ∧
           (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.residualRepresentative =
-            representative := by
+            representative ∧
+          active =
+            retainedTailResource (finish.advance branch branchTail)
+              (args.map (PLeaTTa.subst binding)) args res
+              (segmentExecutableRest ++ flattenExecutables outer) binding
+              qterm bodyBarrier startCounter altTail
+              pending.persistent.counter := by
   obtain ⟨active, _snapshot, payloadContext, result⟩ :=
     _root_.PLeaTTa.PrologNestedRetainedPayloadBridge.SpinedRepresentativeProductActivation.activeResourceStackWithNestedSnapshots
       retainedPosition positioned frontier preHeadPayload oldCumulative
@@ -681,7 +687,14 @@ theorem
   have snapshotOrigin :
       (SourceControlResourcePayloadContextAgrees.headCell payloadContext).snapshot.controlOrigin.MatchesPendingControl
         pending :=
-    result.2.2.2.2.2.2.2
+    result.2.2.2.2.2.2.2.1
+  have activeExact :
+      active =
+        retainedTailResource (finish.advance branch branchTail)
+          (args.map (PLeaTTa.subst binding)) args res
+          (segmentExecutableRest ++ flattenExecutables outer) binding qterm
+          bodyBarrier startCounter altTail pending.persistent.counter :=
+    result.2.2.2.2.2.2.2.2
   have counterExact :
       (activatedOpenSuccessor pending copied
         (segmentExecutableRest ++ flattenExecutables outer) qterm
@@ -757,7 +770,8 @@ theorem
     simpa only [core.control.frames, core.control.retainedBarriers] using
       controlOriginsAtPending
   refine
-    ⟨active, payloadContext, ?_, outerPayloadExact, snapshotRepresentative⟩
+    ⟨active, payloadContext, ?_, outerPayloadExact, snapshotRepresentative,
+      activeExact⟩
   exact
     ⟨core, endpointsCurrent, activationOrdered, activationOrigins,
       controlOrigins⟩

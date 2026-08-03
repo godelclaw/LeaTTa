@@ -323,6 +323,52 @@ inductive RepresentativeSupportedReady
           clause :: alts)
         finalCounter
 
+/-- A ready semantic/executable suffix keeps exact occurrence multiplicity.
+The result follows from the constructors, independently of clause values or
+duplicate payloads. -/
+theorem RepresentativeSupportedReady.length_eq
+    {callGeneration : Generation} {predicate : String}
+    {referenceArguments : List Term}
+    {referenceBindings : Substitution}
+    {argsv args : List Atom} {res : Atom}
+    {rest : List PLeaTTa.Goal} {binding : Subst} {qterm : Atom}
+    {barrier : Nat} {branches : List ClauseBranch}
+    {clauses : List PLeaTTa.Clause} {counter : Nat}
+    {alts : List Alt} {finalCounter : Nat}
+    (ready :
+      RepresentativeSupportedReady callGeneration predicate
+        referenceArguments referenceBindings argsv args res rest binding
+        qterm barrier branches clauses counter alts finalCounter) :
+    branches.length = clauses.length := by
+  cases ready with
+  | exhausted => rfl
+  | retained branch clause branches clauses counter finalCounter alts
+      supported arity kept tailSupported tailScan =>
+      simp [tailSupported.length_eq]
+
+/-- Forgetting the ready tag recovers the exact executable scan of the
+remaining candidate suffix at the unchanged frontier counter. -/
+theorem RepresentativeSupportedReady.scan
+    {callGeneration : Generation} {predicate : String}
+    {referenceArguments : List Term}
+    {referenceBindings : Substitution}
+    {argsv args : List Atom} {res : Atom}
+    {rest : List PLeaTTa.Goal} {binding : Subst} {qterm : Atom}
+    {barrier : Nat} {branches : List ClauseBranch}
+    {clauses : List PLeaTTa.Clause} {counter : Nat}
+    {alts : List Alt} {finalCounter : Nat}
+    (ready :
+      RepresentativeSupportedReady callGeneration predicate
+        referenceArguments referenceBindings argsv args res rest binding
+        qterm barrier branches clauses counter alts finalCounter) :
+    ResolutionScan argsv args res rest binding qterm barrier clauses counter
+      alts finalCounter := by
+  cases ready with
+  | exhausted counter => exact .nil counter
+  | retained branch clause branches clauses counter finalCounter alts
+      supported arity kept tailSupported tailScan =>
+      exact .retained clause clauses counter finalCounter alts kept tailScan
+
 /-- A real executable scan and its exact supported occurrence spine factor
 through a maximal, exactly counted source-only rejected prefix.
 

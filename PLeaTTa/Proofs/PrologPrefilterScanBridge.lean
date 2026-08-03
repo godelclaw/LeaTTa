@@ -166,6 +166,48 @@ inductive RejectedPullsN :
         RejectedPullsN count (cursor.advance branch branches) finish) :
       RejectedPullsN (count + 1) cursor finish
 
+/-- A zero-length rejected prefix preserves the complete prepared cursor,
+not merely its remaining-clause list.  Naming this inversion avoids dependent
+elimination of a cursor embedded inside a larger proof-relevant carrier. -/
+theorem RejectedPullsN.eq_of_count_zero
+    {before after : PreparedCursor}
+    (pulls : RejectedPullsN 0 before after) :
+    after = before := by
+  cases pulls
+  rfl
+
+/-- The endpoint of an exact rejected-prefix execution is the literal
+unconsumed suffix of the starting cursor.  This is the positional fact that
+keeps duplicate clause payloads occurrence-sensitive: the transition count,
+not value equality, determines which frozen occurrence is now at the front.
+-/
+theorem RejectedPullsN.remaining_eq_drop
+    {count : Nat} {before after : PreparedCursor}
+    (pulls : RejectedPullsN count before after) :
+    after.remaining = before.remaining.drop count := by
+  induction pulls with
+  | zero cursor => simp
+  | succ count cursor branch branches finish remaining clash tail
+      inductionHypothesis =>
+      rw [inductionHypothesis]
+      simp [PreparedCursor.advance, remaining]
+
+/-- An exact rejected-prefix execution cannot consume more occurrences than
+the frozen cursor contains. -/
+theorem RejectedPullsN.count_le_remaining_length
+    {count : Nat} {before after : PreparedCursor}
+    (pulls : RejectedPullsN count before after) :
+    count ≤ before.remaining.length := by
+  induction pulls with
+  | zero cursor => simp
+  | succ count cursor branch branches finish remaining clash tail
+      inductionHypothesis =>
+      rw [remaining]
+      simp only [List.length_cons]
+      have tailBound : count ≤ branches.length := by
+        simpa [PreparedCursor.advance] using inductionHypothesis
+      omega
+
 /-- A conservative scan is ready exactly when it is exhausted or its first
 paired occurrence was retained.  The retained constructor carries the
 complete remaining decision alignment, so later activation cannot swap or

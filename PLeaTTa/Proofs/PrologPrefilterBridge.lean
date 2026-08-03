@@ -454,6 +454,38 @@ theorem AlphaEquationsAgree.prologMatchCompatList_of_unifier
         inductionHypothesis tailUnifies]
       rfl
 
+/-- Conservative filtering needs only pointwise unifiability, not one common
+substitution for the whole head.  This is the exact abstraction exercised by
+repeated-variable false positives: each equation can match independently
+while the conjunction has no unifier. -/
+theorem AlphaEquationsAgree.prologMatchCompatList_of_pointwise_unifiable
+    {equations : List (Term × Term)}
+    {leftAtoms rightAtoms : List Atom}
+    (agreement : AlphaEquationsAgree equations leftAtoms rightAtoms)
+    (unifies :
+      ∀ equation, equation ∈ equations →
+        ∃ candidate : PeTTaSpec.PrologCore.OpenSubstitution.Substitution,
+          DenotationalUnifier candidate equation.1 equation.2) :
+    PLeaTTa.prologMatchCompatList leftAtoms rightAtoms = true := by
+  induction agreement with
+  | nil => rfl
+  | @cons leftAlpha rightAlpha leftTerm rightTerm leftAtom rightAtom
+      equations leftAtoms rightAtoms left right tail inductionHypothesis =>
+      obtain ⟨candidate, headUnifies⟩ :=
+        unifies (leftTerm, rightTerm) (by simp)
+      have tailUnifies :
+          ∀ equation, equation ∈ equations →
+            ∃ candidate :
+                PeTTaSpec.PrologCore.OpenSubstitution.Substitution,
+              DenotationalUnifier candidate equation.1 equation.2 := by
+        intro equation member
+        exact unifies equation (List.mem_cons_of_mem _ member)
+      simp only [PLeaTTa.prologMatchCompatList]
+      rw [AlphaTermAgrees.prologMatchCompat_of_denotationalUnifier
+          left right headUnifies,
+        inductionHypothesis tailUnifies]
+      rfl
+
 /-- With equal prefix lengths, appending the output slot turns the full-head
 compatibility test into the conjunction used by `resolutionClauseRetained`.
 -/
@@ -503,6 +535,30 @@ theorem NormalizedHeadAgrees.retained_of_headResolution
     HeadResolution.exists_iff_unifiable.mp resolves
   have fullCompatibility :=
     agreement.equations.prologMatchCompatList_of_unifier unifies
+  rw [prologMatchCompatList_append_singleton_of_length_eq
+      argsv clause.params resv clause.result agreement.arity.symm]
+      at fullCompatibility
+  have split :
+      PLeaTTa.prologMatchCompatList argsv clause.params = true ∧
+        PLeaTTa.prologMatchCompat resv clause.result = true := by
+    simpa only [Bool.and_eq_true] using fullCompatibility
+  exact resolutionClauseRetained_true_iff argsv resv clause |>.mpr
+    ⟨agreement.arity, split.1, split.2⟩
+
+/-- A normalized head is conservatively retained whenever every source head
+equation is independently unifiable.  Unlike `retained_of_headResolution`,
+this theorem deliberately does not require one common substitution. -/
+theorem NormalizedHeadAgrees.retained_of_pointwise_unifiable
+    {branch : ClauseBranch} {argsv : List Atom} {resv : Atom}
+    {clause : PLeaTTa.Clause}
+    (agreement : NormalizedHeadAgrees branch argsv resv clause)
+    (unifies :
+      ∀ equation, equation ∈ branch.normalizedHeadEquations →
+        ∃ candidate : PeTTaSpec.PrologCore.OpenSubstitution.Substitution,
+          DenotationalUnifier candidate equation.1 equation.2) :
+    resolutionClauseRetained argsv resv clause = true := by
+  have fullCompatibility :=
+    agreement.equations.prologMatchCompatList_of_pointwise_unifiable unifies
   rw [prologMatchCompatList_append_singleton_of_length_eq
       argsv clause.params resv clause.result agreement.arity.symm]
       at fullCompatibility

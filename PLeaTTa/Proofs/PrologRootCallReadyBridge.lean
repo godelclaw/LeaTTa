@@ -123,6 +123,12 @@ structure RepresentativeRootCallSuccessorFacts
         after.carrier.index.branchTail =
       finish.advance branch branchTail
   activeAltsExact : after.carrier.index.active.alts = altTail
+  activeResourceExact :
+    after.carrier.index.active =
+      retainedTailResource (finish.advance branch branchTail)
+        (args.map (PLeaTTa.subst binding)) args res [] binding
+        before.control.qterm (barrierDepth before.toConf + 1)
+        before.toConf.counter altTail finalCounter
   carrierRepresentative :
     after.representative = flattenedRepresentative ++ representative
   snapshotRepresentative :
@@ -345,7 +351,7 @@ theorem RepresentativeSupportedCallEntryRelates.activate_literal_root
     finishPositioned.advance frontier.finishRemaining
   obtain
       ⟨active, payloadContext, agreement, _outerExact,
-        snapshotRepresentative⟩ :=
+        snapshotRepresentative, activeExact⟩ :=
     SpinedRepresentativeProductActivation.spinedProductPayloadResourceRelates
       (prog := prog) (gt := gt) (alpha := alpha) (support := support)
       (canonical := canonical) (referenceBase := referenceBase)
@@ -556,6 +562,9 @@ theorem RepresentativeSupportedCallEntryRelates.activate_literal_root
       activeAltsExact := by
         simpa [after, carrier, ActivePayloadState.ofAgreement] using
           agreement.core.resourceStack.activeAlts
+      activeResourceExact := by
+        simpa [after, carrier, ActivePayloadState.ofAgreement, pending,
+          DemandDrivenCallStep.pendingCallOf] using activeExact
       carrierRepresentative := rfl
       snapshotRepresentative := by
         simpa [after, carrier, ActivePayloadState.ofAgreement] using
