@@ -16,6 +16,7 @@ import PLeaTTa.Proofs.PrologCurrentSessionAdministrativeTransitionBridge
 import PLeaTTa.Proofs.PrologCurrentSessionPayloadTransitionBridge
 import PLeaTTa.Proofs.PrologCurrentSessionUnifyTransitionBridge
 import PLeaTTa.Proofs.PrologPersistentFreeActivePayloadBridge
+import PLeaTTa.Proofs.PrologPersistentFreeCommittedPayloadBridge
 import PLeaTTa.Proofs.PrologPersistentFreeScheduledPayloadBridge
 
 namespace PLeaTTa.PrologHeterogeneousPrefixBridge
@@ -36,6 +37,7 @@ open PrologCurrentSessionPayloadTransitionBridge
 open PrologCurrentSessionUnifyTransitionBridge
 open PrologMguComposition
 open PrologPersistentFreeActivePayloadBridge
+open PrologPersistentFreeCommittedPayloadBridge
 open PrologPersistentFreeScheduledPayloadBridge
 open PrologNestedCallChainBridge
 open PrologNestedCallPrefixInductionBridge
@@ -491,6 +493,95 @@ structure RepresentativeCommittedPayloadState where
       carrier.index.support carrier.index.canonical carrier.index.referenceBase
       carrier.index.runtime representative
 
+namespace PersistentFreeCommittedPayloadState
+
+/-- Erase a legacy committed carrier while retaining exactly its live source,
+fine, payload, and representative indices.  Historical activation packets do
+not occur in the target type. -/
+def ofLegacy (state : CommittedPayloadState) :
+    PersistentFreeCommittedPayloadState :=
+  { index :=
+      { freshFrontier := state.index.freshFrontier
+        alpha := state.index.alpha
+        support := state.index.support
+        canonical := state.index.canonical
+        referenceBase := state.index.referenceBase
+        predicateScope := state.index.opened.scope
+        session := state.index.session
+        bodyBarrier := state.index.bodyBarrier
+        callerBarrier := state.index.callerBarrier
+        bodyReferences := state.index.bodyReferences
+        bodyExecutables := state.index.bodyExecutables
+        callerReferences := state.index.callerReferences
+        callerExecutables := state.index.callerExecutables
+        outer := state.index.outer
+        current := state.index.current
+        runtime := state.index.runtime
+        qterm := state.index.qterm
+        resources := state.index.resources
+        callerScope := state.index.callerScope
+        outerScope := state.index.outerScope
+        context := state.index.context
+        baseAlts := state.index.baseAlts
+        source := state.index.source
+        openConf := state.index.openConf }
+    payloadContext := state.payloadContext
+    agreement :=
+      PersistentFreeCommittedProductPayloadResourceRelatesAt.ofLegacy
+        state.agreement }
+
+@[simp] theorem ofLegacy_sourceState (state : CommittedPayloadState) :
+    (ofLegacy state).sourceState = state.sourceState := rfl
+
+@[simp] theorem ofLegacy_fineState (state : CommittedPayloadState) :
+    (ofLegacy state).fineState = state.fineState := rfl
+
+@[simp] theorem ofLegacy_session (state : CommittedPayloadState) :
+    (ofLegacy state).index.session = state.index.session := rfl
+
+@[simp] theorem ofLegacy_openConf (state : CommittedPayloadState) :
+    (ofLegacy state).index.openConf = state.index.openConf := rfl
+
+@[simp] theorem ofLegacy_alpha (state : CommittedPayloadState) :
+    (ofLegacy state).index.alpha = state.index.alpha := rfl
+
+@[simp] theorem ofLegacy_baseAlts (state : CommittedPayloadState) :
+    (ofLegacy state).index.baseAlts = state.index.baseAlts := rfl
+
+@[simp] theorem ofLegacy_cellIdentities (state : CommittedPayloadState) :
+    (ofLegacy state).cellIdentities = state.cellIdentities := rfl
+
+@[simp] theorem ofLegacy_cellCount (state : CommittedPayloadState) :
+    (ofLegacy state).cellCount = state.cellCount := rfl
+
+end PersistentFreeCommittedPayloadState
+
+namespace RepresentativePersistentFreeCommittedPayloadState
+
+/-- Legacy representative carriers embed without preserving either
+historical activation packet. -/
+def ofLegacy (state : RepresentativeCommittedPayloadState) :
+    RepresentativePersistentFreeCommittedPayloadState :=
+  { carrier := PersistentFreeCommittedPayloadState.ofLegacy state.carrier
+    representative := state.representative
+    cumulative := by
+      simpa [PersistentFreeCommittedPayloadState.ofLegacy] using
+        state.cumulative }
+
+@[simp] theorem ofLegacy_sourceState
+    (state : RepresentativeCommittedPayloadState) :
+    (ofLegacy state).carrier.sourceState = state.carrier.sourceState := rfl
+
+@[simp] theorem ofLegacy_fineState
+    (state : RepresentativeCommittedPayloadState) :
+    (ofLegacy state).carrier.fineState = state.carrier.fineState := rfl
+
+@[simp] theorem ofLegacy_representative
+    (state : RepresentativeCommittedPayloadState) :
+    (ofLegacy state).representative = state.representative := rfl
+
+end RepresentativePersistentFreeCommittedPayloadState
+
 /-- The three ordinary product phases which are genuine state
 correspondences.  Post-failure and exhausted certificates are intentionally
 not forced into this type: the latter already relates a predecessor and a
@@ -498,7 +589,7 @@ successor and will enter the later frontier-transition layer. -/
 inductive ProductPhaseState where
   | active (state : RepresentativePersistentFreeActivePayloadState)
   | scheduled (state : RepresentativePersistentFreeScheduledPayloadState)
-  | committed (state : RepresentativeCommittedPayloadState)
+  | committed (state : RepresentativePersistentFreeCommittedPayloadState)
 
 namespace ProductPhaseState
 
@@ -2146,7 +2237,7 @@ inductive CertifiedTransition (prog : PLeaTTa.Prog)
           (RepresentativeActivePayloadState.afterBodyAnswer
             prog gt before referenceEmpty executableEmpty))
   | cut
-      (before : RepresentativeActivePayloadState)
+      (before : RepresentativePersistentFreeActivePayloadState)
       (bodyRest : List PeTTaSpec.PrologCore.Goal)
       (bodyExecutableTail : List PLeaTTa.Goal)
       (referenceHead :
@@ -2158,13 +2249,14 @@ inductive CertifiedTransition (prog : PLeaTTa.Prog)
         PLeaTTa.BarrierCacheCoherent before.carrier.index.openConf.toConf) :
       CertifiedTransition prog gt
         (.cut
-          (retainedCursorToken before.carrier.index.opened
+          (retainedCursorTokenAt before.carrier.index.predicateScope
             before.carrier.index.finish before.carrier.index.branch
             before.carrier.index.branchTail))
-        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before))
+        (.active before)
         (.committed
-          (RepresentativeActivePayloadState.afterCut prog gt before bodyRest
-            bodyExecutableTail referenceHead executableHead coherent))
+          (RepresentativePersistentFreeActivePayloadState.afterCut prog gt
+            before bodyRest bodyExecutableTail referenceHead executableHead
+            coherent))
 
 namespace CertifiedTransition
 
@@ -2184,6 +2276,34 @@ theorem administrative_target_active
             (RepresentativeActivePayloadState.afterAdministrative
               prog gt before steps),
           rfl⟩
+
+/-- A cut label can only produce the packet-free committed phase.  This
+constructor discrimination prevents a caller from relabelling the same
+source/fine endpoints as an ordinary active successor. -/
+theorem cut_target_committed
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {token : CursorToken} {before after : ProductPhaseState}
+    (step : CertifiedTransition prog gt (.cut token) before after) :
+    ∃ state : RepresentativePersistentFreeCommittedPayloadState,
+      after = .committed state := by
+  cases step with
+  | cut before bodyRest bodyExecutableTail referenceHead executableHead
+      coherent =>
+      exact ⟨_, rfl⟩
+
+/-- A native packet-free cut cannot be laundered into an active target. -/
+theorem cut_not_active
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativePersistentFreeActivePayloadState)
+    (token : CursorToken)
+    (target : RepresentativePersistentFreeActivePayloadState) :
+    IsEmpty
+      (CertifiedTransition prog gt (.cut token) (.active before)
+        (.active target)) := by
+  constructor
+  intro step
+  obtain ⟨after, impossible⟩ := step.cut_target_committed
+  cases impossible
 
 /-- One independent raw step is one exact public source step. -/
 theorem oneSourceStep
@@ -2270,11 +2390,11 @@ theorem sourceSteps
   | cut before bodyRest bodyExecutableTail referenceHead executableHead
       coherent =>
       have activeAgreement :
-          SpinedActiveProductPayloadResourceRelatesAt
+          PersistentFreeActiveProductPayloadResourceRelatesAt
             before.carrier.index.freshFrontier before.carrier.index.alpha
             before.carrier.index.support before.carrier.index.canonical
-            before.carrier.index.referenceBase before.carrier.index.opened
-            before.carrier.index.session before.carrier.index.pending
+            before.carrier.index.referenceBase
+            before.carrier.index.predicateScope before.carrier.index.session
             before.carrier.index.finish before.carrier.index.branch
             before.carrier.index.branchTail before.carrier.index.altTail
             before.carrier.index.bodyBarrier before.carrier.index.callerBarrier
@@ -2288,14 +2408,17 @@ theorem sourceSteps
             before.carrier.index.outerScope before.carrier.index.context
             before.carrier.index.baseAlts before.carrier.index.source
             before.carrier.index.openConf before.carrier.payloadContext := by
-        simpa only [ActivePayloadIndex.Relates, referenceHead, executableHead]
+        simpa only [PersistentFreeActivePayloadIndex.Relates, referenceHead,
+          executableHead]
           using before.carrier.agreement
       have raw :=
-        (PrologCurrentSessionPayloadTransitionBridge.SpinedActiveProductPayloadResourceRelatesAt.afterCut
+        (persistentFreeActive_afterCut
           (prog := prog) (gt := gt) activeAgreement coherent).2.1
       simpa [TransitionKind.sourceCost, TransitionKind.sourceEvents,
-        ProductPhaseState.sourceState, ActivePayloadState.sourceState,
-        RepresentativeActivePayloadState.cutSource] using oneSourceStep raw
+        ProductPhaseState.sourceState,
+        PersistentFreeActivePayloadState.sourceState,
+        RepresentativePersistentFreeActivePayloadState.committedSource] using
+        oneSourceStep raw
 
 /-- Every closed transition exposes its exact fine executable execution. -/
 theorem fineSteps
@@ -2330,11 +2453,11 @@ theorem fineSteps
   | cut before bodyRest bodyExecutableTail referenceHead executableHead
       coherent =>
       have activeAgreement :
-          SpinedActiveProductPayloadResourceRelatesAt
+          PersistentFreeActiveProductPayloadResourceRelatesAt
             before.carrier.index.freshFrontier before.carrier.index.alpha
             before.carrier.index.support before.carrier.index.canonical
-            before.carrier.index.referenceBase before.carrier.index.opened
-            before.carrier.index.session before.carrier.index.pending
+            before.carrier.index.referenceBase
+            before.carrier.index.predicateScope before.carrier.index.session
             before.carrier.index.finish before.carrier.index.branch
             before.carrier.index.branchTail before.carrier.index.altTail
             before.carrier.index.bodyBarrier before.carrier.index.callerBarrier
@@ -2348,17 +2471,20 @@ theorem fineSteps
             before.carrier.index.outerScope before.carrier.index.context
             before.carrier.index.baseAlts before.carrier.index.source
             before.carrier.index.openConf before.carrier.payloadContext := by
-        simpa only [ActivePayloadIndex.Relates, referenceHead, executableHead]
+        simpa only [PersistentFreeActivePayloadIndex.Relates, referenceHead,
+          executableHead]
           using before.carrier.agreement
       have fine :=
-        (PrologCurrentSessionPayloadTransitionBridge.SpinedActiveProductPayloadResourceRelatesAt.afterCut
+        (persistentFreeActive_afterCut
           (prog := prog) (gt := gt) activeAgreement coherent).2.2.1
       change DemandDrivenCallStep.StepsN prog gt 1 before.carrier.fineState
-        (RepresentativeActivePayloadState.afterCut prog gt before bodyRest
-          bodyExecutableTail referenceHead executableHead coherent).carrier.fineState
-      rw [RepresentativeActivePayloadState.afterCut_fineState]
-      simpa [ActivePayloadState.fineState,
-        RepresentativeActivePayloadState.cutOpenConf] using oneFineStep fine
+        (RepresentativePersistentFreeActivePayloadState.afterCut prog gt before
+          bodyRest bodyExecutableTail referenceHead executableHead
+          coherent).carrier.fineState
+      rw [RepresentativePersistentFreeActivePayloadState.afterCut_fineState]
+      simpa [PersistentFreeActivePayloadState.fineState,
+        RepresentativePersistentFreeActivePayloadState.committedOpenConf] using
+        oneFineStep fine
 
 /-- Every closed heterogeneous transition advances all four independent
 source allocator high-waters. -/
@@ -2487,24 +2613,20 @@ theorem payloadEvolution
   | cut before bodyRest bodyExecutableTail referenceHead executableHead
       coherent =>
       refine
-        ⟨PLeaTTa.PrologHeterogeneousPrefixBridge.ActivePayloadState.headCell
-            before.carrier,
+        ⟨PersistentFreeActivePayloadState.headCell before.carrier,
           ?_⟩
       calc
         before.carrier.cellIdentities =
-            PLeaTTa.PrologHeterogeneousPrefixBridge.ActivePayloadState.headCell
-                before.carrier ::
-              SourceControlResourcePayloadContextAgrees.cellIdentities
-                (ActiveProductPayloadContext.outerPayload
-                  before.carrier.payloadContext) :=
-          PLeaTTa.PrologHeterogeneousPrefixBridge.ActivePayloadState.cellIdentities_eq_headCell_cons_outerPayload
+            PersistentFreeActivePayloadState.headCell before.carrier ::
+              before.carrier.cellIdentities.tail :=
+          PersistentFreeActivePayloadState.cellIdentities_eq_headCell_cons_outerPayload
             before.carrier
         _ =
-            PLeaTTa.PrologHeterogeneousPrefixBridge.ActivePayloadState.headCell
-                before.carrier ::
-              (RepresentativeActivePayloadState.afterCut prog gt before
-                bodyRest bodyExecutableTail referenceHead executableHead
-                coherent).carrier.cellIdentities := rfl
+            PersistentFreeActivePayloadState.headCell before.carrier ::
+              (RepresentativePersistentFreeActivePayloadState.afterCut prog gt
+                before bodyRest bodyExecutableTail referenceHead executableHead
+                coherent).carrier.cellIdentities := by
+          rw [RepresentativePersistentFreeActivePayloadState.afterCut_cellIdentities]
 
 /-- Every closed transition preserves the literal base alternative suffix.
 Recursive-call push uses the producer's explicit preservation field; no
@@ -3083,8 +3205,9 @@ inductive Produces (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable) :
         (ActiveStepReady.cut state bodyRest bodyExecutableTail referenceHead
           executableHead coherent)
         (.committed
-          (RepresentativeActivePayloadState.afterCut prog gt state bodyRest
-            bodyExecutableTail referenceHead executableHead coherent))
+          (RepresentativePersistentFreeActivePayloadState.afterCut prog gt
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy state)
+            bodyRest bodyExecutableTail referenceHead executableHead coherent))
 
 namespace Produces
 
@@ -3147,12 +3270,12 @@ theorem certifiedCoupledStep
       coherent =>
       exact
         ⟨.cut
-            (retainedCursorToken state.carrier.index.opened
+            (retainedCursorTokenAt state.carrier.index.opened.scope
               state.carrier.index.finish state.carrier.index.branch
               state.carrier.index.branchTail),
           by simp [TransitionKind.sourceCost, TransitionKind.fineCost],
-          ⟨.cut state bodyRest bodyExecutableTail referenceHead executableHead
-            coherent⟩⟩
+          ⟨.cut (RepresentativePersistentFreeActivePayloadState.ofLegacy state)
+            bodyRest bodyExecutableTail referenceHead executableHead coherent⟩⟩
 
 /-- The closed transition label prevents an administrative step from being
 laundered through a committed successor, even when the same source state also
@@ -3162,7 +3285,7 @@ theorem administrative_not_committed
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     (state : RepresentativeActivePayloadState)
     (count : Nat)
-    (target : RepresentativeCommittedPayloadState) :
+    (target : RepresentativePersistentFreeCommittedPayloadState) :
     IsEmpty (CertifiedTransition prog gt (.administrative count)
         (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy state))
         (.committed target)) := by
@@ -3237,8 +3360,10 @@ theorem produces
       coherent =>
       exact
         ⟨.committed
-            (RepresentativeActivePayloadState.afterCut prog gt state bodyRest
-              bodyExecutableTail referenceHead executableHead coherent),
+            (RepresentativePersistentFreeActivePayloadState.afterCut prog gt
+              (RepresentativePersistentFreeActivePayloadState.ofLegacy state)
+              bodyRest bodyExecutableTail referenceHead executableHead
+              coherent),
           .cut state bodyRest bodyExecutableTail referenceHead executableHead
             coherent⟩
 

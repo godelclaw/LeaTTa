@@ -396,24 +396,41 @@ theorem stale_cache_would_defeat_own_barrier_cut :
 
 /-! ## Clause-local cut through the real wrapper stack -/
 
-/-- Identity-bearing resource owned by the retained later-clause cursor. -/
+/-- Identity-bearing resource owned by the retained later-clause cursor,
+indexed directly by the live predicate scope. -/
+def retainedCursorTokenAt
+    (predicateScope : CutScopeId) (finish : PreparedCursor)
+    (branch : ClauseBranch) (branchTail : List ClauseBranch) : CursorToken :=
+  { scope := predicateScope
+    cursor := finish.advance branch branchTail }
+
+/-- Compatibility spelling for callers which still carry the activation
+packet. -/
 def retainedCursorToken
     (opened : OpenedCall) (finish : PreparedCursor)
     (branch : ClauseBranch) (branchTail : List ClauseBranch) : CursorToken :=
-  { scope := opened.scope
-    cursor := finish.advance branch branchTail }
+  retainedCursorTokenAt opened.scope finish branch branchTail
 
-/-- Source control after the current clause commits: later clauses are gone,
-the predicate cut boundary remains around the continuing body, and the
-caller's latent tail remains outside it. -/
+/-- Source control after the current clause commits, indexed only by the
+typed predicate scope which remains live after the activation packet has
+been consumed.  Later clauses are gone, the predicate cut boundary remains
+around the continuing body, and the caller's latent tail remains outside it. -/
+def cutSourceProductAt
+    (callerScope predicateScope : CutScopeId)
+    (current : Substitution) (body referenceRest :
+      List PeTTaSpec.PrologCore.Goal) : Search :=
+  .product callerScope
+    (.cutBoundary predicateScope
+      (.task predicateScope body current))
+    referenceRest
+
+/-- Compatibility spelling for legacy callers which still retain the
+activation packet.  The packet contributes only its typed predicate scope. -/
 def cutSourceProduct
     (callerScope : CutScopeId) (opened : OpenedCall)
     (current : Substitution) (body referenceRest :
       List PeTTaSpec.PrologCore.Goal) : Search :=
-  .product callerScope
-    (.cutBoundary opened.scope
-      (.task opened.scope body current))
-    referenceRest
+  cutSourceProductAt callerScope opened.scope current body referenceRest
 
 /-- One clause-local cut step prunes the retained later-clause cursor,
 catches the predicate-local commit, and leaves the caller tail intact.
@@ -443,7 +460,8 @@ theorem activeSourceProduct_cut
         [.pruned (retainedCursorToken opened finish branch branchTail)]
         (.commit opened.scope) session
         (.running (.task opened.scope bodyRest current)) := by
-    simpa [retainedCursorToken, Search.liveCursors] using
+    simpa [retainedCursorToken, retainedCursorTokenAt,
+      Search.liveCursors] using
       (RawStep.choiceCommitHere opened.scope
         (.task opened.scope (.cut :: bodyRest) current)
         (.clauses opened.scope (finish.advance branch branchTail))
@@ -464,10 +482,70 @@ theorem activeSourceProduct_cut
     RawStep.cutBoundaryCatch opened.scope _ _
       [.pruned (retainedCursorToken opened finish branch branchTail)]
       session session choiceStep
-  simpa [activeSourceProduct, activeSourceProductAt, cutSourceProduct] using
+  simpa [activeSourceProduct, activeSourceProductAt, cutSourceProduct,
+    cutSourceProductAt] using
     (RawStep.productProgress callerScope _ _
       referenceRest
       [.pruned (retainedCursorToken opened finish branch branchTail)]
+      .none session session boundaryStep
+      (by simp [Trace.AnswerFree]))
+
+/-- Packet-free form of `activeSourceProduct_cut`.  Both the source
+predecessor and successor are indexed by the live predicate scope, so no
+historical `OpenedCall` is retained or reconstructed. -/
+theorem activeSourceProductAt_cut
+    {session : Session}
+    {callerScope predicateScope : CutScopeId}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch}
+    {current : Substitution}
+    {bodyRest referenceRest : List PeTTaSpec.PrologCore.Goal} :
+    RawStep session
+      (activeSourceProductAt callerScope predicateScope finish branch
+        branchTail current (.cut :: bodyRest) referenceRest)
+      [.pruned
+        (retainedCursorTokenAt predicateScope finish branch branchTail)]
+      .none session
+      (.running
+        (cutSourceProductAt callerScope predicateScope current bodyRest
+          referenceRest)) := by
+  have choiceStep :
+      RawStep session
+        (.choice predicateScope
+          (.task predicateScope (.cut :: bodyRest) current)
+          (.clauses predicateScope (finish.advance branch branchTail)))
+        [.pruned
+          (retainedCursorTokenAt predicateScope finish branch branchTail)]
+        (.commit predicateScope) session
+        (.running (.task predicateScope bodyRest current)) := by
+    simpa [retainedCursorTokenAt, Search.liveCursors] using
+      (RawStep.choiceCommitHere predicateScope
+        (.task predicateScope (.cut :: bodyRest) current)
+        (.clauses predicateScope (finish.advance branch branchTail))
+        (.task predicateScope bodyRest current) []
+        session session
+        (RawStep.taskCut predicateScope bodyRest current session))
+  have boundaryStep :
+      RawStep session
+        (.cutBoundary predicateScope
+          (.choice predicateScope
+            (.task predicateScope (.cut :: bodyRest) current)
+            (.clauses predicateScope (finish.advance branch branchTail))))
+        [.pruned
+          (retainedCursorTokenAt predicateScope finish branch branchTail)]
+        .none session
+        (.running
+          (.cutBoundary predicateScope
+            (.task predicateScope bodyRest current))) :=
+    RawStep.cutBoundaryCatch predicateScope _ _
+      [.pruned
+        (retainedCursorTokenAt predicateScope finish branch branchTail)]
+      session session choiceStep
+  simpa [activeSourceProductAt, cutSourceProductAt] using
+    (RawStep.productProgress callerScope _ _
+      referenceRest
+      [.pruned
+        (retainedCursorTokenAt predicateScope finish branch branchTail)]
       .none session session boundaryStep
       (by simp [Trace.AnswerFree]))
 

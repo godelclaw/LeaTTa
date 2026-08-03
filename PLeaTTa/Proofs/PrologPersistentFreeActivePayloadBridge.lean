@@ -335,6 +335,40 @@ theorem cellIdentities_length (state : PersistentFreeActivePayloadState) :
   PrologNestedCallChainBridge.SourceControlResourcePayloadContextAgrees.cellIdentities_length_eq_cellCount
     state.payloadContext
 
+/-- Runtime identity of the unique active payload cell after historical
+activation packets have been erased.  The typed predicate scope is retained
+directly in the packet-free index, so no `OpenedCall` reconstruction is
+needed. -/
+def headCell (state : PersistentFreeActivePayloadState) :
+    PrologNestedCallChainBridge.PayloadCellIdentity :=
+  { currentBarrier := state.index.bodyBarrier
+    currentScope := state.index.predicateScope
+    nextScope := state.index.callerScope
+    outerScope := state.index.outerScope
+    segment :=
+      { barrier := state.index.callerBarrier
+        references := state.index.callerReferences
+        executables := state.index.callerExecutables }
+    resource := state.index.active
+    cursor :=
+      state.index.finish.advance state.index.branch state.index.branchTail }
+
+/-- The packet-free active cell is literally the head of the runtime zipper;
+the committed successor owns the literal outer tail. -/
+theorem cellIdentities_eq_headCell_cons_outerPayload
+    (state : PersistentFreeActivePayloadState) :
+    state.cellIdentities =
+      headCell state ::
+        state.cellIdentities.tail := by
+  change
+    PrologNestedCallChainBridge.SourceControlResourcePayloadContextAgrees.cellIdentities
+          state.payloadContext =
+      headCell state ::
+        (PrologNestedCallChainBridge.SourceControlResourcePayloadContextAgrees.cellIdentities
+          state.payloadContext).tail
+  cases state.payloadContext
+  rfl
+
 /-- Erase a legacy carrier while preserving both literal machine endpoints. -/
 def ofLegacy (state : PrologNestedCallChainBridge.ActivePayloadState) :
     PersistentFreeActivePayloadState :=

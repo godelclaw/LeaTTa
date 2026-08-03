@@ -367,6 +367,10 @@ PROLOG_PERSISTENT_FREE_ACTIVE_PAYLOAD_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologPersistentFreeActivePayloadBridge.lean"
 )
+PROLOG_PERSISTENT_FREE_COMMITTED_PAYLOAD_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologPersistentFreeCommittedPayloadBridge.lean"
+)
 PROLOG_PERSISTENT_FREE_SCHEDULED_PAYLOAD_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologPersistentFreeScheduledPayloadBridge.lean"
@@ -606,6 +610,7 @@ STRICT_AXIOM_AUDIT_ROWS = {
     "BISIM.scheduled_payload_rejected_head",
     "BISIM.scheduled_payload_successful_head",
     "BISIM.scheduled_phase_packet_free",
+    "BISIM.packet_free_cut_commit",
     "BISIM.root_closed_public_answer_value",
     "BISIM.answer_visibility_public",
     "BISIM.findall_collection_answer_general",
@@ -667,6 +672,49 @@ def packet_free_scheduled_consumer_errors() -> list[str]:
                 if count != wanted
             )
             errors.append(f"{relative}: {detail}")
+    return errors
+
+
+def packet_free_committed_consumer_errors() -> list[str]:
+    """Pin the legacy committed carrier to its reviewed adapter surface.
+
+    Native cut production and committed-phase consumers must use the
+    persistent-free carrier.  The historical carrier remains only inside the
+    heterogeneous compatibility module, with exact occurrence counts so a
+    new executable consumer cannot silently depend on stale activation
+    packets.
+    """
+    errors: list[str] = []
+    legacy_patterns = (
+        ("legacy committed carrier", re.compile(
+            r"(?<!Free)CommittedPayloadState")),
+        ("committed one-way adapter", re.compile(
+            r"PersistentFreeCommittedPayloadState\.ofLegacy")),
+    )
+    # Reviewed compatibility budget: a red gate is a request for adequacy
+    # review, not permission to refresh these counts mechanically.
+    allowed_counts = {
+        PROLOG_HETEROGENEOUS_PREFIX_BRIDGE: (27, 2),
+    }
+    for path in sorted((ROOT / "PLeaTTa").rglob("*.lean")):
+        text = "\n".join(
+            line for line in path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#print axioms")
+        )
+        actual = tuple(len(pattern.findall(text))
+                       for _label, pattern in legacy_patterns)
+        expected = allowed_counts.get(path, (0, 0))
+        if actual != expected:
+            relative = path.relative_to(ROOT)
+            detail = ", ".join(
+                f"{label}={count} (expected {wanted})"
+                for (label, _pattern), count, wanted
+                in zip(legacy_patterns, actual, expected)
+            )
+            errors.append(
+                f"{relative}: unreviewed legacy committed carrier use: "
+                f"{detail}"
+            )
     return errors
 
 
@@ -890,6 +938,8 @@ def check() -> list[str]:
             digest(PROLOG_CURRENT_SESSION_PAYLOAD_TRANSITION_BRIDGE),
         "prolog_persistent_free_active_payload_bridge_sha256":
             digest(PROLOG_PERSISTENT_FREE_ACTIVE_PAYLOAD_BRIDGE),
+        "prolog_persistent_free_committed_payload_bridge_sha256":
+            digest(PROLOG_PERSISTENT_FREE_COMMITTED_PAYLOAD_BRIDGE),
         "prolog_persistent_free_scheduled_payload_bridge_sha256":
             digest(PROLOG_PERSISTENT_FREE_SCHEDULED_PAYLOAD_BRIDGE),
         "prolog_scheduled_answer_propagation_bridge_sha256":
@@ -1090,6 +1140,7 @@ def check() -> list[str]:
                     f"{row_id}: reference is not axiom-audited: {target}"
                 )
     errors.extend(packet_free_scheduled_consumer_errors())
+    errors.extend(packet_free_committed_consumer_errors())
     return errors
 
 

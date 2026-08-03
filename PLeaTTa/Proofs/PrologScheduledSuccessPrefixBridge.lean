@@ -42,6 +42,7 @@ open PrologMguComposition
 open PrologNestedCallReadyBridge
 open PrologOrdinaryStepBridge
 open PrologPersistentFreeActivePayloadBridge
+open PrologPersistentFreeCommittedPayloadBridge
 open PrologPersistentFreeScheduledPayloadBridge
 open PrologProductResourceContextBridge
 open PrologProductResourceTransitionBridge
@@ -385,6 +386,7 @@ consumer share the vocabulary with producer-derived owned assertion effects. -/
 inductive GlobalTransitionKind where
   | resolver (kind : ResolverTransitionKind)
   | activeAdministrative (count : Nat)
+  | committedAdministrative (count : Nat)
   | scheduledSuccess (label : ScheduledSuccessLabel)
   | assertion (label : AssertionTransitionLabel)
 
@@ -393,18 +395,21 @@ namespace GlobalTransitionKind
 def sourceCost : GlobalTransitionKind → Nat
   | .resolver kind => kind.sourceCost
   | .activeAdministrative count => count
+  | .committedAdministrative count => count
   | .scheduledSuccess label => label.sourceCost
   | .assertion _ => 1
 
 def sourceEvents : GlobalTransitionKind → List Observation
   | .resolver kind => kind.sourceEvents
   | .activeAdministrative _ => []
+  | .committedAdministrative _ => []
   | .scheduledSuccess label => [.answer label.answer]
   | .assertion label => [.effect label.effect]
 
 def fineCost : GlobalTransitionKind → Nat
   | .resolver kind => kind.fineCost
   | .activeAdministrative _ => 0
+  | .committedAdministrative _ => 0
   | .scheduledSuccess _ => 2
   | .assertion _ => 1
 
@@ -416,6 +421,7 @@ def AlphaEvolution (kind : GlobalTransitionKind)
   match kind with
   | .resolver resolverKind => resolverKind.AlphaEvolution before after
   | .activeAdministrative _ => after.alpha = before.alpha
+  | .committedAdministrative _ => after.alpha = before.alpha
   | .scheduledSuccess label =>
       AlphaExtendsAbove before.alpha after.alpha
           label.referenceFloor label.executableFloor ∧
@@ -431,6 +437,8 @@ def RepresentativeEvolution (kind : GlobalTransitionKind)
   | .resolver resolverKind =>
       resolverKind.RepresentativeEvolution before after
   | .activeAdministrative _ => after.representative = before.representative
+  | .committedAdministrative _ =>
+      after.representative = before.representative
   | .scheduledSuccess label =>
       after.representative = label.targetRepresentative
   | .assertion _ => after.representative = before.representative
@@ -458,6 +466,19 @@ inductive GlobalCertifiedTransition
         (.ordinary
           (.active
             (RepresentativePersistentFreeActivePayloadState.afterAdministrative
+              before steps)))
+  | committedAdministrative
+      (before : RepresentativePersistentFreeCommittedPayloadState)
+      {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+      (positive : 0 < count)
+      (steps :
+        AdministrativeStepsN count before.carrier.index.bodyReferences
+          afterBody) :
+      GlobalCertifiedTransition prog gt (.committedAdministrative count)
+        (.ordinary (.committed before))
+        (.ordinary
+          (.committed
+            (RepresentativePersistentFreeCommittedPayloadState.afterAdministrative
               before steps)))
   | scheduledSuccess
       {before : RepresentativePersistentFreeScheduledPayloadState}
@@ -527,13 +548,43 @@ the source and fine endpoint projections. -/
 theorem activeAdministrative_not_committed
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     (before : RepresentativePersistentFreeActivePayloadState)
-    (count : Nat) (target : RepresentativeCommittedPayloadState) :
+    (count : Nat)
+    (target : RepresentativePersistentFreeCommittedPayloadState) :
     IsEmpty
       (GlobalCertifiedTransition prog gt (.activeAdministrative count)
         (.ordinary (.active before)) (.ordinary (.committed target))) := by
   constructor
   intro step
   obtain ⟨after, impossible⟩ := step.activeAdministrative_target_active
+  cases impossible
+
+/-- A committed administrative edge remains in the committed phase and is
+indexed by the actual packet-free successor. -/
+theorem committedAdministrative_target_committed
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {count : Nat}
+    {before : RepresentativePersistentFreeCommittedPayloadState}
+    {after : ResolverPhaseState}
+    (step :
+      GlobalCertifiedTransition prog gt (.committedAdministrative count)
+        (.ordinary (.committed before)) after) :
+    ∃ target : RepresentativePersistentFreeCommittedPayloadState,
+      after = .ordinary (.committed target) := by
+  cases step with
+  | committedAdministrative before positive steps => exact ⟨_, rfl⟩
+
+/-- Committed administration cannot be relabelled as an active successor. -/
+theorem committedAdministrative_not_active
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativePersistentFreeCommittedPayloadState)
+    (count : Nat)
+    (target : RepresentativePersistentFreeActivePayloadState) :
+    IsEmpty
+      (GlobalCertifiedTransition prog gt (.committedAdministrative count)
+        (.ordinary (.committed before)) (.ordinary (.active target))) := by
+  constructor
+  intro step
+  obtain ⟨after, impossible⟩ := step.committedAdministrative_target_committed
   cases impossible
 
 theorem sourceSteps
@@ -551,6 +602,12 @@ theorem sourceSteps
         GlobalTransitionKind.sourceEvents, ResolverPhaseState.sourceState,
         ProductPhaseState.sourceState] using
         PLeaTTa.PrologScheduledSuccessPrefixBridge.RepresentativePersistentFreeActivePayloadState.afterAdministrative_sourceSteps
+          before steps
+  | committedAdministrative before positive steps =>
+      simpa [GlobalTransitionKind.sourceCost,
+        GlobalTransitionKind.sourceEvents, ResolverPhaseState.sourceState,
+        ProductPhaseState.sourceState] using
+        PLeaTTa.PrologPersistentFreeCommittedPayloadBridge.RepresentativePersistentFreeCommittedPayloadState.afterAdministrative_sourceSteps
           before steps
   | scheduledSuccess relation successor =>
       simpa [GlobalTransitionKind.sourceCost,
@@ -595,6 +652,8 @@ theorem fineSteps
   | resolver step =>
       simpa [GlobalTransitionKind.fineCost] using step.fineSteps
   | activeAdministrative before positive steps =>
+      exact .zero _
+  | committedAdministrative before positive steps =>
       exact .zero _
   | @scheduledSuccess before ready selection scope transition partition
       independentResult nextAlpha sourceCanonical flattened installed
@@ -659,6 +718,8 @@ theorem sessionHighWaters
   | resolver step => exact step.sessionHighWaters
   | activeAdministrative before positive steps =>
       exact SessionHighWatersExtend.refl _
+  | committedAdministrative before positive steps =>
+      exact SessionHighWatersExtend.refl _
   | scheduledSuccess relation successor =>
       exact SessionHighWatersExtend.refl _
   | assertion before ready =>
@@ -675,6 +736,7 @@ theorem executableCounter_mono
   cases step with
   | resolver step => exact step.executableCounter_mono
   | activeAdministrative before positive steps => exact Nat.le_refl _
+  | committedAdministrative before positive steps => exact Nat.le_refl _
   | @scheduledSuccess before ready selection scope transition partition
       independentResult nextAlpha sourceCanonical flattened installed
       relation successor =>
@@ -700,6 +762,9 @@ theorem alphaIncluded
   | activeAdministrative before positive steps =>
       intro pair present
       exact present
+  | committedAdministrative before positive steps =>
+      intro pair present
+      exact present
   | scheduledSuccess relation successor =>
       exact relation.alphaIncluded
   | assertion before ready =>
@@ -715,6 +780,7 @@ theorem alphaEvolution
   | resolver step =>
       simpa [GlobalTransitionKind.AlphaEvolution] using step.alphaEvolution
   | activeAdministrative before positive steps => rfl
+  | committedAdministrative before positive steps => rfl
   | @scheduledSuccess before ready selection scope transition partition
       independentResult nextAlpha sourceCanonical flattened installed
       relation successor =>
@@ -772,6 +838,7 @@ theorem representativeEvolution
       simpa [GlobalTransitionKind.RepresentativeEvolution] using
         step.representativeEvolution
   | activeAdministrative before positive steps => rfl
+  | committedAdministrative before positive steps => rfl
   | scheduledSuccess relation successor => rfl
   | assertion before ready => rfl
 
@@ -810,7 +877,7 @@ theorem assertion_not_committed
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {label : AssertionTransitionLabel}
     (start : ResolverPhaseState)
-    (target : RepresentativeCommittedPayloadState) :
+    (target : RepresentativePersistentFreeCommittedPayloadState) :
     IsEmpty
       (GlobalCertifiedTransition prog gt (.assertion label) start
         (.ordinary (.committed target))) := by
@@ -1277,6 +1344,123 @@ def states
   | @cons kind kinds start middle finish head tail ih =>
       simp only [ofResolver, states, ResolverCertifiedPrefix.states]
       exact congrArg (start :: ·) ih
+
+/-- A native packet-free cut followed immediately by the first committed
+administrative consumer.  The literal cut successor is the dependent
+midpoint of both edges: no historical `OpenedCall`/`PendingCall` packet is
+reconstructed, and no merely endpoint-compatible committed state can be
+substituted. -/
+def activeCutThenCommittedAdministrative
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativePersistentFreeActivePayloadState)
+    (bodyRest : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutableTail : List PLeaTTa.Goal)
+    (referenceHead :
+      before.carrier.index.bodyReferences = .cut :: bodyRest)
+    (executableHead :
+      before.carrier.index.bodyExecutables =
+        .cutAt before.carrier.index.bodyBarrier :: bodyExecutableTail)
+    (coherent :
+      PLeaTTa.BarrierCacheCoherent before.carrier.index.openConf.toConf)
+    {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+    (positive : 0 < count)
+    (steps : AdministrativeStepsN count bodyRest afterBody) :
+    GlobalCertifiedPrefix prog gt
+      [ .resolver
+          (.forward
+            (.cut
+              (retainedCursorTokenAt before.carrier.index.predicateScope
+                before.carrier.index.finish before.carrier.index.branch
+                before.carrier.index.branchTail))),
+        .committedAdministrative count ]
+      (.ordinary (.active before))
+      (.ordinary
+        (.committed
+          (RepresentativePersistentFreeCommittedPayloadState.afterAdministrative
+            (RepresentativePersistentFreeActivePayloadState.afterCut prog gt
+              before bodyRest bodyExecutableTail referenceHead executableHead
+              coherent)
+            steps))) :=
+  .cons
+    (.resolver
+      (.forward
+        (.cut before bodyRest bodyExecutableTail referenceHead executableHead
+          coherent)))
+    (.cons
+      (.committedAdministrative
+        (RepresentativePersistentFreeActivePayloadState.afterCut prog gt before
+          bodyRest bodyExecutableTail referenceHead executableHead coherent)
+        positive steps)
+      (.nil _))
+
+/-- The native two-edge cut prefix exposes the exact active, committed, and
+post-administrative states in chronological order. -/
+@[simp] theorem activeCutThenCommittedAdministrative_states
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativePersistentFreeActivePayloadState)
+    (bodyRest : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutableTail : List PLeaTTa.Goal)
+    (referenceHead :
+      before.carrier.index.bodyReferences = .cut :: bodyRest)
+    (executableHead :
+      before.carrier.index.bodyExecutables =
+        .cutAt before.carrier.index.bodyBarrier :: bodyExecutableTail)
+    (coherent :
+      PLeaTTa.BarrierCacheCoherent before.carrier.index.openConf.toConf)
+    {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+    (positive : 0 < count)
+    (steps : AdministrativeStepsN count bodyRest afterBody) :
+    (activeCutThenCommittedAdministrative (prog := prog) (gt := gt) before
+      bodyRest bodyExecutableTail referenceHead executableHead coherent positive
+      steps).states =
+      [ .ordinary (.active before),
+        .ordinary
+          (.committed
+            (RepresentativePersistentFreeActivePayloadState.afterCut prog gt
+              before bodyRest bodyExecutableTail referenceHead executableHead
+              coherent)),
+        .ordinary
+          (.committed
+            (RepresentativePersistentFreeCommittedPayloadState.afterAdministrative
+              (RepresentativePersistentFreeActivePayloadState.afterCut prog gt
+                before bodyRest bodyExecutableTail referenceHead executableHead
+                coherent)
+              steps)) ] := rfl
+
+/-- Splitting the native cut/administration prefix after its first edge
+returns the literal packet-free committed successor, not an existentially
+reconstructed compatible state. -/
+@[simp] theorem activeCutThenCommittedAdministrative_split_middle
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativePersistentFreeActivePayloadState)
+    (bodyRest : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutableTail : List PLeaTTa.Goal)
+    (referenceHead :
+      before.carrier.index.bodyReferences = .cut :: bodyRest)
+    (executableHead :
+      before.carrier.index.bodyExecutables =
+        .cutAt before.carrier.index.bodyBarrier :: bodyExecutableTail)
+    (coherent :
+      PLeaTTa.BarrierCacheCoherent before.carrier.index.openConf.toConf)
+    {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+    (positive : 0 < count)
+    (steps : AdministrativeStepsN count bodyRest afterBody) :
+    (split
+      [ .resolver
+          (.forward
+            (.cut
+              (retainedCursorTokenAt before.carrier.index.predicateScope
+                before.carrier.index.finish before.carrier.index.branch
+                before.carrier.index.branchTail))) ]
+      [.committedAdministrative count]
+      (activeCutThenCommittedAdministrative (prog := prog) (gt := gt) before
+        bodyRest bodyExecutableTail referenceHead executableHead coherent
+        positive steps)).1 =
+      .ordinary
+        (.committed
+          (RepresentativePersistentFreeActivePayloadState.afterCut prog gt
+            before bodyRest bodyExecutableTail referenceHead executableHead
+            coherent)) := rfl
 
 /-- The exact success edge followed immediately by a legacy-free ordinary
 administrative edge.  The second constructor is indexed by `successor.after`
