@@ -37,7 +37,9 @@ private theorem groundRootClosedScheduledCarrier
       _rootReferences, _rootExecutables, _rootSourceSteps, _rootFineSteps,
       _qCertificate, _rHead, after, _rReady, _rPredicate, _rPayload,
       _rCertificate, bodyReferencesEmpty, bodyExecutablesEmpty,
-      callerReferencesEmpty, baseAltsEmpty, outerLength, outerAllEmpty⟩ :=
+      callerReferencesEmpty, baseAltsEmpty, _afterActiveAlts,
+      _afterResources, _middleActiveAlts, _rootActiveAlts, outerLength,
+      outerAllEmpty⟩ :=
     PrologNestedCallReadyRegression.ground_p_q_r_two_nested_pushes
       (prog := prog) (gt := gt)
   obtain ⟨representative, carrierExact⟩ := after.existsRepresentative

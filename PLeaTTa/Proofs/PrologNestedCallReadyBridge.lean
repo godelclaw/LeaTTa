@@ -485,6 +485,14 @@ structure NestedCallSuccessorFacts
   resolution : HeadResolution branch after.index.current
   bodyReferences : after.index.bodyReferences = branch.body
   bodyExecutables : after.index.bodyExecutables = copied.body
+  /-- The newly active retained descriptor owns exactly the residual
+  alternative tail computed by the same ordered scan. -/
+  activeAltsExact : after.index.active.alts = altTail
+  /-- A nested call transfers the predecessor's active descriptor to the
+  literal head of the outer resource spine; it neither duplicates nor drops
+  any older descriptor. -/
+  resourcesExact :
+    after.index.resources = before.index.active :: before.index.resources
   /-- The activated callee stores the literal source continuation following
   the call head, not a shape-compatible caller tail. -/
   callerReferences :
@@ -1050,6 +1058,8 @@ theorem pushDetailed {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
       resolution := ?_
       bodyReferences := ?_
       bodyExecutables := ?_
+      activeAltsExact := nestedAgreement.core.resourceStack.activeAlts
+      resourcesExact := rfl
       callerReferences := rfl
       callerExecutables := rfl
       outerSegments := rfl

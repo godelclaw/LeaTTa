@@ -42,7 +42,9 @@ theorem ground_depth_two_payload_paths_are_exact
       _rootReferences, _rootExecutables, _rootSourceSteps, _rootFineSteps,
       _qCertificate, _rHead, state, _rReady, _rPredicate, _rPayload,
       _rCertificate, _bodyReferencesEmpty, _bodyExecutablesEmpty,
-      _callerReferencesEmpty, _baseAltsEmpty, outerLength, _outerAllEmpty⟩ :=
+      _callerReferencesEmpty, _baseAltsEmpty, _afterActiveAlts,
+      _afterResources, _middleActiveAlts, _rootActiveAlts, outerLength,
+      _outerAllEmpty⟩ :=
     PrologNestedCallReadyRegression.ground_p_q_r_two_nested_pushes
       (prog := prog) (gt := gt)
   have cellsLength :

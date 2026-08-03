@@ -424,6 +424,14 @@ PROLOG_SCHEDULED_PAYLOAD_SUCCESS_CARRIER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologScheduledPayloadSuccessCarrierBridge.lean"
 )
+PROLOG_PERSISTENT_FREE_SCHEDULED_REJECTION_PULL_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologPersistentFreeScheduledRejectionPullBridge.lean"
+)
+PROLOG_PERSISTENT_FREE_SCHEDULED_REJECTION_PULL_REGRESSION = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologPersistentFreeScheduledRejectionPullRegression.lean"
+)
 PROLOG_SCHEDULED_PAYLOAD_SUCCESS_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologScheduledPayloadSuccessRegression.lean"
@@ -836,6 +844,10 @@ def check() -> list[str]:
             digest(PROLOG_SCHEDULED_PAYLOAD_SUCCESS_BRIDGE),
         "prolog_scheduled_payload_success_carrier_bridge_sha256":
             digest(PROLOG_SCHEDULED_PAYLOAD_SUCCESS_CARRIER_BRIDGE),
+        "prolog_persistent_free_scheduled_rejection_pull_bridge_sha256":
+            digest(PROLOG_PERSISTENT_FREE_SCHEDULED_REJECTION_PULL_BRIDGE),
+        "prolog_persistent_free_scheduled_rejection_pull_regression_sha256":
+            digest(PROLOG_PERSISTENT_FREE_SCHEDULED_REJECTION_PULL_REGRESSION),
         "prolog_scheduled_payload_success_regression_sha256":
             digest(PROLOG_SCHEDULED_PAYLOAD_SUCCESS_REGRESSION),
         "prolog_root_closed_answer_bridge_sha256":
