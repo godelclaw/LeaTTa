@@ -1385,6 +1385,24 @@ theorem renameAtomSuffix_chainOf (suffix : String) (atoms : List Atom) :
       simp [consC, renameAtomSuffix_expr, renameAtomSuffix_sym,
         inductionHypothesis]
 
+/-- Suffix renaming preserves the ordinary Prolog-compound constructor and
+acts only on its encoded value arguments. -/
+@[simp] theorem renameAtomSuffix_prologCompoundC (suffix functor : String)
+    (encodedArguments : Atom) :
+    renameAtomSuffix suffix (prologCompoundC functor encodedArguments) =
+      prologCompoundC functor
+        (renameAtomSuffix suffix encodedArguments) := by
+  simp [prologCompoundC, prologCompoundTagA,
+    renameAtomSuffix_expr, renameAtomSuffix_sym, renameAtomSuffix_gnd]
+
+/-- In particular, suffix renaming commutes with the unified `partial/2`
+representation. -/
+@[simp] theorem renameAtomSuffix_partialC (suffix functor : String)
+    (encodedArguments : Atom) :
+  renameAtomSuffix suffix (partialC functor encodedArguments) =
+      partialC functor (renameAtomSuffix suffix encodedArguments) := by
+  simp [partialC, renameAtomSuffix_chainOf, renameAtomSuffix_sym]
+
 /-- Representation agreement transports through one simultaneous independent
 freshening and one executable suffix renaming when every supported source
 variable is tied to the same finite alpha graph.  This is not executable deep
@@ -1446,9 +1464,7 @@ theorem termAgrees_alpha_freshen
   · intro head terms encoded arguments inductionHypothesis termSupport
     have termsSupport : termsVariablesIn domain terms := by
       simpa [termVariablesIn, termsVariablesIn] using termSupport
-    simpa [partialC, partialTagA, renameAtomSuffix_expr,
-      renameAtomSuffix_chainOf,
-      renameAtomSuffix_sym, renameAtomSuffix_gnd] using
+    simpa using
       (AlphaTermAgrees.partialValue
         (inductionHypothesis termsSupport))
   · intro items encoded elements inductionHypothesis termSupport

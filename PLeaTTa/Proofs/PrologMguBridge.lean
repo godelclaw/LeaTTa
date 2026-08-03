@@ -852,14 +852,32 @@ theorem CanonicalRuntimeAgrees.equivalent_of_same
       cases rightAgreement with
       | string =>
           exact .ground (PLeaTTa.prologGroundIdentical_self _)
-  | partialValue arguments inductionHypothesis =>
+  | @partialValue leftHead argumentsTree leftEncodedArguments arguments
+      inductionHypothesis =>
       cases rightAgreement with
-      | partialValue rightArguments =>
+      | @partialValue rightHead rightArgumentsTree rightEncodedArguments
+          rightArguments =>
+          have argumentsEquivalent :
+              AtomEquivalentWith PLeaTTa.prologGroundIdentical
+                (chainOf [Atom.sym leftHead, leftEncodedArguments])
+                (chainOf [Atom.sym leftHead, rightEncodedArguments]) := by
+            simp only [chainOf, List.foldr]
+            apply AtomEquivalentWith.expression
+            exact .cons (.symbol "#c")
+              (.cons (.symbol leftHead)
+                (.cons
+                  (.expression
+                    (.cons (.symbol "#c")
+                      (.cons (inductionHypothesis rightArguments)
+                        (.cons
+                          (.ground
+                            (PLeaTTa.prologGroundIdentical_self _))
+                          .nil))))
+                  .nil))
           apply AtomEquivalentWith.expression
           exact .cons
             (.ground (PLeaTTa.prologGroundIdentical_self _))
-            (.cons (.symbol _) (.cons
-              (inductionHypothesis rightArguments) .nil))
+            (.cons (.symbol _) (.cons argumentsEquivalent .nil))
   | nil =>
       cases rightAgreement with
       | nil =>

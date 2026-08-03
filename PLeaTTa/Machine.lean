@@ -1243,6 +1243,38 @@ private theorem substN_sym (k : Nat) (b : Subst) (f : String) :
     subst b (Atom.expr xs) = Atom.expr (xs.map (subst b)) := by
   simp [subst, substN]
 
+/-- Deep substitution maps pointwise over the private proper-list spine. -/
+@[simp] theorem subst_chainOf_exact (b : Subst) (atoms : List Atom) :
+    subst b (chainOf atoms) = chainOf (atoms.map (subst b)) := by
+  induction atoms with
+  | nil => simp [chainOf, nilA]
+  | cons head tail inductionHypothesis =>
+      change subst b (consC head (chainOf tail)) =
+        consC (subst b head) (chainOf (tail.map (subst b)))
+      simp [consC, inductionHypothesis]
+
+/-- A compound's functor and provenance are rigid; substitution reaches only
+its encoded argument spine. -/
+@[simp] theorem subst_prologCompoundC (b : Subst) (functor : String)
+    (encodedArguments : Atom) :
+    subst b (prologCompoundC functor encodedArguments) =
+      prologCompoundC functor (subst b encodedArguments) := by
+  simp [prologCompoundC, prologCompoundTagA]
+
+@[simp] theorem subst_reservedSyntaxC (b : Subst) (functor : String)
+    (encodedArguments : Atom) :
+    subst b (reservedSyntaxC functor encodedArguments) =
+      reservedSyntaxC functor (subst b encodedArguments) := by
+  simp [reservedSyntaxC, reservedSyntaxTagA]
+
+/-- Compiler and Predicate partial values share the same compound encoding,
+and substitution acts exactly on the bound-argument payload. -/
+@[simp] theorem subst_partialC (b : Subst) (functor : String)
+    (encodedArguments : Atom) :
+    subst b (partialC functor encodedArguments) =
+      partialC functor (subst b encodedArguments) := by
+  simp [partialC]
+
 /-- One-pass application is invisible under a runtime substitution that
     realizes every lookup of the applied binding. -/
 theorem subst_apply_of_lookupDenotes (runtime binding : Subst)
@@ -5721,9 +5753,10 @@ theorem installPredicateClause_coherent_of_no_descendants
   exact coherent
 
 /-- Source-facing syntax for one executable goal during `retract/1`
-matching.  Every syntax constructor uses the private `prologCompoundC`
-representation: the source terms are Prolog compounds, not forgeable MeTTa
-lists.  The two executable representations admitted by `GoalAgrees` for each
+matching.  Every syntax constructor uses the private `reservedSyntaxC`
+representation: certified syntax cannot be forged by either MeTTa lists or
+ordinary Prolog compounds constructed through `Predicate/2`.  The two
+executable representations admitted by `GoalAgrees` for each
 independent source constructor deliberately share one tag: ordinary and
 grounded calls both denote `$goal.call`, while runtime equality and a leaked
 compile alias both denote `$goal.unify`.  Runtime-tagged cuts retain the
@@ -5736,31 +5769,31 @@ claiming source adequacy for a construct outside the independently decoded
 dynamic-clause fragment. -/
 def retractGoalSyntaxAtom : Goal → Atom
   | .call predicate arguments result =>
-      prologCompoundC "$goal.call"
+      reservedSyntaxC "$goal.call"
         (chainOf [.sym predicate, chainOf (arguments ++ [result])])
   | .bin predicate arguments result =>
-      prologCompoundC "$goal.call"
+      reservedSyntaxC "$goal.call"
         (chainOf [.sym predicate, chainOf (arguments ++ [result])])
   | .eq left right =>
-      prologCompoundC "$goal.unify" (chainOf [left, right])
+      reservedSyntaxC "$goal.unify" (chainOf [left, right])
   | .compileAlias left right =>
-      prologCompoundC "$goal.unify" (chainOf [left, right])
-  | .cut => prologCompoundC "$goal.cut" nilA
-  | .cutAt _ => prologCompoundC "$goal.cut" nilA
-  | goal => prologCompoundC "$goal.executable" (chainOf [goalAlphaAtom goal])
+      reservedSyntaxC "$goal.unify" (chainOf [left, right])
+  | .cut => reservedSyntaxC "$goal.cut" nilA
+  | .cutAt _ => reservedSyntaxC "$goal.cut" nilA
+  | goal => reservedSyntaxC "$goal.executable" (chainOf [goalAlphaAtom goal])
 
 /-- Ordered source-facing syntax for an executable goal sequence. -/
 def retractGoalsSyntaxAtom (goals : List Goal) : Atom :=
   chainOf (goals.map retractGoalSyntaxAtom)
 
 /-- Encode a complete output-last executable clause as the same first-order
-syntax shape used by the independent `clauseSyntaxTerm`.  The outer private
-Prolog-compound tag is load-bearing: an ordinary quoted MeTTa list headed by
-`$clause` cannot masquerade as this internal unification term.  The predicate
-name is explicit so clauses of different locally owned predicates cannot
-unify. -/
+syntax shape used by the independent `clauseSyntaxTerm`.  The outer reserved
+tag is load-bearing: neither an ordinary quoted MeTTa list nor a
+`Predicate/2` value headed by `$clause` can masquerade as this internal
+unification term.  The predicate name is explicit so clauses of different
+locally owned predicates cannot unify. -/
 def retractClauseSyntaxAtom (functor : String) (clause : Clause) : Atom :=
-  prologCompoundC "$clause"
+  reservedSyntaxC "$clause"
     (chainOf [.sym functor,
       chainOf (clause.params ++ [clause.result]),
       retractGoalsSyntaxAtom clause.body])
@@ -6993,9 +7026,11 @@ def step (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf) : Conf :=
              -- else is data (:62-64)
              match partialView? other with
              | some (base, boundList) =>
-                 let bound := (chainListM boundList).getD []
-                 let g := Goal.callDyn (Atom.sym base) (bound ++ args) res
-                 { c with cur := some (g :: rest, b) }
+                 match chainListM boundList with
+                 | some bound =>
+                     let g := Goal.callDyn (Atom.sym base) (bound ++ args) res
+                     { c with cur := some (g :: rest, b) }
+                 | none => pull { c with cur := none }
              | _ =>
                  let g := Goal.eq res (chainOf (other :: args))
                  { c with cur := some (g :: rest, b) })

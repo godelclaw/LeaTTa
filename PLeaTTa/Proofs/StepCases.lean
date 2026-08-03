@@ -514,11 +514,20 @@ theorem step_callDyn (c : Conf) (hd : Atom) (args : List Atom) (res : Atom)
       unfold step; rw [h]; simp only [hhd]
       split
       · rename_i base boundList heq
-        refine Step.callDyn_partial c hd args res rest b base boundList _ h
-          ?_ ?_ rfl _ ?_
-        · intro f; rw [hhd]; simp
-        · rw [hhd]; exact heq
-        · rfl
+        split
+        · rename_i bound hbound
+          refine Step.callDyn_partial c hd args res rest b base boundList
+            bound h ?_ ?_ ?_ _ ?_
+          · intro f; rw [hhd]; simp
+          · rw [hhd]; exact heq
+          · exact hbound
+          · rfl
+        · rename_i hbound
+          refine Step.callDyn_partial_malformed c hd args res rest b base
+            boundList h ?_ ?_ ?_
+          · intro f; rw [hhd]; simp
+          · rw [hhd]; exact heq
+          · exact hbound
       · rename_i x hno
         refine Step.callDyn_data c hd args res rest b h ?_ ?_ _ ?_
         · intro f; rw [hhd]; simp

@@ -249,7 +249,7 @@ def universalClauses (defs : List (String × Nat)) (binOps : List String) :
     ⟨⟨"chain_append", [consC' H T, L, consC' H R]⟩,
       [⟨"chain_append", [T, L, R]⟩]⟩,
     -- partial(Base, Bound) applied: append the new args, re-dispatch
-    ⟨⟨"dyncall", [Atom.expr [partialTagA, F, B], As, R]⟩,
+    ⟨⟨"dyncall", [prologCompoundC "partial" (chainOf [F, B]), As, R]⟩,
       [⟨"chain_append", [B, As, L]⟩, ⟨"dyncall", [F, L, R]⟩]⟩ ]
   -- per-defined-head bridges: dyncall(f, chain(A1..An), R) :- u_f(A1..An, R)
   ++ defs.map (fun (f, n) =>

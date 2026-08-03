@@ -377,9 +377,17 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (h : c.cur = some (Goal.callDyn hd args res :: rest, b))
       (hns : ∀ f, subst b hd ≠ Atom.sym f)
       (hp : partialView? (subst b hd) = some (base, boundList))
-      (hbd : bound = (chainListM boundList).getD [])
+      (hbd : chainListM boundList = some bound)
       (g : Goal) (hg : g = Goal.callDyn (Atom.sym base) (bound ++ args) res) :
       Step prog gt c { c with cur := some (g :: rest, b) }
+  | callDyn_partial_malformed (c : Conf) (hd : Atom) (args : List Atom)
+      (res : Atom) (rest : List Goal) (b : Subst) (base : String)
+      (boundList : Atom)
+      (h : c.cur = some (Goal.callDyn hd args res :: rest, b))
+      (hns : ∀ f, subst b hd ≠ Atom.sym f)
+      (hp : partialView? (subst b hd) = some (base, boundList))
+      (hbd : chainListM boundList = none) :
+      Step prog gt c (pull { c with cur := none })
   | callDyn_data (c : Conf) (hd : Atom) (args : List Atom) (res : Atom)
       (rest : List Goal) (b : Subst)
       (h : c.cur = some (Goal.callDyn hd args res :: rest, b))

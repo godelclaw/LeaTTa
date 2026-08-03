@@ -2796,9 +2796,11 @@ def stepWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable)
         | other =>
             match partialView? other with
             | some (base, boundList) =>
-                let bound := (chainListM boundList).getD []
-                let goal := Goal.callDyn (Atom.sym base) (bound ++ args) res
-                { c with cur := some (goal :: rest, next) }
+                match chainListM boundList with
+                | some bound =>
+                    let goal := Goal.callDyn (Atom.sym base) (bound ++ args) res
+                    { c with cur := some (goal :: rest, next) }
+                | none => pull { c with cur := none }
             | _ =>
                 let goal := Goal.eq res (chainOf (other :: args))
                 { c with cur := some (goal :: rest, next) }
@@ -3729,8 +3731,13 @@ theorem erase_stepWith_of_run (engine : SubstEngine) (prog : Prog)
                       · apply Conf.ext <;> simp_all [mapConf]
                         case cur => rfl
                   · split
-                    · apply Conf.ext <;> simp_all [mapConf]
-                      case cur => rfl
+                    · split
+                      · apply Conf.ext <;> simp_all [mapConf]
+                        case cur => rfl
+                      · rw [mapConf_pull]
+                        simp_all [mapConf]
+                        apply congrArg pull
+                        apply Conf.ext <;> rfl
                     · apply Conf.ext <;> simp_all [mapConf]
                       case cur => rfl
           | evalg value res =>

@@ -144,7 +144,7 @@ inductive RetractSyntaxRuntimeAgrees
       (right : CanonicalRuntimeAgrees alpha rightTree rightAtom) :
       RetractSyntaxRuntimeAgrees alpha
         (.node (.compound "$goal.unify") [leftTree, rightTree])
-        (prologCompoundC "$goal.unify" (chainOf [leftAtom, rightAtom]))
+        (reservedSyntaxC "$goal.unify" (chainOf [leftAtom, rightAtom]))
   | goalCall {predicate : String} {argumentsTree : Tree}
       {argumentsAtom : Atom}
       (arguments :
@@ -152,7 +152,7 @@ inductive RetractSyntaxRuntimeAgrees
       RetractSyntaxRuntimeAgrees alpha
         (.node (.compound "$goal.call")
           [.node (.atom predicate) [], argumentsTree])
-        (prologCompoundC "$goal.call"
+        (reservedSyntaxC "$goal.call"
           (chainOf [.sym predicate, argumentsAtom]))
   | clause {predicate : String} {argumentsTree bodyTree : Tree}
       {argumentsAtom bodyAtom : Atom}
@@ -162,7 +162,7 @@ inductive RetractSyntaxRuntimeAgrees
       RetractSyntaxRuntimeAgrees alpha
         (.node (.compound "$clause")
           [.node (.atom predicate) [], argumentsTree, bodyTree])
-        (prologCompoundC "$clause"
+        (reservedSyntaxC "$clause"
           (chainOf [.sym predicate, argumentsAtom, bodyAtom]))
 
 /-- Proper-list representation used only for a list of reserved goal-syntax
@@ -192,7 +192,7 @@ inductive RetractSyntaxRuntimeReading
       (right : CanonicalRuntimeReading alpha rightTree rightAtom) :
       RetractSyntaxRuntimeReading alpha
         (.node (.compound "$goal.unify") [leftTree, rightTree])
-        (prologCompoundC "$goal.unify" (chainOf [leftAtom, rightAtom]))
+        (reservedSyntaxC "$goal.unify" (chainOf [leftAtom, rightAtom]))
   | goalCall {predicate : String} {argumentsTree : Tree}
       {argumentsAtom : Atom}
       (arguments :
@@ -200,7 +200,7 @@ inductive RetractSyntaxRuntimeReading
       RetractSyntaxRuntimeReading alpha
         (.node (.compound "$goal.call")
           [.node (.atom predicate) [], argumentsTree])
-        (prologCompoundC "$goal.call"
+        (reservedSyntaxC "$goal.call"
           (chainOf [.sym predicate, argumentsAtom]))
   | clause {predicate : String} {argumentsTree bodyTree : Tree}
       {argumentsAtom bodyAtom : Atom}
@@ -210,7 +210,7 @@ inductive RetractSyntaxRuntimeReading
       RetractSyntaxRuntimeReading alpha
         (.node (.compound "$clause")
           [.node (.atom predicate) [], argumentsTree, bodyTree])
-        (prologCompoundC "$clause"
+        (reservedSyntaxC "$clause"
           (chainOf [.sym predicate, argumentsAtom, bodyAtom]))
 
 /-- Proper-list companion to `RetractSyntaxRuntimeReading`. -/
@@ -341,7 +341,7 @@ theorem RetractSyntaxRuntimeReading.decodeAlphaAtom
   cases reading with
   | @goalUnify leftTree rightTree leftAtom rightAtom left right =>
       unfold decodeAlphaAtom
-      rw [decodeRuntimeAtom_prologCompound (alphaInverse alpha)
+      rw [decodeRuntimeAtom_reservedSyntax (alphaInverse alpha)
         "$goal.unify" [leftAtom, rightAtom] (by decide) (by decide)]
       simp only [List.map]
       rw [decodeRuntimeAtom_eq_of_reading (alphaInverse_on shared) left,
@@ -485,7 +485,7 @@ theorem DecoderClauseAlphaAgrees.syntaxRuntimeAgrees
         Tree.prologList (Terms.denote reference.arguments) none,
         Tree.prologList
           (Terms.denote (goalsSyntaxTerms reference.body)) none])
-    (prologCompoundC "$clause"
+    (reservedSyntaxC "$clause"
       (chainOf [.sym functor,
         chainOf (executable.params ++ [executable.result]),
         PLeaTTa.retractGoalsSyntaxAtom executable.body]))
@@ -594,16 +594,15 @@ theorem RetractSyntaxRuntimeReading.decodedGroundValuation_apply
         decodedGroundValuation_apply_of_reading shared runtime right
       have substEq :
           PLeaTTa.subst runtime
-              (prologCompoundC "$goal.unify"
+              (reservedSyntaxC "$goal.unify"
                 (chainOf [leftAtom, rightAtom])) =
-            prologCompoundC "$goal.unify"
+            reservedSyntaxC "$goal.unify"
               (chainOf [PLeaTTa.subst runtime leftAtom,
                 PLeaTTa.subst runtime rightAtom]) := by
-        simp [prologCompoundC, prologCompoundTagA,
-          PLeaTTa.subst_expr, subst_chainOf]
+        simp
       rw [substEq]
       unfold decodeAlphaAtom
-      rw [decodeRuntimeAtom_prologCompound (alphaInverse alpha)
+      rw [decodeRuntimeAtom_reservedSyntax (alphaInverse alpha)
         "$goal.unify"
         [PLeaTTa.subst runtime leftAtom,
           PLeaTTa.subst runtime rightAtom]
@@ -617,13 +616,12 @@ theorem RetractSyntaxRuntimeReading.decodedGroundValuation_apply
         decodedGroundValuation_apply_of_reading shared runtime arguments
       have substEq :
           PLeaTTa.subst runtime
-              (prologCompoundC "$goal.call"
+              (reservedSyntaxC "$goal.call"
                 (chainOf [.sym predicate, argumentsAtom])) =
-            prologCompoundC "$goal.call"
+            reservedSyntaxC "$goal.call"
               (chainOf [.sym predicate,
                 PLeaTTa.subst runtime argumentsAtom]) := by
-        simp [prologCompoundC, prologCompoundTagA,
-          PLeaTTa.subst_expr, subst_chainOf]
+        simp
       rw [substEq]
       unfold decodeAlphaAtom
       rw [decodeRuntimeAtom_retractGoalCall]
@@ -639,14 +637,13 @@ theorem RetractSyntaxRuntimeReading.decodedGroundValuation_apply
           shared runtime body
       have substEq :
           PLeaTTa.subst runtime
-              (prologCompoundC "$clause"
+              (reservedSyntaxC "$clause"
                 (chainOf [.sym predicate, argumentsAtom, bodyAtom])) =
-            prologCompoundC "$clause"
+            reservedSyntaxC "$clause"
               (chainOf [.sym predicate,
                 PLeaTTa.subst runtime argumentsAtom,
                 PLeaTTa.subst runtime bodyAtom]) := by
-        simp [prologCompoundC, prologCompoundTagA,
-          PLeaTTa.subst_expr, subst_chainOf]
+        simp
       rw [substEq]
       unfold decodeAlphaAtom
       rw [decodeRuntimeAtom_retractClause]
@@ -702,14 +699,14 @@ private theorem chainOf_equivalent {left right : List Atom}
             (.cons (.symbol "#c")
               (.cons head (.cons (inductionHypothesis tail) .nil)))
 
-/-- A shared private compound tag lifts equivalence of the encoded argument
-spine. -/
-private theorem prologCompoundC_equivalent (functor : String)
+/-- A shared private reserved-syntax tag lifts equivalence of the encoded
+argument spine. -/
+private theorem reservedSyntaxC_equivalent (functor : String)
     {left right : Atom}
     (arguments :
       AtomEquivalentWith PLeaTTa.prologGroundIdentical left right) :
     AtomEquivalentWith PLeaTTa.prologGroundIdentical
-      (prologCompoundC functor left) (prologCompoundC functor right) := by
+      (reservedSyntaxC functor left) (reservedSyntaxC functor right) := by
   exact .expression
     (.cons (.ground (PLeaTTa.prologGroundIdentical_self _))
       (.cons (.symbol functor) (.cons arguments .nil)))
@@ -735,7 +732,7 @@ theorem RetractSyntaxRuntimeAgrees.equivalent_of_tree_eq
       | goalUnify otherLeft otherRight =>
           simp at treeEq
           rcases treeEq with ⟨rfl, rfl⟩
-          apply prologCompoundC_equivalent
+          apply reservedSyntaxC_equivalent
           apply chainOf_equivalent
           exact .cons
             (CanonicalRuntimeAgrees.equivalent_of_same
@@ -752,7 +749,7 @@ theorem RetractSyntaxRuntimeAgrees.equivalent_of_tree_eq
       | goalCall otherArguments =>
           simp at treeEq
           rcases treeEq with ⟨rfl, rfl⟩
-          apply prologCompoundC_equivalent
+          apply reservedSyntaxC_equivalent
           apply chainOf_equivalent
           exact .cons (.symbol _)
             (.cons
@@ -767,7 +764,7 @@ theorem RetractSyntaxRuntimeAgrees.equivalent_of_tree_eq
       | clause otherArguments otherBody =>
           simp at treeEq
           rcases treeEq with ⟨rfl, rfl, rfl⟩
-          apply prologCompoundC_equivalent
+          apply reservedSyntaxC_equivalent
           apply chainOf_equivalent
           exact .cons (.symbol _)
             (.cons
@@ -999,11 +996,11 @@ private def reflectedRightTerm : Term :=
     [.atom "value", .atom "anchor"]
 
 private def reflectedLeftAtom : Atom :=
-  prologCompoundC "$goal.unify"
+  reservedSyntaxC "$goal.unify"
     (chainOf [.var "runtime-x", .sym "anchor"])
 
 private def reflectedRightAtom : Atom :=
-  prologCompoundC "$goal.unify"
+  reservedSyntaxC "$goal.unify"
     (chainOf [.sym "value", .sym "anchor"])
 
 private theorem reflectedAlpha_shared : SharedRuntimeAlpha reflectedAlpha := by

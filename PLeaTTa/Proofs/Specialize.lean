@@ -8342,7 +8342,7 @@ theorem subst_denoted_partialHeadView (runtime binding : Subst)
     subst runtime head = subst runtime concrete := hinvisible.symm
     _ = subst runtime (partialC base (chainOf bound)) := by rw [hshape]
     _ = partialC base (chainOf (bound.map (subst runtime))) := by
-        simp [partialC, partialTagA, subst_chainOf]
+        simp
 
 theorem partialView?_subst_denoted_partialHeadView (runtime binding : Subst)
     (head : Atom) (base : String) (bound : List Atom)
@@ -8353,7 +8353,8 @@ theorem partialView?_subst_denoted_partialHeadView (runtime binding : Subst)
       some (base, chainOf (bound.map (subst runtime))) := by
   rw [subst_denoted_partialHeadView runtime binding head base bound
     hdenotes hview]
-  simp [partialC, partialView?, partialTagA]
+  exact partialView?_partialC base
+    (chainOf (bound.map (subst runtime)))
 
 /-- Every atom supported by source residuals is literally fixed by a
     sequential residual state. -/
@@ -9899,12 +9900,48 @@ theorem callDyn_partial_steps_to_redispatch (prog : Prog) (gt : GroundingTable)
     (hcur : c.cur = some (Goal.callDyn head args res :: rest, b))
     (hns : ∀ f, subst b head ≠ Atom.sym f)
     (hp : partialView? (subst b head) = some (base, boundList))
-    (hbound : bound = (chainListM boundList).getD []) :
+    (hbound : chainListM boundList = some bound) :
     Step prog gt c
       { c with cur := some (
           Goal.callDyn (Atom.sym base) (bound ++ args) res :: rest, b) } := by
   exact Step.callDyn_partial c head args res rest b base boundList bound
     hcur hns hp hbound _ rfl
+
+/-- A `partial/2` value whose second field is not a proper list fails at the
+append boundary.  Pinned PeTTa's `append(Bound, Args, NewArgs)` has no clause
+for that shape; treating it as an empty bound prefix would invent a call. -/
+theorem callDyn_malformed_partial_steps_to_failure (prog : Prog)
+    (gt : GroundingTable) (c : Conf) (head : Atom) (base : String)
+    (boundList : Atom) (args : List Atom) (res : Atom) (rest : List Goal)
+    (b : Subst)
+    (hcur : c.cur = some (Goal.callDyn head args res :: rest, b))
+    (hns : ∀ f, subst b head ≠ Atom.sym f)
+    (hp : partialView? (subst b head) = some (base, boundList))
+    (hbound : chainListM boundList = none) :
+    Step prog gt c (pull { c with cur := none }) := by
+  exact Step.callDyn_partial_malformed c head args res rest b base boundList
+    hcur hns hp hbound
+
+/-- The executable takes the same failure transition; this pins the actual
+dispatch function rather than only inhabiting the relational specification. -/
+theorem step_callDyn_malformed_partial_eq_failure (prog : Prog)
+    (gt : GroundingTable) (fuel : Nat) (c : Conf) (head : Atom)
+    (base : String) (boundList : Atom) (args : List Atom) (res : Atom)
+    (rest : List Goal) (b : Subst)
+    (hcur : c.cur = some (Goal.callDyn head args res :: rest, b))
+    (hp : partialView? (subst b head) = some (base, boundList))
+    (hbound : chainListM boundList = none) :
+    step prog gt fuel c = pull { c with cur := none } := by
+  cases hvalue : subst b head with
+  | sym symbol => simp [hvalue, partialView?] at hp
+  | var source => simp [hvalue, partialView?] at hp
+  | gnd ground => simp [hvalue, partialView?] at hp
+  | expr atoms =>
+      rw [hvalue] at hp
+      unfold step
+      rw [hcur]
+      simp only [hvalue]
+      simp only [hp, hbound]
 
 theorem runClean_callDyn_partial_eq_redispatch (prog : Prog)
     (gt : GroundingTable) (fuel : Nat) (c : Conf) (head : Atom)
@@ -9913,7 +9950,7 @@ theorem runClean_callDyn_partial_eq_redispatch (prog : Prog)
     (hcur : c.cur = some (Goal.callDyn head args res :: rest, b))
     (hns : ∀ f, subst b head ≠ Atom.sym f)
     (hp : partialView? (subst b head) = some (base, boundList))
-    (hbound : bound = (chainListM boundList).getD []) :
+    (hbound : chainListM boundList = some bound) :
     runClean prog gt (fuel + 2) c none =
       runClean prog gt (fuel + 1)
         { c with cur := some (
@@ -9945,7 +9982,7 @@ theorem runClean_callDyn_partial_defined_eq_direct (prog : Prog)
     (hcur : c.cur = some (Goal.callDyn head args res :: rest, b))
     (hns : ∀ f, subst b head ≠ Atom.sym f)
     (hp : partialView? (subst b head) = some (base, boundList))
-    (hbound : bound = (chainListM boundList).getD [])
+    (hbound : chainListM boundList = some bound)
     (hregistered : c.world.isRegisteredHead base = true) :
     runClean prog gt (fuel + 3) c none =
       runClean prog gt (fuel + 1)
@@ -9976,7 +10013,7 @@ theorem runClean_callDyn_partial_builtin_eq_direct (prog : Prog)
     (hcur : c.cur = some (Goal.callDyn head args res :: rest, b))
     (hns : ∀ f, subst b head ≠ Atom.sym f)
     (hp : partialView? (subst b head) = some (base, boundList))
-    (hbound : bound = (chainListM boundList).getD [])
+    (hbound : chainListM boundList = some bound)
     (hunregistered : c.world.isRegisteredHead base = false)
     (hbuiltin : (GroundingTable.lookup gt base).isSome) :
     runClean prog gt (fuel + 3) c none =
@@ -10023,11 +10060,11 @@ theorem runClean_denoted_callDyn_partial_defined_eq_runtimeDirect
   have hnotSymbol : ∀ f, subst runtime head ≠ Atom.sym f := by
     intro f
     rw [hshape]
-    simp [partialC, chainOf]
+    simp [partialC, prologCompoundC, prologCompoundTagA]
   have hpartial := partialView?_subst_denoted_partialHeadView runtime binding
     head base bound hdenotes hview
-  have hbound : bound.map (subst runtime) =
-      (chainListM (chainOf (bound.map (subst runtime)))).getD [] := by
+  have hbound : chainListM (chainOf (bound.map (subst runtime))) =
+      some (bound.map (subst runtime)) := by
     simp
   exact runClean_callDyn_partial_defined_eq_direct prog gt fuel c head base
     (chainOf (bound.map (subst runtime))) (bound.map (subst runtime)) args res
@@ -10053,11 +10090,11 @@ theorem runClean_denoted_callDyn_partial_builtin_eq_runtimeDirect
   have hnotSymbol : ∀ f, subst runtime head ≠ Atom.sym f := by
     intro f
     rw [hshape]
-    simp [partialC, chainOf]
+    simp [partialC, prologCompoundC, prologCompoundTagA]
   have hpartial := partialView?_subst_denoted_partialHeadView runtime binding
     head base bound hdenotes hview
-  have hbound : bound.map (subst runtime) =
-      (chainListM (chainOf (bound.map (subst runtime)))).getD [] := by
+  have hbound : chainListM (chainOf (bound.map (subst runtime))) =
+      some (bound.map (subst runtime)) := by
     simp
   exact runClean_callDyn_partial_builtin_eq_direct prog gt fuel c head base
     (chainOf (bound.map (subst runtime))) (bound.map (subst runtime)) args res

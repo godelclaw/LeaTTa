@@ -102,10 +102,10 @@ mutual
 
 /-- Canonical interpretation of one exact runtime shape.
 
-The private partial, nil, and positive-arity Prolog-compound tags and the
-`#c` cell are recognized before the generic fallbacks.  Symbols used as
-functor/name slots remain literal even when spelled `True`; boolean
-normalization applies only to value positions. -/
+The nil, ordinary-compound, reserved-syntax tags, and `#c` cell are
+recognized before the generic fallbacks.  Symbols used as certified syntax
+name slots remain literal even when spelled `True`; Boolean normalization
+applies only to ordinary value positions. -/
 def RuntimeShape.normalize : RuntimeShape → Tree
   | .symbol "True" => .node (.atom "true") []
   | .symbol "False" => .node (.atom "false") []
@@ -117,12 +117,7 @@ def RuntimeShape.normalize : RuntimeShape → Tree
   | .ground (.external "PLeaTTa.internal" "nil") => .node .nil []
   | .ground _ => .node (.compound "$runtime-ground") []
   | .expression
-      [.ground (.external "PLeaTTa.internal" "partial"),
-        .symbol head, arguments] =>
-      .node (.compound "partial")
-        [.node (.atom head) [], RuntimeShape.normalize arguments]
-  | .expression
-      [.ground (.external "PLeaTTa.internal" "prolog-compound"),
+      [.ground (.external "PLeaTTa.internal" "reserved-syntax"),
         .symbol "$goal.call",
         .expression [.symbol "#c", .symbol predicate, tail]] =>
       match properListItems? (RuntimeShape.normalize tail) with
@@ -133,11 +128,11 @@ def RuntimeShape.normalize : RuntimeShape → Tree
           .node (.compound "$runtime-expression")
             (RuntimeShape.normalizeList
               [.ground
-                  (.external "PLeaTTa.internal" "prolog-compound"),
+                  (.external "PLeaTTa.internal" "reserved-syntax"),
                 .symbol "$goal.call",
                 .expression [.symbol "#c", .symbol predicate, tail]])
   | .expression
-      [.ground (.external "PLeaTTa.internal" "prolog-compound"),
+      [.ground (.external "PLeaTTa.internal" "reserved-syntax"),
         .symbol "$clause",
         .expression [.symbol "#c", .symbol predicate, tail]] =>
       match properListItems? (RuntimeShape.normalize tail) with
@@ -148,9 +143,24 @@ def RuntimeShape.normalize : RuntimeShape → Tree
           .node (.compound "$runtime-expression")
             (RuntimeShape.normalizeList
               [.ground
-                  (.external "PLeaTTa.internal" "prolog-compound"),
+                  (.external "PLeaTTa.internal" "reserved-syntax"),
                 .symbol "$clause",
                 .expression [.symbol "#c", .symbol predicate, tail]])
+  | .expression
+      [.ground (.external "PLeaTTa.internal" "reserved-syntax"),
+        .symbol functor, arguments] =>
+      -- Reserved constructors other than the metadata-bearing cases above
+      -- contain ordinary value slots.  Their private tag is retained only
+      -- in runtime identity; canonical decoding intentionally exposes the
+      -- corresponding pinned Prolog compound.
+      match properListItems? (RuntimeShape.normalize arguments) with
+      | some children => .node (.compound functor) children
+      | none =>
+          .node (.compound "$runtime-expression")
+            (RuntimeShape.normalizeList
+              [.ground
+                  (.external "PLeaTTa.internal" "reserved-syntax"),
+                .symbol functor, arguments])
   | .expression
       [.ground (.external "PLeaTTa.internal" "prolog-compound"),
         .symbol functor, arguments] =>
@@ -216,20 +226,34 @@ fact used by the positive-arity Prolog-compound decoder. -/
         decodeRuntimeAtom]
 
 /-- Generic positive-arity Prolog compounds decode to the canonical compound
-with the same literal functor and normalized value arguments.  The two
-reserved decoder forms below are excluded because their first argument is a
-literal predicate-name slot rather than an ordinary Boolean-normalized value
-slot. -/
+with the same literal functor and normalized value arguments.  Even visible
+functors named `$goal.call` or `$clause` remain ordinary data here: only the
+distinct `reservedSyntaxC` tag selects metadata-aware syntax decoding. -/
 theorem decodeRuntimeAtom_prologCompound
     (variableIdentity : String → LogicVar) (functor : String)
-    (arguments : List Atom)
-    (notGoalCall : functor ≠ "$goal.call")
-    (notClause : functor ≠ "$clause") :
+    (arguments : List Atom) :
     decodeRuntimeAtom variableIdentity
         (prologCompoundC functor (chainOf arguments)) =
       .node (.compound functor)
         (arguments.map (decodeRuntimeAtom variableIdentity)) := by
   simp [decodeRuntimeAtom, prologCompoundC, prologCompoundTagA,
+    RuntimeShape.ofAtom, RuntimeShape.ofAtoms, RuntimeShape.normalize,
+    PLeaTTa.PrologGroundIdentity.ofGround,
+    properListItems?_normalize_chainOf]
+
+/-- Reserved syntax without a metadata-bearing predicate-name slot decodes
+to the same canonical Prolog tree as its visible constructor.  Runtime
+identity nevertheless remains disjoint from ordinary `Predicate/2` data. -/
+theorem decodeRuntimeAtom_reservedSyntax
+    (variableIdentity : String → LogicVar) (functor : String)
+    (arguments : List Atom)
+    (notGoalCall : functor ≠ "$goal.call")
+    (notClause : functor ≠ "$clause") :
+    decodeRuntimeAtom variableIdentity
+        (reservedSyntaxC functor (chainOf arguments)) =
+      .node (.compound functor)
+        (arguments.map (decodeRuntimeAtom variableIdentity)) := by
+  simp [decodeRuntimeAtom, reservedSyntaxC, reservedSyntaxTagA,
     RuntimeShape.ofAtom, RuntimeShape.ofAtoms, RuntimeShape.normalize,
     PLeaTTa.PrologGroundIdentity.ofGround,
     properListItems?_normalize_chainOf, notGoalCall, notClause]
@@ -241,13 +265,13 @@ theorem decodeRuntimeAtom_retractGoalCall
     (variableIdentity : String → LogicVar) (predicate : String)
     (arguments : Atom) :
     decodeRuntimeAtom variableIdentity
-        (prologCompoundC "$goal.call"
+        (reservedSyntaxC "$goal.call"
           (chainOf [.sym predicate, arguments])) =
       .node (.compound "$goal.call")
         [.node (.atom predicate) [],
           decodeRuntimeAtom variableIdentity arguments] := by
   rw [chainOf_cons]
-  simp [decodeRuntimeAtom, prologCompoundC, prologCompoundTagA, consC,
+  simp [decodeRuntimeAtom, reservedSyntaxC, reservedSyntaxTagA, consC,
     RuntimeShape.ofAtom, RuntimeShape.ofAtoms, RuntimeShape.normalize,
     PLeaTTa.PrologGroundIdentity.ofGround,
     properListItems?_normalize_chainOf]
@@ -258,14 +282,14 @@ theorem decodeRuntimeAtom_retractClause
     (variableIdentity : String → LogicVar) (predicate : String)
     (arguments body : Atom) :
     decodeRuntimeAtom variableIdentity
-        (prologCompoundC "$clause"
+        (reservedSyntaxC "$clause"
           (chainOf [.sym predicate, arguments, body])) =
       .node (.compound "$clause")
         [.node (.atom predicate) [],
           decodeRuntimeAtom variableIdentity arguments,
           decodeRuntimeAtom variableIdentity body] := by
   rw [chainOf_cons]
-  simp [decodeRuntimeAtom, prologCompoundC, prologCompoundTagA, consC,
+  simp [decodeRuntimeAtom, reservedSyntaxC, reservedSyntaxTagA, consC,
     RuntimeShape.ofAtom, RuntimeShape.ofAtoms, RuntimeShape.normalize,
     PLeaTTa.PrologGroundIdentity.ofGround,
     properListItems?_normalize_chainOf]
@@ -410,12 +434,14 @@ theorem decodeRuntimeAtom_eq_of_reading
   | string value =>
       simp [decodeRuntimeAtom, RuntimeShape.ofAtom,
         RuntimeShape.normalize, PLeaTTa.PrologGroundIdentity.ofGround]
-  | @partialValue head argumentsTree encodedArguments arguments
-      inductionHypothesis =>
-      simpa [decodeRuntimeAtom, RuntimeShape.ofAtom,
-        RuntimeShape.ofAtoms, RuntimeShape.normalize,
-        PLeaTTa.PrologGroundIdentity.ofGround,
-        partialC, partialTagA] using inductionHypothesis
+  | @partialValue head argumentsTree encodedArguments notRuntimeTrue
+      notRuntimeFalse arguments inductionHypothesis =>
+      change
+        (RuntimeShape.ofAtom variableIdentity encodedArguments).normalize =
+          argumentsTree at inductionHypothesis
+      rw [partialC, decodeRuntimeAtom_prologCompound]
+      simp [decodeRuntimeAtom, RuntimeShape.ofAtom,
+        RuntimeShape.normalize, inductionHypothesis]
   | nil =>
       simp [decodeRuntimeAtom, RuntimeShape.ofAtom,
         RuntimeShape.normalize, PLeaTTa.PrologGroundIdentity.ofGround,
@@ -677,14 +703,19 @@ theorem decodedGroundValuation_apply_of_reading
       simp [TreeSubstitution.apply_node, groundTree, groundTrees,
         decodeAlphaAtom, decodeRuntimeAtom, RuntimeShape.ofAtom,
         RuntimeShape.normalize, PLeaTTa.PrologGroundIdentity.ofGround]
-  | @partialValue head argumentsTree encodedArguments arguments
-      inductionHypothesis =>
-      simpa [TreeSubstitution.apply_node, groundTree, groundTrees,
-        decodeAlphaAtom, decodeRuntimeAtom, RuntimeShape.ofAtom,
-        RuntimeShape.ofAtoms, RuntimeShape.normalize,
-        PLeaTTa.PrologGroundIdentity.ofGround,
-        partialC, partialTagA, PLeaTTa.subst_expr] using
-        inductionHypothesis
+  | @partialValue head argumentsTree encodedArguments notRuntimeTrue
+      notRuntimeFalse arguments inductionHypothesis =>
+      change
+        (decodedGroundValuation alpha runtime).apply argumentsTree =
+          groundTree
+            ((RuntimeShape.ofAtom (alphaInverse alpha)
+              (PLeaTTa.subst runtime encodedArguments)).normalize) at inductionHypothesis
+      unfold decodeAlphaAtom
+      rw [PLeaTTa.subst_partialC, partialC,
+        decodeRuntimeAtom_prologCompound]
+      simp [TreeSubstitution.apply_node, groundTree, groundTrees,
+        decodeRuntimeAtom, RuntimeShape.ofAtom,
+        RuntimeShape.normalize, inductionHypothesis]
   | nil =>
       simp [TreeSubstitution.apply_node, groundTree, groundTrees,
         decodeAlphaAtom, decodeRuntimeAtom, RuntimeShape.ofAtom,
@@ -833,22 +864,23 @@ theorem runtime_nil_and_source_nil_decode_differently :
   simp [decodeRuntimeAtom, RuntimeShape.ofAtom, RuntimeShape.normalize,
     PLeaTTa.PrologGroundIdentity.ofGround, nilA]
 
-/-- The private partial compound decodes as `partial/2`, not as a generic
-three-child expression or a proper-list spine. -/
+/-- The tagged partial compound decodes as `partial/2`, not as a generic
+three-child expression or a proper-list spine.  Compiler and `Predicate/2`
+construction share this exact tagged representation. -/
 theorem runtime_partial_decodes_as_compound :
     decodeRuntimeAtom identityVariable (partialC "f" nilA) =
       .node (.compound "partial")
         [.node (.atom "f") [], .node .nil []] := by
-  simp [decodeRuntimeAtom, RuntimeShape.ofAtom, RuntimeShape.ofAtoms,
-    RuntimeShape.normalize, PLeaTTa.PrologGroundIdentity.ofGround,
-    partialC, partialTagA, nilA]
+  rw [partialC, decodeRuntimeAtom_prologCompound]
+  simp [decodeRuntimeAtom, RuntimeShape.ofAtom, RuntimeShape.normalize,
+    PLeaTTa.PrologGroundIdentity.ofGround, nilA]
 
 /-- Predicate names in reserved retract syntax are metadata, not Boolean
 values.  The same executable spelling therefore remains literal in the name
 slot and normalizes in the adjacent value slot. -/
 theorem retract_goal_call_name_and_value_slots_are_distinct :
     decodeRuntimeAtom identityVariable
-        (prologCompoundC "$goal.call"
+        (reservedSyntaxC "$goal.call"
           (chainOf [.sym "True", .sym "True"])) =
       .node (.compound "$goal.call")
         [.node (.atom "True") [], .node (.atom "true") []] := by
@@ -879,29 +911,32 @@ theorem nested_prolog_compounds_decode_recursively :
       .node (.compound "outer")
         [.node (.compound "inner") [.node (.atom "true") []]] := by
   rw [decodeRuntimeAtom_prologCompound identityVariable "outer"
-    [prologCompoundC "inner" (chainOf [.sym "True"])] (by decide)
-    (by decide)]
+    [prologCompoundC "inner" (chainOf [.sym "True"])]]
   simp only [List.map]
   rw [decodeRuntimeAtom_prologCompound identityVariable "inner"
-    [.sym "True"] (by decide) (by decide)]
+    [.sym "True"]]
   simp [decodeRuntimeAtom, RuntimeShape.ofAtom, RuntimeShape.normalize]
 
-/-- Pinned `=../2` naturally constructs an ordinary Prolog `partial/2`
-compound.  The executable keeps that provenance distinct from the private
-partial-value tag, while the canonical decoder intentionally identifies the
-two as the same Prolog term.  This witnesses deliberate decoder
-non-injectivity rather than an encoding collision. -/
-theorem constructed_partial_and_private_partial_are_distinct_but_decode_equal :
-    prologCompoundC "partial" (chainOf [.sym "f", nilA]) ≠
+/-- Compiler-produced and `Predicate/2`-constructed `partial/2` values now
+have literal runtime identity, not merely equal decoded observations. -/
+theorem constructed_partial_and_compiler_partial_are_identical :
+    prologCompoundC "partial" (chainOf [.sym "f", nilA]) =
         partialC "f" nilA ∧
       decodeRuntimeAtom identityVariable
           (prologCompoundC "partial" (chainOf [.sym "f", nilA])) =
         decodeRuntimeAtom identityVariable (partialC "f" nilA) := by
-  constructor
-  · simp [prologCompoundC, prologCompoundTagA, partialC, partialTagA]
-  · rw [decodeRuntimeAtom_prologCompound identityVariable "partial"
-      [.sym "f", nilA] (by decide) (by decide)]
-    exact runtime_partial_decodes_as_compound.symm.symm
+  simp [partialC]
+
+/-- A `Predicate/2` value may use a reserved-looking visible functor without
+acquiring the metadata-slot decoding of certified syntax. -/
+theorem ordinary_goal_call_spelling_remains_value_data :
+    decodeRuntimeAtom identityVariable
+        (prologCompoundC "$goal.call"
+          (chainOf [.sym "True", .sym "True"])) =
+      .node (.compound "$goal.call")
+        [.node (.atom "true") [], .node (.atom "true") []] := by
+  rw [decodeRuntimeAtom_prologCompound]
+  simp [decodeRuntimeAtom, RuntimeShape.ofAtom, RuntimeShape.normalize]
 
 /-- Broad runtime agreement is insufficient for failure reflection.
 

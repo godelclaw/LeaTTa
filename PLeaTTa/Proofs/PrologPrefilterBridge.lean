@@ -207,7 +207,8 @@ theorem CanonicalRuntimeAgrees.prologMatchCompat_of_treeMayUnify
       leftArgumentsIH =>
       cases right with
       | «variable» =>
-          simp [partialC, partialTagA, PLeaTTa.prologMatchCompat]
+          simp [partialC, prologCompoundC, prologCompoundTagA,
+            PLeaTTa.prologMatchCompat]
       | @partialValue rightHead rightTree rightAtom rightArguments =>
           have children := compatible.node_children
           cases children with
@@ -219,7 +220,8 @@ theorem CanonicalRuntimeAgrees.prologMatchCompat_of_treeMayUnify
                   subst rightHead
                   have arguments :=
                     leftArgumentsIH rightArguments argumentsCompatible
-                  simp [partialC, partialTagA, PLeaTTa.prologMatchCompat,
+                  simp [partialC, prologCompoundC, prologCompoundTagA,
+                    chainOf, consC, nilA, PLeaTTa.prologMatchCompat,
                     PLeaTTa.prologMatchCompatList, arguments]
       | atom | trueAtom | falseAtom | integer | float | string | nil | cons =>
           cases compatible

@@ -74,8 +74,9 @@ theorem CanonicalRuntimeAgrees.occurs_eq
       simp [Tree.occurs, Trees.occurs, nilA, Metta.Subst.occurs]
   | @partialValue head argumentsTree encodedArguments arguments
       inductionHypothesis =>
-      simpa [Tree.occurs, Trees.occurs, partialC, partialTagA, chainOf,
-        consC, nilA, Metta.Subst.occurs] using inductionHypothesis
+      simpa [Tree.occurs, Trees.occurs, partialC, prologCompoundC,
+        prologCompoundTagA, chainOf, consC, nilA,
+        Metta.Subst.occurs] using inductionHypothesis
   | @cons headTree tailTree headAtom tailAtom head tail
       headInduction tailInduction =>
       simp [Tree.occurs, Trees.occurs, consC,
@@ -148,7 +149,8 @@ theorem CanonicalRuntimeAgrees.instantiateOne
         (CanonicalRuntimeAgrees.string (alpha := alpha) value)
   | partialValue arguments inductionHypothesis =>
       simpa [Tree.instantiateOne, Trees.instantiateOne, partialC,
-        partialTagA, chainOf, consC, nilA, Metta.Subst.apply] using
+        prologCompoundC, prologCompoundTagA, chainOf, consC, nilA,
+        Metta.Subst.apply] using
           (CanonicalRuntimeAgrees.partialValue inductionHypothesis)
   | nil =>
       simpa [Tree.instantiateOne, Trees.instantiateOne,
@@ -1642,7 +1644,8 @@ theorem CanonicalRuntimeAgrees.weight_le_size
       integer | float | string | nil =>
       simp [Tree.weight, Trees.weight, Atom.size, nilA]
   | partialValue arguments inductionHypothesis =>
-      simp [Tree.weight, Trees.weight, Atom.size, partialC, partialTagA] at *
+      simp [Tree.weight, Trees.weight, Atom.size, partialC,
+        prologCompoundC, prologCompoundTagA, chainOf, consC, nilA] at *
       omega
   | cons head tail headInduction tailInduction =>
       simp [Tree.weight, Trees.weight, Atom.size,
@@ -2244,8 +2247,8 @@ theorem TreeDecomposes.runtime
                 argumentDecomposition.runtime
                   shared arguments rightArguments
               refine ⟨runtime, ?_, runtimeAgreement⟩
-              simp [partialC, partialTagA,
-                Metta.Unify.decomposeEqWith,
+              simp [partialC, prologCompoundC, prologCompoundTagA,
+                chainOf, consC, nilA, Metta.Unify.decomposeEqWith,
                 Metta.Unify.decomposeListWith, runtimeExact]
       | nil =>
           obtain ⟨rfl, rfl⟩ := children.left_nil

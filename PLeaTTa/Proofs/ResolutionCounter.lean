@@ -2208,7 +2208,8 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
     rcases member with ((hres | hchain) | hrest) | hbinding
     · exact Or.inl (Or.inl (Or.inr hres))
     · have hinner : name ∈ (chainOf args).vars := by
-        simpa [partialC, partialTagA, Atom.vars] using hchain
+        simpa [partialC, prologCompoundC, prologCompoundTagA, chainOf,
+          consC, nilA, Atom.vars] using hchain
       have hargs := chainOf_vars_subset args name hinner
       exact Or.inl (Or.inl (Or.inl hargs))
     · exact Or.inl (Or.inr hrest)
@@ -2278,7 +2279,8 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
     rcases member with ((hres | hchain) | hrest) | hbinding
     · exact Or.inl (Or.inl (Or.inr hres))
     · have hinner : name ∈ (chainOf (args.map (subst binding))).vars := by
-        simpa [partialC, partialTagA, Atom.vars] using hchain
+        simpa [partialC, prologCompoundC, prologCompoundTagA, chainOf,
+          consC, nilA, Atom.vars] using hchain
       have hsubstituted := chainOf_vars_subset
         (args.map (subst binding)) name hinner
       rcases substAtomList_vars_origin binding args name hsubstituted with
@@ -2741,24 +2743,23 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
         (bound.flatMap Atom.vars) ≤ c.counter := by
       rw [PersistentSubst.resolutionSeedHighWaterNames_le_iff]
       intro name member
-      rw [hbound] at member
-      rcases chainListM_getD_vars_subset boundList [] name member with
-        hboundList | himpossible
-      · have hpartialShape := partialView?_sound hpartial
-        have hsubHead : name ∈ (subst binding head).vars := by
-          rw [hpartialShape]
-          simpa [partialC, partialTagA, Atom.vars] using hboundList
-        rcases subst_vars_origin binding head name hsubHead with
-          hheadOrigin | hrange
-        · exact (PersistentSubst.resolutionSeedHighWaterNames_le_iff _
-            c.counter).mp hhead name hheadOrigin
-        · apply (PersistentSubst.resolutionSeedHighWaterNames_le_iff _
-            c.counter).mp hbinding name
-          simp only [resolutionSubstVars, List.mem_flatMap]
-          simp only [List.mem_flatMap] at hrange
-          obtain ⟨entry, hentry, htarget⟩ := hrange
-          exact ⟨entry, hentry, by simp [htarget]⟩
-      · simp at himpossible
+      have hboundList :=
+        chainListM_vars_subset boundList bound hbound name member
+      have hpartialShape := partialView?_sound hpartial
+      have hsubHead : name ∈ (subst binding head).vars := by
+        rw [hpartialShape]
+        simpa [partialC, prologCompoundC, prologCompoundTagA, chainOf,
+          consC, nilA, Atom.vars] using hboundList
+      rcases subst_vars_origin binding head name hsubHead with
+        hheadOrigin | hrange
+      · exact (PersistentSubst.resolutionSeedHighWaterNames_le_iff _
+          c.counter).mp hhead name hheadOrigin
+      · apply (PersistentSubst.resolutionSeedHighWaterNames_le_iff _
+          c.counter).mp hbinding name
+        simp only [resolutionSubstVars, List.mem_flatMap]
+        simp only [List.mem_flatMap] at hrange
+        obtain ⟨entry, hentry, htarget⟩ := hrange
+        exact ⟨entry, hentry, by simp [htarget]⟩
     subst goal
     apply ConfBelowResolutionCounter.of_components
     · simp only [resolutionCurVars, specializationGoalsVars,
@@ -2769,6 +2770,10 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
     · exact below.alts
     · exact below.qterm
     · exact below.answers
+  case callDyn_partial_malformed =>
+    intro c head args res rest binding base boundList hcur hnotSymbol
+      hpartial hbound below
+    exact below.clearActive.pull
   case evalg_ok =>
     intro c value res rest binding translated compiled compilerCounter
       profileWorld profileGoals newGoals hcur hcompile hspecialize hnewGoals

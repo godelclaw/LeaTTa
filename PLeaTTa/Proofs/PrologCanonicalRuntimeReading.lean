@@ -151,6 +151,8 @@ inductive CanonicalRuntimeReading
         (.node (.string value) []) (.gnd (.str value))
   | partialValue {head : String} {argumentsTree : Tree}
       {encodedArguments : Atom}
+      (notRuntimeTrue : head ≠ "True")
+      (notRuntimeFalse : head ≠ "False")
       (arguments :
         CanonicalRuntimeReading alpha argumentsTree encodedArguments) :
       CanonicalRuntimeReading alpha
@@ -181,7 +183,7 @@ theorem CanonicalRuntimeReading.toCanonicalRuntimeAgrees
   | integer value => exact .integer value
   | float value => exact .float value
   | string value => exact .string value
-  | partialValue arguments inductionHypothesis =>
+  | partialValue _ _ arguments inductionHypothesis =>
       exact .partialValue inductionHypothesis
   | nil => exact .nil
   | cons head tail headIH tailIH =>
@@ -236,7 +238,18 @@ theorem CanonicalRuntimeAgrees.toCanonicalRuntimeReading
   | @partialValue head argumentsTree encodedArguments arguments
       inductionHypothesis =>
       intro safe
+      have headSafe :
+          NoRuntimeBooleanAliases (.node (.atom head) []) :=
+        noRuntimeBooleanAliases_of_mem safe.2.2 (by simp)
       exact .partialValue
+        (by
+          intro equality
+          apply headSafe.1
+          simp [equality])
+        (by
+          intro equality
+          apply headSafe.2.1
+          simp [equality])
         (inductionHypothesis
           (noRuntimeBooleanAliases_of_mem safe.2.2
             (by simp)))
@@ -278,11 +291,13 @@ theorem CanonicalRuntimeReading.functional
   | trueAtom =>
       generalize atomEq : (Atom.sym "True") = runtimeAtom at rightReading
       cases rightReading <;>
-        simp_all [partialC, partialTagA, consC, nilA]
+        simp_all [partialC, prologCompoundC, prologCompoundTagA,
+          consC, nilA]
   | falseAtom =>
       generalize atomEq : (Atom.sym "False") = runtimeAtom at rightReading
       cases rightReading <;>
-        simp_all [partialC, partialTagA, consC, nilA]
+        simp_all [partialC, prologCompoundC, prologCompoundTagA,
+          consC, nilA]
   | integer _ =>
       cases rightReading with
       | integer _ => rfl
@@ -292,15 +307,16 @@ theorem CanonicalRuntimeReading.functional
   | string _ =>
       cases rightReading with
       | string _ => rfl
-  | @partialValue leftHead leftTree leftAtom leftArguments
+  | @partialValue leftHead leftTree leftAtom _ _ leftArguments
       inductionHypothesis =>
       cases rightReading with
-      | @partialValue rightHead rightTree rightAtom rightArguments =>
+      | @partialValue rightHead rightTree rightAtom _ _ rightArguments =>
           rw [inductionHypothesis rightArguments]
   | nil =>
       generalize atomEq : nilA = runtimeAtom at rightReading
       cases rightReading <;>
-        simp_all [partialC, partialTagA, consC, nilA]
+        simp_all [partialC, prologCompoundC, prologCompoundTagA,
+          consC, nilA]
   | @cons leftHeadTree leftTailTree leftHeadAtom leftTailAtom
       leftHead leftTail headIH tailIH =>
       cases rightReading with
@@ -355,7 +371,7 @@ theorem partial_value_is_admitted :
       (.node (.compound "partial")
         [.node (.atom "f") [], partialArgumentsTree])
       (partialC "f" partialArgumentsAtom) := by
-  exact .partialValue .nil
+  exact .partialValue (by decide) (by decide) .nil
 
 /-- The internal partial runtime value is not admitted as an ordinary
 three-element proper list.  Thus partial/list ambiguity is removed by a
@@ -390,7 +406,7 @@ theorem source_partial_list_is_distinctly_admitted :
       · apply CanonicalRuntimeReading.cons
         · exact .nil
         · exact .nil
-  · simp [partialArgumentsAtom, partialC, partialTagA, chainOf, consC,
-      nilA]
+  · simp [partialArgumentsAtom, partialC, prologCompoundC,
+      prologCompoundTagA, chainOf, consC, nilA]
 
 end PLeaTTa.PrologCanonicalRuntimeReading

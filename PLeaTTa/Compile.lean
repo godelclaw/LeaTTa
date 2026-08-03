@@ -394,9 +394,9 @@ private def staticDataHead (env : CEnv) : Atom → Bool
       !(env.defined.contains h) && !(env.isBin h) && !specialHead h
   | _ => false
 
-/-- Compiler-private partial values can never be mistaken for an ordinary
-compound data head.  Their first child is the source-unforgeable external tag,
-not a source symbol. -/
+/-- Tagged runtime partial values can never be mistaken for a source-shaped
+compound data head.  Their first child is the ordinary-Prolog-compound
+external tag shared with `Predicate/2`, not a source symbol. -/
 theorem staticDataHead_partialC_false (env : CEnv) (head : String)
     (encodedArguments : Atom) :
     staticDataHead env (partialC head encodedArguments) = false := by
@@ -1075,14 +1075,19 @@ def compileExprFuel : Nat → CEnv → Nat → Atom →
       -- argument list is a #c-chain [SPEC translator.pl:253-254].
       .ok (Atom.expr [Atom.sym "#c", h, t], [], n)
   | _ + 1, _, n, Atom.expr
-      [Atom.gnd (.external "PLeaTTa.internal" "partial"),
-       Atom.sym functor, encodedArgs] =>
-      -- Binder desugaring materializes pinned `partial(Fun, Bound)` as the
-      -- source-unforgeable `partialC` value.  Like `#c`, this is already
-      -- compiler data: recursively translating it as a compound-headed
-      -- source application would call the private tag and destroy the
-      -- closure before the enclosing application can dispatch it
-      -- [SPEC translator.pl:59-61,244-261].
+      [Atom.gnd (.external "PLeaTTa.internal" "prolog-compound"),
+       Atom.sym "partial",
+       Atom.expr
+         [Atom.sym "#c", Atom.sym functor,
+          Atom.expr
+            [Atom.sym "#c", encodedArgs,
+             Atom.gnd (.external "PLeaTTa.internal" "nil")]]] =>
+      -- Binder desugaring and Predicate/2 materialize the same pinned
+      -- `partial(Fun, Bound)` compound.  Its exact arity-two private spine is
+      -- already compiler data: recursively translating it as a
+      -- compound-headed source application would destroy the closure before
+      -- the enclosing application can dispatch it
+      -- [SPEC metta.pl:275; translator.pl:59-61,244-261].
       .ok (partialC functor encodedArgs, [], n)
   | fuel + 1, env, n, Atom.expr (Atom.sym h :: args) => compileAppFuel fuel env n h args
   | fuel + 1, env, n, Atom.expr (Atom.var v :: args) => do
@@ -1710,6 +1715,19 @@ def compilePatternListFuel : Nat → CEnv → Nat → List Atom →
 termination_by structural fuel _ _ _ => fuel
 
 end
+
+/-- Exact compiler equation for an already-materialized partial/2 value.
+
+Naming this equation keeps downstream proofs independent of the raw private
+compound spine while the executable match remains exact-arity and
+definitionally checkable. -/
+@[simp] theorem compileExprFuel_partialC (fuel : Nat) (env : CEnv)
+    (counter : Nat) (functor : String) (encodedArguments : Atom) :
+    compileExprFuel (fuel + 1) env counter
+        (partialC functor encodedArguments) =
+      .ok (partialC functor encodedArguments, [], counter) := by
+  simp [partialC, prologCompoundC, prologCompoundTagA, chainOf, consC,
+    nilA, compileExprFuel]
 
 /-- Publicly named fuelled argument traversal, starting at argument zero. -/
 def compileArgsFuel (fuel : Nat) (env : CEnv) (counter : Nat)

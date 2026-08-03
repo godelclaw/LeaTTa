@@ -39,13 +39,19 @@ theorem compound_not_proper_list (functor : String) (first : Atom)
     chainListM (prologCompoundC functor (chainOf (first :: rest))) = none := by
   simp
 
-/-- A dynamically constructed Prolog compound cannot masquerade as the
-private partial-application representation. -/
-theorem compound_ne_partial (compoundFunctor partialFunctor : String)
+/-- Predicate/2 and the compiler overlap at exactly the pinned `partial/2`
+term.  This replaces the former provenance-disjointness claim and pins both
+the functor and the two-field argument spine. -/
+theorem compound_eq_partial_iff (compoundFunctor partialFunctor : String)
     (compoundArguments partialArguments : Atom) :
-    prologCompoundC compoundFunctor compoundArguments ≠
-      partialC partialFunctor partialArguments := by
-  simp [prologCompoundC, prologCompoundTagA, partialC, partialTagA]
+    prologCompoundC compoundFunctor compoundArguments =
+        partialC partialFunctor partialArguments ↔
+      compoundFunctor = "partial" ∧
+        compoundArguments = chainOf [.sym partialFunctor, partialArguments] := by
+  constructor
+  · exact prologCompoundC_injective
+  · rintro ⟨rfl, rfl⟩
+    rfl
 
 /-- Observation erases only the private compound tag and recursively exposes
 the exact source-shaped arguments. -/

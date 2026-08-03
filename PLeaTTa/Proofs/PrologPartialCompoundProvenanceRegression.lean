@@ -2,12 +2,14 @@
 
 /-
 Module: PLeaTTa.Proofs.PrologPartialCompoundProvenanceRegression
-Purpose: Pin the current mixed-provenance partial/2 mismatch before repairing
-  the executable representation.
+Purpose: Pin the repaired compiler/Predicate partial/2 runtime identity and
+  the corresponding ground/open unification behavior.
 Trusted boundary: none
 [SPEC metta.pl:275,279; translator.pl:335-346]
 -/
 import PLeaTTa.Proofs.PrologRuntimeDecode
+import PLeaTTa.Proofs.PredicateAdequacy
+import PLeaTTa.Proofs.Specialize
 
 namespace PLeaTTa.PrologPartialCompoundProvenanceRegression
 
@@ -26,49 +28,43 @@ private def openPredicatePartial : Atom :=
   prologCompoundC "partial"
     (chainOf [.var "functor", .var "arguments"])
 
+private def malformedPredicatePartial : Atom :=
+  prologCompoundC "partial" (chainOf [.sym "f", .sym "malformed"])
+
 private def sourceIdentity (name : String) : LogicVar :=
   .source name
 
-/-- The current executable distinguishes two encodings of the same pinned
-Prolog `partial/2` term.  The decoder equality rules out a mere observation
-spelling difference, while failed unification exposes the operational bug
-that prevents retract/1 from selecting the clause. -/
-theorem mixed_partial_provenance_decodes_equal_but_does_not_unify :
-    decodeRuntimeAtom sourceIdentity compiledPartial =
+/-- Compiler and `Predicate/2` construction now produce the same raw atom.
+The empty unifier is therefore reflexive for the right reason: exact runtime
+identity, not a decoder quotient over two incompatible encodings. -/
+theorem compiler_and_predicate_partial_are_identical :
+    compiledPartial = predicatePartial ∧
+      decodeRuntimeAtom sourceIdentity compiledPartial =
         decodeRuntimeAtom sourceIdentity predicatePartial ∧
-      PLeaTTa.unifyTopExact compiledPartial predicatePartial = none := by
-  constructor
-  · simp [compiledPartial, predicatePartial,
-      decodeRuntimeAtom, RuntimeShape.ofAtom, RuntimeShape.ofAtoms,
-      RuntimeShape.normalize, PLeaTTa.PrologGroundIdentity.ofGround,
-      properListItems?, partialC, partialTagA, prologCompoundC,
-      prologCompoundTagA, chainOf, consC, nilA]
-  · unfold compiledPartial predicatePartial partialC partialTagA
-      prologCompoundC prologCompoundTagA chainOf consC nilA
-      PLeaTTa.unifyTopExact
-    simp [Metta.Unify.unifyTopWith, Atom.size,
-      Metta.Unify.unifyRoundsWith,
-      Metta.Unify.decomposeAllWith, Metta.Unify.decomposeEqWith,
-      Metta.Unify.decomposeListWith]
+      PLeaTTa.unifyTopExact compiledPartial predicatePartial = some [] := by
+  have identity : compiledPartial = predicatePartial := by
+    rfl
+  exact ⟨identity, congrArg (decodeRuntimeAtom sourceIdentity) identity,
+    identity ▸ PLeaTTa.unifyTopExact_self predicatePartial⟩
 
-/-- The same representation split is observable before unification: dynamic
-dispatch recognizes only the compiler spelling even though pinned Prolog
-applies either occurrence of the same `partial/2` term. -/
-theorem mixed_partial_provenance_dynamic_view_disagrees :
+/-- Dynamic dispatch recognizes the exact arity-two value regardless of
+whether the compiler or `Predicate/2` produced it. -/
+theorem compiler_and_predicate_partial_dynamic_views_agree :
     partialView? compiledPartial = some ("f", nilA) ∧
-      partialView? predicatePartial = none := by
+      partialView? predicatePartial = some ("f", nilA) := by
   simp [compiledPartial, predicatePartial, partialView?, partialC,
-    partialTagA, prologCompoundC, prologCompoundTagA, chainOf, consC, nilA]
+    prologCompoundC, prologCompoundTagA, chainOf, consC, nilA]
 
-/-- The open occurrence is a stronger discriminator than the ground probe:
-the independent finite-tree algebra has an ordered MGU binding both fields,
-whereas the current executable rejects before either binding is visible. -/
-theorem open_partial_provenance_has_source_mgu_but_no_runtime_mgu :
+/-- The open occurrence is the stronger parity witness: both the independent
+finite-tree algebra and the executable expose the two field bindings, in the
+executable's exact elimination order. -/
+theorem open_partial_provenance_has_source_and_runtime_mgu :
     (∃ binding,
       OrderedTreeMgu
         [(decodeRuntimeAtom sourceIdentity compiledPartial,
           decodeRuntimeAtom sourceIdentity openPredicatePartial)] binding) ∧
-      PLeaTTa.unifyTopExact compiledPartial openPredicatePartial = none := by
+      PLeaTTa.unifyTopExact compiledPartial openPredicatePartial =
+        some [("arguments", nilA), ("functor", .sym "f")] := by
   constructor
   · apply OrderedTreeMgu.complete
       [(.source "functor", .node (.atom "f") []),
@@ -80,15 +76,55 @@ theorem open_partial_provenance_has_source_mgu_but_no_runtime_mgu :
     simp [sourceIdentity, decodeRuntimeAtom, RuntimeShape.ofAtom,
       RuntimeShape.ofAtoms, RuntimeShape.normalize,
       PLeaTTa.PrologGroundIdentity.ofGround, properListItems?, partialC,
-      partialTagA, prologCompoundC, prologCompoundTagA, chainOf, consC,
-      nilA,
+      prologCompoundC, prologCompoundTagA, chainOf, consC, nilA,
       TreeSubstitution.apply, Tree.instantiateOne, Trees.instantiateOne]
-  · unfold compiledPartial openPredicatePartial partialC partialTagA
+  · unfold compiledPartial openPredicatePartial partialC
       prologCompoundC prologCompoundTagA chainOf consC nilA
       PLeaTTa.unifyTopExact
     simp [Metta.Unify.unifyTopWith, Atom.size,
       Metta.Unify.unifyRoundsWith,
       Metta.Unify.decomposeAllWith, Metta.Unify.decomposeEqWith,
-      Metta.Unify.decomposeListWith]
+      Metta.Unify.decomposeListWith, Metta.Subst.occurs,
+      Metta.Subst.apply, Metta.Subst.lookup, Metta.Subst.extend,
+      Metta.Subst.erase]
+
+/-- The ordinary `partial/2` representation preserves a malformed second
+field at the surface, but its bound-argument view is not a proper list. -/
+theorem malformed_partial_surface_and_append_boundary :
+    malformedPredicatePartial = partialC "f" (.sym "malformed") ∧
+      partialView? malformedPredicatePartial =
+        some ("f", .sym "malformed") ∧
+      chainListM (.sym "malformed") = none ∧
+      unchainify 10000 malformedPredicatePartial =
+        .expr [.sym "partial", .sym "f", .sym "malformed"] := by
+  constructor
+  · rfl
+  constructor
+  · rfl
+  constructor
+  · rfl
+  · have rendered :=
+      PLeaTTa.PredicateAdequacy.unchainify_compound 9999 "partial"
+        [.sym "f", .sym "malformed"]
+    norm_num at rendered
+    simpa only [malformedPredicatePartial] using rendered
+
+/-- Dynamic application of the malformed value takes the executable failure
+transition.  This rules out the historical `getD []` behavior that invented
+an empty bound prefix and called `f/1`. -/
+theorem malformed_partial_application_fails
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable) (fuel : Nat)
+    (c : PLeaTTa.Conf) (args : List Atom) (res : Atom)
+    (rest : List PLeaTTa.Goal) (binding : Metta.Subst)
+    (current : c.cur = some
+      (PLeaTTa.Goal.callDyn malformedPredicatePartial args res :: rest,
+        binding)) :
+    PLeaTTa.step prog gt fuel c = PLeaTTa.pull { c with cur := none } := by
+  apply PLeaTTa.step_callDyn_malformed_partial_eq_failure prog gt fuel c
+      malformedPredicatePartial "f" (.sym "malformed") args res rest binding
+      current
+  · simp [malformedPredicatePartial, partialView?, prologCompoundC,
+      prologCompoundTagA, chainOf, consC, nilA]
+  · rfl
 
 end PLeaTTa.PrologPartialCompoundProvenanceRegression

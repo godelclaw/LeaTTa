@@ -13,7 +13,7 @@ but those clauses must not separate the marker from the query it owns.
 
 This file specifies that ownership independently of `desugarProgramAtoms`,
 proves the executable pass sound and complete for the specification, relates
-the batch and sequential source-form passes, and pins the private partial
+the batch and sequential source-form passes, and pins the tagged partial
 closure value that exposed the original bug.
 
 [SPEC filereader.pl:13-24, translator.pl:59-61,244-261]
@@ -179,9 +179,10 @@ theorem desugarSourceForms_atoms_map (source : List Atom) (observable : Bool)
         rw [tailEquality]
         simp [List.map_append]
 
-/-- A private partial closure is already a runtime value, not source syntax.
-Compiling it preserves both its independent Prolog reading and its counter and
-emits no goals. -/
+/-- A tagged partial closure is already a runtime value, not source syntax.
+Its ordinary Prolog-compound representation is shared with `Predicate/2`.
+Compiling it preserves both its independent reading and its counter and emits
+no goals. -/
 theorem compileExprFuel_partial_value_data
     (fuel counter : Nat) (env : CEnv) (head : String)
     {terms : List PeTTaSpec.PrologCore.Term} {encodedArguments : Atom}
@@ -193,13 +194,7 @@ theorem compileExprFuel_partial_value_data
         (.compound "partial" [.atom head, .list terms none])
         (partialC head encodedArguments) := by
   constructor
-  · change
-      compileExprFuel (fuel + 1) env counter
-          (.expr [.gnd (.external "PLeaTTa.internal" "partial"),
-            .sym head, encodedArguments]) =
-        .ok (partialC head encodedArguments, [], counter)
-    simpa [Nat.succ_eq_add_one] using
-      (compileExprFuel.eq_7 env counter fuel head encodedArguments)
+  · exact compileExprFuel_partialC fuel env counter head encodedArguments
   · exact TermAgrees.partialValue arguments
 
 /-- Applying an already-created partial value emits exactly one dynamic call
@@ -228,20 +223,23 @@ theorem compileExprFuel_partial_application
   | succ fuel =>
       rw [show fuel.succ + 1 = fuel.succ.succ by omega]
       rw [compileExprFuel.eq_10
-        (x_4 := by simp [partialC, partialTagA])
-        (x_5 := by simp [partialC, partialTagA])
-        (x_6 := by simp [partialC, partialTagA])
-        (x_7 := by simp [partialC, partialTagA])]
+        (x_4 := by
+          simp [partialC, prologCompoundC, prologCompoundTagA])
+        (x_5 := by
+          simp [partialC, prologCompoundC, prologCompoundTagA])
+        (x_6 := by
+          simp [partialC, prologCompoundC, prologCompoundTagA])
+        (x_7 := by
+          simp [partialC, prologCompoundC, prologCompoundTagA])]
       rw [staticDataHead_partialC_false]
-      unfold partialC partialTagA
-      rw [compileExprFuel.eq_7]
+      rw [compileExprFuel_partialC]
       simp only [Bind.bind, Except.bind]
       rw [arguments]
-      simp [partialC, partialTagA, fresh, compilerGeneratedName]
+      simp [fresh, compilerGeneratedName]
 
 /-- Narrow cross-language agreement for pinned partial smart dispatch.
 Pinned emits a direct output-last call with bound arguments first; the
-executable emits `callDyn` carrying the private partial value.  The sealed
+executable emits `callDyn` carrying the tagged partial value.  The sealed
 machine's `callDyn_partial` step performs exactly that redispatch.
 [SPEC translator.pl:59-61,302-346] -/
 inductive PartialCallAgrees :
@@ -429,7 +427,7 @@ theorem source_written_partial_ne_private (head : String)
     (encodedArguments : Atom) :
     .expr [.sym "partial", .sym head, encodedArguments] ≠
       partialC head encodedArguments := by
-  simp [partialC, partialTagA]
+  simp [partialC, prologCompoundC, prologCompoundTagA]
 
 def capturedLambda : Atom :=
   .expr [.sym "|->", .expr [.var "x"], .expr [.var "f", .var "x"]]
@@ -443,7 +441,7 @@ def capturedLambdaRule : Atom :=
 def capturedLambdaValue : Atom :=
   partialValue capturedLambdaName [.var "f"]
 
-/-- Binder conversion itself creates one definition and one private partial
+/-- Binder conversion itself creates one definition and one tagged partial
 value for the captured source. -/
 theorem capturedLambda_desugars_exact :
     desugarBinders capturedLambda 0 =

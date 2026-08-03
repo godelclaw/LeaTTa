@@ -170,7 +170,7 @@ private theorem atomDenotes_variable {valuation : ExecutableValuation}
       rw [← encodedEq] at elements
       exact False.elim (chainDenotes_variable_false elements)
   | partialValue arguments =>
-      simp [partialC, partialTagA] at encodedEq
+      simp [partialC, prologCompoundC, prologCompoundTagA] at encodedEq
 
 private theorem atomDenotes_symbol {valuation : ExecutableValuation}
     {name : String} {value : GroundTerm}
@@ -198,7 +198,7 @@ private theorem atomDenotes_symbol {valuation : ExecutableValuation}
       rw [← encodedEq] at elements
       exact False.elim (chainDenotes_symbol_false elements)
   | partialValue arguments =>
-      simp [partialC, partialTagA] at encodedEq
+      simp [partialC, prologCompoundC, prologCompoundTagA] at encodedEq
 
 private theorem atomDenotes_ground {valuation : ExecutableValuation}
     {ground : Metta.Ground} {value : GroundTerm}
@@ -230,7 +230,7 @@ private theorem atomDenotes_ground {valuation : ExecutableValuation}
       cases itemsEq
       exact Or.inr (Or.inr (Or.inr ⟨groundEq, rfl⟩))
   | partialValue arguments =>
-      simp [partialC, partialTagA] at encodedEq
+      simp [partialC, prologCompoundC, prologCompoundTagA] at encodedEq
 
 private theorem atomDenotes_expression {valuation : ExecutableValuation}
     {atoms : List Atom} {value : GroundTerm}
@@ -440,8 +440,8 @@ theorem AtomDenotes.subst {valuation : ExecutableValuation}
   · intro _items _encoded _elements elementsIH
     exact .properList elementsIH
   · intro head _items _encoded _arguments argumentsIH
-    simpa [partialC, partialTagA, chainOf, consC, nilA] using
-      (AtomDenotes.partialValue (head := head) argumentsIH)
+    rw [subst_partialC]
+    exact AtomDenotes.partialValue (head := head) argumentsIH
   · simpa [nilA] using ChainDenotes.nil (valuation := valuation)
   · intro _value _atom _values _tail _head _rest headIH restIH
     simpa [consC] using ChainDenotes.cons headIH restIH

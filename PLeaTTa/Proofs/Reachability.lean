@@ -727,6 +727,12 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
       exact htop.replaceActive h
   | callDyn_partial c hd args res rest b base boundList bound h hns hp hbd g hg =>
       exact htop.replaceActive h
+  | callDyn_partial_malformed c hd args res rest b base boundList h hns hp hbd =>
+      apply ConfTopological.pull
+      constructor
+      · intro goals branchSubst hcur
+        simp at hcur
+      · exact htop.2
   | callDyn_data c hd args res rest b h hns hnp g hg =>
       exact htop.replaceActive h
   | evalg_ok c v res rest b t gs m profileWorld profileGoals newgoals h ho hs hng =>

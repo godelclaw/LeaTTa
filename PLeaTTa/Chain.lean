@@ -45,31 +45,18 @@ theorem chainOf_cons (head : Atom) (tail : List Atom) :
     chainOf (head :: tail) = consC head (chainOf tail) := by
   rfl
 
-/-- Source-unforgeable tag for pinned PeTTa's `partial(Fun, Args)` compound.
-
-Using the source symbol `partial` here would alias the ordinary source list
-`[partial, Fun, Args]`.  The external payload is an internal representation
-tag only; `unchainify` below erases it before any user observation. -/
-def partialTagA : Atom :=
-  Atom.gnd (.external "PLeaTTa.internal" "partial")
-
-/-- Internal representation of one pinned PeTTa `partial(Fun, Args)`
-compound, where `encodedArgs` is the ordinary internal list encoding.
-
-This is deliberately a direct expression rather than a `#c` chain.  Pinned
-PeTTa's `partial/2` is a Prolog compound, not a list: representing it as a
-chain would let generic list operations observe the private tag and would
-give partial values the wrong list semantics. -/
-def partialC (functor : String) (encodedArgs : Atom) : Atom :=
-  Atom.expr [partialTagA, Atom.sym functor, encodedArgs]
-
-/-- Source-unforgeable tag for a Prolog compound constructed by pinned
-`Predicate/2` through `=../2` [SPEC metta.pl:275].
+/-- Source-unforgeable tag for an ordinary Prolog compound constructed by
+pinned `Predicate/2` through `=../2` [SPEC metta.pl:275].
 
 An ordinary MeTTa expression is represented by a cons-chain, so neither a
 source expression headed by `Predicate` nor a quoted list may double as a
 Prolog compound.  Keeping the provenance in an external tag makes that
-distinction structural; `unchainify` erases it only at observation time. -/
+distinction structural; `unchainify` erases it only at observation time.
+
+This tag is deliberately distinct from `reservedSyntaxTagA`: ordinary
+Prolog data may use functor spellings such as `$clause` and `$goal.call`, but
+it must never become executable retract syntax merely because the spelling
+matches. -/
 def prologCompoundTagA : Atom :=
   Atom.gnd (.external "PLeaTTa.internal" "prolog-compound")
 
@@ -79,6 +66,39 @@ argument spine is an ordinary private proper-list encoding.  Prolog atoms
 do not use this constructor. -/
 def prologCompoundC (functor : String) (encodedArgs : Atom) : Atom :=
   Atom.expr [prologCompoundTagA, Atom.sym functor, encodedArgs]
+
+/-- Source-unforgeable tag for executable syntax used only by the internal
+`retract/1` matcher.
+
+Pinned Prolog uses ordinary compounds for both data and syntax, but the
+executable bridge must remember which terms came from its certified clause
+encoder: otherwise `Predicate/2` could construct a value named `$clause` or
+`$goal.call` and forge an internal syntax node.  Keeping a second private tag
+makes that provenance distinction structural without restricting the
+ordinary Prolog functor namespace. -/
+def reservedSyntaxTagA : Atom :=
+  Atom.gnd (.external "PLeaTTa.internal" "reserved-syntax")
+
+/-- Internal representation of one certified retract-syntax constructor. -/
+def reservedSyntaxC (functor : String) (encodedArgs : Atom) : Atom :=
+  Atom.expr [reservedSyntaxTagA, Atom.sym functor, encodedArgs]
+
+/-- Compatibility name for the former dedicated partial tag.
+
+Pinned PeTTa gives compiler-produced partial applications and Predicate/2's
+`partial(Fun, Args)` the same Prolog term identity.  Partial values therefore
+use `prologCompoundTagA`; this name remains only so downstream proofs can
+remove their old shape assumptions incrementally. -/
+def partialTagA : Atom := prologCompoundTagA
+
+/-- Exact runtime representation of pinned PeTTa's `partial(Fun, Args)`.
+
+The outer value is the same private positive-arity compound produced by
+Predicate/2.  Its argument spine has exactly two fields: the callable
+functor atom and the already-encoded bound-argument list.  An ordinary MeTTa
+list headed by the source symbol `partial` remains a distinct cons-chain. -/
+def partialC (functor : String) (encodedArgs : Atom) : Atom :=
+  prologCompoundC "partial" (chainOf [.sym functor, encodedArgs])
 
 /-- Decode one complete internal cons-chain.  Compilation, specialization,
     and execution share this exact inverse view of `chainOf`. -/
@@ -111,12 +131,6 @@ theorem nilA_ne_source_nil : nilA ≠ Atom.sym "#nil" := by
     chainListM (Atom.sym "#nil") = none := by
   rfl
 
-/-- Recognize only the source-unforgeable partial compound encoding. -/
-def partialView? : Atom → Option (String × Atom)
-  | Atom.expr [Atom.gnd (.external "PLeaTTa.internal" "partial"),
-      Atom.sym functor, encodedArgs] => some (functor, encodedArgs)
-  | _ => none
-
 /-- Recognize only the source-unforgeable positive-arity Prolog-compound
 encoding. -/
 def prologCompoundView? : Atom → Option (String × Atom)
@@ -124,16 +138,40 @@ def prologCompoundView? : Atom → Option (String × Atom)
       Atom.sym functor, encodedArgs] => some (functor, encodedArgs)
   | _ => none
 
+/-- Recognize only certified retract-syntax constructors. -/
+def reservedSyntaxView? : Atom → Option (String × Atom)
+  | Atom.expr [Atom.gnd (.external "PLeaTTa.internal" "reserved-syntax"),
+      Atom.sym functor, encodedArgs] => some (functor, encodedArgs)
+  | _ => none
+
+/-- Recognize only the exact callable `partial/2` compound shape.
+
+The two nested cons cells and private nil terminator make the arity check
+structural.  Predicate/2's `partial/3` therefore remains ordinary data,
+while Predicate/2 and the compiler agree on every exact `partial/2` value. -/
+def partialView? : Atom → Option (String × Atom)
+  | Atom.expr
+      [Atom.gnd (.external "PLeaTTa.internal" "prolog-compound"),
+       Atom.sym "partial",
+       Atom.expr
+         [Atom.sym "#c", Atom.sym functor,
+          Atom.expr
+            [Atom.sym "#c", encodedArgs,
+             Atom.gnd (.external "PLeaTTa.internal" "nil")]]] =>
+      some (functor, encodedArgs)
+  | _ => none
+
 @[simp] theorem chainListM_partialC (functor : String)
     (encodedArgs : Atom) :
     chainListM (partialC functor encodedArgs) = none := by
-  simp [partialC, partialTagA, chainListM]
+  simp [partialC, prologCompoundC, prologCompoundTagA, chainListM]
 
 @[simp] theorem partialView?_partialC (functor : String)
     (encodedArgs : Atom) :
     partialView? (partialC functor encodedArgs) =
       some (functor, encodedArgs) := by
-  simp [partialView?, partialC, partialTagA]
+  simp [partialView?, partialC, prologCompoundC, prologCompoundTagA,
+    chainOf, consC, nilA]
 
 /-- Successful partial decoding exposes the exact internal compound. -/
 theorem partialView?_sound {atom : Atom} {functor : String}
@@ -180,6 +218,55 @@ theorem prologCompoundC_injective {leftFunctor rightFunctor : String}
       prologCompoundC rightFunctor rightArgs) :
     leftFunctor = rightFunctor ∧ leftArgs = rightArgs := by
   simpa [prologCompoundC, prologCompoundTagA] using equal
+
+@[simp] theorem chainListM_reservedSyntaxC (functor : String)
+    (encodedArgs : Atom) :
+    chainListM (reservedSyntaxC functor encodedArgs) = none := by
+  simp [reservedSyntaxC, reservedSyntaxTagA, chainListM]
+
+@[simp] theorem reservedSyntaxView?_reservedSyntaxC (functor : String)
+    (encodedArgs : Atom) :
+    reservedSyntaxView? (reservedSyntaxC functor encodedArgs) =
+      some (functor, encodedArgs) := by
+  simp [reservedSyntaxView?, reservedSyntaxC, reservedSyntaxTagA]
+
+/-- Successful reserved-syntax decoding exposes the exact constructor. -/
+theorem reservedSyntaxView?_sound {atom : Atom} {functor : String}
+    {encodedArgs : Atom}
+    (view : reservedSyntaxView? atom = some (functor, encodedArgs)) :
+    atom = reservedSyntaxC functor encodedArgs := by
+  unfold reservedSyntaxView? at view
+  split at view
+  next parsedFunctor parsedArgs =>
+    simp only [Option.some.injEq, Prod.mk.injEq] at view
+    rcases view with ⟨rfl, rfl⟩
+    rfl
+  next => contradiction
+
+/-- Certified syntax is injective in its functor and argument spine. -/
+theorem reservedSyntaxC_injective {leftFunctor rightFunctor : String}
+    {leftArgs rightArgs : Atom}
+    (equal : reservedSyntaxC leftFunctor leftArgs =
+      reservedSyntaxC rightFunctor rightArgs) :
+    leftFunctor = rightFunctor ∧ leftArgs = rightArgs := by
+  simpa [reservedSyntaxC, reservedSyntaxTagA] using equal
+
+/-- An ordinary Prolog value cannot forge certified retract syntax, even
+when both use the same visible functor and argument spine. -/
+@[simp] theorem prologCompoundC_ne_reservedSyntaxC
+    (valueFunctor syntaxFunctor : String) (valueArgs syntaxArgs : Atom) :
+    prologCompoundC valueFunctor valueArgs ≠
+      reservedSyntaxC syntaxFunctor syntaxArgs := by
+  simp [prologCompoundC, prologCompoundTagA,
+    reservedSyntaxC, reservedSyntaxTagA]
+
+@[simp] theorem reservedSyntaxC_ne_prologCompoundC
+    (syntaxFunctor valueFunctor : String) (syntaxArgs valueArgs : Atom) :
+    reservedSyntaxC syntaxFunctor syntaxArgs ≠
+      prologCompoundC valueFunctor valueArgs := by
+  exact Ne.symm
+    (prologCompoundC_ne_reservedSyntaxC valueFunctor syntaxFunctor
+      valueArgs syntaxArgs)
 
 /-- Deep chainify a surface atom (quoted data, facts). -/
 def chainify : Atom → Atom

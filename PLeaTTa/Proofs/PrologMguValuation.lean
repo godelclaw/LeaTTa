@@ -481,7 +481,9 @@ theorem CanonicalRuntimeAgrees.ground_exists
           by
             simpa [groundTree, groundTrees] using
               (CanonicalRuntimeAgrees.partialValue groundedAgreement),
-          by simp [partialC, partialTagA, Atom.vars, closed]⟩
+          by
+            simp [partialC, prologCompoundC, prologCompoundTagA,
+              chainOf, consC, nilA, Atom.vars, closed]⟩
   | nil =>
       exact ⟨nilA, by
         simpa [groundTree, groundTrees] using
@@ -581,7 +583,8 @@ theorem canonicalRuntimeAgrees_ground_apply
   | @partialValue head argumentsTree encodedArguments arguments
       inductionHypothesis =>
       simpa [TreeSubstitution.apply_node, groundTree, groundTrees,
-        groundTrees_eq_map, partialC, partialTagA, subst_chainOf] using
+        groundTrees_eq_map, partialC, prologCompoundC,
+        prologCompoundTagA, subst_chainOf] using
           (CanonicalRuntimeAgrees.partialValue inductionHypothesis)
   | nil =>
       simpa [TreeSubstitution.apply_node, groundTree, groundTrees, nilA] using
