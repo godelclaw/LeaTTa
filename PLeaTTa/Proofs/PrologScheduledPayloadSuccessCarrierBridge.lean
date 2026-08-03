@@ -1470,6 +1470,341 @@ theorem toPersistentFreeActivePayload
   · exact nextSnapshotRestoration
   · simpa [currentQuery] using relation.successorCumulative
 
+/-! ## Type-valued scheduled-success successor -/
+
+/-- The exact active successor of one successful scheduled-head transition.
+
+This package lives in `Type`.  In particular, the dependent payload value is
+data carried by the transition rather than a proposition which a later layer
+would have to reopen with choice.  The older existence theorem remains the
+constructive producer: it can establish `Nonempty` for this package, while an
+actual global transition stores the package itself. -/
+structure ScheduledSuccessfulHeadSuccessor
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (before : RepresentativeScheduledPayloadState)
+    (ready : RootClosedAnswerReady before)
+    (selection : ScheduledLocalSelection ready.result.historyBuild.cells)
+    (scope : CutScopeId)
+    (transition :
+      ScheduledSelectedHeadTransition ready.payloadAlignment selection scope
+        before.carrier.index.session)
+    (partition : RootPayloadPartition before)
+    (independentResult : Substitution)
+    (nextAlpha : List (LogicVar × String))
+    (sourceCanonical flattened : TreeSubstitution)
+    (installed : Subst)
+    (relation :
+      ScheduledSuccessfulHeadRelates prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed) where
+  payloadContext :
+    ActiveProductPayloadContextAt nextAlpha before.carrier.index.support
+      before.carrier.index.qterm
+      transition.selectedPayloadCell.currentScope transition.finish
+      transition.branch transition.branchTail
+      selection.selected.resource.barrier
+      transition.selectedPayloadCell.segment.barrier
+      transition.selectedPayloadCell.segment.references
+      transition.selectedPayloadCell.segment.executables
+      transition.selectedPayloadCell.outerSegments
+      (afterPulledHead selection.selected.resource selection.localTail)
+      transition.postLaterResources
+      transition.selectedPayloadCell.nextScope
+      transition.selectedPayloadCell.outerScope
+      transition.postLaterContext
+  agreement :
+    PersistentFreeActiveProductPayloadResourceRelatesAt
+      (AlphaFreshFrontier nextAlpha) nextAlpha
+      before.carrier.index.support
+      (sourceCanonical ++ transition.selectedSnapshotAtFinish.canonical)
+      transition.selectedSnapshotAtFinish.referenceBase
+      transition.selectedPayloadCell.currentScope
+      before.carrier.index.session transition.finish transition.branch
+      transition.branchTail selection.localTail
+      selection.selected.resource.barrier
+      transition.selectedPayloadCell.segment.barrier
+      transition.branch.body transition.copied.body
+      transition.selectedPayloadCell.segment.references
+      transition.selectedPayloadCell.segment.executables
+      transition.selectedPayloadCell.outerSegments independentResult
+      (PLeaTTa.trimFor
+        (transition.copied.body ++ selection.selected.resource.rest)
+        (selectedFineState before).control.qterm installed)
+      before.carrier.index.qterm
+      (afterPulledHead selection.selected.resource selection.localTail)
+      transition.postLaterResources
+      transition.selectedPayloadCell.nextScope
+      transition.selectedPayloadCell.outerScope
+      transition.postLaterContext []
+      (successfulSourceFrontier transition independentResult)
+      (successfulFineState transition installed) payloadContext
+  restoration :
+    RetainedCallPayloadSnapshot.RestorationDataAgrees
+      (headCell payloadContext).snapshot
+      transition.selectedSnapshotAtFinish
+  cumulative :
+    AlphaCumulativeResidualVariantAgreesOnWith nextAlpha
+      before.carrier.index.support
+      (sourceCanonical ++ transition.selectedSnapshotAtFinish.canonical)
+      transition.selectedSnapshotAtFinish.referenceBase
+      (PLeaTTa.trimFor
+        (transition.copied.body ++ selection.selected.resource.rest)
+        (selectedFineState before).control.qterm installed)
+      (flattened ++
+        transition.selectedSnapshotAtFinish.residualRepresentative)
+
+namespace ScheduledSuccessfulHeadSuccessor
+
+/-- Reify the successor package as the single global persistent-free active
+carrier.  Every index is the literal endpoint already certified by
+`agreement`; no historical creation packet is reconstructed. -/
+def carrier
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : RepresentativeScheduledPayloadState}
+    {ready : RootClosedAnswerReady before}
+    {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
+    {scope : CutScopeId}
+    {transition :
+      ScheduledSelectedHeadTransition ready.payloadAlignment selection scope
+        before.carrier.index.session}
+    {partition : RootPayloadPartition before}
+    {independentResult : Substitution}
+    {nextAlpha : List (LogicVar × String)}
+    {sourceCanonical flattened : TreeSubstitution}
+    {installed : Subst}
+    {relation :
+      ScheduledSuccessfulHeadRelates prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed}
+    (successor :
+      ScheduledSuccessfulHeadSuccessor prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed relation) :
+    PersistentFreeActivePayloadState :=
+  { index :=
+      { freshFrontier := AlphaFreshFrontier nextAlpha
+        alpha := nextAlpha
+        support := before.carrier.index.support
+        canonical :=
+          sourceCanonical ++ transition.selectedSnapshotAtFinish.canonical
+        referenceBase := transition.selectedSnapshotAtFinish.referenceBase
+        predicateScope := transition.selectedPayloadCell.currentScope
+        session := before.carrier.index.session
+        finish := transition.finish
+        branch := transition.branch
+        branchTail := transition.branchTail
+        altTail := selection.localTail
+        bodyBarrier := selection.selected.resource.barrier
+        callerBarrier := transition.selectedPayloadCell.segment.barrier
+        bodyReferences := transition.branch.body
+        bodyExecutables := transition.copied.body
+        callerReferences := transition.selectedPayloadCell.segment.references
+        callerExecutables := transition.selectedPayloadCell.segment.executables
+        outer := transition.selectedPayloadCell.outerSegments
+        current := independentResult
+        runtime :=
+          PLeaTTa.trimFor
+            (transition.copied.body ++ selection.selected.resource.rest)
+            (selectedFineState before).control.qterm installed
+        qterm := before.carrier.index.qterm
+        active :=
+          afterPulledHead selection.selected.resource selection.localTail
+        resources := transition.postLaterResources
+        callerScope := transition.selectedPayloadCell.nextScope
+        outerScope := transition.selectedPayloadCell.outerScope
+        context := transition.postLaterContext
+        baseAlts := []
+        source := successfulSourceFrontier transition independentResult
+        openConf := successfulFineState transition installed }
+    payloadContext := successor.payloadContext
+    agreement := successor.agreement }
+
+/-- The representative-bearing phase endpoint stored by the global zipper. -/
+def after
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : RepresentativeScheduledPayloadState}
+    {ready : RootClosedAnswerReady before}
+    {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
+    {scope : CutScopeId}
+    {transition :
+      ScheduledSelectedHeadTransition ready.payloadAlignment selection scope
+        before.carrier.index.session}
+    {partition : RootPayloadPartition before}
+    {independentResult : Substitution}
+    {nextAlpha : List (LogicVar × String)}
+    {sourceCanonical flattened : TreeSubstitution}
+    {installed : Subst}
+    {relation :
+      ScheduledSuccessfulHeadRelates prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed}
+    (successor :
+      ScheduledSuccessfulHeadSuccessor prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed relation) :
+    RepresentativePersistentFreeActivePayloadState :=
+  { carrier := successor.carrier
+    representative :=
+      flattened ++ transition.selectedSnapshotAtFinish.residualRepresentative
+    cumulative := successor.cumulative }
+
+@[simp] theorem after_sourceState
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : RepresentativeScheduledPayloadState}
+    {ready : RootClosedAnswerReady before}
+    {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
+    {scope : CutScopeId}
+    {transition :
+      ScheduledSelectedHeadTransition ready.payloadAlignment selection scope
+        before.carrier.index.session}
+    {partition : RootPayloadPartition before}
+    {independentResult : Substitution}
+    {nextAlpha : List (LogicVar × String)}
+    {sourceCanonical flattened : TreeSubstitution}
+    {installed : Subst}
+    {relation :
+      ScheduledSuccessfulHeadRelates prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed}
+    (successor :
+      ScheduledSuccessfulHeadSuccessor prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed relation) :
+    successor.after.carrier.sourceState =
+      .running before.carrier.index.session
+        (successfulSourceFrontier transition independentResult) := rfl
+
+@[simp] theorem after_fineState
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : RepresentativeScheduledPayloadState}
+    {ready : RootClosedAnswerReady before}
+    {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
+    {scope : CutScopeId}
+    {transition :
+      ScheduledSelectedHeadTransition ready.payloadAlignment selection scope
+        before.carrier.index.session}
+    {partition : RootPayloadPartition before}
+    {independentResult : Substitution}
+    {nextAlpha : List (LogicVar × String)}
+    {sourceCanonical flattened : TreeSubstitution}
+    {installed : Subst}
+    {relation :
+      ScheduledSuccessfulHeadRelates prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed}
+    (successor :
+      ScheduledSuccessfulHeadSuccessor prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed relation) :
+    successor.after.carrier.fineState =
+      .ready (successfulFineState transition installed) := rfl
+
+@[simp] theorem after_session
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : RepresentativeScheduledPayloadState}
+    {ready : RootClosedAnswerReady before}
+    {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
+    {scope : CutScopeId}
+    {transition :
+      ScheduledSelectedHeadTransition ready.payloadAlignment selection scope
+        before.carrier.index.session}
+    {partition : RootPayloadPartition before}
+    {independentResult : Substitution}
+    {nextAlpha : List (LogicVar × String)}
+    {sourceCanonical flattened : TreeSubstitution}
+    {installed : Subst}
+    {relation :
+      ScheduledSuccessfulHeadRelates prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed}
+    (successor :
+      ScheduledSuccessfulHeadSuccessor prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed relation) :
+    successor.after.carrier.index.session = before.carrier.index.session := rfl
+
+@[simp] theorem after_openConf
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : RepresentativeScheduledPayloadState}
+    {ready : RootClosedAnswerReady before}
+    {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
+    {scope : CutScopeId}
+    {transition :
+      ScheduledSelectedHeadTransition ready.payloadAlignment selection scope
+        before.carrier.index.session}
+    {partition : RootPayloadPartition before}
+    {independentResult : Substitution}
+    {nextAlpha : List (LogicVar × String)}
+    {sourceCanonical flattened : TreeSubstitution}
+    {installed : Subst}
+    {relation :
+      ScheduledSuccessfulHeadRelates prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed}
+    (successor :
+      ScheduledSuccessfulHeadSuccessor prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed relation) :
+    successor.after.carrier.index.openConf =
+      successfulFineState transition installed := rfl
+
+@[simp] theorem after_representative
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : RepresentativeScheduledPayloadState}
+    {ready : RootClosedAnswerReady before}
+    {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
+    {scope : CutScopeId}
+    {transition :
+      ScheduledSelectedHeadTransition ready.payloadAlignment selection scope
+        before.carrier.index.session}
+    {partition : RootPayloadPartition before}
+    {independentResult : Substitution}
+    {nextAlpha : List (LogicVar × String)}
+    {sourceCanonical flattened : TreeSubstitution}
+    {installed : Subst}
+    {relation :
+      ScheduledSuccessfulHeadRelates prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed}
+    (successor :
+      ScheduledSuccessfulHeadSuccessor prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed relation) :
+    successor.after.representative =
+      flattened ++
+        transition.selectedSnapshotAtFinish.residualRepresentative := rfl
+
+/-- The existing constructive proof inhabits the new Type-valued package.
+`Nonempty` is only the producer theorem's proposition; it is never stored as
+phase data. -/
+theorem nonempty
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : RepresentativeScheduledPayloadState}
+    {ready : RootClosedAnswerReady before}
+    {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
+    {scope : CutScopeId}
+    {transition :
+      ScheduledSelectedHeadTransition ready.payloadAlignment selection scope
+        before.carrier.index.session}
+    {partition : RootPayloadPartition before}
+    {independentResult : Substitution}
+    {nextAlpha : List (LogicVar × String)}
+    {sourceCanonical flattened : TreeSubstitution}
+    {installed : Subst}
+    (relation :
+      ScheduledSuccessfulHeadRelates prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed) :
+    Nonempty
+      (ScheduledSuccessfulHeadSuccessor prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed relation) := by
+  rcases ScheduledSelectedHeadTransition.toPersistentFreeActivePayload relation with
+    ⟨payloadContext, agreement, restoration, cumulative⟩
+  exact ⟨⟨payloadContext, agreement, restoration, cumulative⟩⟩
+
+end ScheduledSuccessfulHeadSuccessor
+
 end ScheduledSelectedHeadTransition
 
 end PLeaTTa.PrologScheduledPayloadSuccessCarrierBridge

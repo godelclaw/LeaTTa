@@ -424,6 +424,10 @@ PROLOG_SCHEDULED_PAYLOAD_SUCCESS_CARRIER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologScheduledPayloadSuccessCarrierBridge.lean"
 )
+PROLOG_SCHEDULED_SUCCESS_PREFIX_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologScheduledSuccessPrefixBridge.lean"
+)
 PROLOG_PERSISTENT_FREE_SCHEDULED_REJECTION_PULL_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologPersistentFreeScheduledRejectionPullBridge.lean"
@@ -856,6 +860,8 @@ def check() -> list[str]:
             digest(PROLOG_SCHEDULED_PAYLOAD_SUCCESS_BRIDGE),
         "prolog_scheduled_payload_success_carrier_bridge_sha256":
             digest(PROLOG_SCHEDULED_PAYLOAD_SUCCESS_CARRIER_BRIDGE),
+        "prolog_scheduled_success_prefix_bridge_sha256":
+            digest(PROLOG_SCHEDULED_SUCCESS_PREFIX_BRIDGE),
         "prolog_persistent_free_scheduled_rejection_pull_bridge_sha256":
             digest(PROLOG_PERSISTENT_FREE_SCHEDULED_REJECTION_PULL_BRIDGE),
         "prolog_persistent_free_scheduled_rejection_pull_regression_sha256":

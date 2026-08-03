@@ -8,6 +8,7 @@ Trusted boundary: none
 -/
 import PLeaTTa.Proofs.PrologPersistentFreeScheduledRejectionCatchupBridge
 import PLeaTTa.Proofs.PrologRepresentativeCallPrefilterBridge
+import PLeaTTa.Proofs.PrologScheduledSuccessPrefixBridge
 
 namespace PLeaTTa.PrologScheduledRejectionReachabilityRegression
 
@@ -55,6 +56,9 @@ open PrologScheduledPayloadPathBridge
 open PrologScheduledPayloadResumeBridge
 open PrologScheduledPayloadPostHeadBridge
 open PrologScheduledPayloadRejectionBridge
+open PrologScheduledPayloadSuccessBridge
+open PrologScheduledPayloadSuccessCarrierBridge
+open PrologScheduledSuccessPrefixBridge
 open PrologStateBridge
 open PrologSupportedCursorAlternativeBridge
 
@@ -1727,5 +1731,808 @@ theorem four_occurrence_rejection_then_one_source_skip_exact
           agreement, positionZero, by simpa [postResource] using nextResourceExact,
           nextCursorExact, fineBranchExact, fineTailExact, partitionExact,
           countOne, finishLive, sourceOne, by simpa using combined⟩
+
+/-! ## Reachable successful scheduled head
+
+The four-occurrence witness above deliberately makes the first scheduled
+head fail.  A second, smaller literal program uses two occurrence-distinct
+copies of the successful source clause.  Its first answer therefore exposes
+the second copy as a genuinely reachable scheduled success, rather than
+assuming `ScheduledSuccessfulHeadRelates` as an input. -/
+
+private def secondSelectedVersion : VersionedClause :=
+  (Database.empty.assertz selectedReference).allocate selectedReference
+
+private def doubleSelectedDatabase : Database :=
+  (Database.empty.assertz selectedReference).assertz selectedReference
+
+private def doubleSelectedWorld : PWorld :=
+  (((default : PWorld).reindexClauses.appendProgClause
+    ("p", selectedExecutable)).appendProgClause ("p", selectedExecutable))
+
+private theorem doubleSelectedDatabase_relates_world :
+    DatabaseRelatesWorld doubleSelectedDatabase doubleSelectedWorld := by
+  have first := emptyDatabaseRelatesIndexedWorld.assertz selectedClauseAgrees
+  have second := first.assertz selectedClauseAgrees
+  simpa [doubleSelectedDatabase, doubleSelectedWorld] using second
+
+private def doubleSelectedSession : Session :=
+  { resolver :=
+      { database := doubleSelectedDatabase
+        nextFresh := 0 } }
+
+private def doubleSelectedOpenConf : OpenConf :=
+  { persistent :=
+      { world := doubleSelectedWorld
+        counter := 0 }
+    control :=
+      { cur := some ([.call "p" queryArgs okAtom], [])
+        alts := []
+        qterm := okAtom } }
+
+private theorem doubleSelectedWorld_coherent :
+    doubleSelectedWorld.ClauseIndexCoherent := by
+  have root := PWorld.reindexClauses_coherent (default : PWorld)
+  have first :=
+    PWorld.appendProgClause_coherent _ ("p", selectedExecutable) root
+  have second :=
+    PWorld.appendProgClause_coherent _ ("p", selectedExecutable) first
+  simpa [doubleSelectedWorld] using second
+
+private theorem doubleSelected_resolutionCandidates :
+    doubleSelectedWorld.resolutionCandidates "p" 2 =
+      [selectedExecutable, selectedExecutable] := by
+  rw [PWorld.resolutionCandidates_eq _ _ _ doubleSelectedWorld_coherent]
+  have emptyClauses : (default : PWorld).progClauses = [] := rfl
+  simp [doubleSelectedWorld, PWorld.reindexClauses,
+    PWorld.appendProgClause, PWorld.clausesOf, selectedExecutable,
+    emptyClauses]
+
+private theorem doubleSelected_visibleClauses :
+    doubleSelectedDatabase.visibleClausesAt
+        doubleSelectedDatabase.generation "p" 3 =
+      [selectedVersion, secondSelectedVersion] := by
+  rfl
+
+private theorem doubleSelected_candidateBank :
+    SupportedCandidateBank "p"
+      (doubleSelectedDatabase.visibleClausesAt
+        doubleSelectedDatabase.generation "p" 3)
+      (doubleSelectedWorld.resolutionCandidates "p" 2) := by
+  rw [doubleSelected_visibleClauses, doubleSelected_resolutionCandidates]
+  let firstHead : CandidateClauseAgrees "p" selectedVersion
+      selectedExecutable := by
+    change LocalClauseAgrees selectedReference ("p", selectedExecutable)
+    exact selectedClauseAgrees
+  let secondHead : CandidateClauseAgrees "p" secondSelectedVersion
+      selectedExecutable := by
+    change LocalClauseAgrees selectedReference ("p", selectedExecutable)
+    exact selectedClauseAgrees
+  have firstEncoding : EncodingInjectiveOn selectedVersion.clause.variables := by
+    simp [EncodingInjectiveOn, selectedVersion, Database.allocate,
+      selectedReference, queryTerms, leftTerm, rightTerm, okTerm,
+      LocalClause.variables, termsVariables, termVariables, goalsVariables,
+      goalVariables]
+  have secondEncoding :
+      EncodingInjectiveOn secondSelectedVersion.clause.variables := by
+    simp [EncodingInjectiveOn, secondSelectedVersion, Database.allocate,
+      selectedReference, queryTerms, leftTerm, rightTerm, okTerm,
+      LocalClause.variables, termsVariables, termVariables, goalsVariables,
+      goalVariables]
+  have firstBody :
+      CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported
+        selectedVersion.clause.variables selectedVersion.clause.variables
+        firstHead.body := by
+    change CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported [] []
+      firstHead.body
+    have bodyEq : firstHead.body =
+        (CompilerAdequacy.GoalsAgree.conjunction
+          CompilerAdequacy.GoalsAgree.nil CompilerAdequacy.GoalsAgree.nil) :=
+      Subsingleton.elim _ _
+    rw [bodyEq]
+    exact .conjunction .nil .nil
+  have secondBody :
+      CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported
+        secondSelectedVersion.clause.variables
+        secondSelectedVersion.clause.variables secondHead.body := by
+    change CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported [] []
+      secondHead.body
+    have bodyEq : secondHead.body =
+        (CompilerAdequacy.GoalsAgree.conjunction
+          CompilerAdequacy.GoalsAgree.nil CompilerAdequacy.GoalsAgree.nil) :=
+      Subsingleton.elim _ _
+    rw [bodyEq]
+    exact .conjunction .nil .nil
+  exact
+    ⟨List.Forall₂.cons firstHead (List.Forall₂.cons secondHead .nil),
+      .cons (head := firstHead) firstEncoding firstBody
+        (.cons (head := secondHead) secondEncoding secondBody .nil)⟩
+
+private def firstSelectedPrepared : ClauseBranch :=
+  preparedBranchOf doubleSelectedDatabase.generation queryTerms [] 0
+    selectedVersion
+
+private def secondSelectedPrepared : ClauseBranch :=
+  preparedBranchOf doubleSelectedDatabase.generation queryTerms [] 0
+    secondSelectedVersion
+
+private def firstSelectedAlt : PLeaTTa.Alt :=
+  resolutionAlt queryArgs queryArgs okAtom [] [] okAtom 1 0
+    selectedExecutable
+
+private def secondSelectedAlt : PLeaTTa.Alt :=
+  resolutionAlt queryArgs queryArgs okAtom [] [] okAtom 1 1
+    selectedExecutable
+
+private def firstSelectedCopied : PLeaTTa.Clause :=
+  PLeaTTa.freshenResolutionClause queryArgs queryArgs okAtom [] [] okAtom
+    0 1 selectedExecutable
+
+private def doubleSelectedScan : List PLeaTTa.Alt × Nat :=
+  resolveAlts
+    (doubleSelectedOpenConf.persistent.world.resolutionCandidates "p" 2)
+    queryArgs queryArgs okAtom [] [] doubleSelectedOpenConf.control.qterm
+    (barrierDepth doubleSelectedOpenConf.toConf + 1)
+    doubleSelectedOpenConf.toConf.counter
+
+private theorem doubleSelectedScan_exact :
+    doubleSelectedScan = ([firstSelectedAlt, secondSelectedAlt], 2) := by
+  unfold doubleSelectedScan
+  change
+    resolveAlts (doubleSelectedWorld.resolutionCandidates "p" 2)
+        queryArgs queryArgs okAtom [] [] okAtom 1 0 =
+      ([firstSelectedAlt, secondSelectedAlt], 2)
+  rw [doubleSelected_resolutionCandidates, resolveAlts_eq_scanResolution]
+  have scan :
+      ResolutionScan queryArgs queryArgs okAtom [] [] okAtom 1
+        [selectedExecutable, selectedExecutable] 0
+        [firstSelectedAlt, secondSelectedAlt] 2 :=
+    .retained selectedExecutable [selectedExecutable] 0 2
+      [secondSelectedAlt]
+      (by
+        simp [resolutionClauseRetained, queryArgs, leftAtom, rightAtom,
+          okAtom, selectedExecutable, PLeaTTa.prologMatchCompat,
+          PLeaTTa.prologMatchCompatList])
+      (.retained selectedExecutable [] 1 2 []
+        (by
+          simp [resolutionClauseRetained, queryArgs, leftAtom, rightAtom,
+            okAtom, selectedExecutable, PLeaTTa.prologMatchCompat,
+            PLeaTTa.prologMatchCompatList])
+        (.nil 2))
+  simpa [firstSelectedAlt, secondSelectedAlt] using scan.result_eq
+
+private def doubleSelectedPending : DemandDrivenCallStep.PendingCall :=
+  DemandDrivenCallStep.pendingCallOf doubleSelectedOpenConf
+    doubleSelectedScan.1 doubleSelectedScan.2
+
+private theorem doubleSelectedScan_nonempty :
+    doubleSelectedPending.branches ≠ [] := by
+  rw [doubleSelectedPending, doubleSelectedScan_exact]
+  exact List.cons_ne_nil _ _
+
+private theorem doubleSelected_openedRemaining :
+    (openedFor doubleSelectedSession "p" queryTerms []).cursor.remaining =
+      [firstSelectedPrepared, secondSelectedPrepared] := by
+  rfl
+
+private theorem firstSelected_resolves :
+    HeadResolution firstSelectedPrepared [] := by
+  have normalizedExact :
+      firstSelectedPrepared.normalizedHeadEquations =
+        selectedPrepared.normalizedHeadEquations := by
+    rfl
+  have selected := selectedResolves
+  unfold HeadResolution at selected ⊢
+  rw [normalizedExact]
+  simpa [firstSelectedPrepared, selectedPrepared, preparedBranchOf] using
+    selected
+
+private theorem secondSelected_resolves :
+    HeadResolution secondSelectedPrepared [] := by
+  have normalizedExact :
+      secondSelectedPrepared.normalizedHeadEquations =
+        firstSelectedPrepared.normalizedHeadEquations := by
+    rfl
+  have first := firstSelected_resolves
+  unfold HeadResolution at first ⊢
+  rw [normalizedExact]
+  simpa [secondSelectedPrepared, firstSelectedPrepared, preparedBranchOf]
+    using first
+
+private theorem doubleSelected_entry :
+    RepresentativeSupportedCallEntryRelates []
+      (openedFor doubleSelectedSession "p" queryTerms [])
+      doubleSelectedOpenConf doubleSelectedPending queryArgs queryArgs okAtom
+      [] [] okAtom (barrierDepth doubleSelectedOpenConf.toConf + 1)
+      doubleSelectedOpenConf.toConf.counter := by
+  have database :
+      DatabaseRelatesWorld doubleSelectedSession.resolver.database
+        doubleSelectedOpenConf.persistent.world := by
+    simpa [doubleSelectedSession, doubleSelectedOpenConf] using
+      doubleSelectedDatabase_relates_world
+  have ready :
+      doubleSelectedOpenConf.persistent.world.clauseIndexReady = true := by
+    rfl
+  have scanned :
+      resolveAlts
+          (doubleSelectedOpenConf.persistent.world.resolutionCandidates "p" 2)
+          queryArgs queryArgs okAtom [] [] doubleSelectedOpenConf.control.qterm
+          (barrierDepth doubleSelectedOpenConf.toConf + 1)
+          doubleSelectedOpenConf.toConf.counter = doubleSelectedScan := by
+    rfl
+  have query :=
+    PrologRecursiveCallPayloadBridge.TaskPayloadAgrees.representativeNormalizedCallAgrees
+      (rootPayload (barrierDepth doubleSelectedOpenConf.toConf + 1))
+      querySupported
+      (openedFor doubleSelectedSession "p" queryTerms []).cursor
+      (by simp [openedFor, openLocalCall, requestFor, prepareCall])
+      (by simp [openedFor, openLocalCall, requestFor, prepareCall])
+  have constructed :=
+    openedFor_pendingCallOf_representative_supported_relates
+      database ready "p" queryTerms [] [] queryArgs okAtom [] []
+      doubleSelectedScan.1 doubleSelectedScan.2 (by rfl) (by rfl)
+      (by
+        calc
+          _ = doubleSelectedScan := by
+            simpa [queryArgs, leftAtom, rightAtom, Metta.Subst.apply,
+              Metta.Subst.lookup] using scanned
+          _ = (doubleSelectedScan.1, doubleSelectedScan.2) :=
+            (Prod.eta doubleSelectedScan).symm)
+      query doubleSelected_candidateBank
+  simpa [doubleSelectedPending, doubleSelectedOpenConf] using constructed
+
+private theorem doubleSelected_initialBelow :
+    ConfBelowResolutionCounter doubleSelectedOpenConf.toConf := by
+  apply ConfBelowResolutionCounter.of_names
+  intro name member
+  simp [resolutionLiveVars, doubleSelectedOpenConf, OpenConf.toConf,
+    Control.toConf, specializationGoalsVars, specializationGoalVars,
+    resolutionSubstVars, queryArgs, leftAtom, rightAtom, okAtom,
+    Metta.Atom.vars] at member
+
+private theorem doubleSelectedFrontier_resolves :
+    ∀ {count : Nat} {finish : PreparedCursor} {branch : ClauseBranch}
+      {clause : PLeaTTa.Clause} {branchTail : List ClauseBranch}
+      {clauseTail : List PLeaTTa.Clause} {altTail : List PLeaTTa.Alt}
+      {copied : PLeaTTa.Clause},
+      RejectedPullsN count
+          (openedFor doubleSelectedSession "p" queryTerms []).cursor finish →
+        RepresentativeRetainedCallFrontier []
+          (openedFor doubleSelectedSession "p" queryTerms [])
+          doubleSelectedOpenConf doubleSelectedPending finish branch clause
+          branchTail clauseTail altTail copied queryArgs queryArgs okAtom [] []
+          okAtom (barrierDepth doubleSelectedOpenConf.toConf + 1)
+          doubleSelectedOpenConf.toConf.counter →
+        ∃ independentResult : Substitution,
+          HeadResolution branch independentResult ∧
+            AlphaRuntimeNamesLive [] copied.body okAtom := by
+  intro count finish branch clause branchTail clauseTail altTail copied
+    pulls frontier
+  cases pulls with
+  | zero cursor =>
+      have shape := frontier.finishRemaining
+      rw [doubleSelected_openedRemaining] at shape
+      have branchExact : branch = firstSelectedPrepared :=
+        (List.cons.inj shape).1.symm
+      subst branch
+      exact
+        ⟨[], firstSelected_resolves,
+          by intro identity name member; simp at member⟩
+  | succ count cursor entered branches finish remaining clash tail =>
+      rw [doubleSelected_openedRemaining] at remaining
+      have enteredExact : entered = firstSelectedPrepared :=
+        (List.cons.inj remaining).1.symm
+      subst entered
+      exact False.elim (clash ⟨[], firstSelected_resolves⟩)
+
+private theorem doubleSelectedFrontier_shape
+    {count : Nat} {finish : PreparedCursor} {branch : ClauseBranch}
+    {clause : PLeaTTa.Clause} {branchTail : List ClauseBranch}
+    {clauseTail : List PLeaTTa.Clause} {altTail : List PLeaTTa.Alt}
+    {copied : PLeaTTa.Clause}
+    (pulls :
+      RejectedPullsN count
+        (openedFor doubleSelectedSession "p" queryTerms []).cursor finish)
+    (frontier :
+      RepresentativeRetainedCallFrontier []
+        (openedFor doubleSelectedSession "p" queryTerms [])
+        doubleSelectedOpenConf doubleSelectedPending finish branch clause
+        branchTail clauseTail altTail copied queryArgs queryArgs okAtom [] []
+        okAtom (barrierDepth doubleSelectedOpenConf.toConf + 1)
+        doubleSelectedOpenConf.toConf.counter) :
+    count = 0 ∧
+      finish = (openedFor doubleSelectedSession "p" queryTerms []).cursor ∧
+      branch = firstSelectedPrepared ∧
+      branchTail = [secondSelectedPrepared] := by
+  cases pulls with
+  | zero cursor =>
+      have shape := frontier.finishRemaining
+      rw [doubleSelected_openedRemaining] at shape
+      exact
+        ⟨rfl, rfl, (List.cons.inj shape).1.symm,
+          (List.cons.inj shape).2.symm⟩
+  | succ count cursor entered branches finish remaining clash tail =>
+      rw [doubleSelected_openedRemaining] at remaining
+      have enteredExact : entered = firstSelectedPrepared :=
+        (List.cons.inj remaining).1.symm
+      subst entered
+      exact False.elim (clash ⟨[], firstSelected_resolves⟩)
+
+/-- A literal two-occurrence program reaches the first successful clause with
+the second, occurrence-distinct successful clause retained in both lanes. -/
+private theorem double_selected_root_activation
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ∃ finish representative nextAlpha sourceCanonical flattened installed
+        after,
+      RepresentativeRootCallSuccessorFacts prog gt [] [] [] []
+        doubleSelectedSession doubleSelectedOpenConf rootScope "p" queryTerms
+        [] queryArgs okAtom [] doubleSelectedScan.1 doubleSelectedScan.2 0
+        0 [] [] finish firstSelectedPrepared selectedExecutable
+        [secondSelectedPrepared] [selectedExecutable] [secondSelectedAlt]
+        firstSelectedCopied [] representative nextAlpha sourceCanonical
+        flattened installed after ∧
+      finish = (openedFor doubleSelectedSession "p" queryTerms []).cursor ∧
+      finish.remaining =
+        [firstSelectedPrepared, secondSelectedPrepared] ∧
+      after.carrier.index.bodyReferences = selectedReference.body ∧
+      after.carrier.index.bodyExecutables = firstSelectedCopied.body := by
+  have beforeSession :
+      SessionRelatesOpenConf (AlphaFreshFrontier []) ExactControlFrontiers
+        doubleSelectedSession doubleSelectedOpenConf := by
+    refine ⟨?_, rfl, rfl, rfl⟩
+    refine ⟨?_, ?_⟩
+    · simpa [doubleSelectedSession, doubleSelectedOpenConf] using
+        doubleSelectedDatabase_relates_world
+    · simpa [doubleSelectedSession, doubleSelectedOpenConf] using
+        (AlphaFreshFrontier.empty 0 0)
+  have preHeadPayload :
+      TaskSpinePayloadAgrees [] [] [] [] [] []
+        [{ barrier := 0
+           references := [.call "p" queryTerms]
+           executables := [.call "p" queryArgs okAtom] }] :=
+    TaskSpinePayloadAgrees.singleton (rootPayload 0)
+  have notThrow : ¬ BuiltinThrowCall "p" queryTerms := by
+    simp [BuiltinThrowCall]
+  have notDatabase :
+      DatabaseActions.recognizeDatabaseAction "p" queryTerms = none := by
+    rfl
+  obtain
+      ⟨rejects, skippedBranches, skippedClauses, finish, branch, clause,
+        branchTail, clauseTail, altTail, copied, independentResult,
+        representative, nextAlpha, sourceCanonical, flattened, installed,
+        after, facts⟩ :=
+    RepresentativeSupportedCallEntryRelates.activate_literal_root
+      (prog := prog) (gt := gt) (scope := rootScope) (callerBarrier := 0)
+      (branches := doubleSelectedScan.1)
+      (finalCounter := doubleSelectedScan.2)
+      (by
+        simpa [doubleSelectedPending, doubleSelectedOpenConf, queryArgs,
+          leftAtom, rightAtom, PLeaTTa.subst, PLeaTTa.substN,
+          Metta.Subst.lookup] using doubleSelected_entry)
+      preHeadPayload querySupported beforeSession (by rfl) (by rfl)
+      doubleSelected_initialBelow doubleSelectedScan_nonempty
+      (by
+        intro count finish branch clause branchTail clauseTail altTail copied
+          pulls frontier
+        apply doubleSelectedFrontier_resolves pulls
+        simpa [doubleSelectedPending, doubleSelectedOpenConf, queryArgs,
+          leftAtom, rightAtom, PLeaTTa.subst, PLeaTTa.substN,
+          Metta.Subst.lookup] using frontier)
+      notThrow notDatabase
+  have frontierNormalized :
+      RepresentativeRetainedCallFrontier []
+        (openedFor doubleSelectedSession "p" queryTerms [])
+        doubleSelectedOpenConf doubleSelectedPending finish branch clause
+        branchTail clauseTail altTail copied queryArgs queryArgs okAtom [] []
+        okAtom (barrierDepth doubleSelectedOpenConf.toConf + 1)
+        doubleSelectedOpenConf.toConf.counter := by
+    simpa [doubleSelectedPending, doubleSelectedOpenConf, queryArgs,
+      leftAtom, rightAtom, PLeaTTa.subst, PLeaTTa.substN,
+      Metta.Subst.lookup] using facts.frontier
+  obtain ⟨rejectsExact, finishExact, branchExact, branchTailExact⟩ :=
+    doubleSelectedFrontier_shape facts.pulls frontierNormalized
+  subst rejects
+  subst finish
+  subst branch
+  subst branchTail
+  have skippedBranchesExact : skippedBranches = [] :=
+    List.length_eq_zero_iff.mp (by simpa using facts.sourceSkipCount)
+  subst skippedBranches
+  have skippedClausesExact : skippedClauses = [] :=
+    List.length_eq_zero_iff.mp (by simpa using facts.executableSkipCount)
+  subst skippedClauses
+  have executableShape := facts.executableBank
+  change
+    doubleSelectedWorld.resolutionCandidates "p" 2 =
+      clause :: clauseTail at executableShape
+  rw [doubleSelected_resolutionCandidates] at executableShape
+  have clauseExact : clause = selectedExecutable :=
+    (List.cons.inj executableShape).1.symm
+  have clauseTailExact : clauseTail = [selectedExecutable] :=
+    (List.cons.inj executableShape).2.symm
+  subst clause
+  subst clauseTail
+  have copiedExact : copied = firstSelectedCopied := by
+    rw [facts.frontier.copiedExact]
+    rfl
+  subst copied
+  have tailScan :
+      ResolutionScan queryArgs queryArgs okAtom [] [] okAtom 1
+        [selectedExecutable] 1 altTail 2 := by
+    simpa [doubleSelectedPending, doubleSelectedScan_exact,
+      doubleSelectedOpenConf, OpenConf.toConf, Control.toConf, barrierDepth,
+      queryArgs, leftAtom, rightAtom, Metta.Subst.apply, Metta.Subst.lookup]
+      using facts.frontier.tailScan
+  have expectedTailScan :
+      ResolutionScan queryArgs queryArgs okAtom [] [] okAtom 1
+        [selectedExecutable] 1 [secondSelectedAlt] 2 :=
+    .retained selectedExecutable [] 1 2 []
+      (by
+        simp [resolutionClauseRetained, queryArgs, leftAtom, rightAtom,
+          okAtom, selectedExecutable, PLeaTTa.prologMatchCompat,
+          PLeaTTa.prologMatchCompatList])
+      (.nil 2)
+  have altTailExact : altTail = [secondSelectedAlt] :=
+    (tailScan.deterministic expectedTailScan).1
+  subst altTail
+  have selectedResolution :
+      HeadResolution firstSelectedPrepared independentResult := by
+    rw [← facts.carrierCurrent]
+    exact facts.resolution
+  have independentResultExact : independentResult = [] :=
+    HeadResolution.deterministic selectedResolution firstSelected_resolves
+  subst independentResult
+  exact
+    ⟨(openedFor doubleSelectedSession "p" queryTerms []).cursor,
+      representative, nextAlpha, sourceCanonical, flattened, installed,
+      after, facts, rfl, doubleSelected_openedRemaining,
+      facts.bodyReferences, facts.bodyExecutables⟩
+
+private def postFirstSelectedCursor : PreparedCursor :=
+  (openedFor doubleSelectedSession "p" queryTerms []).cursor.advance
+    firstSelectedPrepared [secondSelectedPrepared]
+
+/-- Type-valued data carried by the concrete duplicate-success regression.
+The administrative proof is indexed by the literal scheduled-success
+successor, and the prefix endpoint is indexed by that same proof. -/
+structure ReachableScheduledSuccessAdministrativePrefix
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (before : RepresentativeScheduledPayloadState)
+    (ready : RootClosedAnswerReady before)
+    (selection : ScheduledLocalSelection ready.result.historyBuild.cells)
+    (scope : CutScopeId)
+    (transition :
+      ScheduledSelectedHeadTransition ready.payloadAlignment selection scope
+        before.carrier.index.session)
+    (partition : RootPayloadPartition before)
+    (nextAlpha : List (LogicVar × String))
+    (sourceCanonical flattened : TreeSubstitution)
+    (installed : Subst)
+    (relation :
+      ScheduledSuccessfulHeadRelates prog gt before ready selection scope
+        transition partition [] nextAlpha sourceCanonical flattened
+        installed) where
+  successor :
+    ScheduledSelectedHeadTransition.ScheduledSuccessfulHeadSuccessor prog gt
+      before ready selection scope transition partition [] nextAlpha
+      sourceCanonical flattened installed relation
+  steps : AdministrativeStepsN 1
+    successor.after.carrier.index.bodyReferences []
+  run :
+    GlobalCertifiedPrefix prog gt
+      [ .scheduledSuccess
+          (ScheduledSuccessLabel.of ready transition partition flattened),
+        .activeAdministrative 1 ]
+      (.ordinary (.scheduled before))
+      (.ordinary
+        (.active
+          (RepresentativePersistentFreeActivePayloadState.afterAdministrative
+            successor.after steps)))
+
+/-- The duplicate-success program inhabits the complete scheduled-success
+producer and immediately consumes the second source clause's real
+administrative body.  The returned scheduled state is itself reached from
+the literal root task; the `Nonempty` package contains the Type-valued
+successor and exact two-edge global prefix, so the acceptance path is not a
+conditional theorem over an assumed success relation. -/
+theorem double_selected_scheduled_success_then_administrative_exact
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ∃ (before : RepresentativeScheduledPayloadState)
+        (ready : RootClosedAnswerReady before)
+        (selection : ScheduledLocalSelection ready.result.historyBuild.cells)
+        (scope : CutScopeId)
+        (transition :
+          ScheduledSelectedHeadTransition ready.payloadAlignment selection
+            scope before.carrier.index.session)
+        (partition : RootPayloadPartition before)
+        (nextAlpha : List (LogicVar × String))
+        (sourceCanonical flattened : TreeSubstitution)
+        (installed : Subst)
+        (relation :
+          ScheduledSuccessfulHeadRelates prog gt before ready selection scope
+            transition partition [] nextAlpha sourceCanonical flattened
+            installed),
+      StepsN 4
+        (.running doubleSelectedSession
+          (.task rootScope [.call "p" queryTerms] []))
+        [.opened (requestFor "p" queryTerms [])]
+        before.carrier.sourceState ∧
+      DemandDrivenCallStep.StepsN prog gt 3
+        (.ready doubleSelectedOpenConf) before.carrier.fineState ∧
+      transition.branch = secondSelectedPrepared ∧
+      Nonempty
+        (ReachableScheduledSuccessAdministrativePrefix prog gt before ready
+          selection scope transition partition nextAlpha sourceCanonical
+          flattened installed relation) := by
+  obtain
+    ⟨finish, _representative, _nextAlpha, _sourceCanonical, _flattened,
+      _installed, active, facts, finishExact, _finishRemaining,
+      bodyReferences, bodyExecutables⟩ :=
+    double_selected_root_activation (prog := prog) (gt := gt)
+  subst finish
+  have referenceConjunction :
+      active.carrier.index.bodyReferences = [.conjunction []] := by
+    simpa [selectedReference] using bodyReferences
+  have executableEmpty : active.carrier.index.bodyExecutables = [] := by
+    exact bodyExecutables.trans (by rfl)
+  have administration :
+      AdministrativeStepsN 1 active.carrier.index.bodyReferences [] := by
+    rw [referenceConjunction]
+    exact .succ 0 _ _ _ (.conjunction [] []) (.zero [])
+  let normalized :=
+    RepresentativeActivePayloadState.afterAdministrative prog gt active
+      administration
+  have normalizedReferencesEmpty :
+      normalized.carrier.index.bodyReferences = [] := by
+    rfl
+  have normalizedExecutablesEmpty :
+      normalized.carrier.index.bodyExecutables = [] := by
+    change active.carrier.index.bodyExecutables = []
+    exact executableEmpty
+  let before :=
+    RepresentativeActivePayloadState.afterBodyAnswer prog gt normalized
+      normalizedReferencesEmpty normalizedExecutablesEmpty
+  have callerEmpty : before.carrier.index.callerReferences = [] := by
+    simpa [before, normalized] using facts.callerReferencesEmpty
+  have outerEmpty : before.carrier.index.outer = [] := by
+    simpa [before, normalized] using facts.outerEmpty
+  have baseEmpty : before.carrier.index.baseAlts = [] := by
+    simpa [before, normalized] using facts.baseAltsEmpty
+  have resourcesEmpty : before.carrier.index.resources = [] := by
+    simpa [before, normalized] using facts.resourcesEmpty
+  have allOuterEmpty :
+      ∀ segment, segment ∈ before.carrier.index.outer →
+        segment.references = [] := by
+    rw [outerEmpty]
+    simp
+  let ready :=
+    RepresentativeScheduledPayloadState.rootClosedAnswerReady before
+      callerEmpty allOuterEmpty baseEmpty
+  have activeAltsShape :
+      before.carrier.index.active.alts = [secondSelectedAlt] := by
+    simpa [before, normalized] using facts.activeAltsExact
+  have historyResources :
+      ready.result.history.resources = [before.carrier.index.active] := by
+    rw [ready.result.resourcesExact, currentAnswerHistory_resources,
+      resourcesEmpty]
+    rfl
+  have cellsLength : ready.result.historyBuild.cells.length = 1 := by
+    have mapped := congrArg List.length
+      ready.result.historyBuild.cells_map_resource
+    rw [historyResources] at mapped
+    simpa using mapped
+  obtain ⟨only, cellsExact⟩ := List.length_eq_one_iff.mp cellsLength
+  have onlyResource : only.resource = before.carrier.index.active := by
+    have mapped := ready.result.historyBuild.cells_map_resource
+    rw [cellsExact, historyResources] at mapped
+    exact (List.cons.inj mapped).1
+  have tailCellsEmpty :
+      payloadCells
+          (ActiveProductPayloadContext.outerPayload
+            before.carrier.payloadContext) = [] := by
+    have mapped := payloadCells_map_resource
+      (ActiveProductPayloadContext.outerPayload before.carrier.payloadContext)
+    have mappedEmpty := mapped.trans resourcesEmpty
+    apply List.eq_nil_of_length_eq_zero
+    have lengths := congrArg List.length mappedEmpty
+    simpa using lengths
+  have initialCellsExact :
+      ready.result.historyBuild.cells =
+        (currentAnswerHistoryBuild before).cells := by
+    rw [ready.result.historyCellsExact, tailCellsEmpty]
+    simp
+  have onlyCursor :
+      only.cursor =
+        before.carrier.index.finish.advance before.carrier.index.branch
+          before.carrier.index.branchTail := by
+    have mapped := congrArg (List.map ScheduledHistoryCell.cursor)
+      initialCellsExact
+    rw [cellsExact] at mapped
+    simpa [currentAnswerHistoryBuild, ScheduledHistoryBuild.cells] using
+      (List.cons.inj mapped).1
+  have beforeCursorExact :
+      before.carrier.index.finish.advance before.carrier.index.branch
+          before.carrier.index.branchTail = postFirstSelectedCursor := by
+    calc
+      _ = active.carrier.index.finish.advance active.carrier.index.branch
+            active.carrier.index.branchTail := rfl
+      _ = postFirstSelectedCursor := facts.retainedCursorExact
+  have beforeActiveExact :
+      before.carrier.index.active =
+        retainedTailResource postFirstSelectedCursor queryArgs queryArgs
+          okAtom [] [] okAtom 1 0 [secondSelectedAlt] 2 := by
+    calc
+      _ = active.carrier.index.active := by simp [before, normalized]
+      _ = retainedTailResource postFirstSelectedCursor queryArgs queryArgs
+            okAtom [] [] okAtom 1 0 [secondSelectedAlt] 2 := by
+        simpa [postFirstSelectedCursor, doubleSelectedOpenConf,
+          OpenConf.toConf, Control.toConf, barrierDepth,
+          doubleSelectedScan_exact, queryArgs, leftAtom, rightAtom, okAtom,
+          PLeaTTa.subst, PLeaTTa.substN, Metta.Subst.lookup] using
+          facts.activeResourceExact
+  have sourceToActive := facts.sourceSteps
+  have activeToBefore :
+      CertifiedPrefix prog gt [.administrative 1, .bodyAnswer]
+        (.active
+          (PLeaTTa.PrologPersistentFreeActivePayloadBridge.RepresentativePersistentFreeActivePayloadState.ofLegacy
+            active))
+        (.scheduled before) :=
+    .cons (.administrative active administration)
+      (.cons
+        (.bodyAnswer normalized normalizedReferencesEmpty
+          normalizedExecutablesEmpty)
+        (.nil (.scheduled before)))
+  have sourceRoot :
+      StepsN 4
+        (.running doubleSelectedSession
+          (.task rootScope [.call "p" queryTerms] []))
+        [.opened (requestFor "p" queryTerms [])]
+        before.carrier.sourceState := by
+    have tail := activeToBefore.sourceSteps
+    have combined := sourceToActive.trans tail
+    simpa [
+      PLeaTTa.PrologHeterogeneousPrefixBridge.TransitionSchedule.sourceCost,
+      PLeaTTa.PrologHeterogeneousPrefixBridge.TransitionSchedule.sourceEvents,
+      PLeaTTa.PrologHeterogeneousPrefixBridge.TransitionKind.sourceCost,
+      PLeaTTa.PrologHeterogeneousPrefixBridge.TransitionKind.sourceEvents,
+      ProductPhaseState.sourceState,
+      PLeaTTa.PrologPersistentFreeActivePayloadBridge.RepresentativePersistentFreeActivePayloadState.ofLegacy]
+      using combined
+  have fineRoot :
+      DemandDrivenCallStep.StepsN prog gt 3
+        (.ready doubleSelectedOpenConf) before.carrier.fineState := by
+    have tail := activeToBefore.fineSteps
+    have combined := facts.fineSteps.trans tail
+    simpa [
+      PLeaTTa.PrologHeterogeneousPrefixBridge.TransitionSchedule.fineCost,
+      PLeaTTa.PrologHeterogeneousPrefixBridge.TransitionKind.fineCost,
+      ProductPhaseState.fineState,
+      PLeaTTa.PrologPersistentFreeActivePayloadBridge.RepresentativePersistentFreeActivePayloadState.ofLegacy]
+      using combined
+  cases classified :
+      PLeaTTa.PrologScheduledPayloadLandingBridge.ScheduledPayloadAlignment.classifyPull
+        ready.payloadAlignment with
+  | terminal falls =>
+      have impossible := falls.pullAux_eq
+      change
+        PLeaTTa.pullAux
+            (PrologProductResourceContextBridge.flattenOwnedAlts
+              ready.result.history.resources []) =
+          PLeaTTa.pullAux [] at impossible
+      rw [historyResources] at impossible
+      simp only [PrologProductResourceContextBridge.flattenOwnedAlts_cons,
+        PrologProductResourceContextBridge.flattenOwnedAlts_nil] at impossible
+      rw [activeAltsShape] at impossible
+      change
+        PLeaTTa.pullAux [secondSelectedAlt, .barrier] =
+          PLeaTTa.pullAux [] at impossible
+      simp [secondSelectedAlt, resolutionAlt, PLeaTTa.pullAux] at impossible
+  | localLive selection landing =>
+      have decomposition :
+          [only] =
+            selection.earlier ++ selection.selected :: selection.suffix :=
+        cellsExact.symm.trans selection.cellsExact
+      have lengths := congrArg List.length decomposition
+      simp only [List.length_cons, List.length_nil, List.length_append] at lengths
+      have earlierLength : selection.earlier.length = 0 := by omega
+      have suffixLength : selection.suffix.length = 0 := by omega
+      have earlierExact : selection.earlier = [] :=
+        List.length_eq_zero_iff.mp earlierLength
+      have suffixExact : selection.suffix = [] :=
+        List.length_eq_zero_iff.mp suffixLength
+      have selectedExact : selection.selected = only := by
+        rw [earlierExact, suffixExact] at decomposition
+        simpa using (List.cons.inj decomposition).1.symm
+      have selectedResourceExact :
+          selection.selected.resource =
+            retainedTailResource postFirstSelectedCursor queryArgs queryArgs
+              okAtom [] [] okAtom 1 0 [secondSelectedAlt] 2 := by
+        rw [selectedExact, onlyResource, beforeActiveExact]
+      have selectedCursorExact :
+          selection.selected.cursor = postFirstSelectedCursor := by
+        rw [selectedExact, onlyCursor, beforeCursorExact]
+      have localTailExact : selection.localTail = [] := by
+        have selectedHead := selection.selectedHead
+        rw [selectedResourceExact] at selectedHead
+        exact (List.cons.inj selectedHead).2.symm
+      obtain ⟨transition⟩ :=
+        PLeaTTa.PrologScheduledPayloadPostHeadBridge.ScheduledPayloadAlignment.selectAndAdvanceHead
+          ready.payloadAlignment selection before.carrier.index.session
+      have countZero : transition.frontier.rejectedCount = 0 := by
+        have noRejected :
+            ∀ {count : Nat} {finish : PreparedCursor},
+              RejectedPullsN count selection.selected.cursor finish →
+                count = 0 := by
+          intro count finish pulls
+          cases pulls with
+          | zero cursor => rfl
+          | succ count cursor entered branches finish remaining clash tail =>
+              have remainingExact := remaining
+              rw [selectedCursorExact] at remainingExact
+              change
+                [secondSelectedPrepared] = entered :: branches at remainingExact
+              have enteredExact : entered = secondSelectedPrepared :=
+                (List.cons.inj remainingExact).1.symm
+              subst entered
+              exact False.elim (clash ⟨[], secondSelected_resolves⟩)
+        exact noRejected transition.frontier.rejectedPulls
+      have finishRemaining :=
+        transition.frontier.rejectedPulls.remaining_eq_drop
+      rw [countZero, List.drop_zero, selectedCursorExact] at finishRemaining
+      have selectedHeadRemaining := transition.offset.cursorRemaining
+      rw [finishRemaining] at selectedHeadRemaining
+      have branchExact : transition.branch = secondSelectedPrepared :=
+        (List.cons.inj selectedHeadRemaining).1.symm
+      have branchTailExact : transition.branchTail = [] :=
+        (List.cons.inj selectedHeadRemaining).2.symm
+      have freshFrontierExact :
+          before.carrier.index.freshFrontier =
+            AlphaFreshFrontier before.carrier.index.alpha := by
+        change active.carrier.index.freshFrontier =
+          AlphaFreshFrontier active.carrier.index.alpha
+        exact facts.freshFrontierExact
+      have belowBefore :
+          ConfBelowResolutionCounter before.carrier.index.openConf.toConf := by
+        simpa [before, normalized] using facts.below
+      have live :
+          AlphaRuntimeNamesLive before.carrier.index.support
+            (transition.copied.body ++ selection.selected.resource.rest)
+            selection.selected.resource.qterm := by
+        have supportEmpty : before.carrier.index.support = [] := by
+          change active.carrier.index.support = []
+          exact facts.carrierSupport
+        intro identity name member
+        rw [supportEmpty] at member
+        simp at member
+      obtain
+        ⟨partition, nextAlpha, sourceCanonical, flattened, installed,
+          relation⟩ :=
+        PLeaTTa.PrologScheduledPayloadSuccessBridge.ScheduledSelectedHeadTransition.resolveHead
+          (prog := prog) (gt := gt) transition freshFrontierExact belowBefore live
+          (by simpa [branchExact] using secondSelected_resolves)
+      have successorPackage :=
+        ScheduledSelectedHeadTransition.ScheduledSuccessfulHeadSuccessor.nonempty
+          (prog := prog) (gt := gt) relation
+      rcases successorPackage with ⟨successor⟩
+      have successorBody :
+          successor.after.carrier.index.bodyReferences = [.conjunction []] := by
+        change transition.branch.body = [.conjunction []]
+        rw [branchExact]
+        rfl
+      have successorAdministrative :
+          AdministrativeStepsN 1
+            successor.after.carrier.index.bodyReferences [] := by
+        rw [successorBody]
+        exact .succ 0 _ _ _ (.conjunction [] []) (.zero [])
+      let run :=
+        GlobalCertifiedPrefix.scheduledSuccessThenAdministrative
+          (prog := prog) (gt := gt) relation successor (by decide)
+          successorAdministrative
+      exact
+        ⟨before, ready, selection,
+          (ready.payloadAlignment.payloadPath selection.path).cell.currentScope,
+          transition, partition, nextAlpha, sourceCanonical, flattened,
+          installed, relation, sourceRoot, fineRoot, branchExact,
+          ⟨⟨successor, successorAdministrative, run⟩⟩⟩
 
 end PLeaTTa.PrologScheduledRejectionReachabilityRegression
