@@ -203,6 +203,9 @@ PROLOG_SEQUENTIAL_MGU = (
 PROLOG_RUNTIME_DECODE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologRuntimeDecode.lean"
 )
+PROLOG_RETRACT_ENCODING_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" / "PrologRetractEncodingBridge.lean"
+)
 PROLOG_ACTIVATION_UNIFIER_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" / "PrologActivationUnifierBridge.lean"
 )
@@ -608,6 +611,7 @@ STRICT_AXIOM_AUDIT_ROWS = {
     "BISIM.findall_collection_answer_general",
     "BISIM.findall_bag_alpha_support",
     "BISIM.findall_tail_control_materialization",
+    "WORLD.retract_unifier_reflection",
 }
 
 
@@ -802,6 +806,8 @@ def check() -> list[str]:
             digest(PROLOG_SEQUENTIAL_MGU),
         "prolog_runtime_decode_sha256":
             digest(PROLOG_RUNTIME_DECODE),
+        "prolog_retract_encoding_bridge_sha256":
+            digest(PROLOG_RETRACT_ENCODING_BRIDGE),
         "prolog_activation_unifier_bridge_sha256":
             digest(PROLOG_ACTIVATION_UNIFIER_BRIDGE),
         "prolog_ordinary_step_bridge_sha256":

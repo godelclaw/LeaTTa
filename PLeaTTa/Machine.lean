@@ -5587,7 +5587,11 @@ private def predicateCallParts? (atom : Atom) :
       | .expr (.sym functor :: args) => splitOutput functor args
       | _ => none
 
-private def predicateRelationGoal (gt : GroundingTable) (functor : String)
+/-- Choose the exact executable relation constructor used by the
+`Predicate/2` decoder.  Keeping this public lets the adequacy layer reuse the
+real grounding-table dispatch decision instead of maintaining a second
+classifier that could drift after registration changes. -/
+def predicateRelationGoal (gt : GroundingTable) (functor : String)
     (inputs : List Atom) (output : Atom) : Goal :=
   if (Metta.GroundingTable.lookup gt functor).isSome then
     .bin functor inputs output
