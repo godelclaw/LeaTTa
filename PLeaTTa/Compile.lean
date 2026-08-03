@@ -206,6 +206,7 @@ def compileBinArity : String → Option Nat
   | "#test-results" => some 2
   | "not" | "car-atom" | "cdr-atom" | "last" | "size-atom" | "repr" | "parse"
   | "repra" | "unique-atom" | "list_to_set" | "msort" | "println!"
+  | "Predicate"
   | "add-translator-rule!" | "remove-translator-rule!"
   | "is-ground" | "is-expr" | "is-space" | "argv" => some 1
   | _ => none
@@ -1157,10 +1158,17 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
   | fuel + 1, env, n, h, args => do
     match classifyAppCoreHead h, args with
     | .hQuote, [e] => .ok (chainify e, [], n)              -- syntactic value
-    | .hPredicate, [goal] =>
-        -- [SPEC metta.pl:275] `Predicate` converts a MeTTa expression to a
-        -- Prolog term without evaluating the expression's members.
-        .ok (chainify (Atom.expr [Atom.sym "Predicate", goal]), [], n)
+    | .hPredicate, [goal] => do
+        -- `Predicate` is an ordinary registered function. Its argument uses
+        -- the same staging mask as pinned `translate_args`: untyped arguments
+        -- evaluate, while an explicit `Expression` declaration stays data.
+        -- The actual `=../2` conversion must remain a runtime goal so empty,
+        -- open-head, and non-atom-head behavior is not erased at compilation.
+        -- [SPEC metta.pl:275; translator.pl:310-370]
+        let (terms, goals, n1) ←
+          compileArgsAtFuel fuel env n h 0 [goal]
+        let (r, n2) := fresh n1
+        .ok (r, goals ++ [Goal.bin "Predicate" terms r], n2)
     | .hTranslatePredicate, [goal] => do
         -- The argument is Prolog syntax, not a MeTTa subexpression.  Preserve it
         -- as data and make the trusted-host boundary explicit at execution.
@@ -2770,6 +2778,36 @@ theorem compileExprFuel_collapse_eq (bodyFuel : Nat) (env : CEnv)
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_26, body]
   all_goals try simp only [classifyAppCoreHead]
+  rfl
+
+set_option maxHeartbeats 2000000 in
+/-- Pinned `Predicate/2` is a runtime `=../2` conversion, not a compile-time
+wrapper.  Its sole argument follows the ordinary typed staging traversal,
+then the compiler allocates exactly one result and appends exactly one owned
+builtin goal.  Supplying the traversal as evidence keeps both the evaluated
+and explicitly `Expression`-staged cases in one reusable equation.
+[SPEC metta.pl:275; translator.pl:310-370] -/
+theorem compileExprFuel_Predicate_eq (argumentFuel : Nat) (env : CEnv)
+    (counter : Nat) (source payload : Atom) (goals : List Goal)
+    (nextCounter : Nat)
+    (noHook : env.translatorRules.contains "Predicate" = false)
+    (argumentCompiled :
+      compileArgsAtFuel argumentFuel env counter "Predicate" 0 [source] =
+        .ok ([payload], goals, nextCounter)) :
+    compileExprFuel (argumentFuel + 3) env counter
+        (.expr [.sym "Predicate", source]) =
+      .ok (.var s!"_q{nextCounter}",
+        goals ++ [Goal.bin "Predicate" [payload]
+          (.var s!"_q{nextCounter}")],
+        nextCounter + 1) := by
+  rw [show argumentFuel + 3 = (argumentFuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
+  rw [show argumentFuel + 2 = (argumentFuel + 1) + 1 by omega]
+  rw [compileAppFuel.eq_2]
+  simp only [noHook, Bool.false_eq_true, ↓reduceIte]
+  rw [compileAppCoreFuel.eq_def]
+  simp only [classifyAppCoreHead]
+  rw [argumentCompiled]
   rfl
 
 set_option maxHeartbeats 2000000 in

@@ -2786,7 +2786,7 @@ def stepWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable)
         let next := headResult.2
         match headResult.1 with
         | Atom.sym f =>
-            if !(c.world.clauseHeadCandidates f).isEmpty then
+            if c.world.isRegisteredHead f then
               { c with cur := some (Goal.call f args res :: rest, next) }
             else if (Metta.GroundingTable.lookup gt f).isSome then
               { c with cur := some (Goal.bin f args res :: rest, next) }

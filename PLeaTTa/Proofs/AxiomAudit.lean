@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: Apache-2.0
 
 import PLeaTTa.Proofs.StepCases
+import PLeaTTa.Proofs.PredicateAdequacy
 import PLeaTTa.Proofs.DemandDrivenStep
 import PLeaTTa.Proofs.FindallCopy
 import PLeaTTa.Proofs.PrologMguVariantRenaming
@@ -3027,3 +3028,26 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologRootScheduledSelectionBridge.RepresentativeRootCallSuccessorFacts.toScheduledSelected
 #print axioms PLeaTTa.PrologUnboundNestedCallRegression.StrictScheduled.root_to_scheduled_selected
 #print axioms PLeaTTa.PrologUnboundNestedCallRegression.StrictScheduled.reachable_scheduled_success_strict_alpha
+#print axioms PLeaTTa.chainListM_chainOf_exact
+#print axioms PLeaTTa.prologCompoundView?_sound
+#print axioms PLeaTTa.prologCompoundC_injective
+#print axioms PLeaTTa.compileExprFuel_Predicate_eq
+#print axioms PLeaTTa.caughtBinErrorResolved_some_iff
+#print axioms PLeaTTa.PredicateAdequacy.compound_not_proper_list
+#print axioms PLeaTTa.PredicateAdequacy.compound_ne_partial
+#print axioms PLeaTTa.PredicateAdequacy.unchainify_compound
+#print axioms PLeaTTa.PredicateAdequacy.predicateOp_compound
+#print axioms PLeaTTa.PredicateAdequacy.predicateOp_atom
+#print axioms PLeaTTa.PredicateAdequacy.predicateOp_empty
+#print axioms PLeaTTa.PredicateAdequacy.predicateOp_bare_variable
+#print axioms PLeaTTa.PredicateAdequacy.predicateOp_open_functor
+#print axioms PLeaTTa.PredicateAdequacy.predicateOp_nonatom_functor
+#print axioms PLeaTTa.PredicateAdequacy.bare_variable_error_exact
+#print axioms PLeaTTa.PredicateAdequacy.nonatom_error_exact
+#print axioms PLeaTTa.PredicateAdequacy.tagged_fact_decodes
+#print axioms PLeaTTa.PredicateAdequacy.tagged_fact_builds_call
+#print axioms PLeaTTa.PredicateAdequacy.raw_quoted_fact_rejected
+#print axioms PLeaTTa.PredicateAdequacy.raw_assertion_does_not_register
+#print axioms PLeaTTa.PredicateAdequacy.raw_asserted_head_remains_dynamic_data
+#print axioms PLeaTTa.PredicateAdequacy.shadowing_definition_is_registered
+#print axioms PLeaTTa.PredicateAdequacy.predicate_dispatch_is_special

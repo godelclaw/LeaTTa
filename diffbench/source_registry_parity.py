@@ -24,7 +24,15 @@ def main() -> None:
 
     normalized_native = [diff.normalize(value) for value in native]
     normalized_executable = [diff.normalize(value) for value in executable]
-    expected = ["7", "8", "(partial source-registry-probe ())"]
+    expected = [
+        "7",
+        "8",
+        "(partial source-registry-probe ())",
+        "true",
+        "8",
+        "true",
+        "(source-registry-probe 7)",
+    ]
     if normalized_native != expected:
         raise SystemExit(
             "source registry parity: pinned PeTTa changed: "
@@ -36,8 +44,9 @@ def main() -> None:
             f"PeTTa={normalized_native!r} PLeaTTa={normalized_executable!r}"
         )
     print(
-        "source registry parity: PASS; duplicate heads, two arities, and "
-        "incomplete partial construction agree"
+        "source registry parity: PASS; duplicate heads, two arities, "
+        "incomplete partial construction, and last-clause unregistration "
+        "agree"
     )
 
 

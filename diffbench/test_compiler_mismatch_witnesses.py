@@ -44,11 +44,12 @@ class CompilerMismatchWitnessGateTest(unittest.TestCase):
     ) -> int:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            fixture = root / "fixture.metta"
-            fixture.write_text(
-                ";; SPDX-License-Identifier: Apache-2.0\n!(unit)\n",
-                encoding="utf-8",
-            )
+            for fixture_name in ["fixture.metta", "fixture2.metta"]:
+                fixture = root / fixture_name
+                fixture.write_text(
+                    ";; SPDX-License-Identifier: Apache-2.0\n!(unit)\n",
+                    encoding="utf-8",
+                )
             compiler = root / "PLeaTTa" / "Compile.lean"
             compiler.parent.mkdir(parents=True)
             compiler.write_text("-- synthetic compiler\n", encoding="utf-8")
@@ -157,6 +158,36 @@ class CompilerMismatchWitnessGateTest(unittest.TestCase):
             ),
             1,
         )
+
+    def test_one_obligation_may_have_multiple_unique_scenarios(self) -> None:
+        rows = [
+            'UNIT.fail\tfixture.metta\tcharacterization\tok\t["same"]'
+            '\tok\t["same"]\tfirst scenario',
+            'UNIT.fail\tfixture2.metta\tcharacterization\tok\t["same"]'
+            '\tok\t["same"]\tsecond scenario',
+        ]
+        self.assertEqual(
+            self._run_synthetic_gate(
+                manifest_rows=rows,
+                native=witnesses.Outcome("ok", ("same",)),
+                pleatta=witnesses.Outcome("ok", ("same",)),
+                ledger_status="GAP",
+            ),
+            0,
+        )
+
+    def test_duplicate_obligation_fixture_pair_is_rejected(self) -> None:
+        row = (
+            'UNIT.fail\tfixture.metta\tcharacterization\tok\t["same"]'
+            '\tok\t["same"]\tsame scenario'
+        )
+        with self.assertRaisesRegex(SystemExit, "duplicate mismatch scenarios"):
+            self._run_synthetic_gate(
+                manifest_rows=[row, row],
+                native=witnesses.Outcome("ok", ("same",)),
+                pleatta=witnesses.Outcome("ok", ("same",)),
+                ledger_status="GAP",
+            )
 
     def test_expected_divergence_cannot_hide_in_gap(self) -> None:
         row = (

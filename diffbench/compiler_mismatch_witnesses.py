@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Execute every known compiler mismatch against pinned PeTTa.
+"""Execute every known compiler mismatch scenario against pinned PeTTa.
 
 This is an evidence gate, not a proof ledger.  A green expected-divergence row
 means the documented difference is still observable exactly as recorded.  If
@@ -126,10 +126,11 @@ def main() -> int:
         if row.get("status") == "FAIL"
     }
     manifest_ids = [row["id"] for row in manifest_rows]
-    duplicates = sorted({item for item in manifest_ids
-                         if manifest_ids.count(item) > 1})
+    manifest_keys = [(row["id"], row["fixture"]) for row in manifest_rows]
+    duplicates = sorted({item for item in manifest_keys
+                         if manifest_keys.count(item) > 1})
     if duplicates:
-        raise SystemExit(f"duplicate mismatch IDs: {duplicates}")
+        raise SystemExit(f"duplicate mismatch scenarios: {duplicates}")
     missing = sorted(fail_ids - set(manifest_ids))
     unknown = sorted(set(manifest_ids) - set(ledger_by_id))
     if missing or unknown:

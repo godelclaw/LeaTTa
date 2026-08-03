@@ -1,5 +1,6 @@
 import PLeaTTa.Chain
 import Lean.Data.Json
+import Lean.Elab.Tactic.Omega
 
 namespace PLeaTTa
 
@@ -84,9 +85,16 @@ termination_by structural terms => terms
 
 end
 
-/-- Marshal a PLeaTTa atom into a Prolog term for a `translatePredicate` goal.
-    Variables and compounds are preserved; unsupported grounds fail. -/
-partial def atomToPrologTerm : Atom → Option PrologTerm
+mutual
+
+/-- Marshal a PLeaTTa atom into a Prolog term for a `translatePredicate`
+    goal.  Variables and compounds are preserved; unsupported grounds fail.
+
+    The list companion makes this nested recursion structurally total.  In
+    particular there is no fuel-exhaustion branch that could silently confuse
+    a deep legal term with an unsupported host value. -/
+def atomToPrologTerm (atom : Atom) : Option PrologTerm :=
+  match atom with
   | .var name => some (.var name)
   | .gnd (.int v) => some (.int v)
   | .gnd (.float v) => some (.floating v.toBits)
@@ -97,31 +105,71 @@ partial def atomToPrologTerm : Atom → Option PrologTerm
   | .sym name => some (.atom name)
   | .expr [] => some (.list [])
   | .expr (.sym f :: args) =>
-      (args.mapM atomToPrologTerm).map (PrologTerm.compound f)
-  | .expr items => (items.mapM atomToPrologTerm).map PrologTerm.list
+      (atomsToPrologTerms args).map (PrologTerm.compound f)
+  | .expr items => (atomsToPrologTerms items).map PrologTerm.list
   | _ => none
+termination_by 2 * atom.size
+decreasing_by
+  all_goals (simp_all [Atom.size]; omega)
+
+/-- Structurally recursive list companion for `atomToPrologTerm`. -/
+def atomsToPrologTerms : List Atom → Option (List PrologTerm)
+  | [] => some []
+  | atom :: atoms => do
+      let head ← atomToPrologTerm atom
+      let tail ← atomsToPrologTerms atoms
+      pure (head :: tail)
+termination_by atoms => 2 * (atoms.map Atom.size).sum + 1
+decreasing_by
+  all_goals
+    simp only [List.map_cons, List.sum_cons]
+    have positive : 0 < atom.size := by
+      cases atom <;> simp [Atom.size] <;> omega
+    omega
+
+end
+
+mutual
+
+/-- Variable occurrences before the public first-occurrence deduplication. -/
+def prologVarsRaw (atom : Atom) : List String :=
+  match atom with
+  | .var name => [name]
+  | .expr items => prologVarsRawList items
+  | _ => []
+termination_by 2 * atom.size
+decreasing_by
+  all_goals (simp_all [Atom.size]; omega)
+
+/-- Structurally recursive list companion for `prologVarsRaw`. -/
+def prologVarsRawList : List Atom → List String
+  | [] => []
+  | atom :: atoms => prologVarsRaw atom ++ prologVarsRawList atoms
+termination_by atoms => 2 * (atoms.map Atom.size).sum + 1
+decreasing_by
+  all_goals
+    simp only [List.map_cons, List.sum_cons]
+    have positive : 0 < atom.size := by
+      cases atom <;> simp [Atom.size] <;> omega
+    omega
+
+end
+
 
 /-- Distinct variable names occurring in an atom (the answer keys to request). -/
-partial def prologVars : Atom → List String
-  | .var name => [name]
-  | .expr items => (items.flatMap prologVars).eraseDups
-  | _ => []
+def prologVars (atom : Atom) : List String :=
+  (prologVarsRaw atom).eraseDups
 
-/-- Reverse `chainify`: decode nested `#c`/`#nil` cons-chains and the internal
-    partial-value tag back to surface exprs.  The compiler stores a
+/-- Reverse the internal value encodings: decode nested `#c`/`#nil`
+    cons-chains, partial values, and certified `Predicate/2` compounds back
+    to surface expressions.  The compiler stores a
     `translatePredicate` argument as chained data
     (`(#c is (#c $x (#c 2 #nil)))`), so it must be unchained before it parses as
-    the Prolog goal `(is $x 2)`.  Internal partial values become the real
-    `partial/2` compound expected by pinned PeTTa's SWI boundary. -/
-partial def deepUnchain (a : Atom) : Atom :=
-  match partialView? a with
-  | some (functor, encodedArgs) =>
-      Atom.expr
-        [Atom.sym "partial", Atom.sym functor, deepUnchain encodedArgs]
-  | none =>
-      match chainListM a with
-      | some elems => Atom.expr (elems.map deepUnchain)
-      | none => a
+    the Prolog goal `(is $x 2)`.  The private compound tag is erased only at
+    this typed Prolog boundary; an ordinary quoted list therefore cannot
+    forge a callable Predicate value. -/
+def deepUnchain (a : Atom) : Atom :=
+  unchainify (a.size + 1) a
 
 /-- Parse a `translatePredicate` argument `(functor a b ...)` into the Prolog
     call components (functor, marshalled arguments, requested variable names).
@@ -143,9 +191,12 @@ def buildPrologCall (innerExpr : Atom) :
     the corresponding typed Prolog call. -/
 def buildCallPredicate (predicate : Atom) :
     Option (String × List PrologTerm × List String) :=
-  match deepUnchain predicate with
-  | .expr [.sym "Predicate", _] => buildPrologCall predicate
-  | _ => none
+  match prologCompoundView? predicate with
+  | some _ => buildPrologCall predicate
+  | none =>
+      match deepUnchain predicate with
+      | .expr [.sym "Predicate", _] => buildPrologCall predicate
+      | _ => none
 
 structure HostError where
   kind : String

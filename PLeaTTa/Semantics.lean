@@ -354,20 +354,20 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
       (res : Atom) (rest : List Goal) (b : Subst)
       (h : c.cur = some (Goal.callDyn hd args res :: rest, b))
       (hf : subst b hd = Atom.sym f)
-      (hdef : c.world.clauseHeadCandidates f ≠ []) :
+      (hdef : c.world.isRegisteredHead f = true) :
       Step prog gt c { c with cur := some (Goal.call f args res :: rest, b) }
   | callDyn_bin (c : Conf) (hd : Atom) (f : String) (args : List Atom)
       (res : Atom) (rest : List Goal) (b : Subst)
       (h : c.cur = some (Goal.callDyn hd args res :: rest, b))
       (hf : subst b hd = Atom.sym f)
-      (he : c.world.clauseHeadCandidates f = [])
+      (he : c.world.isRegisteredHead f = false)
       (hbin : (Metta.GroundingTable.lookup gt f).isSome) :
       Step prog gt c { c with cur := some (Goal.bin f args res :: rest, b) }
   | callDyn_symdata (c : Conf) (hd : Atom) (f : String) (args : List Atom)
       (res : Atom) (rest : List Goal) (b : Subst)
       (h : c.cur = some (Goal.callDyn hd args res :: rest, b))
       (hf : subst b hd = Atom.sym f)
-      (he : c.world.clauseHeadCandidates f = [])
+      (he : c.world.isRegisteredHead f = false)
       (hnb : Metta.GroundingTable.lookup gt f = none)
       (g : Goal) (hg : g = Goal.eq res (chainOf (Atom.sym f :: args))) :
       Step prog gt c { c with cur := some (g :: rest, b) }

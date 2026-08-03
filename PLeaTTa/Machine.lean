@@ -741,12 +741,46 @@ theorem PWorld.captureMetaWithSourceKey_spaceCoherent (w : PWorld)
   unfold captureMetaWithSourceKey
   split <;> exact coherent
 
-def PWorld.compileHeads (w : PWorld) : List String :=
-  (w.knownHeads ++ w.progClauses.map (·.1)).eraseDups
+/-- Heads registered in pinned PeTTa's `fun/1` table.  This is deliberately
+distinct from the live Prolog clause database: `assertzPredicate/2` installs
+a callable Prolog clause without invoking `register_fun/1`, whereas source
+MeTTa definitions and rule-form `add-atom` do both.
+[SPEC filereader.pl:20-23; spaces.pl:9-20; metta.pl:277-278] -/
+def PWorld.isRegisteredHead (w : PWorld) (head : String) : Bool :=
+  w.knownHeads.contains head
 
+/-- Register one MeTTa function shape, mirroring `register_fun/1` plus the
+associated `arity/2` fact.  Raw Prolog predicate assertion must not call this
+helper. -/
+def PWorld.registerMeTTaFunction (w : PWorld) (head : String) (arity : Nat) :
+    PWorld :=
+  { w with
+      knownHeads := (w.knownHeads ++ [head]).eraseDups
+      knownArities := ((head, arity) ::
+        w.knownArities.filter (fun entry =>
+          !(entry.1 == head && entry.2 == arity))) }
+
+/-- Remove the MeTTa dispatch registration after the final live clause for a
+head disappears.  Pinned `remove-atom` retracts `fun/1` only at that point;
+raw Prolog clauses therefore keep direct Prolog calls live without becoming
+MeTTa evaluator heads. [SPEC spaces.pl:25-38] -/
+def PWorld.unregisterMeTTaFunctionIfEmpty (w : PWorld) (head : String) :
+    PWorld :=
+  if (w.clausesOf head).isEmpty then
+    { w with
+        knownHeads := w.knownHeads.filter (· != head)
+        knownArities := w.knownArities.filter (fun entry => entry.1 != head) }
+  else w
+
+/-- Exact `fun/1` view used when the live evaluator recompiles source data.
+The clause database is intentionally absent: Prolog FFI assertions do not
+silently promote their functor into MeTTa's application namespace. -/
+def PWorld.compileHeads (w : PWorld) : List String :=
+  w.knownHeads.eraseDups
+
+/-- Exact registered MeTTa arities used by runtime compilation. -/
 def PWorld.compileArities (w : PWorld) : List (String × Nat) :=
-  w.knownArities ++
-    w.progClauses.map (fun (p : String × Clause) => (p.1, p.2.params.length))
+  w.knownArities
 
 def tableKey (f : String) (args : List Atom) : Atom :=
   Atom.expr (Atom.sym f :: args)
@@ -2117,6 +2151,10 @@ def getTypeP (w : PWorld) : Nat → Nat → Atom → List Atom × Nat
 /-- Builtins that operate on terms AS TERMS (no groundness requirement). -/
 def nonstrictOps : List String :=
   ["==", "!=", "is-var", "=alpha", "#test-results", "repr", "alpha-unique-atom", "is-alpha-member",
+   -- `Predicate/2` delegates to Prolog `=../2`: a variable functor must be
+   -- observed as an instantiation error rather than delayed as an unground
+   -- ordinary builtin.
+   "Predicate",
    -- Structural list ops act on the list SPINE (access / dedup / filter /
    -- sort by term identity), so they must run on lists whose ELEMENTS carry
    -- free variables — e.g. `(car-atom ((Sentence ($z …) …)))`, which native
@@ -2141,6 +2179,7 @@ def binArity : String → Nat
   | "#test-results" => 2
   | "not" | "car-atom" | "cdr-atom" | "last" | "size-atom" | "repr" | "parse"
   | "repra" | "unique-atom" | "list_to_set" | "msort" | "println!" | "assert"
+  | "Predicate"
   | "add-translator-rule!" | "remove-translator-rule!"
   | "is-ground" | "is-expr" | "is-space" | "argv" => 1
   | _ => 0
@@ -5521,17 +5560,32 @@ private def unwrapPredicate : Atom → Atom
   | .expr [.sym "Predicate", body] => body
   | other => other
 
+/-- Decode only a value produced by the owned runtime `Predicate` builtin.
+Unlike `unchainify`, this retains the proof-relevant distinction between a
+Prolog compound and an ordinary quoted MeTTa list. -/
+private def predicateCompoundParts? (atom : Atom) :
+    Option (String × List Atom) := do
+  let (functor, encodedArguments) ← prologCompoundView? atom
+  let arguments ← chainListM encodedArguments
+  pure (functor, arguments)
+
 /-- Read the function-convention shape `p(inputs..., output)` used by PeTTa's
     Prolog interoperability layer. -/
 private def predicateCallParts? (atom : Atom) :
     Option (String × List Atom × Atom) :=
-  match unwrapPredicate atom with
-  | .expr (.sym functor :: args) =>
+  let splitOutput (functor : String) (args : List Atom) :=
       match args.reverse with
       | [] => none
       | output :: reversedInputs =>
           some (functor, reversedInputs.reverse, output)
-  | _ => none
+  match predicateCompoundParts? atom with
+  | some (functor, args) => splitOutput functor args
+  | none =>
+      -- Backward-compatible reader for transcripts and regression states
+      -- produced before Predicate gained its private runtime constructor.
+      match unwrapPredicate atom with
+      | .expr (.sym functor :: args) => splitOutput functor args
+      | _ => none
 
 private def predicateRelationGoal (gt : GroundingTable) (functor : String)
     (inputs : List Atom) (output : Atom) : Goal :=
@@ -5545,9 +5599,15 @@ private def predicateRelationGoal (gt : GroundingTable) (functor : String)
 private def predicateValueGoals? (gt : GroundingTable) (target : Atom) :
     Atom → Option (List Goal)
   | .expr [.sym "Predicate", value] => predicateValueGoals? gt target value
-  | .expr (.sym functor :: inputs) =>
-      some [predicateRelationGoal gt functor inputs target]
-  | value => some [.eq target value]
+  | .expr [.gnd (.external "PLeaTTa.internal" "prolog-compound"),
+      .sym functor, encodedInputs] => do
+      let inputs ← chainListM encodedInputs
+      pure [predicateRelationGoal gt functor inputs target]
+  | value =>
+      match value with
+      | .expr (.sym functor :: inputs) =>
+          some [predicateRelationGoal gt functor inputs target]
+      | literal => some [.eq target literal]
 
 /-- Translate the supported definite-clause body: ordered conjunction,
     `is/2`, and function-convention predicate calls.  Unsupported syntax is
@@ -5561,6 +5621,20 @@ private def predicateBodyGoals? (gt : GroundingTable) :
       pure (leftGoals ++ rightGoals)
   | .expr [.sym "is", target, value] =>
       predicateValueGoals? gt target value
+  | .expr [.gnd (.external "PLeaTTa.internal" "prolog-compound"),
+      .sym ",",
+      .expr [.sym "#c", left,
+        .expr [.sym "#c", right,
+          .gnd (.external "PLeaTTa.internal" "nil")]]] => do
+      let leftGoals ← predicateBodyGoals? gt left
+      let rightGoals ← predicateBodyGoals? gt right
+      pure (leftGoals ++ rightGoals)
+  | .expr [.gnd (.external "PLeaTTa.internal" "prolog-compound"),
+      .sym "is",
+      .expr [.sym "#c", target,
+        .expr [.sym "#c", value,
+          .gnd (.external "PLeaTTa.internal" "nil")]]] =>
+      predicateValueGoals? gt target value
   | call => do
       let (functor, inputs, output) ← predicateCallParts? call
       pure [predicateRelationGoal gt functor inputs output]
@@ -5573,15 +5647,27 @@ can relate the independently decoded clause to the exact machine input;
 execution still enters through `wactDispatch`. -/
 def predicateClause? (gt : GroundingTable) (value : Atom) :
     Option (String × Clause) :=
-  match unchainify 10000 value with
-  | .expr [.sym "Predicate", .expr [.sym ":-", head, body]] => do
+  match predicateCompoundParts? value with
+  | some (":-", [head, body]) => do
       let (functor, inputs, output) ← predicateCallParts? head
       let goals ← predicateBodyGoals? gt body
       pure (functor, { params := inputs, result := output, body := goals })
-  | .expr [.sym "Predicate", fact] => do
-      let (functor, inputs, output) ← predicateCallParts? fact
+  | some _ => do
+      let (functor, inputs, output) ← predicateCallParts? value
       pure (functor, { params := inputs, result := output, body := [] })
-  | _ => none
+  | none =>
+      -- Legacy source-wrapper form remains accepted for old replay logs and
+      -- direct regression configurations, but an unwrapped quoted list is
+      -- deliberately not accepted as a Prolog clause.
+      match unchainify 10000 value with
+      | .expr [.sym "Predicate", .expr [.sym ":-", head, body]] => do
+          let (functor, inputs, output) ← predicateCallParts? head
+          let goals ← predicateBodyGoals? gt body
+          pure (functor, { params := inputs, result := output, body := goals })
+      | .expr [.sym "Predicate", fact] => do
+          let (functor, inputs, output) ← predicateCallParts? fact
+          pure (functor, { params := inputs, result := output, body := [] })
+      | _ => none
 
 /-- Install one decoded dynamic predicate clause at the requested ordered
 Prolog clause-order edge, maintaining the canonical key list and executable
@@ -5598,11 +5684,7 @@ def installPredicateClause (w : PWorld) (front : Bool)
     else base.effectiveProgClauseKeys ++ [key]
   let installed := base.replaceProgClauses clauses
   { installed with
-      progClauseKeys := keys
-      knownHeads := (functor :: installed.knownHeads).eraseDups
-      knownArities := ((functor, clause.params.length) ::
-        installed.knownArities.filter (fun entry =>
-          !(entry.1 == functor && entry.2 == clause.params.length))) }
+      progClauseKeys := keys }
 
 /-- When the updated predicate owns no generated specialization descendants,
 installation changes the canonical clause list by exactly one ordered
@@ -6215,7 +6297,9 @@ private def installDynamicSource (w : PWorld) : List Atom →
           | (compiledSource, compiledFunctor, clause) :: compiledRest =>
               if source != compiledSource || functor != compiledFunctor then none
               else
-                let installed := installPredicateClause w false functor clause
+                let installed :=
+                  (installPredicateClause w false functor clause).registerMeTTaFunction
+                    functor clause.params.length
                 let visible := installed.addAtom selfSpace (chainify source)
                 installDynamicSource (visible.captureMeta source clause) rest
                   compiledRest
@@ -6329,6 +6413,7 @@ private def wactDispatchRaw (w : PWorld) (gt : GroundingTable) (counter : Nat)
               { withClause with
                 progClauseKeys := captured.effectiveProgClauseKeys ++
                   [clauseAlphaKey cl] }
+              |>.registerMeTTaFunction f ps.length
             some (Atom.sym "True",
               updated.invalidateSpecializations f,
               counter + 1)
@@ -6361,6 +6446,7 @@ private def wactDispatchRaw (w : PWorld) (gt : GroundingTable) (counter : Nat)
               { withoutClause with
                 progClauseKeys := dropped.1.map
                   (fun (entry : (String × Clause) × String) => entry.2) }
+              |>.unregisterMeTTaFunctionIfEmpty f
             some (Atom.sym "True",
               updated.invalidateSpecializations f, counter)
         | .error _ => none
@@ -6578,6 +6664,48 @@ def resolveAlts (cs : List Clause) (argsv args : List Atom) (res : Atom)
 private def catchErrorAtom (kind msg : String) : Atom :=
   chainOf [Atom.sym "Error", Atom.sym kind, Atom.gnd (Metta.Ground.str msg)]
 
+/-- Exact finite-tree error reified by pinned PeTTa when `=../2` cannot infer
+the functor of an open `Predicate` payload.  The context variable is
+intentionally free because SWI supplies an alpha-irrelevant message slot.
+[SPEC metta.pl:275; SWI (=..)/2] -/
+def predicateInstantiationErrorAtom : Atom :=
+  chainOf [Atom.sym "Error", Atom.sym "instantiation_error",
+    chainOf [Atom.sym "context",
+      chainOf [Atom.sym ":", Atom.sym "system",
+        chainOf [Atom.sym "/", Atom.sym "=..", Atom.gnd (.int 2)]],
+      Atom.var "_errorContext"]]
+
+/-- Exact finite-tree error reified by pinned PeTTa when the first item of a
+`Predicate` payload is not an atom. -/
+def predicateTypeErrorAtom (actual : Atom) : Atom :=
+  chainOf [Atom.sym "Error",
+    chainOf [Atom.sym "type_error", Atom.sym "atom", actual],
+    chainOf [Atom.sym "context",
+      chainOf [Atom.sym ":", Atom.sym "system",
+        chainOf [Atom.sym "/", Atom.sym "=..", Atom.gnd (.int 2)]],
+      Atom.var "_errorContext"]]
+
+/-- Structured error partition for the owned `Predicate` builtin after
+ordinary runtime substitution.  A bare variable first unifies with the
+`[F|Args]` clause head and therefore reaches the same instantiation error as
+an explicitly open functor. -/
+def predicateErrorAtom? : List Atom → Option Atom
+  | [Atom.var _] => some predicateInstantiationErrorAtom
+  | [Atom.expr [Atom.sym "#c", head, tail]] =>
+      match chainListM tail with
+      | none => none
+      | some _ =>
+          match head with
+          | Atom.var _ => some predicateInstantiationErrorAtom
+          | Atom.sym _ => none
+          | actual => some (predicateTypeErrorAtom actual)
+  | _ => none
+
+/-- Operations with source-defined structured exceptions can refine the
+coarse `ReduceResult` diagnostic without changing the generic grounding API. -/
+def exactBinErrorAtom? (op : String) (args : List Atom) : Option Atom :=
+  if op == "Predicate" then predicateErrorAtom? args else none
+
 /-- SWI arithmetic exceptions reified by PeTTa's one-argument `catch`.
     The final context variable is intentionally free, matching Prolog's
     implementation-supplied context message modulo alpha-renaming. -/
@@ -6646,13 +6774,17 @@ private def caughtBin? (gt : GroundingTable) (b : Subst) (tmpl : Atom) :
       else if op == "get-type" || op == "get-metatype" then none
       else if ["+", "-", "*"].contains op && !(av.all Metta.isGround) then none
       else if nonstrictOps.contains op || av.all Metta.isGround then
-        match callGrounded gt op av with
-        | .ok rs =>
-            some (.answers (rs.filterMap (fun rv =>
-              (unifyB b r (canonBool rv)).map (fun b' => subst b' tmpl))))
-        | .incorrectArgument msg => some (.error (catchErrorAtom "type_error" msg))
-        | .runtimeError msg => some (.error (runtimeErrorAtom op msg))
-        | .noReduce => none
+        match exactBinErrorAtom? op av with
+        | some err => some (.error err)
+        | none =>
+            match callGrounded gt op av with
+            | .ok rs =>
+                some (.answers (rs.filterMap (fun rv =>
+                  (unifyB b r (canonBool rv)).map (fun b' => subst b' tmpl))))
+            | .incorrectArgument msg =>
+                some (.error (catchErrorAtom "type_error" msg))
+            | .runtimeError msg => some (.error (runtimeErrorAtom op msg))
+            | .noReduce => none
       else none
 
 def catchDirect? (gt : GroundingTable) (b : Subst) (tmpl : Atom) :
@@ -6670,10 +6802,13 @@ def caughtBinErrorResolved? (gt : GroundingTable) (op : String)
   else if op == "get-type" || op == "get-metatype" then none
   else if ["+", "-", "*"].contains op && !(args.all Metta.isGround) then none
   else if nonstrictOps.contains op || args.all Metta.isGround then
-    match callGrounded gt op args with
-    | .incorrectArgument msg => some (catchErrorAtom "type_error" msg)
-    | .runtimeError msg => some (runtimeErrorAtom op msg)
-    | _ => none
+    match exactBinErrorAtom? op args with
+    | some err => some err
+    | none =>
+        match callGrounded gt op args with
+        | .incorrectArgument msg => some (catchErrorAtom "type_error" msg)
+        | .runtimeError msg => some (runtimeErrorAtom op msg)
+        | _ => none
   else none
 
 /-- Error preflight with groundness supplied by a certified representation.
@@ -6685,10 +6820,13 @@ def caughtBinErrorResolvedWithGround? (gt : GroundingTable) (op : String)
   else if op == "get-type" || op == "get-metatype" then none
   else if ["+", "-", "*"].contains op && !allGround then none
   else if nonstrictOps.contains op || allGround then
-    match callGrounded gt op args with
-    | .incorrectArgument msg => some (catchErrorAtom "type_error" msg)
-    | .runtimeError msg => some (runtimeErrorAtom op msg)
-    | _ => none
+    match exactBinErrorAtom? op args with
+    | some err => some err
+    | none =>
+        match callGrounded gt op args with
+        | .incorrectArgument msg => some (catchErrorAtom "type_error" msg)
+        | .runtimeError msg => some (runtimeErrorAtom op msg)
+        | _ => none
   else none
 
 theorem caughtBinErrorResolvedWithGround_eq (gt : GroundingTable)
@@ -6704,7 +6842,11 @@ theorem caughtBinErrorResolved_some_iff (gt : GroundingTable) (b : Subst)
       catchDirect? gt b res [Goal.bin op args res] = some (.error err) := by
   simp [caughtBinErrorResolved?, catchDirect?, caughtBin?]
   intro _ _ _ _ _
-  cases callGrounded gt op (args.map (subst b)) <;> simp
+  cases exactErrorEq : exactBinErrorAtom? op (args.map (subst b)) with
+  | none =>
+      simp only
+      cases callGrounded gt op (args.map (subst b)) <;> simp
+  | some exactError => simp
 
 def tableFresh {Binding : Type} (c : Conf Binding) : Atom :=
   Atom.var s!"_tbl{c.counter}"
@@ -6828,7 +6970,7 @@ def step (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf) : Conf :=
         -- (var-headed tuples are usually data in MeTTa)
         (match subst b hd with
          | Atom.sym f =>
-             if !(c.world.clauseHeadCandidates f).isEmpty then
+             if c.world.isRegisteredHead f then
                { c with cur := some (Goal.call f args res :: rest, b) }
              else if (Metta.GroundingTable.lookup gt f).isSome then
                { c with cur := some (Goal.bin f args res :: rest, b) }

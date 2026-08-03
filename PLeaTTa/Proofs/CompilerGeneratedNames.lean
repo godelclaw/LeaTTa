@@ -4011,6 +4011,61 @@ theorem compileWorldDataAction_generatedNames (fuel : Nat)
           resultAllowed operation)
     compiled
 
+/-- Compiling an ordered argument list followed by one fresh-result builtin
+preserves the compiler-owned name interval.  This is the reusable bridge for
+runtime conversions such as `Predicate/2`; their result must not be
+precomputed merely to simplify the name proof. -/
+theorem compileArgsThenFreshBin_generatedNames (fuel : Nat)
+    (ih : CompilerGeneratedNamesAt fuel)
+    (external : String → Prop) (origin : Nat) (env : CEnv) (start : Nat)
+    (argumentHead operation : String) (sources : List Atom) (term : Atom)
+    (goals : List Goal) (next : Nat) (originStart : origin ≤ start)
+    (envAllowed : CompilerEnvNamesAllowed external origin start env)
+    (sourcesAllowed :
+      CompilerAtomsNamesAllowed external origin start sources)
+    (compiled :
+      (do
+        let (compiledTerms, compiledGoals, middle) ←
+          compileArgsAtFuel fuel env start argumentHead 0 sources
+        let (result, finalCounter) := fresh middle
+        .ok (result, compiledGoals ++
+          [Goal.bin operation compiledTerms result], finalCounter)) =
+        .ok (term, goals, next)) :
+    CompilerAtomNamesAllowed external origin next term ∧
+    CompilerGoalsNamesAllowed external origin next goals := by
+  simp only [Bind.bind, Except.bind] at compiled
+  cases argumentsEq :
+      compileArgsAtFuel fuel env start argumentHead 0 sources with
+  | error message =>
+      simp only [argumentsEq] at compiled
+      contradiction
+  | ok argumentsResult =>
+      simp only [argumentsEq, fresh] at compiled
+      rcases Except.ok.inj compiled with ⟨rfl, rfl, rfl⟩
+      have argumentsCounter := (compilerCounterAt fuel).argsAt env start
+        argumentHead 0 sources argumentsResult.1 argumentsResult.2.1
+        argumentsResult.2.2 argumentsEq
+      have argumentsNames := ih.argsAt external origin env start argumentHead 0
+        sources argumentsResult.1 argumentsResult.2.1 argumentsResult.2.2
+        originStart envAllowed sourcesAllowed argumentsEq
+      have resultAllowed : CompilerAtomNamesAllowed external origin
+          (argumentsResult.2.2 + 1)
+          (Atom.var (compilerGeneratedName argumentsResult.2.2)) := by
+        simp only [compilerAtomNamesAllowed_var_iff]
+        exact .generated (Nat.le_trans originStart argumentsCounter) (by omega)
+      constructor
+      · exact resultAllowed
+      · apply (compilerGoalsNamesAllowed_append_iff external origin
+            (argumentsResult.2.2 + 1) argumentsResult.2.1
+            [Goal.bin operation argumentsResult.1
+              (Atom.var (compilerGeneratedName argumentsResult.2.2))]).2
+        constructor
+        · exact argumentsNames.2.mono (by omega)
+        · simp only [compilerGoalsNamesAllowed_cons_iff,
+            compilerGoalsNamesAllowed_nil, and_true]
+          exact compilerGoalNamesAllowed_bin
+            (argumentsNames.1.mono (by omega)) resultAllowed operation
+
 theorem compileArgsThenFreshCall_generatedNames (fuel : Nat)
     (ih : CompilerGeneratedNamesAt fuel)
     (external : String → Prop) (origin : Nat) (env : CEnv) (start : Nat)
@@ -5316,11 +5371,10 @@ private theorem compileAppCoreFuel_hPredicate_generatedNames (fuel : Nat)
     exact compileAppDefaultWith_compiler_generatedNames fuel ih external
       origin env start head _ term goals next originStart envAllowed
       argumentsAllowed compiled
-  rcases Except.ok.inj compiled with ⟨rfl, rfl, rfl⟩
-  constructor
-  · apply chainify_namesAllowed
-    simpa using argumentsAllowed
-  · simp
+  rename_i _ _ goal _
+  exact compileArgsThenFreshBin_generatedNames fuel ih external origin env
+    start head "Predicate" [goal] term goals next originStart envAllowed
+    (by simpa using argumentsAllowed) compiled
 
 private theorem compileAppCoreFuel_hTranslatePredicate_generatedNames
     (fuel : Nat) (ih : CompilerGeneratedNamesAt fuel) :

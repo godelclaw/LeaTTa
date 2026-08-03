@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=d0b11e2d63ddecd72c0baff0960992ad00156b3c9fb68f64a26f1fe60728c79e
+# compiler_sha256=8a3bc1afdd4a9a565e4d9a704ab5f4122a1062ea31673d78a4e8f4979a4d88b2
 # prolog_core_sha256=c971b21c94ec1c71a861ed4ce564d5a2b165c1ec7a3cc48929113b60927b77b0
 # compiler_adequacy_sha256=904f42d172e85e6474cd238eca65678e2f4e5877e838df8edb27e299d3da17e8
 # compiler_translation_support_adequacy_sha256=e660b57913f5c14e57b615661621cee8504cc7801374dcf8a71d5a3c81be4dfb
@@ -40,7 +40,7 @@ LIST.cons	T410-412	X	TranslatesArgs	SC	PASS	supported-expressions-left-to-right;
 PATLIST.nil	T20-22	X	ConstrainsPatternSeq	SC	PASS	recursive-fragment-empty-traversal
 PATLIST.cons	T20-22	X	ConstrainsPatternSeq	SC	PASS	atomic-and-cons-members-left-to-right; function-and-data-patterns-open
 APP.quote	T297-299	X	TranslatesExpr.quote	SC	PASS	covered
-APP.Predicate	M275	H	-	N	BOUNDARY	typed-wrapper
+APP.Predicate	M275,T310-370	X	PredicatePayloadAgrees	EQ	GAP	runtime =../2 staging, private compound provenance, exact reducer/error partition, and decoder anti-forgery proved; independent source translation and assertion composition remain open
 APP.translatePredicate	T271-275	H	-	N	BOUNDARY	ownership-dispatch
 APP.callPredicate	M276	H	-	N	BOUNDARY	ownership-dispatch
 APP.assertaPredicate	M278,T310-324,T335-346	S	TranslatesExpr.assertaPredicate	SH	GAP	source-anchored ordered compiler lowering and the owned local effect through an arbitrary active product/resource/payload context are proved under the existing context relation and a producer-supplied executable world-action head; directly constructing that contextual premise from TranslatesExpr remains open
@@ -137,6 +137,7 @@ DESUGAR.foldl5	T225-231	S	-	N	FAIL	prepass-before-translator-hook-priority
 DESUGAR.expression_walk	-	P	-	N	FAIL	quote-barrier-fixed; other-data-barriers-unproved
 DESUGAR.leaf	-	P	-	N	GAP	identity-helper
 PROGRAM.static_predesugar	F13-45,T225-261	S	-	N	FAIL	rewrites-before-source-processing; quote-barrier-fixed
+PROGRAM.static_predicate_redefinition	F37-38,M275	X	-	N	FAIL	pinned SWI rejects source clauses for existing static predicates while the executable accepts them, so the modeled source language is currently a strict permissive superset; Predicate retains special dispatch while an ordinary builtin such as car-atom is shadowed, and matching pinned would deliberately encode SWI static-procedure protection rather than follow from the language semantics automatically
 PROGRAM.static_split_bang	F13-24,F31-34	X	DesugarsProgram;desugarSourceForms_atoms_map	SC	PASS	reader-shaped adjacent marker/query ownership is sound/complete: generated definitions precede the still-adjacent marker/query pair while order, counter, and visibility are preserved; the former interposed-definition ordering is rejected
 PROGRAM.static_partition	F20-45	S	-	N	GAP	groups-rules-and-queries-not-source-order
 PROGRAM.static_compile_rules	F36-44	S	-	N	GAP	program-reference-missing

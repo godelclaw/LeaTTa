@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# Every compiler-obligations.tsv FAIL row appears exactly once. Outcomes are
+# Every compiler-obligations.tsv FAIL row appears at least once; one obligation
+# may have several uniquely keyed fixture scenarios. Outcomes are
 # ordered lists after diffbench normalization; normalization can hide a
 # presentation-only difference, which makes this gate fail closed by erasing
 # a divergence rather than manufacturing one. Recorded error outcomes use
@@ -31,6 +32,17 @@ APP.bind_new_state	diffbench/probes/characterize-bind-new-state-hook.metta	chara
 DESUGAR.lambda_list	diffbench/probes/mismatch-lambda-list-hook.metta	expected-divergence	ok	["true","(hooked-lambda 2)"]	ok	["true","7"]	hook priority versus list-parameter closure conversion
 DESUGAR.lambda_var	diffbench/probes/mismatch-lambda-var-hook.metta	expected-divergence	ok	["true","(hooked-lambda 2)"]	ok	["true","7"]	hook priority versus variable-parameter closure conversion
 APP.partial_apply	diffbench/probes/characterize-captured-partial-application.metta	characterization	ok	["(partial pair (42))","(42 43)","((partial pair (42)) 43)"]	ok	["(partial pair (42))","(42 43)","((partial pair (42)) 43)"]	a legitimate partial remains observable, a captured partial applies bound arguments before new arguments, and source-written partial syntax remains ordinary data
+APP.Predicate	diffbench/probes/characterize-predicate-ground.metta	characterization	ok	["(probe value)"]	ok	["(probe value)"]	positive-arity Predicate conversion erases only its private runtime provenance at observation
+APP.Predicate	diffbench/probes/characterize-predicate-nullary.metta	characterization	ok	["probe"]	ok	["probe"]	singleton =../2 list constructs an atom rather than a zero-child compound
+APP.Predicate	diffbench/probes/mismatch-predicate-empty.metta	characterization	ok	[]	ok	[]	empty input fails the Predicate clause without raising an exception
+APP.Predicate	diffbench/probes/characterize-predicate-evaluated-tail.metta	characterization	ok	["(probe 3)"]	ok	["(probe 3)"]	untyped argument position evaluates nested tail content before =../2 conversion
+APP.Predicate	diffbench/probes/characterize-predicate-expression-tail.metta	characterization	ok	["(probe (+ 1 2))"]	ok	["(probe (+ 1 2))"]	Expression declaration preserves nested tail syntax before =../2 conversion
+APP.Predicate	diffbench/probes/characterize-predicate-bound-head.metta	characterization	ok	["(probe value)"]	ok	["(probe value)"]	runtime substitution reaches the non-strict Predicate payload before functor inspection
+APP.Predicate	diffbench/probes/characterize-predicate-caught-open-head.metta	characterization	ok	["(Error instantiation_error)"]	ok	["(Error instantiation_error)"]	open functor raises the structured catchable =../2 instantiation error
+APP.Predicate	diffbench/probes/characterize-predicate-caught-nonatom-head.metta	characterization	ok	["(Error type_error)"]	ok	["(Error type_error)"]	non-atom functor raises the distinct structured catchable type error
+APP.Predicate	diffbench/probes/characterize-predicate-sibling-order.metta	characterization	ok	["((a b) (c d))"]	ok	["((a b) (c d))"]	two sibling conversions preserve left-to-right staging and result order
+PROGRAM.static_predicate_redefinition	diffbench/probes/characterize-predicate-shadowing.metta	expected-divergence	error	runner_error_2	ok	["(probe value)"]	pinned SWI rejects assertion into static Predicate/2 while PLeaTTa accepts the definition event and retains builtin dispatch
+PROGRAM.static_predicate_redefinition	diffbench/probes/mismatch-static-builtin-shadowing.metta	expected-divergence	error	runner_error_2	ok	["custom"]	pinned SWI rejects assertion into static car-atom/2 while PLeaTTa accepts the definition event and lets the source clause shadow ordinary builtin dispatch
 DESUGAR.map5	diffbench/probes/mismatch-map-binder-hook.metta	expected-divergence	ok	["true","hooked-map"]	ok	["true","(7 7)"]	hook priority versus map binder lowering
 DESUGAR.filter5	diffbench/probes/mismatch-filter-binder-hook.metta	expected-divergence	ok	["true","hooked-filter"]	ok	["true","(1 2)"]	hook priority versus filter binder lowering
 DESUGAR.foldl5	diffbench/probes/mismatch-foldl-binder-hook.metta	expected-divergence	ok	["true","hooked-foldl"]	ok	["true","7"]	hook priority versus foldl binder lowering

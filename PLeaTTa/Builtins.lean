@@ -60,6 +60,34 @@ def assertOp : List Atom → ReduceResult
       else .runtimeError "assertion failed"
   | _ => .incorrectArgument "assert"
 
+/-- Pinned PeTTa `Predicate/2` converts one nonempty Prolog list into the
+corresponding callable term with `=../2` [SPEC metta.pl:275].  The argument
+has already passed through the compiler's ordinary Expression staging:
+untyped positions are evaluated, while an explicit `Expression` declaration
+quotes the source payload.
+
+Positive-arity compounds retain source-unforgeable provenance; zero-arity
+terms are ordinary atoms.  A non-list or empty list fails at the clause head,
+an open functor raises the `=../2` instantiation error, and a non-atom functor
+raises its type error. -/
+def predicateOp : List Atom → ReduceResult
+  | [Atom.var _] =>
+      .runtimeError "=../2: Arguments are not sufficiently instantiated"
+  | [Atom.expr [Atom.sym "#c", head, tail]] =>
+      match chainListM tail with
+      | none => .incorrectArgument "Predicate: improper =../2 list"
+      | some arguments =>
+          match head with
+          | Atom.sym functor =>
+              match arguments with
+              | [] => .ok [Atom.sym functor]
+              | _ => .ok [prologCompoundC functor (chainOf arguments)]
+          | Atom.var _ =>
+              .runtimeError "=../2: Arguments are not sufficiently instantiated"
+          | _ => .incorrectArgument "=../2: atom functor expected"
+  | [_] => .noReduce
+  | _ => .incorrectArgument "Predicate"
+
 private def groundTermIdentical : Ground → Ground → Bool :=
   prologGroundIdentical
 
@@ -559,6 +587,7 @@ def pleattaTable : GroundingTable :=
   ⟨"readln!", GroundMode.evalArgs, none, readlnMarker⟩ ::
   ⟨"translatePredicate", GroundMode.evalArgs, none,
     translatePredicateMarker⟩ ::
+  ⟨"Predicate", GroundMode.evalArgs, none, predicateOp⟩ ::
   ⟨"string_length", GroundMode.evalArgs, none, stringLengthC⟩ ::
   ⟨"string_concat", GroundMode.evalArgs, none, stringConcatC⟩ ::
   ⟨"split_string", GroundMode.evalArgs, none, splitStringC⟩ ::

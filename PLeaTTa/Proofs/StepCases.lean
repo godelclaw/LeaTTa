@@ -448,24 +448,25 @@ theorem step_callDyn (c : Conf) (hd : Atom) (args : List Atom) (res : Atom)
     Step prog gt c (step prog gt fuel c) := by
   cases hhd : subst b hd with
   | sym f =>
-      cases he : (c.world.clauseHeadCandidates f).isEmpty with
-      | false =>
+      cases registered : c.world.isRegisteredHead f with
+      | true =>
           have hstep : step prog gt fuel c
               = { c with cur := some (Goal.call f args res :: rest, b) } := by
-            unfold step; rw [h]; simp only [hhd, he, Bool.not_false, if_true]
+            unfold step; rw [h]
+            simp only [hhd, registered, if_true]
           rw [hstep]
-          exact Step.callDyn_call c hd f args res rest b h hhd (by simpa using he)
-      | true =>
+          exact Step.callDyn_call c hd f args res rest b h hhd registered
+      | false =>
           cases hbin : (Metta.GroundingTable.lookup gt f).isSome with
           | true =>
               have hstep : step prog gt fuel c
                   = { c with cur := some (Goal.bin f args res :: rest, b) } := by
                 unfold step; rw [h]
-                simp only [hhd, he, Bool.not_true, Bool.false_eq_true, if_false,
+                simp only [hhd, registered, Bool.false_eq_true, if_false,
                   hbin, if_true]
               rw [hstep]
               exact Step.callDyn_bin c hd f args res rest b h hhd
-                (by simpa using he) hbin
+                registered hbin
           | false =>
               have hnb : Metta.GroundingTable.lookup gt f = none := by
                 cases hlk : Metta.GroundingTable.lookup gt f with
@@ -475,11 +476,11 @@ theorem step_callDyn (c : Conf) (hd : Atom) (args : List Atom) (res : Atom)
                   = { c with cur := some (Goal.eq res
                         (chainOf (Atom.sym f :: args)) :: rest, b) } := by
                 unfold step; rw [h]
-                simp only [hhd, he, Bool.not_true, Bool.false_eq_true, if_false,
+                simp only [hhd, registered, Bool.false_eq_true, if_false,
                   hbin]
               rw [hstep]
               exact Step.callDyn_symdata c hd f args res rest b h hhd
-                (by simpa using he) hnb _ rfl
+                registered hnb _ rfl
   | var w =>
       have hcl : chainListM (Atom.var w) = none := rfl
       have hstep : step prog gt fuel c

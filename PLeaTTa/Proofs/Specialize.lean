@@ -8127,16 +8127,16 @@ theorem invalidateSpecializations_of_no_children (w : PWorld)
 
 /-- The semantic dispatch step justified by a direct specialization rewrite.
     This is a genuine stuttering step of the generic path: it checks the
-    concrete head under the current substitution and the live clause database,
+    concrete head under the current substitution and the `fun/1` registry,
     and changes neither answers nor world. -/
 theorem callDyn_defined_steps_to_direct (prog : Prog) (gt : GroundingTable)
     (c : Conf) (head : Atom) (f : String) (args : List Atom) (res : Atom)
     (rest : List Goal) (b : Subst)
     (hcur : c.cur = some (Goal.callDyn head args res :: rest, b))
     (hhead : subst b head = Atom.sym f)
-    (hdefined : c.world.clauseHeadCandidates f ≠ []) :
+    (hregistered : c.world.isRegisteredHead f = true) :
     Step prog gt c { c with cur := some (Goal.call f args res :: rest, b) } := by
-  exact Step.callDyn_call c head f args res rest b hcur hhead hdefined
+  exact Step.callDyn_call c head f args res rest b hcur hhead hregistered
 
 /-- Fuel-shifted executable form of `callDyn_defined_steps_to_direct`.  Both
     runs have the exact same terminal configuration, hence the same ordered
@@ -8146,7 +8146,7 @@ theorem runClean_callDyn_defined_eq_direct (prog : Prog)
     (args : List Atom) (res : Atom) (rest : List Goal) (b : Subst)
     (hcur : c.cur = some (Goal.callDyn head args res :: rest, b))
     (hhead : subst b head = Atom.sym f)
-    (hdefined : c.world.clauseHeadCandidates f ≠ []) :
+    (hregistered : c.world.isRegisteredHead f = true) :
     runClean prog gt (fuel + 2) c none =
       runClean prog gt (fuel + 1)
         { c with cur := some (Goal.call f args res :: rest, b) } none := by
@@ -8156,7 +8156,7 @@ theorem runClean_callDyn_defined_eq_direct (prog : Prog)
       { c with cur := some (Goal.call f args res :: rest, b) } := by
     unfold step
     rw [hcur]
-    simp [hhead, hdefined]
+    simp [hhead, hregistered]
   have hclean : stepClean prog gt (fuel + 1) c =
       .progressed { c with cur := some (Goal.call f args res :: rest, b) } := by
     simp [stepClean, hcur, hstep]
@@ -8172,7 +8172,7 @@ theorem denoted_callDyn_defined_steps_to_rewrite (prog : Prog)
     (hdenotes : SubstDenotesBinding runtime binding)
     (hbindingHead : Metta.Subst.apply binding head = Atom.sym f)
     (hselected : isDefined f = true)
-    (hdefined : c.world.clauseHeadCandidates f ≠ []) :
+    (hregistered : c.world.isRegisteredHead f = true) :
     Step prog gt c
       { c with cur := some ((specializeCallableHeadGoal isDefined isBin binding
             (Goal.callDyn head args res)) :: rest, runtime) } := by
@@ -8182,7 +8182,7 @@ theorem denoted_callDyn_defined_steps_to_rewrite (prog : Prog)
     simpa using hinvisible.symm
   simpa [specializeCallableHeadGoal, hbindingHead, hselected] using
     callDyn_defined_steps_to_direct prog gt c head f args res rest runtime
-      hcur hhead hdefined
+      hcur hhead hregistered
 
 /-- Fuel-parametric executable convergence for the actual defined-function
     rewrite.  The common suffix may recurse or branch arbitrarily; both runs
@@ -8196,7 +8196,7 @@ theorem runClean_denoted_callDyn_defined_eq_rewrite (prog : Prog)
     (hdenotes : SubstDenotesBinding runtime binding)
     (hbindingHead : Metta.Subst.apply binding head = Atom.sym f)
     (hselected : isDefined f = true)
-    (hdefined : c.world.clauseHeadCandidates f ≠ []) :
+    (hregistered : c.world.isRegisteredHead f = true) :
     runClean prog gt (fuel + 2) c none =
       runClean prog gt (fuel + 1)
         { c with cur := some ((specializeCallableHeadGoal isDefined isBin binding
@@ -8207,7 +8207,7 @@ theorem runClean_denoted_callDyn_defined_eq_rewrite (prog : Prog)
     simpa using hinvisible.symm
   simpa [specializeCallableHeadGoal, hbindingHead, hselected] using
     runClean_callDyn_defined_eq_direct prog gt fuel c head f args res rest
-      runtime hcur hhead hdefined
+      runtime hcur hhead hregistered
 
 /-- A concrete dynamic builtin head is exactly one dispatch step away from
     the direct builtin goal emitted by profile lowering. -/
@@ -8216,17 +8216,17 @@ theorem callDyn_builtin_steps_to_direct (prog : Prog) (gt : GroundingTable)
     (rest : List Goal) (b : Subst)
     (hcur : c.cur = some (Goal.callDyn head args res :: rest, b))
     (hhead : subst b head = Atom.sym op)
-    (hundefined : c.world.clauseHeadCandidates op = [])
+    (hunregistered : c.world.isRegisteredHead op = false)
     (hbuiltin : (GroundingTable.lookup gt op).isSome) :
     Step prog gt c { c with cur := some (Goal.bin op args res :: rest, b) } := by
-  exact Step.callDyn_bin c head op args res rest b hcur hhead hundefined hbuiltin
+  exact Step.callDyn_bin c head op args res rest b hcur hhead hunregistered hbuiltin
 
 theorem runClean_callDyn_builtin_eq_direct (prog : Prog)
     (gt : GroundingTable) (fuel : Nat) (c : Conf) (head : Atom) (op : String)
     (args : List Atom) (res : Atom) (rest : List Goal) (b : Subst)
     (hcur : c.cur = some (Goal.callDyn head args res :: rest, b))
     (hhead : subst b head = Atom.sym op)
-    (hundefined : c.world.clauseHeadCandidates op = [])
+    (hunregistered : c.world.isRegisteredHead op = false)
     (hbuiltin : (GroundingTable.lookup gt op).isSome) :
     runClean prog gt (fuel + 2) c none =
       runClean prog gt (fuel + 1)
@@ -8237,7 +8237,7 @@ theorem runClean_callDyn_builtin_eq_direct (prog : Prog)
       { c with cur := some (Goal.bin op args res :: rest, b) } := by
     unfold step
     rw [hcur]
-    simp [hhead, hundefined, hbuiltin]
+    simp [hhead, hunregistered, hbuiltin]
   have hclean : stepClean prog gt (fuel + 1) c =
       .progressed { c with cur := some (Goal.bin op args res :: rest, b) } := by
     simp [stepClean, hcur, hstep]
@@ -8254,7 +8254,7 @@ theorem runClean_denoted_callDyn_builtin_eq_rewrite (prog : Prog)
     (hdenotes : SubstDenotesBinding runtime binding)
     (hbindingHead : Metta.Subst.apply binding head = Atom.sym op)
     (hnotDefined : isDefined op = false) (hselected : isBin op = true)
-    (hundefined : c.world.clauseHeadCandidates op = [])
+    (hunregistered : c.world.isRegisteredHead op = false)
     (hbuiltin : (GroundingTable.lookup gt op).isSome) :
     runClean prog gt (fuel + 2) c none =
       runClean prog gt (fuel + 1)
@@ -8266,7 +8266,7 @@ theorem runClean_denoted_callDyn_builtin_eq_rewrite (prog : Prog)
     simpa using hinvisible.symm
   simpa [specializeCallableHeadGoal, hbindingHead, hnotDefined, hselected] using
     runClean_callDyn_builtin_eq_direct prog gt fuel c head op args res rest
-      runtime hcur hhead hundefined hbuiltin
+      runtime hcur hhead hunregistered hbuiltin
 
 /-- Applying a partial value performs one semantics-only redispatch step.
     This theorem deliberately exposes the runtime-substituted bound arguments;
@@ -9946,7 +9946,7 @@ theorem runClean_callDyn_partial_defined_eq_direct (prog : Prog)
     (hns : ∀ f, subst b head ≠ Atom.sym f)
     (hp : partialView? (subst b head) = some (base, boundList))
     (hbound : bound = (chainListM boundList).getD [])
-    (hdefined : c.world.clauseHeadCandidates base ≠ []) :
+    (hregistered : c.world.isRegisteredHead base = true) :
     runClean prog gt (fuel + 3) c none =
       runClean prog gt (fuel + 1)
         { c with cur := some (
@@ -9966,7 +9966,7 @@ theorem runClean_callDyn_partial_defined_eq_direct (prog : Prog)
         simpa [redispatched, subst] using
           runClean_callDyn_defined_eq_direct prog gt fuel redispatched
             (Atom.sym base) base (bound ++ args) res rest b rfl (by simp)
-              hdefined
+              hregistered
 
 /-- Builtin partials obey the same two-step convergence equation. -/
 theorem runClean_callDyn_partial_builtin_eq_direct (prog : Prog)
@@ -9977,7 +9977,7 @@ theorem runClean_callDyn_partial_builtin_eq_direct (prog : Prog)
     (hns : ∀ f, subst b head ≠ Atom.sym f)
     (hp : partialView? (subst b head) = some (base, boundList))
     (hbound : bound = (chainListM boundList).getD [])
-    (hundefined : c.world.clauseHeadCandidates base = [])
+    (hunregistered : c.world.isRegisteredHead base = false)
     (hbuiltin : (GroundingTable.lookup gt base).isSome) :
     runClean prog gt (fuel + 3) c none =
       runClean prog gt (fuel + 1)
@@ -9998,7 +9998,7 @@ theorem runClean_callDyn_partial_builtin_eq_direct (prog : Prog)
         simpa [redispatched, subst] using
           runClean_callDyn_builtin_eq_direct prog gt fuel redispatched
             (Atom.sym base) base (bound ++ args) res rest b rfl (by simp)
-              hundefined hbuiltin
+              hunregistered hbuiltin
 
 /-- The actual partial-function lowering first converges to a generic direct
     call whose bound prefix has been substituted at runtime.  The following
@@ -10012,7 +10012,7 @@ theorem runClean_denoted_callDyn_partial_defined_eq_runtimeDirect
     (hdenotes : SubstDenotesBinding runtime binding)
     (hview : partialHeadView? (Metta.Subst.apply binding head) =
       some (base, bound))
-    (hdefined : c.world.clauseHeadCandidates base ≠ []) :
+    (hregistered : c.world.isRegisteredHead base = true) :
     runClean prog gt (fuel + 3) c none =
       runClean prog gt (fuel + 1)
         { c with cur := some (Goal.call base
@@ -10031,7 +10031,7 @@ theorem runClean_denoted_callDyn_partial_defined_eq_runtimeDirect
     simp
   exact runClean_callDyn_partial_defined_eq_direct prog gt fuel c head base
     (chainOf (bound.map (subst runtime))) (bound.map (subst runtime)) args res
-    rest runtime hcur hnotSymbol hpartial hbound hdefined
+    rest runtime hcur hnotSymbol hpartial hbound hregistered
 
 theorem runClean_denoted_callDyn_partial_builtin_eq_runtimeDirect
     (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf)
@@ -10041,7 +10041,7 @@ theorem runClean_denoted_callDyn_partial_builtin_eq_runtimeDirect
     (hdenotes : SubstDenotesBinding runtime binding)
     (hview : partialHeadView? (Metta.Subst.apply binding head) =
       some (base, bound))
-    (hundefined : c.world.clauseHeadCandidates base = [])
+    (hunregistered : c.world.isRegisteredHead base = false)
     (hbuiltin : (GroundingTable.lookup gt base).isSome) :
     runClean prog gt (fuel + 3) c none =
       runClean prog gt (fuel + 1)
@@ -10061,7 +10061,7 @@ theorem runClean_denoted_callDyn_partial_builtin_eq_runtimeDirect
     simp
   exact runClean_callDyn_partial_builtin_eq_direct prog gt fuel c head base
     (chainOf (bound.map (subst runtime))) (bound.map (subst runtime)) args res
-    rest runtime hcur hnotSymbol hpartial hbound hundefined hbuiltin
+    rest runtime hcur hnotSymbol hpartial hbound hunregistered hbuiltin
 
 /-! ## Executable base-case witness over the actual clause rewrite -/
 
@@ -10414,7 +10414,7 @@ private theorem generic_dispatch (g input answer marker : String) :
       genericAfterDispatch g input answer marker := by
   simp [genericAfterParentBinding, genericAfterDispatch, prefixConf,
     genericParentSubst, finiteWorld, baseParentClause,
-    finiteSpecializedClause_eq, step, PWorld.clausesOf,
+    finiteSpecializedClause_eq, step, PWorld.isRegisteredHead,
     Metta.Subst.lookup]
 
 private theorem generic_target_resolution (g input answer marker : String)
@@ -10704,12 +10704,12 @@ private theorem ordered_specialized_guard (g input : String)
 
 private theorem ordered_generic_dispatch (g input : String)
     (answers : List String) (hgf : g ≠ "f") (hgs : g ≠ "f_Spec")
-    (hanswers : answers ≠ []) :
+    (_hanswers : answers ≠ []) :
     step baseProg [] 100 (orderedGenericAfterParentBinding g input answers) =
       orderedGenericAfterDispatch g input answers := by
   simp [orderedGenericAfterParentBinding, orderedGenericAfterDispatch,
     orderedPrefixConf, genericParentSubst, step, Metta.Subst.lookup,
-    orderedWorld_clauses_g, hgf, hgs, hanswers]
+    orderedWorld, PWorld.isRegisteredHead, hgf, hgs]
 
 private def orderedTargetGoals (input answer : String) : List Goal :=
   [Goal.eq
