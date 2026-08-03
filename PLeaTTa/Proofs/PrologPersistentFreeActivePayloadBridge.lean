@@ -309,6 +309,75 @@ structure PersistentFreeActivePayloadState where
 
 namespace PersistentFreeActivePayloadState
 
+/-- Package a packet-free active relation from an already derived live
+agreement, without constructing a compatibility carrier inside this
+constructor.  An upstream producer may still carry historical `OpenedCall`
+and `PendingCall` indices; those are erased once when it supplies the
+agreement at this boundary. -/
+def ofAgreement
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {predicateScope : CutScopeId} {session : Session}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {bodyReferences : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext} {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {openConf : OpenConf}
+    {payloadContext :
+      ActiveProductPayloadContextAt alpha support qterm predicateScope finish
+        branch branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context}
+    (agreement :
+      PersistentFreeActiveProductPayloadResourceRelatesAt freshFrontier alpha
+        support canonical referenceBase predicateScope session finish branch
+        branchTail altTail bodyBarrier callerBarrier bodyReferences
+        bodyExecutables callerReferences callerExecutables outer current
+        runtime qterm active resources callerScope outerScope context baseAlts
+        source openConf payloadContext) : PersistentFreeActivePayloadState :=
+  { index :=
+      { freshFrontier := freshFrontier
+        alpha := alpha
+        support := support
+        canonical := canonical
+        referenceBase := referenceBase
+        predicateScope := predicateScope
+        session := session
+        finish := finish
+        branch := branch
+        branchTail := branchTail
+        altTail := altTail
+        bodyBarrier := bodyBarrier
+        callerBarrier := callerBarrier
+        bodyReferences := bodyReferences
+        bodyExecutables := bodyExecutables
+        callerReferences := callerReferences
+        callerExecutables := callerExecutables
+        outer := outer
+        current := current
+        runtime := runtime
+        qterm := qterm
+        active := active
+        resources := resources
+        callerScope := callerScope
+        outerScope := outerScope
+        context := context
+        baseAlts := baseAlts
+        source := source
+        openConf := openConf }
+    payloadContext := payloadContext
+    agreement := agreement }
+
 def sourceState (state : PersistentFreeActivePayloadState) : State :=
   .running state.index.session state.index.source
 

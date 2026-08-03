@@ -10,6 +10,7 @@ Main exports:
   RepresentativeSupportedCallEntryRelates.activate_literal_root
 -/
 import PLeaTTa.Proofs.PrologNestedCallReadyBridge
+import PLeaTTa.Proofs.PrologPersistentFreeActivePayloadBridge
 
 namespace PLeaTTa.PrologRootCallReadyBridge
 
@@ -33,6 +34,7 @@ open PrologNestedCallChainBridge
 open PrologNestedCallReadyBridge
 open PrologOrdinaryStepBridge
 open PrologPrefilterScanBridge
+open PrologPersistentFreeActivePayloadBridge
 open PrologProductResourceContextBridge
 open PrologRepresentativeCallFrontierBridge
 open PrologRepresentativeProductActivationBridge
@@ -191,6 +193,93 @@ structure RepresentativeRootCallSuccessorFacts
   selectionFresh :
     AlphaFreshFrontier after.carrier.index.alpha branch.nextFresh
       (before.toConf.counter + 1)
+  persistentFreeAgreement :
+    PersistentFreeActiveProductPayloadResourceRelatesAt
+      after.carrier.index.freshFrontier after.carrier.index.alpha
+      after.carrier.index.support after.carrier.index.canonical
+      after.carrier.index.referenceBase after.carrier.index.opened.scope
+      after.carrier.index.session after.carrier.index.finish
+      after.carrier.index.branch after.carrier.index.branchTail
+      after.carrier.index.altTail after.carrier.index.bodyBarrier
+      after.carrier.index.callerBarrier after.carrier.index.bodyReferences
+      after.carrier.index.bodyExecutables after.carrier.index.callerReferences
+      after.carrier.index.callerExecutables after.carrier.index.outer
+      after.carrier.index.current after.carrier.index.runtime
+      after.carrier.index.qterm after.carrier.index.active
+      after.carrier.index.resources after.carrier.index.callerScope
+      after.carrier.index.outerScope after.carrier.index.context
+      after.carrier.index.baseAlts after.carrier.index.source
+      after.carrier.index.openConf after.carrier.payloadContext
+
+section PersistentFreeRootSuccessor
+
+variable {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+variable {alpha support : List (LogicVar × String)}
+variable {canonical : TreeSubstitution} {referenceBase : Substitution}
+variable {session : Session} {before : OpenConf} {scope : CutScopeId}
+variable {predicate : String} {referencePayload : List Term}
+variable {referenceBindings : Substitution}
+variable {args : List Atom} {res : Atom} {binding : Subst}
+variable {branches : List PLeaTTa.Alt}
+variable {finalCounter callerBarrier rejects : Nat}
+variable {skippedBranches : List ClauseBranch}
+variable {skippedClauses : List PLeaTTa.Clause}
+variable {finish : PreparedCursor} {branch : ClauseBranch}
+variable {clause : PLeaTTa.Clause} {branchTail : List ClauseBranch}
+variable {clauseTail : List PLeaTTa.Clause} {altTail : List PLeaTTa.Alt}
+variable {copied : PLeaTTa.Clause} {independentResult : Substitution}
+variable {representative sourceCanonical flattenedRepresentative :
+  TreeSubstitution}
+variable {nextAlpha : List (LogicVar × String)}
+variable {installed : Subst} {after : RepresentativeActivePayloadState}
+
+/-- Erase root-call creation packets once at the export boundary by packaging
+the actual live successor relation directly.  The upstream root facts remain
+packet-bearing and supply their historical indices here; unlike the
+compatibility adapter, the exported carrier retains no `OpenedCall` or
+`PendingCall`.  Its only surviving creation datum is the predicate's typed cut
+scope, stored in the packet-free index. -/
+def RepresentativeRootCallSuccessorFacts.toPersistentFreeActive
+    (facts :
+      RepresentativeRootCallSuccessorFacts prog gt alpha support canonical
+        referenceBase session before scope predicate referencePayload
+        referenceBindings args res binding branches finalCounter callerBarrier
+        rejects skippedBranches skippedClauses finish branch clause branchTail
+        clauseTail altTail copied independentResult representative nextAlpha
+        sourceCanonical flattenedRepresentative installed after) :
+    RepresentativePersistentFreeActivePayloadState :=
+  let carrier :=
+    PersistentFreeActivePayloadState.ofAgreement
+      facts.persistentFreeAgreement
+  { carrier := carrier
+    representative := after.representative
+    cumulative := by
+      simpa [carrier, PersistentFreeActivePayloadState.ofAgreement] using
+        after.cumulative }
+
+@[simp] theorem RepresentativeRootCallSuccessorFacts.toPersistentFreeActive_sourceState
+    (facts :
+      RepresentativeRootCallSuccessorFacts prog gt alpha support canonical
+        referenceBase session before scope predicate referencePayload
+        referenceBindings args res binding branches finalCounter callerBarrier
+        rejects skippedBranches skippedClauses finish branch clause branchTail
+        clauseTail altTail copied independentResult representative nextAlpha
+        sourceCanonical flattenedRepresentative installed after) :
+    facts.toPersistentFreeActive.carrier.sourceState =
+      after.carrier.sourceState := rfl
+
+@[simp] theorem RepresentativeRootCallSuccessorFacts.toPersistentFreeActive_fineState
+    (facts :
+      RepresentativeRootCallSuccessorFacts prog gt alpha support canonical
+        referenceBase session before scope predicate referencePayload
+        referenceBindings args res binding branches finalCounter callerBarrier
+        rejects skippedBranches skippedClauses finish branch clause branchTail
+        clauseTail altTail copied independentResult representative nextAlpha
+        sourceCanonical flattenedRepresentative installed after) :
+    facts.toPersistentFreeActive.carrier.fineState =
+      after.carrier.fineState := rfl
+
+end PersistentFreeRootSuccessor
 
 /-- Construct a literal-root activation from the real entry bank and one
 selected semantic clause.
@@ -589,7 +678,8 @@ theorem RepresentativeSupportedCallEntryRelates.activate_literal_root
       qtermPreserved := rfl
       openSession := afterOpenSessionExact
       alphaExtension := activation.alphaExtension
-      selectionFresh := ?_ }
+      selectionFresh := ?_
+      persistentFreeAgreement := ?_ }
   · simpa [pending, opened, openedFor, openLocalCall, requestFor,
       prepareCall] using executableBank
   · change HeadResolution branch independentResult
@@ -624,5 +714,17 @@ theorem RepresentativeSupportedCallEntryRelates.activate_literal_root
       AlphaFreshFrontier nextAlpha branch.nextFresh
         (before.toConf.counter + 1)
     exact activation.selectionFresh
+  · exact
+      { ready := agreement.core.control.ready
+        activeAlts := agreement.core.resourceStack.activeAlts
+        actualAlts := agreement.core.resourceStack.actualAlts
+        sourceShape := by
+          simpa [after, carrier, ActivePayloadState.ofAgreement,
+            PrologActivatedProductStepBridge.activeSourceProduct] using
+              agreement.core.sourceShape
+        endpointsCurrent := agreement.endpointsCurrent
+        activationOrdered := agreement.activationOrdered
+        activationOrigins := agreement.activationOrigins
+        controlOrigins := agreement.controlOrigins }
 
 end PLeaTTa.PrologRootCallReadyBridge
