@@ -35,9 +35,28 @@ open PrologRetainedPayloadSnapshotBridge.SourceControlResourcePayloadContextAgre
 open PrologSourceProductContextBridge
 open PrologStateBridge
 
-/-- The payload zipper retained after a clause body succeeds.  The source
-focus changes to the private scheduling choice, but no retained cursor,
-resource descriptor, or immutable payload cell moves. -/
+/-- The payload zipper retained after a clause body succeeds, indexed only by
+the predicate cut scope which remains live in the source and control spines.
+The source focus changes to the private scheduling choice, but no retained
+cursor, resource descriptor, or immutable payload cell moves. -/
+abbrev ScheduledProductPayloadContextAt
+    (alpha support : List (LogicVar × String)) (qterm : Atom)
+    (predicateScope : CutScopeId)
+    (finish : PreparedCursor) (branch : ClauseBranch)
+    (branchTail : List ClauseBranch) (bodyBarrier callerBarrier : Nat)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (outer : List ControlSegment)
+    (active : RetainedAlternativeSegment)
+    (resources : List RetainedAlternativeSegment)
+    (callerScope outerScope : CutScopeId)
+    (context : ActiveProductContext) :=
+  ActiveProductPayloadContextAt alpha support qterm predicateScope finish branch
+    branchTail bodyBarrier callerBarrier callerReferences callerExecutables
+    outer active resources callerScope outerScope context
+
+/-- Compatibility spelling for a literal call-entry packet.  Only its typed
+predicate scope participates in the scheduled payload shape. -/
 abbrev ScheduledProductPayloadContext
     (alpha support : List (LogicVar × String)) (qterm : Atom)
     (opened : OpenedCall) (finish : PreparedCursor) (branch : ClauseBranch)
@@ -49,9 +68,9 @@ abbrev ScheduledProductPayloadContext
     (resources : List RetainedAlternativeSegment)
     (callerScope outerScope : CutScopeId)
     (context : ActiveProductContext) :=
-  ActiveProductPayloadContext alpha support qterm opened finish branch
-    branchTail bodyBarrier callerBarrier callerReferences callerExecutables
-    outer active resources callerScope outerScope context
+  ScheduledProductPayloadContextAt alpha support qterm opened.scope finish
+    branch branchTail bodyBarrier callerBarrier callerReferences
+    callerExecutables outer active resources callerScope outerScope context
 
 /-- The exact payload tail remaining after the selected clause-local cut
 consumes its active retained alternative. -/

@@ -14,6 +14,15 @@ import PLeaTTa.Proofs.PrologRootCallReadyBridge
 
 namespace PLeaTTa.PrologRootScheduledSelectionBridge
 
+/-- Explicit one-way ingress for packet-bearing producer fixtures. -/
+private abbrev legacyScheduled
+    (state :
+      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState) :
+    PrologHeterogeneousPrefixBridge.ProductPhaseState :=
+  .scheduled
+    (PrologHeterogeneousPrefixBridge.RepresentativePersistentFreeScheduledPayloadState.ofLegacy
+      state)
+
 open Metta (Atom Subst)
 open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.Canonical
@@ -229,12 +238,12 @@ theorem toScheduledSelected
           (.active
             (PLeaTTa.PrologPersistentFreeActivePayloadBridge.RepresentativePersistentFreeActivePayloadState.ofLegacy
               active))
-          (.scheduled before) :=
+          (legacyScheduled before) :=
       .cons (.administrative active administration)
         (.cons
           (.bodyAnswer normalized normalizedReferencesEmpty
             normalizedExecutablesEmpty)
-          (.nil (.scheduled before)))
+          (.nil (legacyScheduled before)))
     have combined := facts.sourceSteps.trans activeToBefore.sourceSteps
     simpa [
       PLeaTTa.PrologHeterogeneousPrefixBridge.TransitionSchedule.sourceCost,
@@ -253,12 +262,12 @@ theorem toScheduledSelected
           (.active
             (PLeaTTa.PrologPersistentFreeActivePayloadBridge.RepresentativePersistentFreeActivePayloadState.ofLegacy
               active))
-          (.scheduled before) :=
+          (legacyScheduled before) :=
       .cons (.administrative active administration)
         (.cons
           (.bodyAnswer normalized normalizedReferencesEmpty
             normalizedExecutablesEmpty)
-          (.nil (.scheduled before)))
+          (.nil (legacyScheduled before)))
     have combined := facts.fineSteps.trans activeToBefore.fineSteps
     simpa [
       PLeaTTa.PrologHeterogeneousPrefixBridge.TransitionSchedule.fineCost,

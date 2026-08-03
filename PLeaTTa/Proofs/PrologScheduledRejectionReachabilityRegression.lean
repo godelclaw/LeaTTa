@@ -12,6 +12,15 @@ import PLeaTTa.Proofs.PrologRootScheduledSelectionBridge
 
 namespace PLeaTTa.PrologScheduledRejectionReachabilityRegression
 
+/-- Explicit one-way ingress for packet-bearing producer fixtures. -/
+private abbrev legacyScheduled
+    (state :
+      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState) :
+    PrologHeterogeneousPrefixBridge.ProductPhaseState :=
+  .scheduled
+    (PrologHeterogeneousPrefixBridge.RepresentativePersistentFreeScheduledPayloadState.ofLegacy
+      state)
+
 open Metta (Atom Subst)
 open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.Canonical
@@ -2268,7 +2277,7 @@ structure ReachableScheduledSuccessAdministrativePrefix
       [ .scheduledSuccess
           (ScheduledSuccessLabel.of ready transition partition flattened),
         .activeAdministrative 1 ]
-      (.ordinary (.scheduled before))
+      (.ordinary (legacyScheduled before))
       (.ordinary
         (.active
           (RepresentativePersistentFreeActivePayloadState.afterAdministrative
@@ -2421,12 +2430,12 @@ theorem double_selected_scheduled_success_then_administrative_exact
         (.active
           (PLeaTTa.PrologPersistentFreeActivePayloadBridge.RepresentativePersistentFreeActivePayloadState.ofLegacy
             active))
-        (.scheduled before) :=
+        (legacyScheduled before) :=
     .cons (.administrative active administration)
       (.cons
         (.bodyAnswer normalized normalizedReferencesEmpty
           normalizedExecutablesEmpty)
-        (.nil (.scheduled before)))
+        (.nil (legacyScheduled before)))
   have sourceRoot :
       StepsN 4
         (.running doubleSelectedSession

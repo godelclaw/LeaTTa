@@ -35,6 +35,7 @@ open PrologHeterogeneousPrefixBridge
 open PrologMguComposition
 open PrologOrdinaryStepBridge
 open PrologPersistentFreeActivePayloadBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologProductResourceContextBridge
 open PrologProductResourceTransitionBridge
 open PrologRetainedPayloadSnapshotBridge
@@ -445,7 +446,10 @@ inductive GlobalCertifiedTransition
       GlobalCertifiedTransition prog gt
         (.scheduledSuccess
           (ScheduledSuccessLabel.of ready transition partition flattened))
-        (.ordinary (.scheduled before))
+        (.ordinary
+          (.scheduled
+            (RepresentativePersistentFreeScheduledPayloadState.ofLegacy
+              before)))
         (.ordinary (.active successor.after))
 
 namespace GlobalCertifiedTransition
@@ -679,7 +683,7 @@ different phase. -/
 theorem scheduledSuccess_target_active
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {label : ScheduledSuccessLabel}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {after : ResolverPhaseState}
     (step :
       GlobalCertifiedTransition prog gt (.scheduledSuccess label)
@@ -694,7 +698,7 @@ strictly positive; a caller cannot relabel the edge as a zero-step stutter. -/
 theorem scheduledSuccess_sourceCost_positive
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {label : ScheduledSuccessLabel}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {after : ResolverPhaseState}
     (step :
       GlobalCertifiedTransition prog gt (.scheduledSuccess label)
@@ -709,7 +713,7 @@ scheduled state's current source substitution. -/
 theorem scheduledSuccess_answer_exact
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {label : ScheduledSuccessLabel}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {after : ResolverPhaseState}
     (step :
       GlobalCertifiedTransition prog gt (.scheduledSuccess label)
@@ -724,7 +728,7 @@ resource relation is represented explicitly. -/
 theorem scheduledSuccess_target_rootClosed
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {label : ScheduledSuccessLabel}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {after : ResolverPhaseState}
     (step :
       GlobalCertifiedTransition prog gt (.scheduledSuccess label)
@@ -765,7 +769,10 @@ theorem scheduledSuccess_nonempty
         GlobalCertifiedTransition prog gt
           (.scheduledSuccess
             (ScheduledSuccessLabel.of ready transition partition flattened))
-          (.ordinary (.scheduled before))
+          (.ordinary
+            (.scheduled
+              (RepresentativePersistentFreeScheduledPayloadState.ofLegacy
+                before)))
           (.ordinary (.active successor.after))) := by
   rcases
       ScheduledSelectedHeadTransition.ScheduledSuccessfulHeadSuccessor.nonempty
@@ -1087,7 +1094,9 @@ def scheduledSuccessThenAdministrative
       [ .scheduledSuccess
           (ScheduledSuccessLabel.of ready transition partition flattened),
         .activeAdministrative count ]
-      (.ordinary (.scheduled before))
+      (.ordinary
+        (.scheduled
+          (RepresentativePersistentFreeScheduledPayloadState.ofLegacy before)))
       (.ordinary
         (.active
           (RepresentativePersistentFreeActivePayloadState.afterAdministrative
@@ -1130,7 +1139,10 @@ def scheduledSuccessThenAdministrative
         successor.after.carrier.index.bodyReferences afterBody) :
     (scheduledSuccessThenAdministrative relation successor positive
       steps).states =
-      [ .ordinary (.scheduled before),
+      [ .ordinary
+          (.scheduled
+            (RepresentativePersistentFreeScheduledPayloadState.ofLegacy
+              before)),
         .ordinary (.active successor.after),
         .ordinary
           (.active

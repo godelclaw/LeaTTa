@@ -29,23 +29,35 @@ open PrologStateBridge
 
 /-! ## Exact source scheduling -/
 
-/-- Source control immediately after one selected clause body succeeds.
+/-- Source control immediately after one selected clause body succeeds,
+indexed only by the predicate cut scope which remains live in the search.
 
 The caller continuation is the left branch and therefore runs first under
 leftmost DFS.  The still-open predicate continuation remains the right
 branch, retaining later clauses for backtracking. -/
-def scheduledSourceProduct
-    (callerScope : CutScopeId) (opened : OpenedCall)
+def scheduledSourceProductAt
+    (callerScope predicateScope : CutScopeId)
     (finish : PreparedCursor) (branch : ClauseBranch)
     (branchTail : List ClauseBranch) (current : Substitution)
     (referenceRest : List PeTTaSpec.PrologCore.Goal) : Search :=
   .choice callerScope
     (.task callerScope referenceRest current)
     (.product callerScope
-      (.cutBoundary opened.scope
-        (.choice opened.scope .done
-          (.clauses opened.scope (finish.advance branch branchTail))))
+      (.cutBoundary predicateScope
+        (.choice predicateScope .done
+          (.clauses predicateScope (finish.advance branch branchTail))))
       referenceRest)
+
+/-- Compatibility spelling for a literal call-entry packet.  The scheduled
+source shape consumes only its predicate cut scope; no historical persistent
+state is needed after the body has answered. -/
+def scheduledSourceProduct
+    (callerScope : CutScopeId) (opened : OpenedCall)
+    (finish : PreparedCursor) (branch : ClauseBranch)
+    (branchTail : List ClauseBranch) (current : Substitution)
+    (referenceRest : List PeTTaSpec.PrologCore.Goal) : Search :=
+  scheduledSourceProductAt callerScope opened.scope finish branch branchTail
+    current referenceRest
 
 /-- Clause-body success is consumed privately by `product`: it schedules the
 caller tail before later callee answers, emits no public observation, and

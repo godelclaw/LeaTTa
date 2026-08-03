@@ -20,6 +20,15 @@ private abbrev legacyActive
     (PrologPersistentFreeActivePayloadBridge.RepresentativePersistentFreeActivePayloadState.ofLegacy
       state)
 
+/-- Explicit one-way ingress for packet-bearing producer fixtures. -/
+private abbrev legacyScheduled
+    (state :
+      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState) :
+    PrologHeterogeneousPrefixBridge.ProductPhaseState :=
+  .scheduled
+    (PrologHeterogeneousPrefixBridge.RepresentativePersistentFreeScheduledPayloadState.ofLegacy
+      state)
+
 open Metta (Atom Subst)
 open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.Canonical
@@ -1124,7 +1133,7 @@ theorem concrete_nonempty_failure_inhabits_resolver_sandwich
                     (legacyActive leftStart) (legacyActive before),
                 ∃ right :
                     CertifiedPrefix prog gt [.bodyAnswer]
-                      (legacyActive activation.after) (.scheduled finish),
+                      (legacyActive activation.after) (legacyScheduled finish),
                   let run :=
                     ResolverCertifiedPrefix.sandwich
                       left failure activation right
@@ -1156,7 +1165,7 @@ theorem concrete_nonempty_failure_inhabits_resolver_sandwich
                         .ordinary (legacyActive before),
                         .postFailure failure.after,
                         .ordinary (legacyActive activation.after),
-                        .ordinary (.scheduled finish)] ∧
+                        .ordinary (legacyScheduled finish)] ∧
                     .postFailure failure.after ∈ run.states ∧
                     (ResolverCertifiedPrefix.sandwichSplitAtFailure
                         left failure activation right).1 =
@@ -1217,12 +1226,12 @@ theorem concrete_nonempty_failure_inhabits_resolver_sandwich
       prog gt activation.after referenceEmpty executableEmpty
   have answered :
       CertifiedTransition prog gt .bodyAnswer
-        (legacyActive activation.after) (.scheduled finish) := by
+        (legacyActive activation.after) (legacyScheduled finish) := by
     exact .bodyAnswer activation.after referenceEmpty executableEmpty
   let right :
       CertifiedPrefix prog gt [.bodyAnswer]
-        (legacyActive activation.after) (.scheduled finish) :=
-    .cons answered (.nil (.scheduled finish))
+        (legacyActive activation.after) (legacyScheduled finish) :=
+    .cons answered (.nil (legacyScheduled finish))
   let run :=
     ResolverCertifiedPrefix.sandwich left failure activation right
   have sourceSegment :
@@ -1249,7 +1258,7 @@ theorem concrete_nonempty_failure_inhabits_resolver_sandwich
         [.ordinary (legacyActive leftStart), .ordinary (legacyActive before),
           .postFailure failure.after,
           .ordinary (legacyActive activation.after),
-          .ordinary (.scheduled finish)] := by
+          .ordinary (legacyScheduled finish)] := by
     rfl
   refine ⟨before, failure, activation, leftStart, finish, left, right, ?_⟩
   dsimp only

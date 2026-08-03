@@ -364,6 +364,10 @@ PROLOG_PERSISTENT_FREE_ACTIVE_PAYLOAD_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologPersistentFreeActivePayloadBridge.lean"
 )
+PROLOG_PERSISTENT_FREE_SCHEDULED_PAYLOAD_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologPersistentFreeScheduledPayloadBridge.lean"
+)
 PROLOG_SCHEDULED_ANSWER_PROPAGATION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologScheduledAnswerPropagationBridge.lean"
@@ -596,6 +600,7 @@ STRICT_AXIOM_AUDIT_ROWS = {
     "BISIM.scheduled_payload_landing",
     "BISIM.scheduled_payload_rejected_head",
     "BISIM.scheduled_payload_successful_head",
+    "BISIM.scheduled_phase_packet_free",
     "BISIM.root_closed_public_answer_value",
     "BISIM.answer_visibility_public",
     "BISIM.findall_collection_answer_general",
@@ -834,6 +839,8 @@ def check() -> list[str]:
             digest(PROLOG_CURRENT_SESSION_PAYLOAD_TRANSITION_BRIDGE),
         "prolog_persistent_free_active_payload_bridge_sha256":
             digest(PROLOG_PERSISTENT_FREE_ACTIVE_PAYLOAD_BRIDGE),
+        "prolog_persistent_free_scheduled_payload_bridge_sha256":
+            digest(PROLOG_PERSISTENT_FREE_SCHEDULED_PAYLOAD_BRIDGE),
         "prolog_scheduled_answer_propagation_bridge_sha256":
             digest(PROLOG_SCHEDULED_ANSWER_PROPAGATION_BRIDGE),
         "prolog_scheduled_history_build_bridge_sha256":

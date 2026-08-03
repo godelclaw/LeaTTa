@@ -16,6 +16,7 @@ import PLeaTTa.Proofs.PrologCurrentSessionAdministrativeTransitionBridge
 import PLeaTTa.Proofs.PrologCurrentSessionPayloadTransitionBridge
 import PLeaTTa.Proofs.PrologCurrentSessionUnifyTransitionBridge
 import PLeaTTa.Proofs.PrologPersistentFreeActivePayloadBridge
+import PLeaTTa.Proofs.PrologPersistentFreeScheduledPayloadBridge
 
 namespace PLeaTTa.PrologHeterogeneousPrefixBridge
 
@@ -35,6 +36,7 @@ open PrologCurrentSessionPayloadTransitionBridge
 open PrologCurrentSessionUnifyTransitionBridge
 open PrologMguComposition
 open PrologPersistentFreeActivePayloadBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologNestedCallChainBridge
 open PrologNestedCallPrefixInductionBridge
 open PrologNestedCallReadyBridge
@@ -216,6 +218,128 @@ structure RepresentativeScheduledPayloadState where
       carrier.index.support carrier.index.canonical carrier.index.referenceBase
       carrier.index.runtime representative
 
+namespace PersistentFreeScheduledPayloadState
+
+/-- Erase the two historical call-entry packets from a legacy scheduled
+carrier while preserving every literal live endpoint and payload identity. -/
+def ofLegacy (state : ScheduledPayloadState) :
+    PersistentFreeScheduledPayloadState :=
+  { index :=
+      { freshFrontier := state.index.freshFrontier
+        alpha := state.index.alpha
+        support := state.index.support
+        canonical := state.index.canonical
+        referenceBase := state.index.referenceBase
+        predicateScope := state.index.opened.scope
+        session := state.index.session
+        finish := state.index.finish
+        branch := state.index.branch
+        branchTail := state.index.branchTail
+        altTail := state.index.altTail
+        bodyBarrier := state.index.bodyBarrier
+        callerBarrier := state.index.callerBarrier
+        callerReferences := state.index.callerReferences
+        callerExecutables := state.index.callerExecutables
+        outer := state.index.outer
+        current := state.index.current
+        runtime := state.index.runtime
+        qterm := state.index.qterm
+        active := state.index.active
+        resources := state.index.resources
+        callerScope := state.index.callerScope
+        outerScope := state.index.outerScope
+        context := state.index.context
+        baseAlts := state.index.baseAlts
+        source := state.index.source
+        openConf := state.index.openConf }
+    payloadContext := state.payloadContext
+    agreement :=
+      PersistentFreeScheduledProductPayloadResourceRelatesAt.ofLegacy
+        state.agreement }
+
+@[simp] theorem ofLegacy_sourceState (state : ScheduledPayloadState) :
+    (ofLegacy state).sourceState = state.sourceState := rfl
+
+@[simp] theorem ofLegacy_fineState (state : ScheduledPayloadState) :
+    (ofLegacy state).fineState = state.fineState := rfl
+
+@[simp] theorem ofLegacy_session (state : ScheduledPayloadState) :
+    (ofLegacy state).index.session = state.index.session := rfl
+
+@[simp] theorem ofLegacy_openConf (state : ScheduledPayloadState) :
+    (ofLegacy state).index.openConf = state.index.openConf := rfl
+
+@[simp] theorem ofLegacy_alpha (state : ScheduledPayloadState) :
+    (ofLegacy state).index.alpha = state.index.alpha := rfl
+
+@[simp] theorem ofLegacy_baseAlts (state : ScheduledPayloadState) :
+    (ofLegacy state).index.baseAlts = state.index.baseAlts := rfl
+
+@[simp] theorem ofLegacy_predicateScope (state : ScheduledPayloadState) :
+    (ofLegacy state).index.predicateScope = state.index.opened.scope := rfl
+
+@[simp] theorem ofLegacy_cellIdentities (state : ScheduledPayloadState) :
+    (ofLegacy state).cellIdentities = state.cellIdentities := rfl
+
+@[simp] theorem ofLegacy_cellCount (state : ScheduledPayloadState) :
+    (ofLegacy state).cellCount = state.cellCount := rfl
+
+end PersistentFreeScheduledPayloadState
+
+namespace RepresentativePersistentFreeScheduledPayloadState
+
+/-- Legacy representative carriers embed without changing their source/fine
+endpoints, residual orientation, or retained payload spine. -/
+def ofLegacy (state : RepresentativeScheduledPayloadState) :
+    RepresentativePersistentFreeScheduledPayloadState :=
+  { carrier := PersistentFreeScheduledPayloadState.ofLegacy state.carrier
+    representative := state.representative
+    cumulative := by
+      simpa [PersistentFreeScheduledPayloadState.ofLegacy] using
+        state.cumulative }
+
+@[simp] theorem ofLegacy_sourceState
+    (state : RepresentativeScheduledPayloadState) :
+    (ofLegacy state).carrier.sourceState = state.carrier.sourceState := by
+  simp [ofLegacy]
+
+@[simp] theorem ofLegacy_fineState
+    (state : RepresentativeScheduledPayloadState) :
+    (ofLegacy state).carrier.fineState = state.carrier.fineState := by
+  simp [ofLegacy]
+
+@[simp] theorem ofLegacy_session
+    (state : RepresentativeScheduledPayloadState) :
+    (ofLegacy state).carrier.index.session = state.carrier.index.session := rfl
+
+@[simp] theorem ofLegacy_openConf
+    (state : RepresentativeScheduledPayloadState) :
+    (ofLegacy state).carrier.index.openConf =
+      state.carrier.index.openConf := rfl
+
+@[simp] theorem ofLegacy_alpha
+    (state : RepresentativeScheduledPayloadState) :
+    (ofLegacy state).carrier.index.alpha = state.carrier.index.alpha := rfl
+
+@[simp] theorem ofLegacy_baseAlts
+    (state : RepresentativeScheduledPayloadState) :
+    (ofLegacy state).carrier.index.baseAlts = state.carrier.index.baseAlts := rfl
+
+@[simp] theorem ofLegacy_cellIdentities
+    (state : RepresentativeScheduledPayloadState) :
+    (ofLegacy state).carrier.cellIdentities =
+      state.carrier.cellIdentities := rfl
+
+@[simp] theorem ofLegacy_cellCount
+    (state : RepresentativeScheduledPayloadState) :
+    (ofLegacy state).carrier.cellCount = state.carrier.cellCount := rfl
+
+@[simp] theorem ofLegacy_representative
+    (state : RepresentativeScheduledPayloadState) :
+    (ofLegacy state).representative = state.representative := rfl
+
+end RepresentativePersistentFreeScheduledPayloadState
+
 /-- All data indices of one committed product state. -/
 structure CommittedPayloadIndex where
   freshFrontier : FreshFrontierRelation
@@ -364,7 +488,7 @@ not forced into this type: the latter already relates a predecessor and a
 successor and will enter the later frontier-transition layer. -/
 inductive ProductPhaseState where
   | active (state : RepresentativePersistentFreeActivePayloadState)
-  | scheduled (state : RepresentativeScheduledPayloadState)
+  | scheduled (state : RepresentativePersistentFreeScheduledPayloadState)
   | committed (state : RepresentativeCommittedPayloadState)
 
 namespace ProductPhaseState
@@ -1986,8 +2110,9 @@ inductive CertifiedTransition (prog : PLeaTTa.Prog)
       CertifiedTransition prog gt .bodyAnswer
         (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before))
         (.scheduled
-          (RepresentativeActivePayloadState.afterBodyAnswer
-            prog gt before referenceEmpty executableEmpty))
+          (RepresentativePersistentFreeScheduledPayloadState.ofLegacy
+            (RepresentativeActivePayloadState.afterBodyAnswer
+              prog gt before referenceEmpty executableEmpty)))
   | cut
       (before : RepresentativeActivePayloadState)
       (bodyRest : List PeTTaSpec.PrologCore.Goal)
@@ -2908,8 +3033,9 @@ inductive Produces (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable) :
       Produces prog gt
         (ActiveStepReady.bodyAnswer state referenceEmpty executableEmpty)
         (.scheduled
-          (RepresentativeActivePayloadState.afterBodyAnswer
-            prog gt state referenceEmpty executableEmpty))
+          (RepresentativePersistentFreeScheduledPayloadState.ofLegacy
+            (RepresentativeActivePayloadState.afterBodyAnswer
+              prog gt state referenceEmpty executableEmpty)))
   | cut
       (state : RepresentativeActivePayloadState)
       (bodyRest : List PeTTaSpec.PrologCore.Goal)
@@ -3072,8 +3198,9 @@ theorem produces
   | bodyAnswer state referenceEmpty executableEmpty =>
       exact
         ⟨.scheduled
-            (RepresentativeActivePayloadState.afterBodyAnswer
-              prog gt state referenceEmpty executableEmpty),
+            (RepresentativePersistentFreeScheduledPayloadState.ofLegacy
+              (RepresentativeActivePayloadState.afterBodyAnswer
+                prog gt state referenceEmpty executableEmpty)),
           .bodyAnswer state referenceEmpty executableEmpty⟩
   | cut state bodyRest bodyExecutableTail referenceHead executableHead
       coherent =>

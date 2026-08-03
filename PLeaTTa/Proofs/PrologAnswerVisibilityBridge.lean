@@ -162,7 +162,8 @@ control zipper rather than this product carrier. -/
     activeCollectionCells
         (scheduledSourceProduct callerScope opened finish branch branchTail
           current referenceRest) = some [] := by
-  simp [scheduledSourceProduct, activeCollectionCells]
+  simp [scheduledSourceProduct, scheduledSourceProductAt,
+    activeCollectionCells]
 
 namespace RepresentativeScheduledPayloadState
 
