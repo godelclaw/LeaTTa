@@ -999,14 +999,16 @@ namespace CutCommit
 
 open PrologPersistentFreeActivePayloadBridge
 open PrologPersistentFreeCommittedPayloadBridge
+open PrologPersistentFreeCommittedUnifyTransitionBridge
 open PrologScheduledSuccessPrefixBridge
 
 /-- The selected source occurrence begins with a real Prolog cut and then one
-compiler-erased administrative wrapper. -/
+compiler-erased administrative wrapper before a reflexive primitive
+unification. -/
 def selectedReference : LocalClause :=
   { predicate := "cutp"
     arguments := [queryTerm]
-    body := [.cut, .conjunction []] }
+    body := [.cut, .conjunction [], .unify queryTerm queryTerm] }
 
 /-- A second matching occurrence remains live until the selected occurrence
 executes its cut. -/
@@ -1018,7 +1020,7 @@ def retainedReference : LocalClause :=
 def selectedExecutable : PLeaTTa.Clause :=
   { params := []
     result := queryAtom
-    body := [.cut] }
+    body := [.cut, .eq queryAtom queryAtom] }
 
 def retainedExecutable : PLeaTTa.Clause :=
   { params := []
@@ -1044,7 +1046,13 @@ private theorem selectedClauseAgrees :
   refine
     { predicate := rfl
       outputLast := ?_
-      body := .cons .cut (.conjunction .nil .nil)
+      body :=
+        .cons .cut
+          (.conjunction .nil
+            (.cons
+              (.unify (CompilerAdequacy.TermAgrees.integer 0)
+                (CompilerAdequacy.TermAgrees.integer 0))
+              .nil))
       support := ?_ }
   · exact
       ⟨[], queryTerm, rfl, CompilerAdequacy.TermsAgree.nil,
@@ -1154,13 +1162,38 @@ private theorem candidateBank :
         selectedHead.body := by
     change CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported [] []
       selectedHead.body
+    let unifyAgreement :
+        CompilerAdequacy.GoalAgrees
+          (.unify queryTerm queryTerm) (.eq queryAtom queryAtom) :=
+      .unify (CompilerAdequacy.TermAgrees.integer 0)
+        (CompilerAdequacy.TermAgrees.integer 0)
+    have unifySupported :
+        CompilerGoalSubstitutionAdequacy.GoalAgreesSupported [] []
+          unifyAgreement := by
+      have agreementEq : unifyAgreement =
+          CompilerAdequacy.GoalAgrees.unify
+            (CompilerAdequacy.TermAgrees.integer 0)
+            (CompilerAdequacy.TermAgrees.integer 0) :=
+        Subsingleton.elim _ _
+      rw [agreementEq]
+      exact
+        @CompilerGoalSubstitutionAdequacy.GoalAgreesSupported.unify
+          [] [] queryTerm queryTerm queryAtom queryAtom
+          (CompilerAdequacy.TermAgrees.integer 0)
+          (CompilerAdequacy.TermAgrees.integer 0)
+          (by simp [CompilerGoalSubstitutionAdequacy.TermAgreesSupported,
+            CompilerSubstitutionAdequacy.termVariablesIn, queryTerm])
+          (by simp [CompilerGoalSubstitutionAdequacy.TermAgreesSupported,
+            CompilerSubstitutionAdequacy.termVariablesIn, queryTerm])
     have bodyEq : selectedHead.body =
         (CompilerAdequacy.GoalsAgree.cons CompilerAdequacy.GoalAgrees.cut
           (CompilerAdequacy.GoalsAgree.conjunction
             CompilerAdequacy.GoalsAgree.nil
-            CompilerAdequacy.GoalsAgree.nil)) := Subsingleton.elim _ _
+            (CompilerAdequacy.GoalsAgree.cons
+              unifyAgreement
+              CompilerAdequacy.GoalsAgree.nil))) := Subsingleton.elim _ _
     rw [bodyEq]
-    exact .cons .cut (.conjunction .nil .nil)
+    exact .cons .cut (.conjunction .nil (.cons unifySupported .nil))
   have retainedBody :
       CompilerGoalSubstitutionAdequacy.GoalsAgreeSupported
         retainedVersion.clause.variables retainedVersion.clause.variables
@@ -1248,8 +1281,11 @@ private def retainedAlt : PLeaTTa.Alt :=
 
 /-- The selected executable occurrence carries the exact predicate-local cut
 tag installed by root call entry. -/
-theorem selectedCopied_body_exact : selectedCopied.body = [.cutAt 1] := by
-  rfl
+theorem selectedCopied_body_exact :
+    selectedCopied.body = [.cutAt 1, .eq queryAtom queryAtom] := by
+  simp [selectedCopied, selectedExecutable,
+    PLeaTTa.freshenResolutionClause, PLeaTTa.renameGoalSuffix, queryAtom,
+    PLeaTTa.renameAtomSuffix]
 
 /-- The sibling that the cut will discard is an ordinary executable branch,
 not an anonymous delimiter marker. -/
@@ -1496,8 +1532,12 @@ theorem root_cut_selected_retained_exact
 /-- The administrative wrapper immediately following the selected cut costs
 one real source step and no executable step. -/
 def afterCutAdministrative :
-    AdministrativeStepsN 1 [.conjunction []] [] :=
-  .succ 0 _ _ _ (.conjunction [] []) (.zero [])
+    AdministrativeStepsN 1
+      [.conjunction [], .unify queryTerm queryTerm]
+      [.unify queryTerm queryTerm] :=
+  .succ 0 _ _ _
+    (.conjunction [] [.unify queryTerm queryTerm])
+    (.zero [.unify queryTerm queryTerm])
 
 /-- Exact literal-root execution through the first continuation after cut.
 
@@ -1509,9 +1549,10 @@ theorem root_cut_then_first_continuation_exact
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
     ∃ (active : RepresentativePersistentFreeActivePayloadState)
         (final : RepresentativePersistentFreeCommittedPayloadState),
-      active.carrier.index.bodyReferences = [.cut, .conjunction []] ∧
+      active.carrier.index.bodyReferences =
+        [.cut, .conjunction [], .unify queryTerm queryTerm] ∧
       active.carrier.index.bodyExecutables =
-        [.cutAt active.carrier.index.bodyBarrier] ∧
+        [.cutAt active.carrier.index.bodyBarrier, .eq queryAtom queryAtom] ∧
       active.carrier.index.active.alts = [retainedAlt] ∧
       active.carrier.index.resources = [] ∧
       StepsN 4
@@ -1526,9 +1567,22 @@ theorem root_cut_then_first_continuation_exact
         final.carrier.sourceState ∧
       DemandDrivenCallStep.StepsN prog gt 4
         (.ready initialOpenConf) final.carrier.fineState ∧
-      final.carrier.index.bodyReferences = [] ∧
+      final.carrier.index.bodyReferences = [.unify queryTerm queryTerm] ∧
       final.carrier.index.resources = [] ∧
-      final.carrier.index.openConf.control.alts = [] := by
+      final.carrier.index.openConf.control.alts = [] ∧
+      final.carrier.index.support = [] ∧
+      Nonempty
+        (GlobalCertifiedPrefix prog gt
+          [ .resolver
+              (.forward
+                (.cut
+                  (PrologActivatedProductStepBridge.retainedCursorTokenAt
+                    active.carrier.index.predicateScope
+                    active.carrier.index.finish active.carrier.index.branch
+                    active.carrier.index.branchTail))),
+            .committedAdministrative 1 ]
+          (.ordinary (.active active))
+          (.ordinary (.committed final))) := by
   obtain
       ⟨finish, representative, nextAlpha, sourceCanonical, flattened,
         installed, legacy, facts, finishRemaining, bodyReferences,
@@ -1536,16 +1590,20 @@ theorem root_cut_then_first_continuation_exact
     root_cut_selected_retained_exact (prog := prog) (gt := gt)
   let active := facts.toPersistentFreeActive
   have referenceHead :
-      active.carrier.index.bodyReferences = [.cut, .conjunction []] := by
-    change legacy.carrier.index.bodyReferences = [.cut, .conjunction []]
+      active.carrier.index.bodyReferences =
+        [.cut, .conjunction [], .unify queryTerm queryTerm] := by
+    change legacy.carrier.index.bodyReferences =
+      [.cut, .conjunction [], .unify queryTerm queryTerm]
     simpa [selectedReference] using bodyReferences
   have executableKnown :
-      active.carrier.index.bodyExecutables = [.cutAt 1] := by
-    change legacy.carrier.index.bodyExecutables = [.cutAt 1]
+      active.carrier.index.bodyExecutables =
+        [.cutAt 1, .eq queryAtom queryAtom] := by
+    change legacy.carrier.index.bodyExecutables =
+      [.cutAt 1, .eq queryAtom queryAtom]
     calc
       legacy.carrier.index.bodyExecutables = selectedCopied.body :=
         bodyExecutables
-      _ = [.cutAt 1] := selectedCopied_body_exact
+      _ = [.cutAt 1, .eq queryAtom queryAtom] := selectedCopied_body_exact
   have activeAgreement := active.carrier.agreement
   have activeReady := activeAgreement.ready
   rw [referenceHead] at activeReady
@@ -1562,7 +1620,8 @@ theorem root_cut_then_first_continuation_exact
     exact same.symm
   have executableHead :
       active.carrier.index.bodyExecutables =
-        [.cutAt active.carrier.index.bodyBarrier] := by
+        [.cutAt active.carrier.index.bodyBarrier,
+          .eq queryAtom queryAtom] := by
     simpa [barrierExact] using executableKnown
   have activeAlts : active.carrier.index.active.alts = [retainedAlt] := by
     change legacy.carrier.index.active.alts = [retainedAlt]
@@ -1646,20 +1705,23 @@ theorem root_cut_then_first_continuation_exact
       using activatedCoherent
   let committed :=
     RepresentativePersistentFreeActivePayloadState.afterCut prog gt active
-      [.conjunction []] [] referenceHead executableHead coherent
+      [.conjunction [], .unify queryTerm queryTerm]
+      [.eq queryAtom queryAtom] referenceHead executableHead coherent
   let final :=
     RepresentativePersistentFreeCommittedPayloadState.afterAdministrative
       committed afterCutAdministrative
   have localPrefix :=
     GlobalCertifiedPrefix.activeCutThenCommittedAdministrative
-      (prog := prog) (gt := gt) active [.conjunction []] [] referenceHead
-      executableHead coherent (by omega) afterCutAdministrative
+      (prog := prog) (gt := gt) active
+      [.conjunction [], .unify queryTerm queryTerm]
+      [.eq queryAtom queryAtom] referenceHead executableHead coherent
+      (by omega) afterCutAdministrative
   have localSource := localPrefix.sourceSteps
   have localFine := localPrefix.fineSteps
   have sourceAll := rootSource.trans localSource
   have fineAll := rootFine.trans localFine
   refine ⟨active, final, referenceHead, executableHead, activeAlts,
-    activeResources, ?_, ?_, ?_, ?_, ?_⟩
+    activeResources, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · simpa [active, committed, final, GlobalTransitionSchedule.sourceCost,
       GlobalTransitionSchedule.sourceEvents, GlobalTransitionKind.sourceCost,
       GlobalTransitionKind.sourceEvents,
@@ -1681,7 +1743,8 @@ theorem root_cut_then_first_continuation_exact
     rw [show committed.carrier.index.resources =
         (active.carrier.index.active :: active.carrier.index.resources).drop 1 from
       RepresentativePersistentFreeActivePayloadState.afterCut_resources_exact
-        prog gt active [.conjunction []] [] referenceHead executableHead coherent]
+        prog gt active [.conjunction [], .unify queryTerm queryTerm]
+          [.eq queryAtom queryAtom] referenceHead executableHead coherent]
     simp [activeResources]
   · change committed.carrier.index.openConf.control.alts = []
     rw [show committed.carrier.index.openConf.control.alts =
@@ -1689,8 +1752,147 @@ theorem root_cut_then_first_continuation_exact
           active.carrier.index.resources
           active.carrier.index.baseAlts from
       RepresentativePersistentFreeActivePayloadState.afterCut_alts_exact
-        prog gt active [.conjunction []] [] referenceHead executableHead coherent]
+        prog gt active [.conjunction [], .unify queryTerm queryTerm]
+          [.eq queryAtom queryAtom] referenceHead executableHead coherent]
     simp [activeResources, activeBaseAlts]
+  · change active.carrier.index.support = []
+    change legacy.carrier.index.support = []
+    exact facts.supportPreserved
+  · exact ⟨localPrefix⟩
+
+/-- Exact literal-root execution through cut, its compiler-erased source
+continuation, and the following reflexive primitive unification.
+
+The retained sibling is pruned by the cut before the equality runs.  The
+committed equality then contributes one real source step and one real fine
+step, consumes its executable head, and remains on the packet-free committed
+carrier.  The returned global prefix contains the literal cut successor and
+the literal unification successor as dependent midpoints. -/
+theorem root_cut_then_reflexive_unify_exact
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ∃ (active : RepresentativePersistentFreeActivePayloadState)
+        (before after : RepresentativePersistentFreeCommittedPayloadState)
+        (bodyExecutableTail : List PLeaTTa.Goal)
+        (sourceExtension executableExtension : TreeSubstitution)
+        (generated installed : Subst),
+      before.carrier.index.bodyReferences =
+        [.unify queryTerm queryTerm] ∧
+      active.carrier.index.active.alts = [retainedAlt] ∧
+      RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt
+        before after queryTerm queryTerm before.carrier.index.current []
+        bodyExecutableTail sourceExtension executableExtension generated
+        installed ∧
+      StepsN 5
+        (.running initialSession
+          (.task rootScope [.call "cutp" [queryTerm]] []))
+        [ .opened (requestFor "cutp" [queryTerm] []),
+          .pruned
+            (PrologActivatedProductStepBridge.retainedCursorTokenAt
+              active.carrier.index.predicateScope
+              active.carrier.index.finish active.carrier.index.branch
+              active.carrier.index.branchTail) ]
+        after.carrier.sourceState ∧
+      DemandDrivenCallStep.StepsN prog gt 5
+        (.ready initialOpenConf) after.carrier.fineState ∧
+      before.carrier.fineState ≠ after.carrier.fineState ∧
+      after.carrier.index.bodyReferences = [] ∧
+      after.carrier.index.resources = [] ∧
+      after.carrier.index.openConf.control.alts = [] ∧
+      ∃ label : CommittedUnifyTransitionLabel,
+        Nonempty
+          (GlobalCertifiedPrefix prog gt
+            [ .resolver
+                (.forward
+                  (.cut
+                    (PrologActivatedProductStepBridge.retainedCursorTokenAt
+                      active.carrier.index.predicateScope
+                      active.carrier.index.finish active.carrier.index.branch
+                      active.carrier.index.branchTail))),
+              .committedAdministrative 1,
+              .committedUnify label ]
+            (.ordinary (.active active))
+            (.ordinary (.committed after))) := by
+  obtain
+      ⟨active, before, _activeReferenceHead, _activeExecutableHead,
+        activeAlts, _activeResources, rootSource, rootFine, beforeReference,
+        beforeResources, beforeAlts, beforeSupport, ⟨cutPrefix⟩⟩ :=
+    root_cut_then_first_continuation_exact (prog := prog) (gt := gt)
+  have leftSupported :
+      AlphaTreeSupported before.carrier.index.alpha
+        before.carrier.index.support (Term.denote queryTerm) := by
+    simp [AlphaTreeSupported, queryTerm, Term.denote,
+      PrologMguOpenAgreement.TreeVariablesSatisfy,
+      PrologMguOpenAgreement.TreesVariablesSatisfy]
+  have rightSupported :
+      AlphaTreeSupported before.carrier.index.alpha
+        before.carrier.index.support (Term.denote queryTerm) :=
+    leftSupported
+  have continuationLive :
+      ReadyUnifyContinuationLive before.carrier.index.support
+        before.carrier.index.openConf := by
+    intro executableHead rest runtime current identity name linked
+    rw [beforeSupport] at linked
+    simp at linked
+  have resolved :
+      UnifyResolution before.carrier.index.current queryTerm queryTerm
+        before.carrier.index.current := by
+    refine ⟨[], ?_, rfl⟩
+    refine ⟨[], ?_, rfl⟩
+    let tree :=
+      Term.denote (before.carrier.index.current.applyTerm queryTerm)
+    simpa [denoteEquations, tree] using
+      (OrderedTreeMgu.cons tree tree [] [] [] (.reflexive tree)
+        OrderedTreeMgu.nil)
+  obtain
+      ⟨bodyExecutableTail, sourceExtension, executableExtension, generated,
+        installed, after, facts⟩ :=
+    RepresentativePersistentFreeCommittedPayloadState.exists_afterUnifySuccessLive
+      before (prog := prog) (gt := gt) (bodyRest := []) beforeReference
+      leftSupported rightSupported continuationLive resolved
+  let edge :
+      GlobalCertifiedTransition prog gt
+        (.committedUnify (CommittedUnifyTransitionLabel.of facts))
+        (.ordinary (.committed before))
+        (.ordinary (.committed after)) :=
+    .committedUnify facts
+  have localSource := edge.sourceSteps
+  have localFine := edge.fineSteps
+  have sourceAll := rootSource.trans localSource
+  have fineAll := rootFine.trans localFine
+  have afterBody : after.carrier.index.bodyReferences = [] := by
+    rw [facts.afterIndexExact]
+    rfl
+  have afterResources : after.carrier.index.resources = [] := by
+    rw [facts.afterIndexExact]
+    exact beforeResources
+  have afterAlts : after.carrier.index.openConf.control.alts = [] := by
+    rw [facts.afterIndexExact]
+    simpa [RepresentativePersistentFreeCommittedPayloadState.unifyIndex,
+      RepresentativePersistentFreeCommittedPayloadState.unifyOpenConf] using
+      beforeAlts
+  let one :
+      GlobalCertifiedPrefix prog gt
+        [.committedUnify (CommittedUnifyTransitionLabel.of facts)]
+        (.ordinary (.committed before))
+        (.ordinary (.committed after)) :=
+    .cons edge (.nil _)
+  let full := cutPrefix.append one
+  refine
+    ⟨active, before, after, bodyExecutableTail, sourceExtension,
+      executableExtension, generated, installed, beforeReference, activeAlts,
+      facts, ?_,
+      ?_, facts.fineState_ne, afterBody, afterResources, afterAlts,
+      CommittedUnifyTransitionLabel.of facts, ?_⟩
+  · simpa [GlobalTransitionKind.sourceCost,
+      GlobalTransitionKind.sourceEvents,
+      PrologFailureRebasePrefixBridge.ResolverPhaseState.sourceState,
+      PrologHeterogeneousPrefixBridge.ProductPhaseState.sourceState] using
+      sourceAll
+  · simpa [GlobalTransitionKind.fineCost,
+      PrologFailureRebasePrefixBridge.ResolverPhaseState.fineState,
+      PrologHeterogeneousPrefixBridge.ProductPhaseState.fineState] using
+      fineAll
+  · exact ⟨by simpa [full, one] using full⟩
 
 end CutCommit
 

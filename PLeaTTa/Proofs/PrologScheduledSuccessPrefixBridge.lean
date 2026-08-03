@@ -18,6 +18,7 @@ Main exports:
 import PLeaTTa.Proofs.PrologScheduledPayloadSuccessCarrierBridge
 import PLeaTTa.Proofs.PrologFailureRebasePrefixBridge
 import PLeaTTa.Proofs.PrologCurrentSessionAssertionTransitionBridge
+import PLeaTTa.Proofs.PrologPersistentFreeCommittedUnifyTransitionBridge
 
 namespace PLeaTTa.PrologScheduledSuccessPrefixBridge
 
@@ -43,6 +44,7 @@ open PrologNestedCallReadyBridge
 open PrologOrdinaryStepBridge
 open PrologPersistentFreeActivePayloadBridge
 open PrologPersistentFreeCommittedPayloadBridge
+open PrologPersistentFreeCommittedUnifyTransitionBridge
 open PrologPersistentFreeScheduledPayloadBridge
 open PrologProductResourceContextBridge
 open PrologProductResourceTransitionBridge
@@ -380,13 +382,41 @@ def of
 
 end AssertionTransitionLabel
 
+/-- Public identity of one packet-free committed primitive-unification edge.
+The proof-relevant producer retains both residual orientations; the closed
+global label exposes only the literal target representative needed by prefix
+invariants. -/
+structure CommittedUnifyTransitionLabel where
+  targetRepresentative : TreeSubstitution
+
+namespace CommittedUnifyTransitionLabel
+
+def of
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : RepresentativePersistentFreeCommittedPayloadState}
+    {left right : Term} {result : Substitution}
+    {bodyRest : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutableTail : List PLeaTTa.Goal}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installed : Subst}
+    (_facts :
+      RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt before
+        after left right result bodyRest bodyExecutableTail sourceExtension
+        executableExtension generated installed) :
+    CommittedUnifyTransitionLabel :=
+  { targetRepresentative := after.representative }
+
+end CommittedUnifyTransitionLabel
+
 /-- Additive global transition vocabulary.  Existing resolver transitions are
-embedded unchanged; scheduled success and its first legacy-free administrative
-consumer share the vocabulary with producer-derived owned assertion effects. -/
+embedded unchanged; scheduled success, packet-free committed unification, and
+their first legacy-free consumers share the vocabulary with producer-derived
+owned assertion effects. -/
 inductive GlobalTransitionKind where
   | resolver (kind : ResolverTransitionKind)
   | activeAdministrative (count : Nat)
   | committedAdministrative (count : Nat)
+  | committedUnify (label : CommittedUnifyTransitionLabel)
   | scheduledSuccess (label : ScheduledSuccessLabel)
   | assertion (label : AssertionTransitionLabel)
 
@@ -396,6 +426,7 @@ def sourceCost : GlobalTransitionKind → Nat
   | .resolver kind => kind.sourceCost
   | .activeAdministrative count => count
   | .committedAdministrative count => count
+  | .committedUnify _ => 1
   | .scheduledSuccess label => label.sourceCost
   | .assertion _ => 1
 
@@ -403,6 +434,7 @@ def sourceEvents : GlobalTransitionKind → List Observation
   | .resolver kind => kind.sourceEvents
   | .activeAdministrative _ => []
   | .committedAdministrative _ => []
+  | .committedUnify _ => []
   | .scheduledSuccess label => [.answer label.answer]
   | .assertion label => [.effect label.effect]
 
@@ -410,6 +442,7 @@ def fineCost : GlobalTransitionKind → Nat
   | .resolver kind => kind.fineCost
   | .activeAdministrative _ => 0
   | .committedAdministrative _ => 0
+  | .committedUnify _ => 1
   | .scheduledSuccess _ => 2
   | .assertion _ => 1
 
@@ -422,6 +455,7 @@ def AlphaEvolution (kind : GlobalTransitionKind)
   | .resolver resolverKind => resolverKind.AlphaEvolution before after
   | .activeAdministrative _ => after.alpha = before.alpha
   | .committedAdministrative _ => after.alpha = before.alpha
+  | .committedUnify _ => after.alpha = before.alpha
   | .scheduledSuccess label =>
       AlphaExtendsAbove before.alpha after.alpha
           label.referenceFloor label.executableFloor ∧
@@ -439,6 +473,8 @@ def RepresentativeEvolution (kind : GlobalTransitionKind)
   | .activeAdministrative _ => after.representative = before.representative
   | .committedAdministrative _ =>
       after.representative = before.representative
+  | .committedUnify label =>
+      after.representative = label.targetRepresentative
   | .scheduledSuccess label =>
       after.representative = label.targetRepresentative
   | .assertion _ => after.representative = before.representative
@@ -480,6 +516,21 @@ inductive GlobalCertifiedTransition
           (.committed
             (RepresentativePersistentFreeCommittedPayloadState.afterAdministrative
               before steps)))
+  | committedUnify
+      {before after : RepresentativePersistentFreeCommittedPayloadState}
+      {left right : Term} {result : Substitution}
+      {bodyRest : List PeTTaSpec.PrologCore.Goal}
+      {bodyExecutableTail : List PLeaTTa.Goal}
+      {sourceExtension executableExtension : TreeSubstitution}
+      {generated installed : Subst}
+      (facts :
+        RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt
+          before after left right result bodyRest bodyExecutableTail
+          sourceExtension executableExtension generated installed) :
+      GlobalCertifiedTransition prog gt
+        (.committedUnify (CommittedUnifyTransitionLabel.of facts))
+        (.ordinary (.committed before))
+        (.ordinary (.committed after))
   | scheduledSuccess
       {before : RepresentativePersistentFreeScheduledPayloadState}
       {ready : RootClosedAnswerReady before}
@@ -587,6 +638,126 @@ theorem committedAdministrative_not_active
   obtain ⟨after, impossible⟩ := step.committedAdministrative_target_committed
   cases impossible
 
+/-- A committed primitive-unification edge remains in the committed phase and
+is indexed by the literal packet-free successor constructed by its producer. -/
+theorem committedUnify_target_committed
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {label : CommittedUnifyTransitionLabel}
+    {before : RepresentativePersistentFreeCommittedPayloadState}
+    {after : ResolverPhaseState}
+    (step :
+      GlobalCertifiedTransition prog gt (.committedUnify label)
+        (.ordinary (.committed before)) after) :
+    ∃ target : RepresentativePersistentFreeCommittedPayloadState,
+      after = .ordinary (.committed target) := by
+  cases step with
+  | committedUnify facts => exact ⟨_, rfl⟩
+
+/-- A committed primitive-unification edge cannot be relabelled as an active
+successor. -/
+theorem committedUnify_not_active
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativePersistentFreeCommittedPayloadState)
+    (label : CommittedUnifyTransitionLabel)
+    (target : RepresentativePersistentFreeActivePayloadState) :
+    IsEmpty
+      (GlobalCertifiedTransition prog gt (.committedUnify label)
+        (.ordinary (.committed before)) (.ordinary (.active target))) := by
+  constructor
+  intro step
+  obtain ⟨after, impossible⟩ := step.committedUnify_target_committed
+  cases impossible
+
+/-- The public label names the literal successor representative; a compatible
+but differently oriented residual substitution cannot be substituted later. -/
+theorem committedUnify_targetRepresentative
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {label : CommittedUnifyTransitionLabel}
+    {before after : RepresentativePersistentFreeCommittedPayloadState}
+    (step :
+      GlobalCertifiedTransition prog gt (.committedUnify label)
+        (.ordinary (.committed before)) (.ordinary (.committed after))) :
+    after.representative = label.targetRepresentative := by
+  cases step with
+  | committedUnify facts => rfl
+
+/-- Primitive unification consumes control but neither manufactures nor drops
+an owned payload cell. -/
+theorem committedUnify_payloadCells_exact
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {label : CommittedUnifyTransitionLabel}
+    {before after : RepresentativePersistentFreeCommittedPayloadState}
+    (step :
+      GlobalCertifiedTransition prog gt (.committedUnify label)
+        (.ordinary (.committed before)) (.ordinary (.committed after))) :
+    after.carrier.cellIdentities = before.carrier.cellIdentities := by
+  cases step with
+  | committedUnify facts => exact facts.payloadCellsExact
+
+/-- Primitive unification allocates no independent clause variables; the
+source session, including every typed allocator high-water, is literally
+unchanged. -/
+theorem committedUnify_session_exact
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {label : CommittedUnifyTransitionLabel}
+    {before after : RepresentativePersistentFreeCommittedPayloadState}
+    (step :
+      GlobalCertifiedTransition prog gt (.committedUnify label)
+        (.ordinary (.committed before)) (.ordinary (.committed after))) :
+    after.carrier.index.session = before.carrier.index.session := by
+  cases step with
+  | committedUnify facts =>
+      rw [facts.afterIndexExact]
+      rfl
+
+/-- The fine equality step also allocates nothing and changes no world state.
+This is the executable half of the no-allocation claim; it prevents the
+retained fresh-frontier certificate from becoming stale behind a counter
+bump. -/
+theorem committedUnify_persistent_exact
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {label : CommittedUnifyTransitionLabel}
+    {before after : RepresentativePersistentFreeCommittedPayloadState}
+    (step :
+      GlobalCertifiedTransition prog gt (.committedUnify label)
+        (.ordinary (.committed before)) (.ordinary (.committed after))) :
+    after.carrier.index.openConf.persistent =
+      before.carrier.index.openConf.persistent := by
+  cases step with
+  | committedUnify facts =>
+      rw [facts.afterIndexExact]
+      simp [RepresentativePersistentFreeCommittedPayloadState.unifyIndex,
+        RepresentativePersistentFreeCommittedPayloadState.unifyOpenConf]
+
+/-- Alpha equality is structural rather than an assumed weakening: primitive
+unification changes the canonical/residual substitutions but performs no
+fresh clause copy. -/
+theorem committedUnify_alpha_exact
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {label : CommittedUnifyTransitionLabel}
+    {before after : RepresentativePersistentFreeCommittedPayloadState}
+    (step :
+      GlobalCertifiedTransition prog gt (.committedUnify label)
+        (.ordinary (.committed before)) (.ordinary (.committed after))) :
+    after.carrier.index.alpha = before.carrier.index.alpha := by
+  cases step with
+  | committedUnify facts =>
+      rw [facts.afterIndexExact]
+      rfl
+
+/-- The global edge retains the local anti-stutter discriminator: its selected
+equality is consumed, so the fine endpoints are not equal. -/
+theorem committedUnify_fineState_ne
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {label : CommittedUnifyTransitionLabel}
+    {before after : RepresentativePersistentFreeCommittedPayloadState}
+    (step :
+      GlobalCertifiedTransition prog gt (.committedUnify label)
+        (.ordinary (.committed before)) (.ordinary (.committed after))) :
+    before.carrier.fineState ≠ after.carrier.fineState := by
+  cases step with
+  | committedUnify facts => exact facts.fineState_ne
+
 theorem sourceSteps
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {kind : GlobalTransitionKind} {before after : ResolverPhaseState}
@@ -609,6 +780,19 @@ theorem sourceSteps
         ProductPhaseState.sourceState] using
         PLeaTTa.PrologPersistentFreeCommittedPayloadBridge.RepresentativePersistentFreeCommittedPayloadState.afterAdministrative_sourceSteps
           before steps
+  | @committedUnify before after left right result bodyRest
+      bodyExecutableTail sourceExtension executableExtension generated
+      installed facts =>
+      have sessionEq :
+          after.carrier.index.session =
+            before.carrier.index.session := by
+        rw [facts.afterIndexExact]
+        rfl
+      have one := CertifiedTransition.oneSourceStep facts.sourceStep
+      simpa [GlobalTransitionKind.sourceCost,
+        GlobalTransitionKind.sourceEvents, ResolverPhaseState.sourceState,
+        ProductPhaseState.sourceState,
+        PersistentFreeCommittedPayloadState.sourceState, sessionEq] using one
   | scheduledSuccess relation successor =>
       simpa [GlobalTransitionKind.sourceCost,
         GlobalTransitionKind.sourceEvents, ScheduledSuccessLabel.of,
@@ -655,6 +839,13 @@ theorem fineSteps
       exact .zero _
   | committedAdministrative before positive steps =>
       exact .zero _
+  | @committedUnify before after left right result bodyRest
+      bodyExecutableTail sourceExtension executableExtension generated
+      installed facts =>
+      simpa [GlobalTransitionKind.fineCost,
+        ResolverPhaseState.fineState, ProductPhaseState.fineState,
+        PersistentFreeCommittedPayloadState.fineState] using
+        CertifiedTransition.oneFineStep facts.fineStep
   | @scheduledSuccess before ready selection scope transition partition
       independentResult nextAlpha sourceCanonical flattened installed
       relation successor =>
@@ -720,6 +911,14 @@ theorem sessionHighWaters
       exact SessionHighWatersExtend.refl _
   | committedAdministrative before positive steps =>
       exact SessionHighWatersExtend.refl _
+  | @committedUnify before after left right result bodyRest
+      bodyExecutableTail sourceExtension executableExtension generated
+      installed facts =>
+      change
+        SessionHighWatersExtend before.carrier.index.session
+          after.carrier.index.session
+      rw [facts.afterIndexExact]
+      exact SessionHighWatersExtend.refl _
   | scheduledSuccess relation successor =>
       exact SessionHighWatersExtend.refl _
   | assertion before ready =>
@@ -737,6 +936,15 @@ theorem executableCounter_mono
   | resolver step => exact step.executableCounter_mono
   | activeAdministrative before positive steps => exact Nat.le_refl _
   | committedAdministrative before positive steps => exact Nat.le_refl _
+  | @committedUnify before after left right result bodyRest
+      bodyExecutableTail sourceExtension executableExtension generated
+      installed facts =>
+      change
+        before.carrier.index.openConf.persistent.counter ≤
+          after.carrier.index.openConf.persistent.counter
+      rw [facts.afterIndexExact]
+      simp [RepresentativePersistentFreeCommittedPayloadState.unifyIndex,
+        RepresentativePersistentFreeCommittedPayloadState.unifyOpenConf]
   | @scheduledSuccess before ready selection scope transition partition
       independentResult nextAlpha sourceCanonical flattened installed
       relation successor =>
@@ -765,6 +973,14 @@ theorem alphaIncluded
   | committedAdministrative before positive steps =>
       intro pair present
       exact present
+  | @committedUnify before after left right result bodyRest
+      bodyExecutableTail sourceExtension executableExtension generated
+      installed facts =>
+      intro pair present
+      change pair ∈ after.carrier.index.alpha
+      change pair ∈ before.carrier.index.alpha at present
+      rw [facts.afterIndexExact]
+      exact present
   | scheduledSuccess relation successor =>
       exact relation.alphaIncluded
   | assertion before ready =>
@@ -781,6 +997,12 @@ theorem alphaEvolution
       simpa [GlobalTransitionKind.AlphaEvolution] using step.alphaEvolution
   | activeAdministrative before positive steps => rfl
   | committedAdministrative before positive steps => rfl
+  | @committedUnify before after left right result bodyRest
+      bodyExecutableTail sourceExtension executableExtension generated
+      installed facts =>
+      change after.carrier.index.alpha = before.carrier.index.alpha
+      rw [facts.afterIndexExact]
+      rfl
   | @scheduledSuccess before ready selection scope transition partition
       independentResult nextAlpha sourceCanonical flattened installed
       relation successor =>
@@ -839,6 +1061,9 @@ theorem representativeEvolution
         step.representativeEvolution
   | activeAdministrative before positive steps => rfl
   | committedAdministrative before positive steps => rfl
+  | @committedUnify before after left right result bodyRest
+      bodyExecutableTail sourceExtension executableExtension generated
+      installed facts => rfl
   | scheduledSuccess relation successor => rfl
   | assertion before ready => rfl
 
@@ -1461,6 +1686,133 @@ reconstructed compatible state. -/
           (RepresentativePersistentFreeActivePayloadState.afterCut prog gt
             before bodyRest bodyExecutableTail referenceHead executableHead
             coherent)) := rfl
+
+/-- A native packet-free cut followed immediately by one committed primitive
+unification.  The cut successor is the literal `before` index of the producer
+facts for the second edge; neither edge can rebuild it from historical call
+packets or from endpoint-compatible source/fine states. -/
+def activeCutThenCommittedUnify
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativePersistentFreeActivePayloadState)
+    (left right : Term) (result : Substitution)
+    (bodyRest : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutableAfterCut bodyExecutableTail : List PLeaTTa.Goal)
+    (sourceExtension executableExtension : TreeSubstitution)
+    (generated installed : Subst)
+    (referenceHead :
+      before.carrier.index.bodyReferences =
+        .cut :: .unify left right :: bodyRest)
+    (executableHead :
+      before.carrier.index.bodyExecutables =
+        .cutAt before.carrier.index.bodyBarrier :: bodyExecutableAfterCut)
+    (coherent :
+      PLeaTTa.BarrierCacheCoherent before.carrier.index.openConf.toConf)
+    (after : RepresentativePersistentFreeCommittedPayloadState)
+    (facts :
+      RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt
+        (RepresentativePersistentFreeActivePayloadState.afterCut prog gt
+          before (.unify left right :: bodyRest) bodyExecutableAfterCut
+          referenceHead executableHead coherent)
+        after left right result bodyRest bodyExecutableTail sourceExtension
+        executableExtension generated installed) :
+    GlobalCertifiedPrefix prog gt
+      [ .resolver
+          (.forward
+            (.cut
+              (retainedCursorTokenAt before.carrier.index.predicateScope
+                before.carrier.index.finish before.carrier.index.branch
+                before.carrier.index.branchTail))),
+        .committedUnify (CommittedUnifyTransitionLabel.of facts) ]
+      (.ordinary (.active before))
+      (.ordinary (.committed after)) :=
+  .cons
+    (.resolver
+      (.forward
+        (.cut before (.unify left right :: bodyRest) bodyExecutableAfterCut
+          referenceHead executableHead coherent)))
+    (.cons (.committedUnify facts) (.nil _))
+
+/-- The native cut/unification prefix exposes the exact active, committed,
+and post-unification states in chronological order. -/
+@[simp] theorem activeCutThenCommittedUnify_states
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativePersistentFreeActivePayloadState)
+    (left right : Term) (result : Substitution)
+    (bodyRest : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutableAfterCut bodyExecutableTail : List PLeaTTa.Goal)
+    (sourceExtension executableExtension : TreeSubstitution)
+    (generated installed : Subst)
+    (referenceHead :
+      before.carrier.index.bodyReferences =
+        .cut :: .unify left right :: bodyRest)
+    (executableHead :
+      before.carrier.index.bodyExecutables =
+        .cutAt before.carrier.index.bodyBarrier :: bodyExecutableAfterCut)
+    (coherent :
+      PLeaTTa.BarrierCacheCoherent before.carrier.index.openConf.toConf)
+    (after : RepresentativePersistentFreeCommittedPayloadState)
+    (facts :
+      RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt
+        (RepresentativePersistentFreeActivePayloadState.afterCut prog gt
+          before (.unify left right :: bodyRest) bodyExecutableAfterCut
+          referenceHead executableHead coherent)
+        after left right result bodyRest bodyExecutableTail sourceExtension
+        executableExtension generated installed) :
+    (activeCutThenCommittedUnify before left right result bodyRest
+      bodyExecutableAfterCut bodyExecutableTail sourceExtension
+      executableExtension generated installed referenceHead executableHead
+      coherent after facts).states =
+      [ .ordinary (.active before),
+        .ordinary
+          (.committed
+            (RepresentativePersistentFreeActivePayloadState.afterCut prog gt
+              before (.unify left right :: bodyRest) bodyExecutableAfterCut
+              referenceHead executableHead coherent)),
+        .ordinary (.committed after) ] := rfl
+
+/-- Splitting the native cut/unification prefix after its first edge returns
+the literal packet-free cut successor used by the unification producer. -/
+@[simp] theorem activeCutThenCommittedUnify_split_middle
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativePersistentFreeActivePayloadState)
+    (left right : Term) (result : Substitution)
+    (bodyRest : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutableAfterCut bodyExecutableTail : List PLeaTTa.Goal)
+    (sourceExtension executableExtension : TreeSubstitution)
+    (generated installed : Subst)
+    (referenceHead :
+      before.carrier.index.bodyReferences =
+        .cut :: .unify left right :: bodyRest)
+    (executableHead :
+      before.carrier.index.bodyExecutables =
+        .cutAt before.carrier.index.bodyBarrier :: bodyExecutableAfterCut)
+    (coherent :
+      PLeaTTa.BarrierCacheCoherent before.carrier.index.openConf.toConf)
+    (after : RepresentativePersistentFreeCommittedPayloadState)
+    (facts :
+      RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt
+        (RepresentativePersistentFreeActivePayloadState.afterCut prog gt
+          before (.unify left right :: bodyRest) bodyExecutableAfterCut
+          referenceHead executableHead coherent)
+        after left right result bodyRest bodyExecutableTail sourceExtension
+        executableExtension generated installed) :
+    (split
+      [ .resolver
+          (.forward
+            (.cut
+              (retainedCursorTokenAt before.carrier.index.predicateScope
+                before.carrier.index.finish before.carrier.index.branch
+                before.carrier.index.branchTail))) ]
+      [.committedUnify (CommittedUnifyTransitionLabel.of facts)]
+      (activeCutThenCommittedUnify before left right result bodyRest
+        bodyExecutableAfterCut bodyExecutableTail sourceExtension
+        executableExtension generated installed referenceHead executableHead
+        coherent after facts)).1 =
+      .ordinary
+        (.committed
+          (RepresentativePersistentFreeActivePayloadState.afterCut prog gt
+            before (.unify left right :: bodyRest) bodyExecutableAfterCut
+            referenceHead executableHead coherent)) := rfl
 
 /-- The exact success edge followed immediately by a legacy-free ordinary
 administrative edge.  The second constructor is indexed by `successor.after`
