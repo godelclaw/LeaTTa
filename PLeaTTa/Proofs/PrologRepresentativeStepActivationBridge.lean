@@ -260,6 +260,10 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step_head_with
         branch.body copied.body
         (PLeaTTa.trimFor (copied.body ++ rest) qterm installed)
         (flattened ++ representative) referenceBase ∧
+      MaterializedUnifyGoalsAgreeWith nextAlpha
+        (flattened ++ representative) referenceBase
+        (PLeaTTa.trimFor (copied.body ++ rest) qterm installed) barrier
+        branch.body copied.body ∧
       (activatedExecutableSuccessor pending copied rest qterm installed).alts =
         altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts ∧
       (activatedExecutableSuccessor pending copied rest qterm installed).world =
@@ -311,7 +315,7 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step_head_with
       independentShape,
       sourceOrdered,
       generatedExact, installedExact, generatedMgu, successorCumulative,
-      successorTask, successorHeads⟩ :=
+      successorTask, successorHeads, successorUnifyHeads⟩ :=
     PLeaTTa.PrologRepresentativeTaskActivationBridge.SupportedPreparedCandidateAgrees.unifyB_body_cumulativeWith_of_headResolution
       oldCumulative queryAtFinish cursorBindingShape
       canonicalWellFormed frontier.finishWellFormed member
@@ -383,6 +387,13 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step_head_with
         (flattened ++ representative) referenceBase := by
     rw [copiedExact]
     exact successorHeads
+  have unifyHeadsCopied :
+      MaterializedUnifyGoalsAgreeWith nextAlpha
+        (flattened ++ representative) referenceBase
+        (PLeaTTa.trimFor (copied.body ++ rest) qterm installed) barrier
+        branch.body copied.body := by
+    rw [copiedExact]
+    exact successorUnifyHeads
   have retainedAlts :
       (activatedExecutableSuccessor pending copied rest qterm installed).alts =
         altTail ++ PLeaTTa.Alt.barrier :: pending.outer.alts := by
@@ -405,7 +416,8 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step_head_with
       nextShared, alphaIncluded, extensionAbove, freshFrontier,
       independentShape,
       sourceOrdered, headMguCopied, sourceStep, executableStep, ?_, taskCopied,
-      headsCopied, retainedAlts, worldPreserved, counterPreserved⟩
+      headsCopied, unifyHeadsCopied, retainedAlts, worldPreserved,
+      counterPreserved⟩
   simpa only using cumulativeCopied
 
 /-- Compatibility view which reconstructs the fixed representative from the
@@ -515,9 +527,18 @@ theorem RepresentativeRetainedCallFrontier.activate_task_step_head
       (by simpa only [openedBindings] using payload.bindingShape)
       payload.canonicalWellFormed payload.alphaShared queryReferenceBelow
       queryExecutableBelow live resolved
+  obtain
+    ⟨nextShared, alphaIncluded, alphaExtension, freshFrontier,
+      independentShape, sourceOrdered, headMgu, sourceStep, executableStep,
+      cumulative, bodyPayload, materializedBodyHeads,
+      _materializedUnifyGoals, retainedAlts, worldPreserved,
+      counterPreserved⟩ := result
   exact
     ⟨representative, nextAlpha, sourceCanonical, flattened, installed,
-      result⟩
+      nextShared, alphaIncluded, alphaExtension, freshFrontier,
+      independentShape, sourceOrdered, headMgu, sourceStep, executableStep,
+      cumulative, bodyPayload, materializedBodyHeads, retainedAlts,
+      worldPreserved, counterPreserved⟩
 
 /-- Compatibility wrapper for callers that still carry a uniformly tagged
 whole-task payload.

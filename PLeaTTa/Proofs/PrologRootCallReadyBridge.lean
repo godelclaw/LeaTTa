@@ -156,6 +156,11 @@ structure RepresentativeRootCallSuccessorFacts
       after.carrier.index.current after.carrier.index.bodyReferences
       after.carrier.index.bodyExecutables after.carrier.index.runtime
       after.representative after.carrier.index.referenceBase
+  materializedUnifyGoals :
+    MaterializedUnifyGoalsAgreeWith after.carrier.index.alpha
+      after.representative after.carrier.index.referenceBase
+      after.carrier.index.runtime after.carrier.index.bodyBarrier
+      after.carrier.index.bodyReferences after.carrier.index.bodyExecutables
   sourceSteps :
     StepsN (rejects + 2)
       (.running session
@@ -256,6 +261,25 @@ def RepresentativeRootCallSuccessorFacts.toPersistentFreeActive
     cumulative := by
       simpa [carrier, PersistentFreeActivePayloadState.ofAgreement] using
         after.cumulative }
+
+/-- Export the same literal root activation together with its whole-body
+equality materialization.  The certificate comes from the selected activation
+stored in `facts`; it is not reconstructed from support after packets are
+erased. -/
+def RepresentativeRootCallSuccessorFacts.toMaterializedPersistentFreeActive
+    (facts :
+      RepresentativeRootCallSuccessorFacts prog gt alpha support canonical
+        referenceBase session before scope predicate referencePayload
+        referenceBindings args res binding branches finalCounter callerBarrier
+        rejects skippedBranches skippedClauses finish branch clause branchTail
+        clauseTail altTail copied independentResult representative nextAlpha
+        sourceCanonical flattenedRepresentative installed after) :
+    MaterializedRepresentativePersistentFreeActivePayloadState :=
+  { carrier := facts.toPersistentFreeActive
+    materializedUnifyGoals := by
+      simpa [RepresentativeRootCallSuccessorFacts.toPersistentFreeActive,
+        PersistentFreeActivePayloadState.ofAgreement] using
+        facts.materializedUnifyGoals }
 
 @[simp] theorem RepresentativeRootCallSuccessorFacts.toPersistentFreeActive_sourceState
     (facts :
@@ -661,6 +685,7 @@ theorem RepresentativeSupportedCallEntryRelates.activate_literal_root
       sourceStateExact := rfl
       fineStateExact := rfl
       materializedBodyHeads := ?_
+      materializedUnifyGoals := ?_
       sourceSteps := rootSourceSteps
       fineSteps := rootFineSteps
       below := ?_
@@ -696,6 +721,18 @@ theorem RepresentativeSupportedCallEntryRelates.activate_literal_root
     simp only [ActivePayloadState.ofAgreement, List.nil_append,
       flattenExecutables]
     exact activation.materializedBodyHeads
+  · change
+      MaterializedUnifyGoalsAgreeWith
+        (ActivePayloadState.ofAgreement agreement).index.alpha
+        (flattenedRepresentative ++ representative)
+        (ActivePayloadState.ofAgreement agreement).index.referenceBase
+        (ActivePayloadState.ofAgreement agreement).index.runtime
+        (ActivePayloadState.ofAgreement agreement).index.bodyBarrier
+        (ActivePayloadState.ofAgreement agreement).index.bodyReferences
+        (ActivePayloadState.ofAgreement agreement).index.bodyExecutables
+    simp only [ActivePayloadState.ofAgreement, List.nil_append,
+      flattenExecutables]
+    exact activation.materializedUnifyGoals
   · simpa [after, carrier, ActivePayloadState.ofAgreement,
       PrologRepresentativeStepActivationBridge.activatedOpenSuccessor]
       using activeBelow

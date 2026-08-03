@@ -16,6 +16,7 @@ Main exports:
 import PLeaTTa.Proofs.PrologActivationUnifierBridge
 import PLeaTTa.Proofs.PrologBooleanAliasSafety
 import PLeaTTa.Proofs.PrologCanonicalMguSimulation
+import PLeaTTa.Proofs.PrologGoalMguVariant
 import PLeaTTa.Proofs.PrologRuntimeDecode
 import PLeaTTa.Proofs.PrologSequentialMgu
 import PLeaTTa.Proofs.PrologStateBridge
@@ -1253,6 +1254,400 @@ structure SelectedUnifyTopExact
   generatedTopological : Nonempty (PLeaTTa.SubstTopological generated)
   runtimeTopological : Nonempty (PLeaTTa.SubstTopological runtime)
 
+/-- Exact post-substitution readings of one ordered operand list under a
+selected residual representative.
+
+Unlike `AlphaTreeSupported`, this relation does not claim that the raw source
+operands belong to the caller's immutable observation support.  It records
+the semantic objects actually presented to the next executable operation.
+Fresh clause-body variables can therefore be materialized locally without
+widening the retained payload support, while the single shared `alpha` still
+preserves aliases between operand positions. -/
+structure MaterializedOperandsAgreeWith
+    (alpha : List (LogicVar × String))
+    (representative : TreeSubstitution) (referenceBase : Substitution)
+    (runtime : Metta.Subst) (references : List Term)
+    (executables : List Metta.Atom) : Prop where
+  operands :
+    List.Forall₂
+      (fun term atom =>
+        CanonicalRuntimeAgrees alpha
+          (TreeSubstitution.apply
+            (representative ++ Substitution.denote referenceBase)
+            (Term.denote term))
+          (PLeaTTa.subst runtime atom))
+      references executables
+
+/-- Exact current equality head after its operands have been materialized.
+
+The executable shape and normalized tail tie the certificate to the current
+control occurrence; `operands` then supplies the post-substitution semantic
+readings without requiring the raw clause-local variables to belong to the
+caller's immutable support. -/
+def MaterializedUnifyHeadReady
+    (alpha : List (LogicVar × String))
+    (representative : TreeSubstitution) (referenceBase : Substitution)
+    (runtime : Metta.Subst) (barrier : Nat)
+    (left right : Term) (referenceTail : List PeTTaSpec.PrologCore.Goal)
+    (executables : List PLeaTTa.Goal) : Prop :=
+  ∃ (spelling : NormalizedAlphaGoalsAgree.ExecutableUnifySpelling)
+      (executableLeft executableRight : Metta.Atom)
+      (executableTail : List PLeaTTa.Goal),
+    executables =
+        spelling.goal executableLeft executableRight :: executableTail ∧
+      AlphaTermAgrees alpha left executableLeft ∧
+      AlphaTermAgrees alpha right executableRight ∧
+      NormalizedAlphaGoalsAgree alpha barrier referenceTail executableTail ∧
+      MaterializedOperandsAgreeWith alpha representative referenceBase runtime
+        [left, right] [executableLeft, executableRight]
+
+/-- One aligned source/executable goal pair carries materialized operands when
+it is primitive equality.  The condition is deliberately generic over the
+other goal constructors: their equality premise is impossible, while the
+recursive spine below keeps their exact alpha-control evidence. -/
+def MaterializedUnifyGoalAgreesWith
+    (alpha : List (LogicVar × String))
+    (representative : TreeSubstitution) (referenceBase : Substitution)
+    (runtime : Metta.Subst)
+    (reference : PeTTaSpec.PrologCore.Goal)
+    (executable : PLeaTTa.Goal) : Prop :=
+  ∀ {left right : Term}
+      {spelling : NormalizedAlphaGoalsAgree.ExecutableUnifySpelling}
+      {executableLeft executableRight : Metta.Atom},
+    reference = .unify left right →
+    executable = spelling.goal executableLeft executableRight →
+    MaterializedOperandsAgreeWith alpha representative referenceBase runtime
+      [left, right] [executableLeft, executableRight]
+
+/-- Exact normalized source/executable spine with every primitive-equality
+occurrence materialized under one post-trim runtime valuation.
+
+Unlike a head-only predicate, this relation cannot become vacuous when a cut,
+truth node, or conjunction wrapper precedes equality.  `cons` consumes one
+aligned source/executable goal, `truth` consumes only the compiler-erased
+source node, and `conjunction` records the same ordered flattening as
+`NormalizedAlphaGoalsAgree`.  Consequently cut and administrative transitions
+project a structurally smaller certificate rather than carrying an unrelated
+head fact. -/
+inductive MaterializedUnifyGoalsAgreeWith
+    (alpha : List (LogicVar × String))
+    (representative : TreeSubstitution) (referenceBase : Substitution)
+    (runtime : Metta.Subst) (barrier : Nat) :
+    List PeTTaSpec.PrologCore.Goal → List PLeaTTa.Goal → Prop where
+  | nil :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier [] []
+  | truth {references : List PeTTaSpec.PrologCore.Goal}
+      {executables : List PLeaTTa.Goal}
+      (tail :
+        MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+          runtime barrier references executables) :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier (.truth :: references) executables
+  | cons {reference : PeTTaSpec.PrologCore.Goal}
+      {executable : PLeaTTa.Goal}
+      {references : List PeTTaSpec.PrologCore.Goal}
+      {executables : List PLeaTTa.Goal}
+      (control : AlphaGoalAgrees alpha barrier reference executable)
+      (materialized :
+        MaterializedUnifyGoalAgreesWith alpha representative referenceBase
+          runtime reference executable)
+      (tail :
+        MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+          runtime barrier references executables) :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier (reference :: references) (executable :: executables)
+  | conjunction {referenceBlock referenceTail :
+        List PeTTaSpec.PrologCore.Goal}
+      {executableBlock executableTail : List PLeaTTa.Goal}
+      (block :
+        MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+          runtime barrier referenceBlock executableBlock)
+      (tail :
+        MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+          runtime barrier referenceTail executableTail) :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier (.conjunction referenceBlock :: referenceTail)
+        (executableBlock ++ executableTail)
+
+namespace MaterializedUnifyGoalsAgreeWith
+
+/-- Forget only the materialized values; the exact normalized alpha control
+spine remains. -/
+theorem toNormalized
+    {alpha : List (LogicVar × String)}
+    {representative : TreeSubstitution} {referenceBase : Substitution}
+    {runtime : Metta.Subst} {barrier : Nat}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (agreement :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier references executables) :
+    NormalizedAlphaGoalsAgree alpha barrier references executables := by
+  induction agreement with
+  | nil => exact .nil
+  | truth tail inductionHypothesis => exact .truth inductionHypothesis
+  | cons control materialized tail inductionHypothesis =>
+      exact .cons control inductionHypothesis
+  | conjunction block tail blockIH tailIH =>
+      exact .conjunction blockIH tailIH
+
+/-- Concatenation preserves both alignment and every occurrence certificate. -/
+theorem append
+    {alpha : List (LogicVar × String)}
+    {representative : TreeSubstitution} {referenceBase : Substitution}
+    {runtime : Metta.Subst} {barrier : Nat}
+    {leftReferences rightReferences : List PeTTaSpec.PrologCore.Goal}
+    {leftExecutables rightExecutables : List PLeaTTa.Goal}
+    (left :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier leftReferences leftExecutables)
+    (right :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier rightReferences rightExecutables) :
+    MaterializedUnifyGoalsAgreeWith alpha representative referenceBase runtime
+      barrier (leftReferences ++ rightReferences)
+      (leftExecutables ++ rightExecutables) := by
+  induction left with
+  | nil => simpa using right
+  | truth tail inductionHypothesis => exact .truth inductionHypothesis
+  | cons control materialized tail inductionHypothesis =>
+      exact .cons control materialized inductionHypothesis
+  | conjunction block tail blockIH tailIH =>
+      simpa [List.append_assoc] using
+        MaterializedUnifyGoalsAgreeWith.conjunction block tailIH
+
+/-- Consume one compiler-erased truth node. -/
+theorem afterTruth
+    {alpha : List (LogicVar × String)}
+    {representative : TreeSubstitution} {referenceBase : Substitution}
+    {runtime : Metta.Subst} {barrier : Nat}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (agreement :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier (.truth :: references) executables) :
+    MaterializedUnifyGoalsAgreeWith alpha representative referenceBase runtime
+      barrier references executables := by
+  cases agreement with
+  | truth tail => exact tail
+  | cons control materialized tail => cases control
+
+/-- Consume one compiler-erased conjunction wrapper while retaining all
+materialized occurrences in the flattened block and tail. -/
+theorem afterConjunction
+    {alpha : List (LogicVar × String)}
+    {representative : TreeSubstitution} {referenceBase : Substitution}
+    {runtime : Metta.Subst} {barrier : Nat}
+    {nested rest : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (agreement :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier (.conjunction nested :: rest) executables) :
+    MaterializedUnifyGoalsAgreeWith alpha representative referenceBase runtime
+      barrier (nested ++ rest) executables := by
+  cases agreement with
+  | conjunction block tail => exact block.append tail
+  | cons control materialized tail => cases control
+
+/-- Every exactly counted administrative prefix consumes only source
+constructors and leaves the post-trim valuation unchanged. -/
+theorem afterAdministrativeSteps
+    {alpha : List (LogicVar × String)}
+    {representative : TreeSubstitution} {referenceBase : Substitution}
+    {runtime : Metta.Subst} {barrier count : Nat}
+    {before after : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (agreement :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier before executables)
+    (steps : AdministrativeStepsN count before after) :
+    MaterializedUnifyGoalsAgreeWith alpha representative referenceBase runtime
+      barrier after executables := by
+  induction steps with
+  | zero goals => exact agreement
+  | succ count before middle after head tail inductionHypothesis =>
+      apply inductionHypothesis
+      cases head with
+      | truth rest => exact agreement.afterTruth
+      | conjunction nested rest => exact agreement.afterConjunction
+
+/-- A cut consumes one aligned source/executable node and exposes the exact
+tail certificate; alternative pruning is orthogonal to the valuation. -/
+theorem cutHead
+    {alpha : List (LogicVar × String)}
+    {representative : TreeSubstitution} {referenceBase : Substitution}
+    {runtime : Metta.Subst} {barrier : Nat}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (agreement :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier (.cut :: references) executables) :
+    ∃ executableTail,
+      executables = .cutAt barrier :: executableTail ∧
+        MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+          runtime barrier references executableTail := by
+  cases agreement with
+  | cons control materialized tail =>
+      cases control with
+      | cut => exact ⟨_, rfl, tail⟩
+
+/-- Project the current equality occurrence after any earlier aligned or
+administrative constructors have been consumed. -/
+theorem unifyHeadReady
+    {alpha : List (LogicVar × String)}
+    {representative : TreeSubstitution} {referenceBase : Substitution}
+    {runtime : Metta.Subst} {barrier : Nat}
+    {left right : Term}
+    {referenceTail : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (agreement :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier (.unify left right :: referenceTail) executables) :
+    MaterializedUnifyHeadReady alpha representative referenceBase runtime
+      barrier left right referenceTail executables := by
+  cases agreement with
+  | cons control materialized tail =>
+      cases control with
+      | unify leftAgreement rightAgreement =>
+          exact
+            ⟨.equality, _, _, _, rfl, leftAgreement, rightAgreement,
+              tail.toNormalized,
+              materialized (spelling := .equality) rfl rfl⟩
+      | compileAlias leftAgreement rightAgreement =>
+          exact
+            ⟨.compilerAlias, _, _, _, rfl, leftAgreement, rightAgreement,
+              tail.toNormalized,
+              materialized (spelling := .compilerAlias) rfl rfl⟩
+
+/-- Enrich two structurally identical alpha-goal derivations with one
+materialized equality certificate at every aligned occurrence.
+
+The local derivation supplies clause-copy freshness, the ambient derivation
+supplies the shared runtime alpha, and `materialize` is the only semantic
+callback.  Occurrence membership in `allExecutables` is derived recursively,
+so a caller cannot certify an equality from a different body. -/
+theorem ofAlphaGoalsAgree
+    {localAlpha alpha : List (LogicVar × String)}
+    {representative : TreeSubstitution} {referenceBase : Substitution}
+    {runtime : Metta.Subst} {barrier : Nat}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables allExecutables : List PLeaTTa.Goal}
+    (localAgreement :
+      NormalizedAlphaGoalsAgree localAlpha barrier references executables)
+    (alphaIncluded : ∀ pair, pair ∈ localAlpha → pair ∈ alpha)
+    (materialize :
+      ∀ {left right : Term}
+          {spelling : NormalizedAlphaGoalsAgree.ExecutableUnifySpelling}
+          {executableLeft executableRight : Metta.Atom},
+        AlphaGoalAgrees localAlpha barrier (.unify left right)
+          (spelling.goal executableLeft executableRight) →
+        AlphaGoalAgrees alpha barrier (.unify left right)
+          (spelling.goal executableLeft executableRight) →
+        spelling.goal executableLeft executableRight ∈ allExecutables →
+        MaterializedOperandsAgreeWith alpha representative referenceBase
+          runtime [left, right] [executableLeft, executableRight])
+    (included : ∀ goal, goal ∈ executables → goal ∈ allExecutables) :
+    MaterializedUnifyGoalsAgreeWith alpha representative referenceBase runtime
+      barrier references executables := by
+  induction localAgreement with
+  | nil =>
+      exact .nil
+  | truth localTail inductionHypothesis =>
+      exact .truth (inductionHypothesis included)
+  | @cons reference executable references executables localHead localTail
+      inductionHypothesis =>
+      let ambientHead : AlphaGoalAgrees alpha barrier reference executable :=
+        PLeaTTa.PrologGoalMguVariant.AlphaGoalAgrees.mono alphaIncluded
+          localHead
+      refine MaterializedUnifyGoalsAgreeWith.cons ambientHead ?_ ?_
+      · intro left right spelling executableLeft executableRight
+          referenceShape executableShape
+        subst reference
+        subst executable
+        exact materialize localHead ambientHead
+          (included _ (by simp))
+      · exact inductionHypothesis
+          (fun goal member => included goal (by simp [member]))
+  | @conjunction referenceBlock referenceTail executableBlock executableTail
+      localBlock localTail blockIH tailIH =>
+      exact MaterializedUnifyGoalsAgreeWith.conjunction
+        (blockIH
+          (fun goal member => included goal
+            (List.mem_append_left executableTail member)))
+        (tailIH
+          (fun goal member => included goal
+            (List.mem_append_right executableBlock member)))
+
+end MaterializedUnifyGoalsAgreeWith
+
+/-- Combine the normalized payload shape with an activation-time materialized
+operand certificate. -/
+theorem TaskPayloadAgrees.materializedUnifyHeadReady_of_materializedHeads
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {left right : Term}
+    {referenceTail : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (_payload :
+      TaskPayloadAgrees alpha support barrier canonical referenceBase current
+        runtime (.unify left right :: referenceTail) executables)
+    (materialized :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier (.unify left right :: referenceTail) executables) :
+    MaterializedUnifyHeadReady alpha representative referenceBase runtime
+      barrier left right referenceTail executables := by
+  exact materialized.unifyHeadReady
+
+/-- Existing support-based task payloads materialize their current equality
+head into the smaller execution-ready interface. -/
+theorem TaskPayloadAgrees.materializedUnifyHeadReady_of_supported
+    {alpha support : List (LogicVar × String)} {barrier : Nat}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {left right : Term}
+    {referenceTail : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (payload :
+      TaskPayloadAgrees alpha support barrier canonical referenceBase current
+        runtime (.unify left right :: referenceTail) executables)
+    (selected :
+      AlphaCumulativeResidualVariantAgreesOnWith alpha support canonical
+        referenceBase runtime representative)
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote left))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote right)) :
+    MaterializedUnifyHeadReady alpha representative referenceBase runtime
+      barrier left right referenceTail executables := by
+  obtain
+    ⟨spelling, executableLeft, executableRight, executableTail,
+      executableShape, leftAgreement, rightAgreement, tailControl⟩ :=
+    payload.control.unifyHead
+  have leftAfter :
+      CanonicalRuntimeAgrees alpha
+        (TreeSubstitution.apply
+          (representative ++ Substitution.denote referenceBase)
+          (Term.denote left))
+        (PLeaTTa.subst runtime executableLeft) :=
+    canonicalRuntimeAgrees_apply_on
+      (AlphaTermAgrees.canonicalRuntimeAgrees leftAgreement)
+      selected.valuation leftSupported
+  have rightAfter :
+      CanonicalRuntimeAgrees alpha
+        (TreeSubstitution.apply
+          (representative ++ Substitution.denote referenceBase)
+          (Term.denote right))
+        (PLeaTTa.subst runtime executableRight) :=
+    canonicalRuntimeAgrees_apply_on
+      (AlphaTermAgrees.canonicalRuntimeAgrees rightAgreement)
+      selected.valuation rightSupported
+  exact
+    ⟨spelling, executableLeft, executableRight, executableTail,
+      executableShape, leftAgreement, rightAgreement, tailControl,
+      ⟨.cons leftAfter (.cons rightAfter .nil)⟩⟩
+
 /-- The freshly generated executable MGU cannot capture any carried runtime
 domain entry.  This is derived from the exact selected operands, not added as
 an independent installation assumption. -/
@@ -1380,7 +1775,7 @@ the proof.  The returned source and executable extensions are therefore tied
 to that literal orientation.  This is the producer used by the heterogeneous
 prefix zipper; the older existential theorem below is only its weak wrapper.
 -/
-theorem TaskDataAgrees.selectedUnifyTopExact_of_equivalent_canonicalAgreement
+theorem TaskDataAgrees.selectedUnifyTopExact_of_equivalent_materialized
     {alpha support : List (LogicVar × String)}
     {canonical representative : TreeSubstitution}
     {referenceBase current : Substitution}
@@ -1396,16 +1791,10 @@ theorem TaskDataAgrees.selectedUnifyTopExact_of_equivalent_canonicalAgreement
       TreeUnificationEquivalent
         [(Term.denote sourceLeft, Term.denote sourceRight)]
         [(Term.denote runtimeLeft, Term.denote runtimeRight)])
-    (leftAgreement :
-      CanonicalRuntimeAgrees alpha
-        (Term.denote runtimeLeft) executableLeft)
-    (rightAgreement :
-      CanonicalRuntimeAgrees alpha
-        (Term.denote runtimeRight) executableRight)
-    (leftSupported :
-      AlphaTreeSupported alpha support (Term.denote runtimeLeft))
-    (rightSupported :
-      AlphaTreeSupported alpha support (Term.denote runtimeRight))
+    (materialized :
+      MaterializedOperandsAgreeWith alpha representative referenceBase
+        runtime [runtimeLeft, runtimeRight]
+        [executableLeft, executableRight])
     {result : Substitution}
     (resolved : UnifyResolution current sourceLeft sourceRight result) :
     ∃ sourceExtension executableExtension generated,
@@ -1429,17 +1818,19 @@ theorem TaskDataAgrees.selectedUnifyTopExact_of_equivalent_canonicalAgreement
         (TreeSubstitution.apply
           (representative ++ Substitution.denote referenceBase)
           (Term.denote runtimeLeft))
-        (PLeaTTa.subst runtime executableLeft) :=
-    canonicalRuntimeAgrees_apply_on
-      leftAgreement selected.valuation leftSupported
+        (PLeaTTa.subst runtime executableLeft) := by
+    cases materialized.operands with
+    | cons left tail => exact left
   have rightAfter :
       CanonicalRuntimeAgrees alpha
         (TreeSubstitution.apply
           (representative ++ Substitution.denote referenceBase)
           (Term.denote runtimeRight))
-        (PLeaTTa.subst runtime executableRight) :=
-    canonicalRuntimeAgrees_apply_on
-      rightAgreement selected.valuation rightSupported
+        (PLeaTTa.subst runtime executableRight) := by
+    cases materialized.operands with
+    | cons _ tail =>
+        cases tail with
+        | cons right _ => exact right
   have sourceRelativeOriginal :
       TreeIsRelativeMgu
         (sourceExtension ++
@@ -1513,6 +1904,66 @@ theorem TaskDataAgrees.selectedUnifyTopExact_of_equivalent_canonicalAgreement
         executableTopological := executableTopological
         generatedTopological := generatedTopological
         runtimeTopological := selected.runtimeTopological }⟩
+
+/-- Support-based compatibility interface for existing task producers.
+
+The immutable payload support is used only to materialize the two current
+operands.  The lower theorem consumes those readings directly, allowing a
+clause-activation producer to supply the same evidence from its fresh local
+valuation without changing the payload's observation domain. -/
+theorem TaskDataAgrees.selectedUnifyTopExact_of_equivalent_canonicalAgreement
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution}
+    {runtime : Metta.Subst}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (selected :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase runtime representative)
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    (equivalent :
+      TreeUnificationEquivalent
+        [(Term.denote sourceLeft, Term.denote sourceRight)]
+        [(Term.denote runtimeLeft, Term.denote runtimeRight)])
+    (leftAgreement :
+      CanonicalRuntimeAgrees alpha
+        (Term.denote runtimeLeft) executableLeft)
+    (rightAgreement :
+      CanonicalRuntimeAgrees alpha
+        (Term.denote runtimeRight) executableRight)
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote runtimeLeft))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote runtimeRight))
+    {result : Substitution}
+    (resolved : UnifyResolution current sourceLeft sourceRight result) :
+    ∃ sourceExtension executableExtension generated,
+      SelectedUnifyTopExact alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated := by
+  have leftAfter :
+      CanonicalRuntimeAgrees alpha
+        (TreeSubstitution.apply
+          (representative ++ Substitution.denote referenceBase)
+          (Term.denote runtimeLeft))
+        (PLeaTTa.subst runtime executableLeft) :=
+    canonicalRuntimeAgrees_apply_on
+      leftAgreement selected.valuation leftSupported
+  have rightAfter :
+      CanonicalRuntimeAgrees alpha
+        (TreeSubstitution.apply
+          (representative ++ Substitution.denote referenceBase)
+          (Term.denote runtimeRight))
+        (PLeaTTa.subst runtime executableRight) :=
+    canonicalRuntimeAgrees_apply_on
+      rightAgreement selected.valuation rightSupported
+  apply agreement.selectedUnifyTopExact_of_equivalent_materialized selected
+    equivalent
+  · exact ⟨.cons leftAfter (.cons rightAfter .nil)⟩
+  · exact resolved
 
 /-- Compatibility wrapper for raw-alpha callers.  The proof above only needs
 canonical readings, so raw term agreement is converted exactly once at this
@@ -2079,6 +2530,45 @@ theorem TaskDataAgrees.afterUnifySuccessDataWith_of_equivalentGeneral_canonicalA
   obtain ⟨sourceExtension, executableExtension, generated, exact⟩ :=
     agreement.selectedUnifyTopExact_of_equivalent_canonicalAgreement selected equivalent
       leftAgreement rightAgreement leftSupported rightSupported resolved
+  exact
+    ⟨sourceExtension, executableExtension, generated,
+      exact.afterUnifySuccessDataGeneral agreement⟩
+
+/-- Materialized-operand form of the selected success producer.
+
+This is the fresh clause-body entry point: the task's immutable support still
+governs its public cumulative valuation, while the exact current operands are
+interpreted by an activation-local certificate. -/
+theorem TaskDataAgrees.afterUnifySuccessDataWith_of_equivalentGeneral_materialized
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {sourceLeft sourceRight runtimeLeft runtimeRight : Term}
+    {executableLeft executableRight : Metta.Atom}
+    (agreement :
+      TaskDataAgrees alpha support canonical referenceBase current runtime)
+    (selected :
+      AlphaCumulativeResidualVariantAgreesOnWith
+        alpha support canonical referenceBase runtime representative)
+    (equivalent :
+      TreeUnificationEquivalent
+        [(Term.denote sourceLeft, Term.denote sourceRight)]
+        [(Term.denote runtimeLeft, Term.denote runtimeRight)])
+    (materialized :
+      MaterializedOperandsAgreeWith alpha representative referenceBase
+        runtime [runtimeLeft, runtimeRight]
+        [executableLeft, executableRight])
+    {result : Substitution}
+    (resolved : UnifyResolution current sourceLeft sourceRight result) :
+    ∃ sourceExtension executableExtension generated,
+      SelectedUnifySuccessData alpha support canonical representative
+        referenceBase current runtime sourceLeft sourceRight runtimeLeft
+        runtimeRight executableLeft executableRight result sourceExtension
+        executableExtension generated
+        (PrologMguComposition.installGenerated generated runtime) := by
+  obtain ⟨sourceExtension, executableExtension, generated, exact⟩ :=
+    agreement.selectedUnifyTopExact_of_equivalent_materialized selected
+      equivalent materialized resolved
   exact
     ⟨sourceExtension, executableExtension, generated,
       exact.afterUnifySuccessDataGeneral agreement⟩

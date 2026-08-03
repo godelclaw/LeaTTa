@@ -339,6 +339,10 @@ PROLOG_ROOT_REJECTED_PREFIX_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRootRejectedPrefixRegression.lean"
 )
+PROLOG_MATERIALIZED_OPERAND_REGRESSION = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologMaterializedOperandRegression.lean"
+)
 PROLOG_RETAINED_PAYLOAD_SNAPSHOT_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologRetainedPayloadSnapshotBridge.lean"
@@ -929,6 +933,8 @@ def check() -> list[str]:
             digest(PROLOG_HETEROGENEOUS_PREFIX_REGRESSION),
         "prolog_root_rejected_prefix_regression_sha256":
             digest(PROLOG_ROOT_REJECTED_PREFIX_REGRESSION),
+        "prolog_materialized_operand_regression_sha256":
+            digest(PROLOG_MATERIALIZED_OPERAND_REGRESSION),
         "prolog_retained_payload_snapshot_bridge_sha256":
             digest(PROLOG_RETAINED_PAYLOAD_SNAPSHOT_BRIDGE),
         "prolog_retained_payload_catchup_bridge_sha256":

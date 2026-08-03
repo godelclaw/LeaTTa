@@ -61,7 +61,7 @@ The selected source and executable residual orientations are returned
 together with both actual transitions and the exact successor relation.  No
 caller can pair a source MGU from one run with an executable installation from
 another. -/
-theorem PersistentFreeCommittedProductPayloadResourceRelatesAt.afterUnifySuccessWithLive
+theorem PersistentFreeCommittedProductPayloadResourceRelatesAt.afterUnifySuccessWithMaterializedLive
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {freshFrontier : FreshFrontierRelation}
     {alpha support : List (LogicVar × String)}
@@ -94,10 +94,9 @@ theorem PersistentFreeCommittedProductPayloadResourceRelatesAt.afterUnifySuccess
     (selected :
       AlphaCumulativeResidualVariantAgreesOnWith alpha support canonical
         referenceBase runtime representative)
-    (leftSupported :
-      AlphaTreeSupported alpha support (Term.denote left))
-    (rightSupported :
-      AlphaTreeSupported alpha support (Term.denote right))
+    (headReady :
+      MaterializedUnifyHeadReady alpha representative referenceBase runtime
+        bodyBarrier left right bodyRest bodyExecutables)
     (continuationLive : ReadyUnifyContinuationLive support state)
     (resolved : UnifyResolution current left right result) :
     ∃ (spelling :
@@ -147,9 +146,10 @@ theorem PersistentFreeCommittedProductPayloadResourceRelatesAt.afterUnifySuccess
       TaskPayloadAgrees alpha support bodyBarrier canonical referenceBase
         current runtime (.unify left right :: bodyRest) bodyExecutables :=
     spinePayload.headPayload
-  rcases bodyPayload.control.unifyHead with
+  rcases headReady with
     ⟨spelling, executableLeft, executableRight, bodyExecutableTail,
-      bodyShape, leftAgreement, rightAgreement, bodyTailControl⟩
+      bodyShape, leftAgreement, rightAgreement, bodyTailControl,
+      materialized⟩
   have executableHead :
       state.control.cur =
         some
@@ -184,9 +184,8 @@ theorem PersistentFreeCommittedProductPayloadResourceRelatesAt.afterUnifySuccess
     continuationLive executableHead
   obtain
     ⟨sourceExtension, executableExtension, generated, selectedSuccess⟩ :=
-    bodyPayload.data.afterUnifySuccessDataWith_of_equivalentGeneral selected
-      (by intro binding; rfl) leftAgreement rightAgreement leftSupported
-      rightSupported resolved
+    bodyPayload.data.afterUnifySuccessDataWith_of_equivalentGeneral_materialized
+      selected (by intro binding; rfl) materialized resolved
   let installed :=
     PrologMguComposition.installGenerated generated runtime
   have installedExact :
@@ -332,6 +331,103 @@ theorem PersistentFreeCommittedProductPayloadResourceRelatesAt.afterUnifySuccess
       leftAgreement, rightAgreement, executableHead,
       by simpa [installed] using selectedSuccess, sourceStep, executableStep,
       nextAgreement, by simpa [executableTail] using nextSelected⟩
+
+/-- Compatibility entry point for callers whose equality operands belong to
+the immutable public support.  The support premises are used only to derive
+the execution-local materialized readings; the transition itself is proved by
+`afterUnifySuccessWithMaterializedLive`. -/
+theorem PersistentFreeCommittedProductPayloadResourceRelatesAt.afterUnifySuccessWithLive
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase : Substitution}
+    {predicateScope : CutScopeId} {session : Session}
+    {bodyBarrier callerBarrier : Nat}
+    {left right : Term} {result : Substitution}
+    {bodyRest : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutables : List PLeaTTa.Goal}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {state : OpenConf}
+    {payloadContext :
+      CommittedProductPayloadContext alpha support qterm callerBarrier outer
+        resources callerScope outerScope context}
+    (agreement :
+      PersistentFreeCommittedProductPayloadResourceRelatesAt freshFrontier
+        alpha support canonical referenceBase predicateScope session
+        bodyBarrier callerBarrier (.unify left right :: bodyRest)
+        bodyExecutables callerReferences callerExecutables outer current
+        runtime qterm resources callerScope outerScope context baseAlts source
+        state payloadContext)
+    (selected :
+      AlphaCumulativeResidualVariantAgreesOnWith alpha support canonical
+        referenceBase runtime representative)
+    (leftSupported :
+      AlphaTreeSupported alpha support (Term.denote left))
+    (rightSupported :
+      AlphaTreeSupported alpha support (Term.denote right))
+    (continuationLive : ReadyUnifyContinuationLive support state)
+    (resolved : UnifyResolution current left right result) :
+    ∃ (spelling :
+          NormalizedAlphaGoalsAgree.ExecutableUnifySpelling)
+        (executableLeft executableRight : Atom)
+        (bodyExecutableTail : List PLeaTTa.Goal)
+        (sourceExtension executableExtension : TreeSubstitution)
+        (generated installed : Subst),
+      let executableTail :=
+        bodyExecutableTail ++
+          (callerExecutables ++ flattenExecutables outer)
+      let executableAfter :=
+        unifySuccessor state executableTail installed
+      let nextSource :=
+        ActiveProductContext.plug context
+          (cutSourceProductAt callerScope predicateScope result bodyRest
+            callerReferences)
+      AlphaTermAgrees alpha left executableLeft ∧
+        AlphaTermAgrees alpha right executableRight ∧
+        state.control.cur =
+          some
+            (spelling.goal executableLeft executableRight ::
+              executableTail,
+              runtime) ∧
+        SelectedUnifySuccessData alpha support canonical representative
+          referenceBase current runtime left right left right executableLeft
+          executableRight result sourceExtension executableExtension generated
+          installed ∧
+        RawStep session source [] .none session
+          (.running nextSource) ∧
+        DemandDrivenCallStep.Step prog gt (.ready state)
+          (.ready executableAfter) ∧
+        PersistentFreeCommittedProductPayloadResourceRelatesAt freshFrontier
+          alpha support (sourceExtension ++ canonical) referenceBase
+          predicateScope session bodyBarrier callerBarrier bodyRest
+          bodyExecutableTail callerReferences callerExecutables outer result
+          (PLeaTTa.trimFor executableTail qterm installed) qterm resources
+          callerScope outerScope context baseAlts nextSource executableAfter
+          payloadContext ∧
+        AlphaCumulativeResidualVariantAgreesOnWith alpha support
+          (sourceExtension ++ canonical) referenceBase
+          (PLeaTTa.trimFor executableTail qterm installed)
+          (executableExtension ++ representative) := by
+  have bodyPayload :
+      TaskPayloadAgrees alpha support bodyBarrier canonical referenceBase
+        current runtime (.unify left right :: bodyRest) bodyExecutables :=
+    agreement.ready.2.2.2.headPayload
+  have headReady :
+      MaterializedUnifyHeadReady alpha representative referenceBase runtime
+        bodyBarrier left right bodyRest bodyExecutables :=
+    bodyPayload.materializedUnifyHeadReady_of_supported selected leftSupported
+      rightSupported
+  exact
+    PersistentFreeCommittedProductPayloadResourceRelatesAt.afterUnifySuccessWithMaterializedLive
+      agreement selected headReady continuationLive resolved
 
 namespace RepresentativePersistentFreeCommittedPayloadState
 
@@ -534,19 +630,18 @@ namespace RepresentativePersistentFreeCommittedPayloadState
 
 /-- Produce the literal committed successor while retaining both selected
 residual orientations in one proof package. -/
-theorem exists_afterUnifySuccessLive
+theorem exists_afterUnifySuccessWithMaterializedLive
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     (before : RepresentativePersistentFreeCommittedPayloadState)
     {left right : Term} {result : Substitution}
     {bodyRest : List PeTTaSpec.PrologCore.Goal}
     (referenceHead :
       before.carrier.index.bodyReferences = .unify left right :: bodyRest)
-    (leftSupported :
-      AlphaTreeSupported before.carrier.index.alpha
-        before.carrier.index.support (Term.denote left))
-    (rightSupported :
-      AlphaTreeSupported before.carrier.index.alpha
-        before.carrier.index.support (Term.denote right))
+    (headReady :
+      MaterializedUnifyHeadReady before.carrier.index.alpha
+        before.representative before.carrier.index.referenceBase
+        before.carrier.index.runtime before.carrier.index.bodyBarrier left right
+        bodyRest before.carrier.index.bodyExecutables)
     (continuationLive :
       ReadyUnifyContinuationLive before.carrier.index.support
         before.carrier.index.openConf)
@@ -582,8 +677,8 @@ theorem exists_afterUnifySuccessLive
       sourceExtension, executableExtension, generated, installed,
       leftAgreement, rightAgreement, executableHead, selectedSuccess,
       sourceStep, fineStep, nextAgreement, nextSelected⟩ :=
-    PersistentFreeCommittedProductPayloadResourceRelatesAt.afterUnifySuccessWithLive
-      committedAgreement before.cumulative leftSupported rightSupported
+    PersistentFreeCommittedProductPayloadResourceRelatesAt.afterUnifySuccessWithMaterializedLive
+      committedAgreement before.cumulative headReady
       continuationLive resolved
   let nextCarrier := PersistentFreeCommittedPayloadState.ofAgreement nextAgreement
   let after : RepresentativePersistentFreeCommittedPayloadState :=
@@ -611,6 +706,88 @@ theorem exists_afterUnifySuccessLive
   · simpa [after, nextCarrier, PersistentFreeCommittedPayloadState.ofAgreement]
       using fineStep
 
+/-- Compatibility producer for callers whose equality operands are inside the
+immutable public support.  New activation paths should preserve the
+whole-body certificate and call
+`exists_afterUnifySuccessWithMaterializedLive` directly. -/
+theorem exists_afterUnifySuccessLive
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativePersistentFreeCommittedPayloadState)
+    {left right : Term} {result : Substitution}
+    {bodyRest : List PeTTaSpec.PrologCore.Goal}
+    (referenceHead :
+      before.carrier.index.bodyReferences = .unify left right :: bodyRest)
+    (leftSupported :
+      AlphaTreeSupported before.carrier.index.alpha
+        before.carrier.index.support (Term.denote left))
+    (rightSupported :
+      AlphaTreeSupported before.carrier.index.alpha
+        before.carrier.index.support (Term.denote right))
+    (continuationLive :
+      ReadyUnifyContinuationLive before.carrier.index.support
+        before.carrier.index.openConf)
+    (resolved :
+      UnifyResolution before.carrier.index.current left right result) :
+    ∃ bodyExecutableTail : List PLeaTTa.Goal,
+      ∃ sourceExtension executableExtension : TreeSubstitution,
+      ∃ generated installed : Subst,
+      ∃ after : RepresentativePersistentFreeCommittedPayloadState,
+        RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt
+          before after left right result bodyRest bodyExecutableTail
+          sourceExtension executableExtension generated installed := by
+  have bodyPayload :
+      TaskPayloadAgrees before.carrier.index.alpha before.carrier.index.support
+        before.carrier.index.bodyBarrier before.carrier.index.canonical
+        before.carrier.index.referenceBase before.carrier.index.current
+        before.carrier.index.runtime before.carrier.index.bodyReferences
+        before.carrier.index.bodyExecutables :=
+    before.carrier.agreement.ready.2.2.2.headPayload
+  have headReady :
+      MaterializedUnifyHeadReady before.carrier.index.alpha
+        before.representative before.carrier.index.referenceBase
+        before.carrier.index.runtime before.carrier.index.bodyBarrier left right
+        bodyRest before.carrier.index.bodyExecutables := by
+    rw [referenceHead] at bodyPayload
+    exact bodyPayload.materializedUnifyHeadReady_of_supported before.cumulative
+      leftSupported rightSupported
+  exact
+    PLeaTTa.PrologPersistentFreeCommittedUnifyTransitionBridge.RepresentativePersistentFreeCommittedPayloadState.exists_afterUnifySuccessWithMaterializedLive
+      before referenceHead headReady continuationLive resolved
+
 end RepresentativePersistentFreeCommittedPayloadState
+
+namespace MaterializedRepresentativePersistentFreeCommittedPayloadState
+
+/-- Consume the current committed equality from the whole-body certificate,
+without requiring the freshly standardized clause variables to occur in the
+caller's immutable support. -/
+theorem exists_afterUnifySuccess
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : MaterializedRepresentativePersistentFreeCommittedPayloadState)
+    {left right : Term} {result : Substitution}
+    {bodyRest : List PeTTaSpec.PrologCore.Goal}
+    (referenceHead :
+      before.carrier.carrier.index.bodyReferences =
+        .unify left right :: bodyRest)
+    (continuationLive :
+      ReadyUnifyContinuationLive before.carrier.carrier.index.support
+        before.carrier.carrier.index.openConf)
+    (resolved :
+      UnifyResolution before.carrier.carrier.index.current left right result) :
+    ∃ bodyExecutableTail : List PLeaTTa.Goal,
+      ∃ sourceExtension executableExtension : TreeSubstitution,
+      ∃ generated installed : Subst,
+      ∃ after : RepresentativePersistentFreeCommittedPayloadState,
+        RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt
+          before.carrier after left right result bodyRest bodyExecutableTail
+          sourceExtension executableExtension generated installed := by
+  have current := before.materializedUnifyGoals
+  rw [referenceHead] at current
+  have headReady := current.unifyHeadReady
+  exact
+    PLeaTTa.PrologPersistentFreeCommittedUnifyTransitionBridge.RepresentativePersistentFreeCommittedPayloadState.exists_afterUnifySuccessWithMaterializedLive
+      before.carrier referenceHead headReady continuationLive resolved
+
+end MaterializedRepresentativePersistentFreeCommittedPayloadState
 
 end PLeaTTa.PrologPersistentFreeCommittedUnifyTransitionBridge

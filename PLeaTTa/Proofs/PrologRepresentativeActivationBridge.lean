@@ -12,6 +12,7 @@ Main exports:
 import PLeaTTa.Proofs.PrologRepresentativeCallFrontierBridge
 import PLeaTTa.Proofs.PrologActivationUnifierBridge
 import PLeaTTa.Proofs.PrologAlphaFreshFrontierBridge
+import PLeaTTa.Proofs.PrologOrdinaryStepBridge
 
 namespace PLeaTTa.PrologRepresentativeActivationBridge
 
@@ -685,6 +686,31 @@ theorem OrderedTreeMgu.unifyB_exists_canonical_alpha_mgu
 
 /-! ## Representation-independent retained-clause activation -/
 
+/-- Provenance of the local clause-body alpha graph that one activation
+embeds into the ambient graph.
+
+This is not an additional freshness assumption.  The activation already
+constructs this graph from the selected source occurrence and executable
+freshening suffix.  Keeping the local normalized body, its literal inclusion,
+the source fresh lower bound, and executable-name avoidance together prevents
+later consumers from pairing a body with an unrelated ambient alpha suffix. -/
+inductive ClauseAlphaProvenance
+    (alpha : List (LogicVar × String)) (binding : Subst)
+    (firstFresh barrier : Nat)
+    (references : List PeTTaSpec.PrologCore.Goal)
+    (executables : List PLeaTTa.Goal) : Prop where
+  | intro (localAlpha : List (LogicVar × String))
+      (normalized :
+        PLeaTTa.PrologOrdinaryStepBridge.NormalizedAlphaGoalsAgree
+          localAlpha barrier references executables)
+      (included : ∀ pair, pair ∈ localAlpha → pair ∈ alpha)
+      (referenceGeneratedAtLeast :
+        ∀ identity name, (identity, name) ∈ localAlpha →
+          ∃ index, identity = .generated index ∧ firstFresh ≤ index)
+      (runtimeAvoids : AlphaRuntimeNamesAvoid localAlpha binding) :
+      ClauseAlphaProvenance alpha binding firstFresh barrier references
+        executables
+
 /-- The current ambient alpha graph can be extended by the exact clause-copy
 graph selected by one supported prepared occurrence.
 
@@ -920,6 +946,10 @@ theorem
       (∀ index, branch.firstFresh ≤ index → index < branch.nextFresh →
         AlphaCovers alpha (.generated index)) ∧
       AlphaGoalsAgree alpha barrier branch.body
+        (freshenResolutionClause
+          (args.map (PLeaTTa.subst binding)) args result rest binding
+          qterm seed barrier clause).body ∧
+      ClauseAlphaProvenance alpha binding branch.firstFresh barrier branch.body
         (freshenResolutionClause
           (args.map (PLeaTTa.subst binding)) args result rest binding
           qterm seed barrier clause).body ∧
@@ -1286,6 +1316,39 @@ theorem
               List.mem_append_right ambientAlpha pairMember)
             bodyAgreement
         simpa [alpha, clauseAlpha, preparedBranchOf] using enlarged
+      have clauseProvenance :
+          ClauseAlphaProvenance alpha binding
+            (preparedBranchOf cursor.callGeneration cursor.arguments
+              cursor.bindings freshSeed reference).firstFresh barrier
+            (preparedBranchOf cursor.callGeneration cursor.arguments
+              cursor.bindings freshSeed reference).body
+            (freshenResolutionClause
+              (args.map (PLeaTTa.subst binding)) args result rest binding
+              qterm seed barrier clause).body := by
+        refine .intro clauseAlpha ?_ ?_ ?_ ?_
+        · simpa [clauseAlpha, preparedBranchOf] using
+            (PLeaTTa.PrologOrdinaryStepBridge.NormalizedAlphaGoalsAgree.ofAlphaGoalsAgree
+              bodyAgreement)
+        · intro pair pairMember
+          exact List.mem_append_right ambientAlpha pairMember
+        · intro identity name pairMember
+          have projectionMember : identity ∈ clauseAlpha.map Prod.fst :=
+            List.mem_map.mpr ⟨(identity, name), pairMember, rfl⟩
+          rw [clauseAgreement.graph_reference] at projectionMember
+          obtain ⟨index, identityShape, lower⟩ :=
+            referenceFreshTargets_generated_lower projectionMember
+          exact ⟨index, identityShape, by
+            simpa [preparedBranchOf] using lower⟩
+        · intro identity name pairMember
+          have projectionMember : name ∈ clauseAlpha.map Prod.snd :=
+            List.mem_map.mpr ⟨(identity, name), pairMember, rfl⟩
+          rw [clauseAgreement.graph_executable] at projectionMember
+          simp only [executableFreshTargets, List.mem_map] at projectionMember
+          obtain ⟨source, _sourceMember, targetShape⟩ := projectionMember
+          rw [← targetShape]
+          exact resolutionFreshSuffix_lookup_none
+            (args.map (PLeaTTa.subst binding)) result rest binding qterm seed
+            highWater (OpenBindingAgreement.logicVarExecutableName source)
       have queryCanonicalSmall :
           List.Forall₂ (CanonicalRuntimeAgrees payloadAlpha)
             (cursor.arguments.map fun term =>
@@ -1475,6 +1538,7 @@ theorem
           by simpa [preparedBranchOf] using combinedGap,
           by simpa [preparedBranchOf] using selectedIntervalCovered,
           by simpa [preparedBranchOf] using bodyControl,
+          by simpa [preparedBranchOf] using clauseProvenance,
           rfl,
           by simpa [sourceExtensionShape] using independentShape,
           sourceOrdered, successorVariants, semanticOrdered,
@@ -1653,7 +1717,8 @@ theorem
         ⟨alpha, sourceCanonical, representative, semanticCanonical,
           flattened, generated, installed, resultBundle.1,
           resultBundle.2.1, resultBundle.2.2.2.1,
-          resultBundle.2.2.2.2.2.2⟩
+          ⟨resultBundle.2.2.2.2.2.2.1,
+            resultBundle.2.2.2.2.2.2.2.2⟩⟩
 
 /-- Existential compatibility view of
 `unifyB_representativeWith_of_headResolution`.

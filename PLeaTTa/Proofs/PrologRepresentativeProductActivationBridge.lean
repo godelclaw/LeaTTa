@@ -181,6 +181,11 @@ structure RepresentativeProductActivationCore
       copied.body
       (PLeaTTa.trimFor (copied.body ++ executableRest) qterm installed)
       (flattenedRepresentative ++ representative) referenceBase
+  materializedUnifyGoals :
+    MaterializedUnifyGoalsAgreeWith nextAlpha
+      (flattenedRepresentative ++ representative) referenceBase
+      (PLeaTTa.trimFor (copied.body ++ executableRest) qterm installed) barrier
+      branch.body copied.body
   retainedAlts :
     (activatedExecutableSuccessor pending copied executableRest qterm
       installed).alts =
@@ -447,8 +452,8 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step_head_with
       nextShared, alphaIncluded, alphaExtension, selectionFresh,
       independentShape,
       sourceOrdered, headMgu, sourceInnerStep, executableStep, cumulative,
-      bodyPayload, materializedBodyHeads, retainedAlts, worldPreserved,
-      counterPreserved⟩ :=
+      bodyPayload, materializedBodyHeads, materializedUnifyGoals, retainedAlts,
+      worldPreserved, counterPreserved⟩ :=
     PLeaTTa.PrologRepresentativeStepActivationBridge.RepresentativeRetainedCallFrontier.activate_task_step_head_with
       entry frontier oldCumulative queryAtOpen openedBindingShape
       canonicalWellFormed alphaShared
@@ -570,7 +575,8 @@ theorem RepresentativeRetainedCallFrontier.activate_product_step_head_with
       entry.entry.sourceFresh, entry.entry.cutScopeAdvanced,
       independentShape, sourceOrdered,
       pendingHeadMgu, sourceProductStep, executableStep, fineExecutableStep,
-      cumulative, bodyPayload, materializedBodyHeads, retainedAlts,
+      cumulative, bodyPayload, materializedBodyHeads, materializedUnifyGoals,
+      retainedAlts,
       retainedCursorOwnership,
       frontier.tailScan.barrierCount_zero,
       retainedBarriers, barrierTag,

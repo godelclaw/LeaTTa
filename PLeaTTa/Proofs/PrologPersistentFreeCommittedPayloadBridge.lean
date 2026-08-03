@@ -730,6 +730,18 @@ structure RepresentativePersistentFreeCommittedPayloadState where
       carrier.index.support carrier.index.canonical carrier.index.referenceBase
       carrier.index.runtime representative
 
+/-- Packet-free committed state retaining the whole-body activation
+materialization after a cut.  The certificate is indexed by the carrier's
+literal residual source and executable bodies, so compiler-erased source
+administration can only shrink it through the proved structural projection. -/
+structure MaterializedRepresentativePersistentFreeCommittedPayloadState where
+  carrier : RepresentativePersistentFreeCommittedPayloadState
+  materializedUnifyGoals :
+    MaterializedUnifyGoalsAgreeWith carrier.carrier.index.alpha
+      carrier.representative carrier.carrier.index.referenceBase
+      carrier.carrier.index.runtime carrier.carrier.index.bodyBarrier
+      carrier.carrier.index.bodyReferences carrier.carrier.index.bodyExecutables
+
 namespace RepresentativePersistentFreeActivePayloadState
 
 /-- Re-index the live packet-free active relation at an exposed cut head.
@@ -828,6 +840,36 @@ def afterCut
     cumulative := by
       simpa [nextCarrier, PersistentFreeCommittedPayloadState.ofAgreement]
         using state.cumulative }
+
+/-- Consume a cut while preserving the activation-time materialization of
+every equality in the residual body. -/
+def afterCutMaterialized
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (state : MaterializedRepresentativePersistentFreeActivePayloadState)
+    (bodyRest : List PeTTaSpec.PrologCore.Goal)
+    (bodyExecutableTail : List PLeaTTa.Goal)
+    (referenceHead :
+      state.carrier.carrier.index.bodyReferences = .cut :: bodyRest)
+    (executableHead :
+      state.carrier.carrier.index.bodyExecutables =
+        .cutAt state.carrier.carrier.index.bodyBarrier :: bodyExecutableTail)
+    (coherent :
+      PLeaTTa.BarrierCacheCoherent
+        state.carrier.carrier.index.openConf.toConf) :
+    MaterializedRepresentativePersistentFreeCommittedPayloadState :=
+  let next :=
+    afterCut prog gt state.carrier bodyRest bodyExecutableTail referenceHead
+      executableHead coherent
+  { carrier := next
+    materializedUnifyGoals := by
+      have current := state.materializedUnifyGoals
+      rw [referenceHead, executableHead] at current
+      obtain ⟨tail, tailShape, remaining⟩ := current.cutHead
+      have tailExact : tail = bodyExecutableTail := by
+        exact (List.cons.inj tailShape.symm).2
+      subst tail
+      simpa [next, afterCut, PersistentFreeCommittedPayloadState.ofAgreement]
+        using remaining }
 
 @[simp] theorem afterCut_sourceState
     (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
@@ -1134,6 +1176,32 @@ def afterAdministrative
     representative := state.representative
     cumulative := by
       simpa [nextCarrier, nextIndex] using state.cumulative }
+
+end RepresentativePersistentFreeCommittedPayloadState
+
+namespace MaterializedRepresentativePersistentFreeCommittedPayloadState
+
+/-- Consume an exact compiler-erased source prefix while preserving the same
+post-trim runtime valuation and projecting the whole-body materialization to
+the literal residual source body. -/
+def afterAdministrative
+    (state : MaterializedRepresentativePersistentFreeCommittedPayloadState)
+    {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
+    (steps :
+      AdministrativeStepsN count state.carrier.carrier.index.bodyReferences
+        afterBody) :
+    MaterializedRepresentativePersistentFreeCommittedPayloadState :=
+  let next := state.carrier.afterAdministrative steps
+  { carrier := next
+    materializedUnifyGoals := by
+      have remaining :=
+        state.materializedUnifyGoals.afterAdministrativeSteps steps
+      simpa [next, RepresentativePersistentFreeCommittedPayloadState.afterAdministrative]
+        using remaining }
+
+end MaterializedRepresentativePersistentFreeCommittedPayloadState
+
+namespace RepresentativePersistentFreeCommittedPayloadState
 
 @[simp] theorem afterAdministrative_sourceState
     (state : RepresentativePersistentFreeCommittedPayloadState)

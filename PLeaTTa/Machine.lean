@@ -3054,6 +3054,75 @@ private theorem goalsVarsFuel_eq_right_mem (tracked : String) :
             · exact htail
             · exact htracked
 
+private theorem goalsVarsFuel_compileAlias_left_atom_mem (tracked : String) :
+    ∀ fuel goals acc left rhs,
+      goalsFuel goals + 1 ≤ fuel →
+      Goal.compileAlias left rhs ∈ goals →
+      tracked ∈ left.vars →
+      (goalsVarsFuel fuel goals acc).contains tracked = true := by
+  intro fuel goals
+  induction goals generalizing fuel with
+  | nil => simp
+  | cons goal rest ih =>
+      intro acc left rhs hfuel hmem htracked
+      cases fuel with
+      | zero => omega
+      | succ fuel =>
+          simp only [goalsVarsFuel]
+          rcases List.mem_cons.mp hmem with hhead | htail
+          · subst goal
+            have hfuelPos : 0 < fuel := by
+              simp only [goalsFuel, goalFuel] at hfuel
+              omega
+            obtain ⟨fuel', rfl⟩ := Nat.exists_eq_succ_of_ne_zero
+              (Nat.ne_of_gt hfuelPos)
+            apply goalsVarsFuel_preserves_contains
+            simp only [goalVarsFuel]
+            apply addAtomVars_preserves_contains
+            exact addAtomVars_contains_of_mem_vars tracked left _ htracked
+          · apply ih fuel (goalVarsFuel fuel goal acc) left rhs
+            · simp only [goalsFuel] at hfuel
+              have hrestLe : goalsFuel rest ≤
+                  Nat.max (goalFuel goal) (goalsFuel rest) :=
+                Nat.le_max_right _ _
+              omega
+            · exact htail
+            · exact htracked
+
+private theorem goalsVarsFuel_compileAlias_right_mem (tracked : String) :
+    ∀ fuel goals acc left rhs,
+      goalsFuel goals + 1 ≤ fuel →
+      Goal.compileAlias left rhs ∈ goals →
+      tracked ∈ rhs.vars →
+      (goalsVarsFuel fuel goals acc).contains tracked = true := by
+  intro fuel goals
+  induction goals generalizing fuel with
+  | nil => simp
+  | cons goal rest ih =>
+      intro acc left rhs hfuel hmem htracked
+      cases fuel with
+      | zero => omega
+      | succ fuel =>
+          simp only [goalsVarsFuel]
+          rcases List.mem_cons.mp hmem with hhead | htail
+          · subst goal
+            have hfuelPos : 0 < fuel := by
+              simp only [goalsFuel, goalFuel] at hfuel
+              omega
+            obtain ⟨fuel', rfl⟩ := Nat.exists_eq_succ_of_ne_zero
+              (Nat.ne_of_gt hfuelPos)
+            apply goalsVarsFuel_preserves_contains
+            simp only [goalVarsFuel]
+            exact addAtomVars_contains_of_mem_vars tracked rhs _ htracked
+          · apply ih fuel (goalVarsFuel fuel goal acc) left rhs
+            · simp only [goalsFuel] at hfuel
+              have hrestLe : goalsFuel rest ≤
+                  Nat.max (goalFuel goal) (goalsFuel rest) :=
+                Nat.le_max_right _ _
+              omega
+            · exact htail
+            · exact htracked
+
 /-- Every variable occurring in an argument or result of any pending local
 call reaches the optimized goal-variable accumulator. -/
 private theorem goalsVarsFuel_call_atom_mem (tracked : String) :
@@ -3876,6 +3945,37 @@ theorem isTrimRoot_eq_right_of_mem (goals : List Goal) (qterm left rhs : Atom)
   apply addAtomVars_preserves_contains
   apply goalsVarsFuel_eq_right_mem name (goalsFuel goals + 1) goals
     (Std.HashSet.emptyWithCapacity 64) left rhs
+  · omega
+  · exact heq
+  · exact hname
+
+/-- Every variable occurring in the left operand of a pending compiler-alias
+equality is directly live.  `compileAlias` and `eq` share the executable
+unification path, so trimming must retain both operands identically. -/
+theorem isTrimRoot_compileAlias_left_atom_of_mem
+    (goals : List Goal) (qterm left rhs : Atom)
+    (name : String) (heq : Goal.compileAlias left rhs ∈ goals)
+    (hname : name ∈ left.vars) :
+    isTrimRoot goals qterm name = true := by
+  unfold isTrimRoot goalsVars
+  apply addAtomVars_preserves_contains
+  apply goalsVarsFuel_compileAlias_left_atom_mem name (goalsFuel goals + 1)
+    goals (Std.HashSet.emptyWithCapacity 64) left rhs
+  · omega
+  · exact heq
+  · exact hname
+
+/-- Every variable occurring in the right operand of a pending compiler-alias
+equality is directly live. -/
+theorem isTrimRoot_compileAlias_right_of_mem
+    (goals : List Goal) (qterm left rhs : Atom)
+    (name : String) (heq : Goal.compileAlias left rhs ∈ goals)
+    (hname : name ∈ rhs.vars) :
+    isTrimRoot goals qterm name = true := by
+  unfold isTrimRoot goalsVars
+  apply addAtomVars_preserves_contains
+  apply goalsVarsFuel_compileAlias_right_mem name (goalsFuel goals + 1)
+    goals (Std.HashSet.emptyWithCapacity 64) left rhs
   · omega
   · exact heq
   · exact hname

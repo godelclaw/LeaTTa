@@ -26,6 +26,7 @@ open PrologAlphaFreshFrontierBridge
 open PrologControlSegmentSpineBridge
 open PrologCurrentSessionPayloadBridge
 open PrologMguComposition
+open PrologOrdinaryStepBridge
 open PrologProductResourceContextBridge
 open PrologProductResourceTransitionBridge
 open PrologRetainedPayloadSnapshotBridge
@@ -507,6 +508,21 @@ structure RepresentativePersistentFreeActivePayloadState where
     AlphaCumulativeResidualVariantAgreesOnWith carrier.index.alpha
       carrier.index.support carrier.index.canonical carrier.index.referenceBase
       carrier.index.runtime representative
+
+/-- Packet-free active state carrying the activation-time materialization of
+every primitive equality in its complete normalized clause body.
+
+The wrapper is intentionally separate from the compatibility carrier: legacy
+states which predate whole-body materialization cannot fabricate this field,
+while new activation producers can preserve it structurally across cut and
+compiler-erased administrative transitions. -/
+structure MaterializedRepresentativePersistentFreeActivePayloadState where
+  carrier : RepresentativePersistentFreeActivePayloadState
+  materializedUnifyGoals :
+    MaterializedUnifyGoalsAgreeWith carrier.carrier.index.alpha
+      carrier.representative carrier.carrier.index.referenceBase
+      carrier.carrier.index.runtime carrier.carrier.index.bodyBarrier
+      carrier.carrier.index.bodyReferences carrier.carrier.index.bodyExecutables
 
 namespace RepresentativePersistentFreeActivePayloadState
 
