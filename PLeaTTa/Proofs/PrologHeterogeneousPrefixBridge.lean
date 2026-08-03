@@ -15,6 +15,7 @@ import PLeaTTa.Proofs.PrologNestedCallPrefixInductionBridge
 import PLeaTTa.Proofs.PrologCurrentSessionAdministrativeTransitionBridge
 import PLeaTTa.Proofs.PrologCurrentSessionPayloadTransitionBridge
 import PLeaTTa.Proofs.PrologCurrentSessionUnifyTransitionBridge
+import PLeaTTa.Proofs.PrologPersistentFreeActivePayloadBridge
 
 namespace PLeaTTa.PrologHeterogeneousPrefixBridge
 
@@ -33,6 +34,7 @@ open PrologCurrentSessionPayloadBridge
 open PrologCurrentSessionPayloadTransitionBridge
 open PrologCurrentSessionUnifyTransitionBridge
 open PrologMguComposition
+open PrologPersistentFreeActivePayloadBridge
 open PrologNestedCallChainBridge
 open PrologNestedCallPrefixInductionBridge
 open PrologNestedCallReadyBridge
@@ -361,7 +363,7 @@ correspondences.  Post-failure and exhausted certificates are intentionally
 not forced into this type: the latter already relates a predecessor and a
 successor and will enter the later frontier-transition layer. -/
 inductive ProductPhaseState where
-  | active (state : RepresentativeActivePayloadState)
+  | active (state : RepresentativePersistentFreeActivePayloadState)
   | scheduled (state : RepresentativeScheduledPayloadState)
   | committed (state : RepresentativeCommittedPayloadState)
 
@@ -1939,10 +1941,11 @@ inductive CertifiedTransition (prog : PLeaTTa.Prog)
         AdministrativeStepsN count before.carrier.index.bodyReferences
           afterBody) :
       CertifiedTransition prog gt (.administrative count)
-        (.active before)
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before))
         (.active
-          (RepresentativeActivePayloadState.afterAdministrative
-            prog gt before steps))
+          (RepresentativePersistentFreeActivePayloadState.ofLegacy
+            (RepresentativeActivePayloadState.afterAdministrative
+              prog gt before steps)))
   | unify
       {before after : RepresentativeActivePayloadState}
       {left right : Term} {result : Substitution}
@@ -1954,7 +1957,9 @@ inductive CertifiedTransition (prog : PLeaTTa.Prog)
         RepresentativeUnifySuccessorFacts prog gt before after left right
           result bodyRest bodyExecutableTail sourceExtension
           executableExtension generated installed) :
-      CertifiedTransition prog gt .unify (.active before) (.active after)
+      CertifiedTransition prog gt .unify
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before))
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy after))
   | localCall
       {before after : RepresentativeActivePayloadState}
       {head : NestedCallHead before.carrier}
@@ -1972,12 +1977,14 @@ inductive CertifiedTransition (prog : PLeaTTa.Prog)
         (.localCall rejected
           (requestFor head.predicate head.referencePayload
             before.carrier.index.current))
-        (.active before) (.active after)
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before))
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy after))
   | bodyAnswer
       (before : RepresentativeActivePayloadState)
       (referenceEmpty : before.carrier.index.bodyReferences = [])
       (executableEmpty : before.carrier.index.bodyExecutables = []) :
-      CertifiedTransition prog gt .bodyAnswer (.active before)
+      CertifiedTransition prog gt .bodyAnswer
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before))
         (.scheduled
           (RepresentativeActivePayloadState.afterBodyAnswer
             prog gt before referenceEmpty executableEmpty))
@@ -1997,12 +2004,29 @@ inductive CertifiedTransition (prog : PLeaTTa.Prog)
           (retainedCursorToken before.carrier.index.opened
             before.carrier.index.finish before.carrier.index.branch
             before.carrier.index.branchTail))
-        (.active before)
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before))
         (.committed
           (RepresentativeActivePayloadState.afterCut prog gt before bodyRest
             bodyExecutableTail referenceHead executableHead coherent))
 
 namespace CertifiedTransition
+
+/-- An administrative transition always remains in the active phase.  The
+target constructor is recoverable without asking the one-way legacy erasure
+to be injective. -/
+theorem administrative_target_active
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {count : Nat} {before after : ProductPhaseState}
+    (step : CertifiedTransition prog gt (.administrative count) before after) :
+    ∃ state : RepresentativePersistentFreeActivePayloadState,
+      after = .active state := by
+  cases step with
+  | administrative before steps =>
+      exact
+        ⟨RepresentativePersistentFreeActivePayloadState.ofLegacy
+            (RepresentativeActivePayloadState.afterAdministrative
+              prog gt before steps),
+          rfl⟩
 
 /-- One independent raw step is one exact public source step. -/
 theorem oneSourceStep
@@ -2644,7 +2668,8 @@ inductive ActiveStepReady : ProductPhaseState → Type where
       (steps :
         AdministrativeStepsN count state.carrier.index.bodyReferences
           afterBody) :
-      ActiveStepReady (.active state)
+      ActiveStepReady
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy state))
   | unify (state : RepresentativeActivePayloadState)
       {left right : Term} {result : Substitution}
       {bodyRest : List PeTTaSpec.PrologCore.Goal}
@@ -2661,15 +2686,18 @@ inductive ActiveStepReady : ProductPhaseState → Type where
           state.carrier.index.openConf)
       (resolved :
         UnifyResolution state.carrier.index.current left right result) :
-      ActiveStepReady (.active state)
+      ActiveStepReady
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy state))
   | localCall (state : RepresentativeActivePayloadState)
       (head : NestedCallHead state.carrier)
       (ready : MaterializedNestedCallReady state head) :
-      ActiveStepReady (.active state)
+      ActiveStepReady
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy state))
   | bodyAnswer (state : RepresentativeActivePayloadState)
       (referenceEmpty : state.carrier.index.bodyReferences = [])
       (executableEmpty : state.carrier.index.bodyExecutables = []) :
-      ActiveStepReady (.active state)
+      ActiveStepReady
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy state))
   | cut (state : RepresentativeActivePayloadState)
       (bodyRest : List PeTTaSpec.PrologCore.Goal)
       (bodyExecutableTail : List PLeaTTa.Goal)
@@ -2680,7 +2708,8 @@ inductive ActiveStepReady : ProductPhaseState → Type where
           .cutAt state.carrier.index.bodyBarrier :: bodyExecutableTail)
       (coherent :
         PLeaTTa.BarrierCacheCoherent state.carrier.index.openConf.toConf) :
-      ActiveStepReady (.active state)
+      ActiveStepReady
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy state))
 
 /-- The unindexed coupled-step relation obtained by hiding only the closed
 transition label.  The source and fine endpoints remain the literal fields of
@@ -2823,8 +2852,9 @@ inductive Produces (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable) :
       Produces prog gt
         (ActiveStepReady.administrative state positive steps)
         (.active
-          (RepresentativeActivePayloadState.afterAdministrative
-            prog gt state steps))
+          (RepresentativePersistentFreeActivePayloadState.ofLegacy
+            (RepresentativeActivePayloadState.afterAdministrative
+              prog gt state steps)))
   | unify
       (state : RepresentativeActivePayloadState)
       {left right : Term} {result : Substitution}
@@ -2853,7 +2883,7 @@ inductive Produces (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable) :
       Produces prog gt
         (ActiveStepReady.unify state referenceHead leftSupported
           rightSupported continuationLive resolved)
-        (.active after)
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy after))
   | localCall
       (state : RepresentativeActivePayloadState)
       (head : NestedCallHead state.carrier)
@@ -2870,7 +2900,7 @@ inductive Produces (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable) :
           skippedBranches skippedClauses finish branch clause branchTail
           clauseTail altTail copied installed after) :
       Produces prog gt (ActiveStepReady.localCall state head ready)
-        (.active after)
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy after))
   | bodyAnswer
       (state : RepresentativeActivePayloadState)
       (referenceEmpty : state.carrier.index.bodyReferences = [])
@@ -2899,6 +2929,30 @@ inductive Produces (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable) :
             bodyExecutableTail referenceHead executableHead coherent))
 
 namespace Produces
+
+/-- Readiness fixes the outer constructor of its generated target without
+recovering any erased legacy packet. -/
+theorem target_shape
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : ProductPhaseState}
+    {ready : ActiveStepReady before}
+    (production : Produces prog gt ready after) :
+    match ready with
+    | .administrative _ _ _ => ∃ state, after = .active state
+    | .unify _ _ _ _ _ _ => ∃ state, after = .active state
+    | .localCall _ _ _ => ∃ state, after = .active state
+    | .bodyAnswer _ _ _ => ∃ state, after = .scheduled state
+    | .cut _ _ _ _ _ _ => ∃ state, after = .committed state := by
+  cases production with
+  | administrative state positive steps => exact ⟨_, rfl⟩
+  | unify state referenceHead leftSupported rightSupported continuationLive
+      resolved facts =>
+      exact ⟨_, rfl⟩
+  | localCall state head ready facts => exact ⟨_, rfl⟩
+  | bodyAnswer state referenceEmpty executableEmpty => exact ⟨_, rfl⟩
+  | cut state bodyRest bodyExecutableTail referenceHead executableHead
+      coherent =>
+      exact ⟨_, rfl⟩
 
 /-- Forgetting the readiness packet preserves the one real, non-stuttering
 coupled transition it generated. -/
@@ -2942,10 +2996,27 @@ theorem certifiedCoupledStep
           ⟨.cut state bodyRest bodyExecutableTail referenceHead executableHead
             coherent⟩⟩
 
-/-- The dependency is observable: administrative readiness cannot be
-laundered through a committed successor, even if the same source state also
-admits a cut transition. -/
+/-- The closed transition label prevents an administrative step from being
+laundered through a committed successor, even when the same source state also
+admits a cut transition.  This formulation deliberately avoids relying on
+injectivity of the one-way legacy-to-persistent-free carrier erasure. -/
 theorem administrative_not_committed
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (state : RepresentativeActivePayloadState)
+    (count : Nat)
+    (target : RepresentativeCommittedPayloadState) :
+    IsEmpty (CertifiedTransition prog gt (.administrative count)
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy state))
+        (.committed target)) := by
+  constructor
+  intro transition
+  obtain ⟨after, impossible⟩ := transition.administrative_target_active
+  cases impossible
+
+/-- A realizable administrative readiness produces an active target.  This
+is the producer-side companion to `administrative_not_committed`; it uses the
+readiness packet, while the latter is purely a closed-label shape theorem. -/
+theorem administrative_produces_target_active
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     (state : RepresentativeActivePayloadState)
     {count : Nat} {afterBody : List PeTTaSpec.PrologCore.Goal}
@@ -2953,12 +3024,11 @@ theorem administrative_not_committed
     (steps :
       AdministrativeStepsN count state.carrier.index.bodyReferences
         afterBody)
-    (target : RepresentativeCommittedPayloadState) :
-    ¬ Produces prog gt
-        (ActiveStepReady.administrative state positive steps)
-        (.committed target) := by
-  intro production
-  cases production
+    (after : ProductPhaseState)
+    (production :
+      Produces prog gt (.administrative state positive steps) after) :
+    ∃ target, after = .active target := by
+  simpa using production.target_shape
 
 end Produces
 
@@ -2975,8 +3045,9 @@ theorem produces
   | administrative state positive steps =>
       exact
         ⟨.active
-            (RepresentativeActivePayloadState.afterAdministrative
-              prog gt state steps),
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy
+              (RepresentativeActivePayloadState.afterAdministrative
+                prog gt state steps)),
           .administrative state positive steps⟩
   | @unify state left right result bodyRest referenceHead leftSupported
       rightSupported continuationLive resolved =>
@@ -2987,7 +3058,7 @@ theorem produces
           (prog := prog) (gt := gt) state referenceHead leftSupported
           rightSupported continuationLive resolved
       exact
-        ⟨.active after,
+        ⟨.active (RepresentativePersistentFreeActivePayloadState.ofLegacy after),
           .unify state referenceHead leftSupported rightSupported
             continuationLive resolved facts⟩
   | localCall state head callReady =>
@@ -2996,7 +3067,7 @@ theorem produces
           branchTail, clauseTail, altTail, copied, installed, after, facts⟩ :=
         callReady.pushDetailed (prog := prog) (gt := gt)
       exact
-        ⟨.active after,
+        ⟨.active (RepresentativePersistentFreeActivePayloadState.ofLegacy after),
           .localCall state head callReady facts⟩
   | bodyAnswer state referenceEmpty executableEmpty =>
       exact
@@ -3142,13 +3213,17 @@ theorem thenMaterializedLocalCallDetailed
                 .localCall rejected
                   (requestFor head.predicate head.referencePayload
                     middle.carrier.index.current)]
-              (.active before) (.active after),
-            run.states = [.active before, .active middle, .active after] ∧
+              (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before))
+              (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy after)),
+            run.states =
+              [.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before),
+                .active (RepresentativePersistentFreeActivePayloadState.ofLegacy middle),
+                .active (RepresentativePersistentFreeActivePayloadState.ofLegacy after)] ∧
               (CertifiedPrefix.split [.unify]
                 [.localCall rejected
                   (requestFor head.predicate head.referencePayload
                     middle.carrier.index.current)] run).1 =
-                .active middle := by
+                .active (RepresentativePersistentFreeActivePayloadState.ofLegacy middle) := by
   obtain
     ⟨rejected, skippedBranches, skippedClauses, finish, branch, clause,
       branchTail, clauseTail, altTail, copied, installedCall, after,
@@ -3159,7 +3234,8 @@ theorem thenMaterializedLocalCallDetailed
         (.localCall rejected
           (requestFor head.predicate head.referencePayload
             middle.carrier.index.current))
-        (.active middle) (.active after) :=
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy middle))
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy after)) :=
     .localCall callFacts
   let run :
       CertifiedPrefix prog gt
@@ -3167,9 +3243,12 @@ theorem thenMaterializedLocalCallDetailed
           .localCall rejected
             (requestFor head.predicate head.referencePayload
               middle.carrier.index.current)]
-        (.active before) (.active after) :=
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before))
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy after)) :=
     .cons (.unify unifyFacts)
-      (.cons callTransition (.nil (.active after)))
+      (.cons callTransition
+        (.nil (.active
+          (RepresentativePersistentFreeActivePayloadState.ofLegacy after))))
   exact
     ⟨rejected, skippedBranches, skippedClauses, finish, branch, clause,
       branchTail, clauseTail, altTail, copied, installedCall, after, callFacts,

@@ -35,6 +35,7 @@ open PrologCurrentSessionPayloadTransitionBridge
 open PrologHeterogeneousPrefixBridge
 open PrologMguBridge
 open PrologMguComposition
+open PrologPersistentFreeActivePayloadBridge
 open PrologNestedCallChainBridge
 open PrologNestedCallReadyBridge
 open PrologOrdinaryStepBridge
@@ -794,12 +795,17 @@ inductive ResolverCertifiedTransition
       {before : RepresentativeActivePayloadState}
       (facts : RetainedFailureSuccessor prog gt before) :
       ResolverCertifiedTransition prog gt (.retainedFailure facts.count)
-        (.ordinary (.active before)) (.postFailure facts.after)
+        (.ordinary
+          (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before)))
+        (.postFailure facts.after)
   | retainedActivation
       {before : PostFailurePayloadState}
       (facts : RetainedActivationSuccessor prog gt before) :
       ResolverCertifiedTransition prog gt .retainedActivation
-        (.postFailure before) (.ordinary (.active facts.after))
+        (.postFailure before)
+        (.ordinary
+          (.active
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy facts.after)))
 
 namespace ResolverCertifiedTransition
 
@@ -1287,11 +1293,19 @@ def failureThenActivation
     (activation : RetainedActivationSuccessor prog gt failure.after) :
     ResolverCertifiedPrefix prog gt
       [.retainedFailure failure.count, .retainedActivation]
-      (.ordinary (.active before))
-      (.ordinary (.active activation.after)) :=
+      (.ordinary
+        (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before)))
+      (.ordinary
+        (.active
+          (RepresentativePersistentFreeActivePayloadState.ofLegacy
+            activation.after))) :=
   .cons (.retainedFailure failure)
     (.cons (.retainedActivation activation)
-      (.nil (.ordinary (.active activation.after))))
+      (.nil
+        (.ordinary
+          (.active
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy
+              activation.after)))))
 
 /-- Exact kind schedule for an arbitrary old prefix, one rollback/retry pair,
 and an arbitrary old suffix.  The parenthesization exposes the failure
@@ -1314,11 +1328,15 @@ def sandwichSplitAtFailure
     {leftKinds rightKinds : List TransitionKind}
     {start finish : ProductPhaseState}
     {before : RepresentativeActivePayloadState}
-    (left : CertifiedPrefix prog gt leftKinds start (.active before))
+    (left : CertifiedPrefix prog gt leftKinds start
+      (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before)))
     (failure : RetainedFailureSuccessor prog gt before)
     (activation : RetainedActivationSuccessor prog gt failure.after)
     (right :
-      CertifiedPrefix prog gt rightKinds (.active activation.after) finish) :
+      CertifiedPrefix prog gt rightKinds
+        (.active
+          (RepresentativePersistentFreeActivePayloadState.ofLegacy
+            activation.after)) finish) :
     Σ middle : ResolverPhaseState,
       ResolverCertifiedPrefix prog gt
           (leftKinds.map ResolverTransitionKind.forward ++
@@ -1339,11 +1357,15 @@ def sandwichSplitAtFailure
     {leftKinds rightKinds : List TransitionKind}
     {start finish : ProductPhaseState}
     {before : RepresentativeActivePayloadState}
-    (left : CertifiedPrefix prog gt leftKinds start (.active before))
+    (left : CertifiedPrefix prog gt leftKinds start
+      (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before)))
     (failure : RetainedFailureSuccessor prog gt before)
     (activation : RetainedActivationSuccessor prog gt failure.after)
     (right :
-      CertifiedPrefix prog gt rightKinds (.active activation.after) finish) :
+      CertifiedPrefix prog gt rightKinds
+        (.active
+          (RepresentativePersistentFreeActivePayloadState.ofLegacy
+            activation.after)) finish) :
     (sandwichSplitAtFailure left failure activation right).1 =
       .postFailure failure.after := rfl
 
@@ -1355,11 +1377,15 @@ def sandwich
     {leftKinds rightKinds : List TransitionKind}
     {start finish : ProductPhaseState}
     {before : RepresentativeActivePayloadState}
-    (left : CertifiedPrefix prog gt leftKinds start (.active before))
+    (left : CertifiedPrefix prog gt leftKinds start
+      (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before)))
     (failure : RetainedFailureSuccessor prog gt before)
     (activation : RetainedActivationSuccessor prog gt failure.after)
     (right :
-      CertifiedPrefix prog gt rightKinds (.active activation.after) finish) :
+      CertifiedPrefix prog gt rightKinds
+        (.active
+          (RepresentativePersistentFreeActivePayloadState.ofLegacy
+            activation.after)) finish) :
     ResolverCertifiedPrefix prog gt
       (sandwichKinds leftKinds rightKinds failure.count)
       (.ordinary start) (.ordinary finish) :=
@@ -1372,11 +1398,15 @@ theorem postFailure_mem_sandwich_states
     {leftKinds rightKinds : List TransitionKind}
     {start finish : ProductPhaseState}
     {before : RepresentativeActivePayloadState}
-    (left : CertifiedPrefix prog gt leftKinds start (.active before))
+    (left : CertifiedPrefix prog gt leftKinds start
+      (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before)))
     (failure : RetainedFailureSuccessor prog gt before)
     (activation : RetainedActivationSuccessor prog gt failure.after)
     (right :
-      CertifiedPrefix prog gt rightKinds (.active activation.after) finish) :
+      CertifiedPrefix prog gt rightKinds
+        (.active
+          (RepresentativePersistentFreeActivePayloadState.ofLegacy
+            activation.after)) finish) :
     .postFailure failure.after ∈
       (sandwich left failure activation right).states := by
   let pieces := sandwichSplitAtFailure left failure activation right
@@ -1425,8 +1455,14 @@ theorem sandwich_fineCost
     (failure : RetainedFailureSuccessor prog gt before)
     (activation : RetainedActivationSuccessor prog gt failure.after) :
     (failureThenActivation failure activation).states =
-      [.ordinary (.active before), .postFailure failure.after,
-        .ordinary (.active activation.after)] := rfl
+      [.ordinary
+          (.active
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy before)),
+        .postFailure failure.after,
+        .ordinary
+          (.active
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy
+              activation.after))] := rfl
 
 /-- Reactivation prepends its selected-head residual to the representative
 stored by the exact retained snapshot. -/

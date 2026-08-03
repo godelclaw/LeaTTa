@@ -316,6 +316,25 @@ def fineState (state : PersistentFreeActivePayloadState) :
     DemandDrivenCallStep.FineConf :=
   .ready state.index.openConf
 
+/-- Exact ordered runtime identity spine of the retained payload.  The
+persistent-free carrier erases only historical creation packets; it retains
+every resource, cursor, delimiter, and control-segment identity needed by the
+global transition zipper. -/
+def cellIdentities (state : PersistentFreeActivePayloadState) :
+    List PrologNestedCallChainBridge.PayloadCellIdentity :=
+  PrologNestedCallChainBridge.SourceControlResourcePayloadContextAgrees.cellIdentities
+    state.payloadContext
+
+/-- Number of retained payload cells in the persistent-free carrier. -/
+def cellCount (state : PersistentFreeActivePayloadState) : Nat :=
+  PrologCurrentSessionPayloadTransitionBridge.ActiveProductPayloadContext.cellCount
+    state.payloadContext
+
+theorem cellIdentities_length (state : PersistentFreeActivePayloadState) :
+    state.cellIdentities.length = state.cellCount :=
+  PrologNestedCallChainBridge.SourceControlResourcePayloadContextAgrees.cellIdentities_length_eq_cellCount
+    state.payloadContext
+
 /-- Erase a legacy carrier while preserving both literal machine endpoints. -/
 def ofLegacy (state : PrologNestedCallChainBridge.ActivePayloadState) :
     PersistentFreeActivePayloadState :=
@@ -366,6 +385,14 @@ def ofLegacy (state : PrologNestedCallChainBridge.ActivePayloadState) :
   simp [ofLegacy, fineState,
     PrologNestedCallChainBridge.ActivePayloadState.fineState]
 
+@[simp] theorem ofLegacy_cellIdentities
+    (state : PrologNestedCallChainBridge.ActivePayloadState) :
+    (ofLegacy state).cellIdentities = state.cellIdentities := rfl
+
+@[simp] theorem ofLegacy_cellCount
+    (state : PrologNestedCallChainBridge.ActivePayloadState) :
+    (ofLegacy state).cellCount = state.cellCount := rfl
+
 end PersistentFreeActivePayloadState
 
 /-- Persistent-free active state with its exact cumulative residual
@@ -389,6 +416,44 @@ def ofLegacy
     representative := state.representative
     cumulative := by
       simpa [PersistentFreeActivePayloadState.ofLegacy] using state.cumulative }
+
+@[simp] theorem ofLegacy_sourceState
+    (state : PrologNestedCallReadyBridge.RepresentativeActivePayloadState) :
+    (ofLegacy state).carrier.sourceState = state.carrier.sourceState := by
+  simp [ofLegacy]
+
+@[simp] theorem ofLegacy_fineState
+    (state : PrologNestedCallReadyBridge.RepresentativeActivePayloadState) :
+    (ofLegacy state).carrier.fineState = state.carrier.fineState := by
+  simp [ofLegacy]
+
+@[simp] theorem ofLegacy_session
+    (state : PrologNestedCallReadyBridge.RepresentativeActivePayloadState) :
+    (ofLegacy state).carrier.index.session = state.carrier.index.session := rfl
+
+@[simp] theorem ofLegacy_openConf
+    (state : PrologNestedCallReadyBridge.RepresentativeActivePayloadState) :
+    (ofLegacy state).carrier.index.openConf = state.carrier.index.openConf := rfl
+
+@[simp] theorem ofLegacy_alpha
+    (state : PrologNestedCallReadyBridge.RepresentativeActivePayloadState) :
+    (ofLegacy state).carrier.index.alpha = state.carrier.index.alpha := rfl
+
+@[simp] theorem ofLegacy_baseAlts
+    (state : PrologNestedCallReadyBridge.RepresentativeActivePayloadState) :
+    (ofLegacy state).carrier.index.baseAlts = state.carrier.index.baseAlts := rfl
+
+@[simp] theorem ofLegacy_cellIdentities
+    (state : PrologNestedCallReadyBridge.RepresentativeActivePayloadState) :
+    (ofLegacy state).carrier.cellIdentities = state.carrier.cellIdentities := rfl
+
+@[simp] theorem ofLegacy_cellCount
+    (state : PrologNestedCallReadyBridge.RepresentativeActivePayloadState) :
+    (ofLegacy state).carrier.cellCount = state.carrier.cellCount := rfl
+
+@[simp] theorem ofLegacy_representative
+    (state : PrologNestedCallReadyBridge.RepresentativeActivePayloadState) :
+    (ofLegacy state).representative = state.representative := rfl
 
 end RepresentativePersistentFreeActivePayloadState
 

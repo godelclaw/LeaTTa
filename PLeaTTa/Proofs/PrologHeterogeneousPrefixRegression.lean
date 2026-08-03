@@ -13,6 +13,15 @@ import PLeaTTa.Proofs.PrologUnboundNestedCallRegression
 
 namespace PLeaTTa.PrologHeterogeneousPrefixRegression
 
+/-- Explicit ingress for legacy producer fixtures; erasure is never inserted
+implicitly at a transition boundary. -/
+private abbrev legacyActive
+    (state : PrologNestedCallReadyBridge.RepresentativeActivePayloadState) :
+    PrologHeterogeneousPrefixBridge.ProductPhaseState :=
+  .active
+    (PrologPersistentFreeActivePayloadBridge.RepresentativePersistentFreeActivePayloadState.ofLegacy
+      state)
+
 open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.Canonical
 open PeTTaSpec.PrologCore.GoalSemantics
@@ -172,25 +181,25 @@ theorem truth_then_unbound_q_call_exact_literal_middle
   let beforeState := beforeTruth (beforeTruth middleState)
   have administrative :
       CertifiedTransition prog gt (.administrative 2)
-        (.active beforeState) (.active middleState) := by
+        (legacyActive beforeState) (legacyActive middleState) := by
     have raw :=
       CertifiedTransition.administrative (prog := prog) (gt := gt)
         beforeState (beforeTruthTwiceSteps middleState)
     simpa [beforeState, afterAdministrative_beforeTruth_twice] using raw
   have nested :
       CertifiedTransition prog gt (.localCall 0 request)
-        (.active middleState) (.active afterState) := by
+        (legacyActive middleState) (legacyActive afterState) := by
     simpa [request, qPredicate, qPayload, middleCurrent] using
       (CertifiedTransition.localCall (prog := prog) (gt := gt) facts)
   have administrativePositive : 0 < 2 := by omega
-  let administrativeReady : ActiveStepReady (.active beforeState) :=
+  let administrativeReady : ActiveStepReady (legacyActive beforeState) :=
     .administrative beforeState administrativePositive
       (beforeTruthTwiceSteps middleState)
-  let nestedReady : ActiveStepReady (.active middleState) :=
+  let nestedReady : ActiveStepReady (legacyActive middleState) :=
     .localCall middleState head ready
   have administrativeProduction :
       administrativeReady.Produces prog gt
-        (.active middleState) :=
+        (legacyActive middleState) :=
     by
       have raw :=
         ActiveStepReady.Produces.administrative
@@ -199,16 +208,17 @@ theorem truth_then_unbound_q_call_exact_literal_middle
       simpa [administrativeReady, beforeState,
         afterAdministrative_beforeTruth_twice] using raw
   have nestedProduction :
-      nestedReady.Produces prog gt (.active afterState) := by
+      nestedReady.Produces prog gt (legacyActive afterState) := by
     simpa [nestedReady] using
       (ActiveStepReady.Produces.localCall
         (prog := prog) (gt := gt) middleState head ready facts)
   let run :
       CertifiedPrefix prog gt [.administrative 2, .localCall 0 request]
-        (.active beforeState) (.active afterState) :=
-    .cons administrative (.cons nested (.nil (.active afterState)))
+        (legacyActive beforeState) (legacyActive afterState) :=
+    .cons administrative (.cons nested (.nil (legacyActive afterState)))
   refine
-    ⟨.active beforeState, .active middleState, .active afterState, run, ?_, ?_,
+    ⟨legacyActive beforeState, legacyActive middleState,
+      legacyActive afterState, run, ?_, ?_,
       administrativeReady, nestedReady, administrativeProduction,
       nestedProduction,
       ?_, ?_, ?_⟩
@@ -404,21 +414,22 @@ theorem truth_then_query_unify_seven_exact_nonempty_residual
       let beforeState := beforeTruth (beforeTruth preUnifyState)
       have administrative :
           CertifiedTransition prog gt (.administrative 2)
-            (.active beforeState) (.active preUnifyState) := by
+            (legacyActive beforeState) (legacyActive preUnifyState) := by
         have raw :=
           CertifiedTransition.administrative (prog := prog) (gt := gt)
             beforeState (beforeTruthTwiceSteps preUnifyState)
         simpa [beforeState, afterAdministrative_beforeTruth_twice] using raw
       have unified :
           CertifiedTransition prog gt .unify
-            (.active preUnifyState) (.active afterState) :=
+            (legacyActive preUnifyState) (legacyActive afterState) :=
         .unify facts
       let run :
           CertifiedPrefix prog gt [.administrative 2, .unify]
-            (.active beforeState) (.active afterState) :=
-        .cons administrative (.cons unified (.nil (.active afterState)))
+            (legacyActive beforeState) (legacyActive afterState) :=
+        .cons administrative (.cons unified (.nil (legacyActive afterState)))
       refine
-        ⟨.active beforeState, .active preUnifyState, .active afterState,
+        ⟨legacyActive beforeState, legacyActive preUnifyState,
+          legacyActive afterState,
           sourceExtension, executableExtension, generated, run,
           ?_, ?_, ?_, sourceNonempty, executableNonempty,
           generatedNonempty, ?_, ?_, ?_⟩
@@ -928,11 +939,12 @@ theorem truth_then_query_unify_seven_then_q_call_exact_literal_states
     ∃ before preUnify middle after : RepresentativeActivePayloadState,
       ∃ run : CertifiedPrefix prog gt
           [.administrative 2, .unify, .localCall 0 request]
-          (.active before) (.active after),
+          (legacyActive before) (legacyActive after),
         run.states =
-            [.active before, .active preUnify, .active middle, .active after] ∧
+            [legacyActive before, legacyActive preUnify,
+              legacyActive middle, legacyActive after] ∧
           (CertifiedPrefix.split [.administrative 2, .unify]
-              [.localCall 0 request] run).1 = .active middle ∧
+              [.localCall 0 request] run).1 = legacyActive middle ∧
           StepsN 5 before.carrier.sourceState [.opened request]
             after.carrier.sourceState ∧
           DemandDrivenCallStep.StepsN prog gt 4 before.carrier.fineState
@@ -997,11 +1009,12 @@ theorem truth_then_query_unify_seven_then_q_call_exact_literal_states
   have segmentPackageExact :
       ∃ segmentExact :
           CertifiedPrefix prog gt [.unify, .localCall 0 request]
-            (.active preUnifyState) (.active afterState),
+            (legacyActive preUnifyState) (legacyActive afterState),
         segmentExact.states =
-            [.active preUnifyState, .active middleState, .active afterState] ∧
+            [legacyActive preUnifyState, legacyActive middleState,
+              legacyActive afterState] ∧
           (CertifiedPrefix.split [.unify] [.localCall 0 request]
-            segmentExact).1 = .active middleState := by
+            segmentExact).1 = legacyActive middleState := by
     exact segmentPackage
   obtain
     ⟨segmentExact, segmentStatesExact, segmentMiddleExact⟩ :=
@@ -1009,7 +1022,7 @@ theorem truth_then_query_unify_seven_then_q_call_exact_literal_states
   let beforeState := beforeTruth (beforeTruth preUnifyState)
   have administrative :
       CertifiedTransition prog gt (.administrative 2)
-        (.active beforeState) (.active preUnifyState) := by
+        (legacyActive beforeState) (legacyActive preUnifyState) := by
     have raw :=
       CertifiedTransition.administrative (prog := prog) (gt := gt)
         beforeState (beforeTruthTwiceSteps preUnifyState)
@@ -1017,14 +1030,14 @@ theorem truth_then_query_unify_seven_then_q_call_exact_literal_states
   let run :
       CertifiedPrefix prog gt
         [.administrative 2, .unify, .localCall 0 request]
-        (.active beforeState) (.active afterState) :=
+        (legacyActive beforeState) (legacyActive afterState) :=
     .cons administrative segmentExact
   refine
     ⟨beforeState, preUnifyState, middleState, afterState, run, ?_, ?_, ?_,
       ?_, preCurrent, middleCurrent, afterCurrent, currentChanged, ?_, ?_, ?_,
       ?_⟩
   · simpa [run, CertifiedPrefix.states] using
-      congrArg (List.cons (.active beforeState)) segmentStatesExact
+      congrArg (List.cons (legacyActive beforeState)) segmentStatesExact
   · simpa [run, CertifiedPrefix.split] using segmentMiddleExact
   · simpa [run, request, TransitionSchedule.sourceCost,
       TransitionSchedule.sourceEvents, TransitionKind.sourceCost,
@@ -1079,13 +1092,13 @@ theorem truth_then_query_unify_seven_recursive_prefix_invariants
   have payload := run.payloadEvolution
   have endpointPush :
       ∃ cell,
-        (ProductPhaseState.active afterState).cellIdentities =
-          cell :: (ProductPhaseState.active beforeState).cellIdentities := by
+        (legacyActive afterState).cellIdentities =
+          cell :: (legacyActive beforeState).cellIdentities := by
     simpa [TransitionSchedule.PayloadEvolution,
       TransitionKind.PayloadEvolution] using payload
   exact
-    ⟨.active beforeState, .active preUnifyState, .active middleState,
-      .active afterState, run, states,
+    ⟨legacyActive beforeState, legacyActive preUnifyState,
+      legacyActive middleState, legacyActive afterState, run, states,
       by simpa [ProductPhaseState.cellIdentities] using unifyCells,
       run.sessionHighWaters, run.executableCounter_mono, run.alphaExtension,
       run.representativeExtension, payload, endpointPush⟩
@@ -1186,29 +1199,30 @@ theorem truth_then_ground_reflexive_unify_then_q_call_exact_literal_states
   let beforeState := beforeTruth (beforeTruth preUnifyState)
   have administrative :
       CertifiedTransition prog gt (.administrative 2)
-        (.active beforeState) (.active preUnifyState) := by
+        (legacyActive beforeState) (legacyActive preUnifyState) := by
     have raw :=
       CertifiedTransition.administrative (prog := prog) (gt := gt)
         beforeState (beforeTruthTwiceSteps preUnifyState)
     simpa [beforeState, afterAdministrative_beforeTruth_twice] using raw
   have unified :
       CertifiedTransition prog gt .unify
-        (.active preUnifyState) (.active middleState) :=
+        (legacyActive preUnifyState) (legacyActive middleState) :=
     .unify unifyFacts
   have nested :
       CertifiedTransition prog gt (.localCall 0 request)
-        (.active middleState) (.active afterState) := by
+        (legacyActive middleState) (legacyActive afterState) := by
     simpa [request, qPredicate, qPayload, middleCurrent] using
       (CertifiedTransition.localCall (prog := prog) (gt := gt) callFacts)
   let run :
       CertifiedPrefix prog gt
         [.administrative 2, .unify, .localCall 0 request]
-        (.active beforeState) (.active afterState) :=
+        (legacyActive beforeState) (legacyActive afterState) :=
     .cons administrative
-      (.cons unified (.cons nested (.nil (.active afterState))))
+      (.cons unified (.cons nested (.nil (legacyActive afterState))))
   refine
-    ⟨.active beforeState, .active preUnifyState, .active middleState,
-      .active afterState, run, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ⟨legacyActive beforeState, legacyActive preUnifyState,
+      legacyActive middleState, legacyActive afterState, run,
+      ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · rfl
   · rfl
   · simpa [run, request, TransitionSchedule.sourceCost,

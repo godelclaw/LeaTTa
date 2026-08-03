@@ -41,6 +41,7 @@ open PrologOrdinaryStepBridge
 open PrologPrefilterScanBridge
 open PrologProductResourceContextBridge
 open PrologProductResourceTransitionBridge
+open PrologPersistentFreeActivePayloadBridge
 open PrologRepresentativeProductActivationBridge
 open PrologRetainedCursorOwnershipBridge
 open PrologRetainedPayloadActivationBridge
@@ -100,7 +101,10 @@ inductive ResolverStepReady : ResolverPhaseState → Type where
         state.carrier.index.freshFrontier =
           AlphaFreshFrontier state.carrier.index.alpha)
       (nonempty : state.carrier.index.active.alts ≠ []) :
-      ResolverStepReady (.ordinary (.active state))
+      ResolverStepReady
+        (.ordinary
+          (.active
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy state)))
   | retainedActivation
       (state : PostFailurePayloadState)
       {resolvedResult : Substitution}
@@ -173,7 +177,10 @@ inductive Produces (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable) :
       (resultExact : facts.independentResult = resolvedResult) :
       Produces prog gt
         (.retainedActivation state currentShared below live resolved)
-        (.ordinary (.active facts.after))
+        (.ordinary
+          (.active
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy
+              facts.after)))
 
 end ResolverStepReady
 
@@ -254,6 +261,60 @@ end ResolverCertifiedCoupledStep
 
 namespace ResolverStepReady.Produces
 
+/-- The outer target phase is fixed by the readiness constructor.  This
+shape lemma avoids asking dependent elimination to recover injectivity from
+the intentionally one-way legacy-to-persistent-free carrier embedding. -/
+theorem target_shape
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : ResolverPhaseState}
+    {ready : ResolverStepReady before}
+    (production : ready.Produces prog gt after) :
+    match ready with
+    | .forward _ => ∃ state, after = .ordinary state
+    | .retainedFailure _ _ _ _ _ _ _ _ _ _ =>
+        ∃ state, after = .postFailure state
+    | .retainedActivation _ _ _ _ _ =>
+        ∃ state, after = .ordinary state := by
+  cases production with
+  | forward ready production => exact ⟨_, rfl⟩
+  | retainedFailure state referenceHead leftSupported rightSupported
+      currentSafe leftAliasSafe rightAliasSafe clash exactFresh nonempty
+      facts =>
+      exact ⟨_, rfl⟩
+  | retainedActivation state currentShared below live resolved facts
+      resultExact =>
+      exact ⟨_, rfl⟩
+
+/-- A retained-failure production exposes the independently certified
+successor package carried by the transition.  The legacy source is returned
+as data rather than recovered by pretending the one-way carrier embedding is
+injective. -/
+theorem retainedFailure_certificate
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : ResolverPhaseState}
+    {ready : ResolverStepReady before}
+    (production : ready.Produces prog gt after) :
+    match ready with
+    | .retainedFailure _ _ _ _ _ _ _ _ _ _ =>
+        ∃ source : RepresentativeActivePayloadState,
+          ∃ facts : RetainedFailureSuccessor prog gt source,
+            before =
+                .ordinary
+                  (.active
+                    (RepresentativePersistentFreeActivePayloadState.ofLegacy
+                      source)) ∧
+              after = .postFailure facts.after
+    | _ => True := by
+  cases production with
+  | forward ready production => trivial
+  | retainedFailure state referenceHead leftSupported rightSupported
+      currentSafe leftAliasSafe rightAliasSafe clash exactFresh nonempty
+      facts =>
+      exact ⟨state, facts, rfl, rfl⟩
+  | retainedActivation state currentShared below live resolved facts
+      resultExact =>
+      trivial
+
 /-- Forgetting a readiness packet preserves the one exact resolver
 transition that it generated. -/
 theorem certifiedCoupledStep
@@ -329,7 +390,7 @@ theorem retainedFailure_not_ordinary
           currentSafe leftAliasSafe rightAliasSafe clash exactFresh nonempty)
         (.ordinary target) := by
   intro production
-  cases production
+  simpa using production.target_shape
 
 /-- Every post-failure endpoint licensed by a failure packet is the literal
 `after` projection of a complete independently certified failure package.
@@ -365,13 +426,12 @@ theorem retainedFailure_target_exact
         (.retainedFailure state referenceHead leftSupported rightSupported
           currentSafe leftAliasSafe rightAliasSafe clash exactFresh nonempty)
         (.postFailure target)) :
-    ∃ facts : RetainedFailureSuccessor prog gt state,
-      target = facts.after := by
-  cases production with
-  | retainedFailure state referenceHead leftSupported rightSupported
-      currentSafe leftAliasSafe rightAliasSafe clash exactFresh nonempty
-      facts =>
-      exact ⟨facts, rfl⟩
+    ∃ source : RepresentativeActivePayloadState,
+      ∃ facts : RetainedFailureSuccessor prog gt source,
+        RepresentativePersistentFreeActivePayloadState.ofLegacy state =
+            RepresentativePersistentFreeActivePayloadState.ofLegacy source ∧
+          target = facts.after := by
+  simpa using production.retainedFailure_certificate
 
 /-- Reactivation readiness cannot be laundered into another post-failure
 endpoint. -/
@@ -414,7 +474,10 @@ theorem retainedActivation_result_exact
         (.retainedActivation state currentShared below live resolved)
         (.ordinary target)) :
     ∃ facts : RetainedActivationSuccessor prog gt state,
-      target = .active facts.after ∧
+      target =
+          .active
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy
+              facts.after) ∧
         facts.independentResult = resolvedResult := by
   cases production with
   | retainedActivation state currentShared below live resolved facts
@@ -454,7 +517,10 @@ theorem produces
         PrologFailureRebasePrefixBridge.PostFailurePayloadState.retainedActivationSuccessor
           (prog := prog) (gt := gt) state currentShared below live resolved
       exact
-        ⟨.ordinary (.active facts.after),
+        ⟨.ordinary
+            (.active
+              (RepresentativePersistentFreeActivePayloadState.ofLegacy
+                facts.after)),
           .retainedActivation state currentShared below live resolved facts
             resultExact⟩
 

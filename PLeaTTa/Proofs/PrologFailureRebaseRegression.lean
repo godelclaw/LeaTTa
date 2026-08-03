@@ -11,6 +11,15 @@ import PLeaTTa.Proofs.PrologResolverReadinessBridge
 
 namespace PLeaTTa.PrologFailureRebaseRegression
 
+/-- Explicit ingress for legacy producer fixtures; erasure is visible at the
+phase boundary and has no inverse. -/
+private abbrev legacyActive
+    (state : PrologNestedCallReadyBridge.RepresentativeActivePayloadState) :
+    PrologHeterogeneousPrefixBridge.ProductPhaseState :=
+  .active
+    (PrologPersistentFreeActivePayloadBridge.RepresentativePersistentFreeActivePayloadState.ofLegacy
+      state)
+
 open Metta (Atom Subst)
 open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.Canonical
@@ -848,12 +857,13 @@ structure ConcreteNonemptyFailureReadyCycle
   before : RepresentativeActivePayloadState
   failure : RetainedFailureSuccessor prog gt before
   activation : RetainedActivationSuccessor prog gt failure.after
-  failureReady : ResolverStepReady (.ordinary (.active before))
+  failureReady : ResolverStepReady (.ordinary (legacyActive before))
   activationReady : ResolverStepReady (.postFailure failure.after)
   failureProduces :
     failureReady.Produces prog gt (.postFailure failure.after)
   activationProduces :
-    activationReady.Produces prog gt (.ordinary (.active activation.after))
+    activationReady.Produces prog gt
+      (.ordinary (legacyActive activation.after))
   activationResultExact : activation.independentResult = retainedResult
   sourceRun :
     StepsN 4
@@ -873,8 +883,8 @@ structure ConcreteNonemptyFailureReadyCycle
     activation.after.representative = activation.flattened
   retryStates :
     (ResolverCertifiedPrefix.failureThenActivation failure activation).states =
-      [.ordinary (.active before), .postFailure failure.after,
-        .ordinary (.active activation.after)]
+      [.ordinary (legacyActive before), .postFailure failure.after,
+        .ordinary (legacyActive activation.after)]
   notExtension :
     ¬ ∃ extension : TreeSubstitution,
         failure.after.representative = extension ++ before.representative
@@ -923,7 +933,7 @@ theorem concrete_nonempty_failure_ready_cycle
   have activeNonempty : before.carrier.index.active.alts ≠ [] := by
     rw [facts.activeAltsExact]
     simp
-  let failureReady : ResolverStepReady (.ordinary (.active before)) :=
+  let failureReady : ResolverStepReady (.ordinary (legacyActive before)) :=
     .retainedFailure before referenceHead leftSupported rightSupported
       currentSafe leftAliasSafe rightAliasSafe
       (ground_two_three_do_not_unify before.carrier.index.current)
@@ -989,7 +999,7 @@ theorem concrete_nonempty_failure_ready_cycle
       (prog := prog) (gt := gt) failure.after currentShared below live resolved
   have activationProduces :
       activationReady.Produces prog gt
-        (.ordinary (.active activation.after)) := by
+        (.ordinary (legacyActive activation.after)) := by
     exact
       .retainedActivation failure.after currentShared below live resolved
         activation activationResultExact
@@ -1076,8 +1086,8 @@ theorem concrete_nonempty_failure_rebases_and_retries
             failure.after.index.branch.body = [] ∧
             activation.after.representative = activation.flattened ∧
             (ResolverCertifiedPrefix.failureThenActivation failure activation).states =
-              [.ordinary (.active before), .postFailure failure.after,
-                .ordinary (.active activation.after)] ∧
+              [.ordinary (legacyActive before), .postFailure failure.after,
+                .ordinary (legacyActive activation.after)] ∧
             ¬ ∃ extension : TreeSubstitution,
                 failure.after.representative =
                   extension ++ before.representative := by
@@ -1111,10 +1121,10 @@ theorem concrete_nonempty_failure_inhabits_resolver_sandwich
             ∃ finish : RepresentativeScheduledPayloadState,
               ∃ left :
                   CertifiedPrefix prog gt [.administrative 2]
-                    (.active leftStart) (.active before),
+                    (legacyActive leftStart) (legacyActive before),
                 ∃ right :
                     CertifiedPrefix prog gt [.bodyAnswer]
-                      (.active activation.after) (.scheduled finish),
+                      (legacyActive activation.after) (.scheduled finish),
                   let run :=
                     ResolverCertifiedPrefix.sandwich
                       left failure activation right
@@ -1142,10 +1152,10 @@ theorem concrete_nonempty_failure_inhabits_resolver_sandwich
                     DemandDrivenCallStep.StepsN prog gt 2
                       leftStart.carrier.fineState finish.carrier.fineState ∧
                     run.states =
-                      [.ordinary (.active leftStart),
-                        .ordinary (.active before),
+                      [.ordinary (legacyActive leftStart),
+                        .ordinary (legacyActive before),
                         .postFailure failure.after,
-                        .ordinary (.active activation.after),
+                        .ordinary (legacyActive activation.after),
                         .ordinary (.scheduled finish)] ∧
                     .postFailure failure.after ∈ run.states ∧
                     (ResolverCertifiedPrefix.sandwichSplitAtFailure
@@ -1190,7 +1200,7 @@ theorem concrete_nonempty_failure_inhabits_resolver_sandwich
       (RepresentativeActivePayloadState.beforeTruth before)
   have administrative :
       CertifiedTransition prog gt (.administrative 2)
-        (.active leftStart) (.active before) := by
+        (legacyActive leftStart) (legacyActive before) := by
     have raw :=
       CertifiedTransition.administrative (prog := prog) (gt := gt)
         leftStart
@@ -1200,18 +1210,18 @@ theorem concrete_nonempty_failure_inhabits_resolver_sandwich
       using raw
   let left :
       CertifiedPrefix prog gt [.administrative 2]
-        (.active leftStart) (.active before) :=
-    .cons administrative (.nil (.active before))
+        (legacyActive leftStart) (legacyActive before) :=
+    .cons administrative (.nil (legacyActive before))
   let finish :=
     RepresentativeActivePayloadState.afterBodyAnswer
       prog gt activation.after referenceEmpty executableEmpty
   have answered :
       CertifiedTransition prog gt .bodyAnswer
-        (.active activation.after) (.scheduled finish) := by
+        (legacyActive activation.after) (.scheduled finish) := by
     exact .bodyAnswer activation.after referenceEmpty executableEmpty
   let right :
       CertifiedPrefix prog gt [.bodyAnswer]
-        (.active activation.after) (.scheduled finish) :=
+        (legacyActive activation.after) (.scheduled finish) :=
     .cons answered (.nil (.scheduled finish))
   let run :=
     ResolverCertifiedPrefix.sandwich left failure activation right
@@ -1236,9 +1246,9 @@ theorem concrete_nonempty_failure_inhabits_resolver_sandwich
       ResolverPhaseState.fineState, ProductPhaseState.fineState] using exact
   have statesExact :
       run.states =
-        [.ordinary (.active leftStart), .ordinary (.active before),
+        [.ordinary (legacyActive leftStart), .ordinary (legacyActive before),
           .postFailure failure.after,
-          .ordinary (.active activation.after),
+          .ordinary (legacyActive activation.after),
           .ordinary (.scheduled finish)] := by
     rfl
   refine ⟨before, failure, activation, leftStart, finish, left, right, ?_⟩

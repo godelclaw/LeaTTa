@@ -35,6 +35,7 @@ open PrologOrdinaryStepBridge
 open PrologPrefilterCallBridge
 open PrologPrefilterScanBridge
 open PrologProductResourceContextBridge
+open PrologPersistentFreeActivePayloadBridge
 open PrologRepresentativeCallFrontierBridge
 open PrologRepresentativeProductActivationBridge
 open PrologRecursiveCallPayloadBridge
@@ -2193,7 +2194,8 @@ theorem activeStepReady
     (ready : RecursiveReadyAt state depth executableResult) :
     Nonempty
       (PLeaTTa.PrologHeterogeneousPrefixBridge.ActiveStepReady
-        (.active state)) := by
+        (.active
+          (RepresentativePersistentFreeActivePayloadState.ofLegacy state))) := by
   obtain ⟨head, materialized, _predicate, _payload, _referenceRest,
       _arguments, _result, _executableRest, _tail⟩ := ready.materializedReady
   exact
@@ -2570,7 +2572,10 @@ theorem RecursiveReadyAt.pushCertified
     (ready : RecursiveReadyAt before depth executableResult) :
     ∃ after : RepresentativeActivePayloadState, ∃ nextResult : Atom,
       ∃ _step : CertifiedTransition prog gt (recursiveKindAt depth)
-          (.active before) (.active after),
+          (.active
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy before))
+          (.active
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy after)),
         RecursiveReadyAt after (depth + 1) nextResult ∧
           ∃ cell : PayloadCellIdentity,
             after.carrier.cellIdentities =
@@ -2583,7 +2588,10 @@ theorem RecursiveReadyAt.pushCertified
     ready.pushDetailed (prog := prog) (gt := gt)
   have step :
       CertifiedTransition prog gt (recursiveKindAt depth)
-        (.active before) (.active after) := by
+        (.active
+          (RepresentativePersistentFreeActivePayloadState.ofLegacy before))
+        (.active
+          (RepresentativePersistentFreeActivePayloadState.ofLegacy after)) := by
     simpa [recursiveKindAt, recursiveRequestAt, countZero, predicateExact,
       payloadExact, ready.current] using
       (CertifiedTransition.localCall facts)
@@ -2598,8 +2606,10 @@ depth plus the executable result atom selected by the certified compiler
 lane. -/
 def RecursiveInvariant : ProductPhaseState → Prop
   | .active state =>
-      ∃ depth : Nat, ∃ executableResult : Atom,
-        RecursiveReadyAt state depth executableResult
+      ∃ legacy : RepresentativeActivePayloadState,
+        state = RepresentativePersistentFreeActivePayloadState.ofLegacy legacy ∧
+          ∃ depth : Nat, ∃ executableResult : Atom,
+            RecursiveReadyAt legacy depth executableResult
   | .scheduled _ | .committed _ => False
 
 /-- Coupled progress and invariant preservation for the self-recursive local
@@ -2614,9 +2624,12 @@ theorem recursiveProgress
   | committed state => simp [RecursiveInvariant] at invariant
   | active before =>
       change
-        ∃ depth : Nat, ∃ executableResult : Atom,
-          RecursiveReadyAt before depth executableResult at invariant
-      obtain ⟨depth, executableResult, ready⟩ := invariant
+        ∃ legacy : RepresentativeActivePayloadState,
+          before =
+              RepresentativePersistentFreeActivePayloadState.ofLegacy legacy ∧
+            ∃ depth : Nat, ∃ executableResult : Atom,
+              RecursiveReadyAt legacy depth executableResult at invariant
+      obtain ⟨legacy, rfl, depth, executableResult, ready⟩ := invariant
       obtain
         ⟨head, materializedReady, count, skippedBranches, skippedClauses,
           finish, branch, clause, branchTail, clauseTail, altTail,
@@ -2624,9 +2637,12 @@ theorem recursiveProgress
           _branchExact, _clauseExact, _predicateExact, _payloadExact⟩ :=
         ready.pushDetailed (prog := prog) (gt := gt)
       refine
-        ⟨.localCall before head materializedReady, .active after, ?_, ?_⟩
-      · exact .localCall before head materializedReady facts
-      · exact ⟨depth + 1, selectedCopy.result, nextReady⟩
+        ⟨.localCall legacy head materializedReady,
+          .active
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy after),
+          ?_, ?_⟩
+      · exact .localCall legacy head materializedReady facts
+      · exact ⟨after, rfl, depth + 1, selectedCopy.result, nextReady⟩
 
 /-- From the literal root task, every requested finite number of recursive
 local-call activations has one exact Type-valued prefix.  The endpoint remains
@@ -2646,12 +2662,17 @@ theorem arbitrary_recursive_prefix
         ∀ count : Nat,
           ∃ kinds : List TransitionKind, ∃ after : ProductPhaseState,
             kinds.length = count ∧
-              ∃ _run : CertifiedPrefix prog gt kinds (.active root) after,
+              ∃ _run : CertifiedPrefix prog gt kinds
+                  (.active
+                    (RepresentativePersistentFreeActivePayloadState.ofLegacy
+                      root)) after,
                 RecursiveInvariant after ∧ Nonempty (ActiveStepReady after) := by
   obtain ⟨root, result, ready, sourceSteps, fineSteps⟩ :=
     rootReady (prog := prog) (gt := gt)
-  have invariant : RecursiveInvariant (.active root) :=
-    ⟨0, result, ready⟩
+  have invariant : RecursiveInvariant
+      (.active
+        (RepresentativePersistentFreeActivePayloadState.ofLegacy root)) :=
+    ⟨root, rfl, 0, result, ready⟩
   refine ⟨root, result, ready, sourceSteps, fineSteps, ?_⟩
   exact
     ActiveStepReady.exists_prefix_of_ready
@@ -2674,7 +2695,10 @@ theorem depth_four_recursive_prefix_exact
       ∃ run : CertifiedPrefix prog gt
           [recursiveKindAt 0, recursiveKindAt 1,
             recursiveKindAt 2, recursiveKindAt 3]
-          (.active state0) (.active state4),
+          (.active
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy state0))
+          (.active
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy state4)),
       ∃ cell1 cell2 cell3 cell4 : PayloadCellIdentity,
         RecursiveReadyAt state0 0 result0 ∧
         RecursiveReadyAt state1 1 result1 ∧
@@ -2682,8 +2706,16 @@ theorem depth_four_recursive_prefix_exact
         RecursiveReadyAt state3 3 result3 ∧
         RecursiveReadyAt state4 4 result4 ∧
         run.states =
-          [.active state0, .active state1, .active state2,
-            .active state3, .active state4] ∧
+          [.active
+              (RepresentativePersistentFreeActivePayloadState.ofLegacy state0),
+            .active
+              (RepresentativePersistentFreeActivePayloadState.ofLegacy state1),
+            .active
+              (RepresentativePersistentFreeActivePayloadState.ofLegacy state2),
+            .active
+              (RepresentativePersistentFreeActivePayloadState.ofLegacy state3),
+            .active
+              (RepresentativePersistentFreeActivePayloadState.ofLegacy state4)] ∧
         state0.carrier.index.current = sourceChain 0 ∧
         state1.carrier.index.current = sourceChain 1 ∧
         state2.carrier.index.current = sourceChain 2 ∧
@@ -2746,7 +2778,10 @@ theorem depth_four_recursive_prefix_exact
   let run : CertifiedPrefix prog gt
       [recursiveKindAt 0, recursiveKindAt 1,
         recursiveKindAt 2, recursiveKindAt 3]
-      (.active state0) (.active state4) :=
+      (.active
+        (RepresentativePersistentFreeActivePayloadState.ofLegacy state0))
+      (.active
+        (RepresentativePersistentFreeActivePayloadState.ofLegacy state4)) :=
     .cons step1 (.cons step2 (.cons step3 (.cons step4 (.nil _))))
   have finalCells :
       state4.carrier.cellIdentities =
