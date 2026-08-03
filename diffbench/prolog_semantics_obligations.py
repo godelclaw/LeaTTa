@@ -593,6 +593,8 @@ REQUIRED_PREFIXES = {
 # metadata is normalized.  A listed row must be PASS and every semicolon-
 # separated reference must be an actual `#print axioms` target.
 STRICT_AXIOM_AUDIT_ROWS = {
+    "BISIM.database_assertion_steps",
+    "BISIM.scheduled_success_global_prefix",
     "BISIM.catch_macro_prefix",
     "BISIM.softcut_macro_prefix",
     "BISIM.root_closed_answer_pull",

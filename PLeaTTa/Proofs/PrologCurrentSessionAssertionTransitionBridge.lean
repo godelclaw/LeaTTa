@@ -6,10 +6,13 @@ Purpose: Lift one owned local database assertion through the complete active
   product/resource/payload context.
 Trusted boundary: none
 Main exports:
-  SpinedActiveProductPayloadResourceRelatesAt.afterAssertion
+  SpinedActiveProductPayloadResourceRelatesAt.afterAssertion,
+  RepresentativeAssertionReady,
+  RepresentativeActivePayloadState.afterAssertion
 -/
 import PLeaTTa.Proofs.PrologCurrentSessionPayloadTransitionBridge
 import PLeaTTa.Proofs.PrologDatabaseActionStepBridge
+import PLeaTTa.Proofs.PrologNestedCallReadyBridge
 
 namespace PLeaTTa.PrologCurrentSessionAssertionTransitionBridge
 
@@ -27,6 +30,8 @@ open PrologCurrentSessionPayloadBridge
 open PrologCurrentSessionPayloadTransitionBridge
 open PrologDatabaseActionStepBridge
 open PrologGoalAlpha
+open PrologNestedCallChainBridge
+open PrologNestedCallReadyBridge
 open PrologOrdinaryStepBridge
 open PrologProductResourceContextBridge
 open PrologProductResourceTransitionBridge
@@ -379,5 +384,274 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.afterAssertion
     ⟨rfl, sourceStep, executableStep, effectErasure,
       ⟨nextCore, nextEndpoints, agreement.activationOrdered,
         nextActivationOrigins, nextControlOrigins⟩⟩
+
+/-! ## Closed representative producer -/
+
+/-- All source/executable evidence which identifies one successful owned
+assertion at the literal head of an active representative carrier.
+
+The executable operation is not a separately supplied string: its head is
+required to use `operation.predicate`.  Consequently a downstream transition
+label can be computed from this package and cannot relabel an `asserta` step
+as `assertz`, change its clause, or attach an unrelated effect observation. -/
+structure RepresentativeAssertionReady
+    (gt : GroundingTable) (before : RepresentativeActivePayloadState) where
+  operation : AssertionOperation
+  payload : Term
+  result : Term
+  bodyRest : List PeTTaSpec.PrologCore.Goal
+  executablePayload : Atom
+  executableResult : Atom
+  bodyExecutableTail : List PLeaTTa.Goal
+  referenceClause : LocalClause
+  functor : String
+  executableClause : PLeaTTa.Clause
+  referenceHead :
+    before.carrier.index.bodyReferences =
+      PeTTaSpec.PrologCore.Goal.call operation.predicate [payload, result] ::
+        bodyRest
+  executableHead :
+    before.carrier.index.bodyExecutables =
+      PLeaTTa.Goal.wact operation.predicate [executablePayload]
+          executableResult ::
+        bodyExecutableTail
+  sourceDecoded :
+    decodePredicateClause
+        (before.carrier.index.current.applyTerm payload) =
+      some referenceClause
+  executableDecoded :
+    PLeaTTa.predicateClause? gt
+        (subst before.carrier.index.runtime executablePayload) =
+      some (functor, executableClause)
+  clause : LocalClauseAgrees referenceClause (functor, executableClause)
+  noDescendants :
+    before.carrier.index.openConf.persistent.world.specializationDescendants
+        functor =
+      []
+  freshAfter :
+    before.carrier.index.freshFrontier
+      before.carrier.index.session.resolver.nextFresh
+      (before.carrier.index.openConf.persistent.counter + 1)
+
+namespace RepresentativeAssertionReady
+
+/-- The unique typed source observation fixed by this producer package. -/
+def effect {gt : GroundingTable} {before : RepresentativeActivePayloadState}
+    (ready : RepresentativeAssertionReady gt before) : LocalDatabaseEffect :=
+  ready.operation.effect before.carrier.index.session.resolver.database
+    ready.referenceClause
+
+/-- Source session after the non-backtrackable database mutation. -/
+def sourceAfter
+    {gt : GroundingTable} {before : RepresentativeActivePayloadState}
+    (ready : RepresentativeAssertionReady gt before) : Session :=
+  before.carrier.index.session.withDatabase
+    (ready.operation.update
+      before.carrier.index.session.resolver.database ready.referenceClause)
+
+/-- Flattened executable continuation after consuming the world action. -/
+def executableTail
+    {gt : GroundingTable} {before : RepresentativeActivePayloadState}
+    (ready : RepresentativeAssertionReady gt before) : List PLeaTTa.Goal :=
+  ready.bodyExecutableTail ++
+    (before.carrier.index.callerExecutables ++
+      flattenExecutables before.carrier.index.outer)
+
+/-- Fine executable state after the matching owned world action. -/
+def executableAfter
+    {gt : GroundingTable} {before : RepresentativeActivePayloadState}
+    (ready : RepresentativeAssertionReady gt before) : OpenConf :=
+  assertionSuccessor ready.operation before.carrier.index.openConf
+    ready.executableResult ready.executableTail before.carrier.index.runtime
+    ready.functor ready.executableClause
+
+/-- Independent source focus after replacing the assertion by its `true`
+result equality. -/
+def sourceSearchAfter
+    {gt : GroundingTable} {before : RepresentativeActivePayloadState}
+    (ready : RepresentativeAssertionReady gt before) : Search :=
+  ActiveProductContext.plug before.carrier.index.context
+    (activeSourceProduct before.carrier.index.callerScope
+      before.carrier.index.opened before.carrier.index.finish
+      before.carrier.index.branch before.carrier.index.branchTail
+      before.carrier.index.current
+      (.unify ready.result (.atom "true") :: ready.bodyRest)
+      before.carrier.index.callerReferences)
+
+/-- Recover the exact contextual relation at the assertion head once.  The
+producer's two head equalities are the only rewriting needed; downstream
+projections reuse this certificate instead of rebuilding the same dependent
+spine proof independently. -/
+theorem activeAgreement
+    {gt : GroundingTable} {before : RepresentativeActivePayloadState}
+    (ready : RepresentativeAssertionReady gt before) :
+    SpinedActiveProductPayloadResourceRelatesAt
+      before.carrier.index.freshFrontier before.carrier.index.alpha
+      before.carrier.index.support before.carrier.index.canonical
+      before.carrier.index.referenceBase before.carrier.index.opened
+      before.carrier.index.session before.carrier.index.pending
+      before.carrier.index.finish before.carrier.index.branch
+      before.carrier.index.branchTail before.carrier.index.altTail
+      before.carrier.index.bodyBarrier before.carrier.index.callerBarrier
+      (.call ready.operation.predicate [ready.payload, ready.result] ::
+        ready.bodyRest)
+      (PLeaTTa.Goal.wact ready.operation.predicate
+          [ready.executablePayload] ready.executableResult ::
+        ready.bodyExecutableTail)
+      before.carrier.index.callerReferences
+      before.carrier.index.callerExecutables before.carrier.index.outer
+      before.carrier.index.current before.carrier.index.runtime
+      before.carrier.index.qterm before.carrier.index.active
+      before.carrier.index.resources before.carrier.index.callerScope
+      before.carrier.index.outerScope before.carrier.index.context
+      before.carrier.index.baseAlts before.carrier.index.source
+      before.carrier.index.openConf before.carrier.payloadContext := by
+  simpa only [ActivePayloadIndex.Relates, ready.referenceHead,
+    ready.executableHead] using before.carrier.agreement
+
+/-- Apply the contextual assertion theorem exactly once.  Its dependent
+conjunction is retained so the deterministic successor and all exact
+projections consume the same proof object. -/
+def produced
+    (prog : PLeaTTa.Prog) {gt : GroundingTable}
+    {before : RepresentativeActivePayloadState}
+    (ready : RepresentativeAssertionReady gt before) :=
+  SpinedActiveProductPayloadResourceRelatesAt.afterAssertion
+    (prog := prog) (gt := gt) ready.activeAgreement rfl ready.sourceDecoded
+    ready.executableDecoded ready.clause ready.noDescendants ready.freshAfter
+
+end RepresentativeAssertionReady
+
+namespace RepresentativeActivePayloadState
+
+/-- Deterministic representative successor of one successful local
+assertion.  Every data field is fixed by `before` and `ready`; the existing
+contextual producer supplies only the proof that those literal endpoints are
+related.  The cumulative logical representative is preserved, while the
+persistent database/world and executable counter advance. -/
+def afterAssertion
+    (prog : PLeaTTa.Prog) (gt : GroundingTable)
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    RepresentativeActivePayloadState :=
+  let produced := ready.produced prog
+  let nextAgreement := produced.2.2.2.2
+  let nextCarrier := ActivePayloadState.ofAgreement nextAgreement
+  { carrier := nextCarrier
+    representative := before.representative
+    cumulative := by
+      simpa [nextCarrier, ActivePayloadState.ofAgreement] using
+        before.cumulative }
+
+@[simp] theorem afterAssertion_sourceState
+    (prog : PLeaTTa.Prog) (gt : GroundingTable)
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    (afterAssertion prog gt before ready).carrier.sourceState =
+      .running ready.sourceAfter ready.sourceSearchAfter := rfl
+
+@[simp] theorem afterAssertion_source
+    (prog : PLeaTTa.Prog) (gt : GroundingTable)
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    (afterAssertion prog gt before ready).carrier.index.source =
+      ready.sourceSearchAfter := rfl
+
+@[simp] theorem afterAssertion_fineState
+    (prog : PLeaTTa.Prog) (gt : GroundingTable)
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    (afterAssertion prog gt before ready).carrier.fineState =
+      .ready ready.executableAfter := rfl
+
+@[simp] theorem afterAssertion_session
+    (prog : PLeaTTa.Prog) (gt : GroundingTable)
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    (afterAssertion prog gt before ready).carrier.index.session =
+      ready.sourceAfter := rfl
+
+@[simp] theorem afterAssertion_openConf
+    (prog : PLeaTTa.Prog) (gt : GroundingTable)
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    (afterAssertion prog gt before ready).carrier.index.openConf =
+      ready.executableAfter := rfl
+
+@[simp] theorem afterAssertion_alpha
+    (prog : PLeaTTa.Prog) (gt : GroundingTable)
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    (afterAssertion prog gt before ready).carrier.index.alpha =
+      before.carrier.index.alpha := rfl
+
+@[simp] theorem afterAssertion_representative
+    (prog : PLeaTTa.Prog) (gt : GroundingTable)
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    (afterAssertion prog gt before ready).representative =
+      before.representative := rfl
+
+@[simp] theorem afterAssertion_cellIdentities
+    (prog : PLeaTTa.Prog) (gt : GroundingTable)
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    (afterAssertion prog gt before ready).carrier.cellIdentities =
+      before.carrier.cellIdentities := rfl
+
+@[simp] theorem afterAssertion_baseAlts
+    (prog : PLeaTTa.Prog) (gt : GroundingTable)
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    (afterAssertion prog gt before ready).carrier.index.baseAlts =
+      before.carrier.index.baseAlts := rfl
+
+/-- The deterministic package retains the exact source step supplied by the
+contextual assertion producer. -/
+theorem afterAssertion_sourceStep
+    (prog : PLeaTTa.Prog) (gt : GroundingTable)
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    RawStep before.carrier.index.session before.carrier.index.source
+      [.effect ready.effect] .none ready.sourceAfter
+      (.running ready.sourceSearchAfter) := by
+  have produced := ready.produced prog
+  simpa [RepresentativeAssertionReady.effect,
+    RepresentativeAssertionReady.sourceAfter,
+    RepresentativeAssertionReady.sourceSearchAfter] using produced.2.1
+
+/-- The deterministic package retains the exact fine step supplied by the
+same contextual assertion producer. -/
+theorem afterAssertion_fineStep
+    (prog : PLeaTTa.Prog) (gt : GroundingTable)
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    DemandDrivenCallStep.Step prog gt before.carrier.fineState
+      (afterAssertion prog gt before ready).carrier.fineState := by
+  have produced := ready.produced prog
+  rw [afterAssertion_fineState]
+  simpa [RepresentativeAssertionReady.executableAfter,
+    RepresentativeAssertionReady.executableTail,
+    ActivePayloadState.fineState] using produced.2.2.1
+
+/-- The effect-erasure certificate is producer-derived and fixes both the
+typed source mutation and the two persistent endpoints. -/
+theorem afterAssertion_effectErasure
+    (prog : PLeaTTa.Prog) (gt : GroundingTable)
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    SourceDatabaseEffectErasure [.effect ready.effect]
+      before.carrier.index.session
+      (afterAssertion prog gt before ready).carrier.index.session
+      before.carrier.index.openConf.persistent
+      (afterAssertion prog gt before ready).carrier.index.openConf.persistent := by
+  have produced := ready.produced prog
+  simpa [afterAssertion, RepresentativeAssertionReady.effect,
+    RepresentativeAssertionReady.sourceAfter,
+    RepresentativeAssertionReady.executableAfter,
+    RepresentativeAssertionReady.executableTail,
+    ActivePayloadState.ofAgreement] using produced.2.2.2.1
+
+end RepresentativeActivePayloadState
 
 end PLeaTTa.PrologCurrentSessionAssertionTransitionBridge

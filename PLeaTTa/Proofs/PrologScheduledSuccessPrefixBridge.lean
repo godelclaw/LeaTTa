@@ -3,23 +3,28 @@
 /-
 Module: PLeaTTa.Proofs.PrologScheduledSuccessPrefixBridge
 Purpose: Add successful scheduled-head activation to the exact global
-  transition zipper and compose its literal persistent-free midpoint.
+  transition zipper, compose its literal persistent-free midpoint, and add
+  producer-derived owned assertion effects to the same global vocabulary.
 Trusted boundary: none
 Main exports:
   RepresentativePersistentFreeActivePayloadState.afterAdministrative,
   GlobalTransitionKind,
   GlobalCertifiedTransition,
+  GlobalCertifiedTransition.assertion_target_exact,
+  GlobalCertifiedTransition.assertion_effectErasure,
   GlobalCertifiedPrefix,
   GlobalCertifiedPrefix.scheduledSuccessThenAdministrative
 -/
 import PLeaTTa.Proofs.PrologScheduledPayloadSuccessCarrierBridge
 import PLeaTTa.Proofs.PrologFailureRebasePrefixBridge
+import PLeaTTa.Proofs.PrologCurrentSessionAssertionTransitionBridge
 
 namespace PLeaTTa.PrologScheduledSuccessPrefixBridge
 
 open Metta (Atom Subst)
 open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.Canonical
+open PeTTaSpec.PrologCore.DatabaseActions
 open PeTTaSpec.PrologCore.GoalSemantics
 open PeTTaSpec.PrologCore.OpenSubstitution
 open PeTTaSpec.PrologCore.Resolver
@@ -28,11 +33,13 @@ open PrologActivatedProductStepBridge
 open PrologAlphaFreshFrontierBridge
 open PrologBodyFailureResourceTransitionBridge
 open PrologCurrentSessionAdministrativeTransitionBridge
+open PrologCurrentSessionAssertionTransitionBridge
 open PrologCurrentSessionPayloadBridge
 open PrologControlSegmentSpineBridge
 open PrologFailureRebasePrefixBridge
 open PrologHeterogeneousPrefixBridge
 open PrologMguComposition
+open PrologNestedCallReadyBridge
 open PrologOrdinaryStepBridge
 open PrologPersistentFreeActivePayloadBridge
 open PrologPersistentFreeScheduledPayloadBridge
@@ -48,6 +55,7 @@ open PrologScheduledPayloadSuccessBridge
 open PrologScheduledPayloadSuccessCarrierBridge
 open PrologSourceProductContextBridge
 open PrologStateBridge
+open PrologDatabaseActionStepBridge
 
 /-! ## Persistent-free source administration -/
 
@@ -347,13 +355,38 @@ def of
 
 end ScheduledSuccessLabel
 
+/-- Public, producer-derived identity of one persistent local assertion.
+The exact effect and logical-update generations are retained in the schedule;
+the unlabelled executable step therefore cannot silently erase which source
+mutation occurred. -/
+structure AssertionTransitionLabel where
+  operation : AssertionOperation
+  effect : LocalDatabaseEffect
+  beforeGeneration : Nat
+  afterGeneration : Nat
+
+namespace AssertionTransitionLabel
+
+def of
+    {gt : Metta.GroundingTable}
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    AssertionTransitionLabel :=
+  { operation := ready.operation
+    effect := ready.effect
+    beforeGeneration := before.carrier.index.session.resolver.database.generation
+    afterGeneration := ready.sourceAfter.resolver.database.generation }
+
+end AssertionTransitionLabel
+
 /-- Additive global transition vocabulary.  Existing resolver transitions are
-embedded unchanged; the two new constructors are the successful scheduled
-edge and the first legacy-free ordinary producer consuming its endpoint. -/
+embedded unchanged; scheduled success and its first legacy-free administrative
+consumer share the vocabulary with producer-derived owned assertion effects. -/
 inductive GlobalTransitionKind where
   | resolver (kind : ResolverTransitionKind)
   | activeAdministrative (count : Nat)
   | scheduledSuccess (label : ScheduledSuccessLabel)
+  | assertion (label : AssertionTransitionLabel)
 
 namespace GlobalTransitionKind
 
@@ -361,16 +394,19 @@ def sourceCost : GlobalTransitionKind → Nat
   | .resolver kind => kind.sourceCost
   | .activeAdministrative count => count
   | .scheduledSuccess label => label.sourceCost
+  | .assertion _ => 1
 
 def sourceEvents : GlobalTransitionKind → List Observation
   | .resolver kind => kind.sourceEvents
   | .activeAdministrative _ => []
   | .scheduledSuccess label => [.answer label.answer]
+  | .assertion label => [.effect label.effect]
 
 def fineCost : GlobalTransitionKind → Nat
   | .resolver kind => kind.fineCost
   | .activeAdministrative _ => 0
   | .scheduledSuccess _ => 2
+  | .assertion _ => 1
 
 /-- Kind-indexed alpha chronology.  Scheduled success allocates above the
 selected retained occurrence's frozen floors while proving those floors are
@@ -385,6 +421,7 @@ def AlphaEvolution (kind : GlobalTransitionKind)
           label.referenceFloor label.executableFloor ∧
         label.referenceFloor ≤ before.session.resolver.nextFresh ∧
         label.executableFloor ≤ before.openConf.persistent.counter
+  | .assertion _ => after.alpha = before.alpha
 
 /-- Scheduled success fixes its literal reconstructed representative instead
 of pretending it necessarily extends the scheduled phase's current one. -/
@@ -396,6 +433,7 @@ def RepresentativeEvolution (kind : GlobalTransitionKind)
   | .activeAdministrative _ => after.representative = before.representative
   | .scheduledSuccess label =>
       after.representative = label.targetRepresentative
+  | .assertion _ => after.representative = before.representative
 
 end GlobalTransitionKind
 
@@ -448,6 +486,19 @@ inductive GlobalCertifiedTransition
           (ScheduledSuccessLabel.of ready transition partition flattened))
         (.ordinary (.scheduled before))
         (.ordinary (.active successor.after))
+  | assertion
+      (before : RepresentativeActivePayloadState)
+      (ready : RepresentativeAssertionReady gt before) :
+      GlobalCertifiedTransition prog gt
+        (.assertion (AssertionTransitionLabel.of before ready))
+        (.ordinary
+          (.active
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy before)))
+        (.ordinary
+          (.active
+            (RepresentativePersistentFreeActivePayloadState.ofLegacy
+              (RepresentativeActivePayloadState.afterAssertion
+                prog gt before ready))))
 
 namespace GlobalCertifiedTransition
 
@@ -506,6 +557,31 @@ theorem sourceSteps
         GlobalTransitionKind.sourceEvents, ScheduledSuccessLabel.of,
         ResolverPhaseState.sourceState, ProductPhaseState.sourceState] using
         relation.fullSourceRun
+  | assertion before ready =>
+      let target :=
+        RepresentativeActivePayloadState.afterAssertion prog gt before ready
+      have raw :
+          RawStep before.carrier.index.session before.carrier.index.source
+            [.effect ready.effect] .none target.carrier.index.session
+            (.running target.carrier.index.source) := by
+        simpa [target] using
+          RepresentativeActivePayloadState.afterAssertion_sourceStep
+            prog gt before ready
+      have publicStep :
+          Transition before.carrier.sourceState [.effect ready.effect]
+            target.carrier.sourceState :=
+        .ordinary _ _ _ _ _ raw
+      have one :
+          StepsN 1 before.carrier.sourceState [.effect ready.effect]
+            target.carrier.sourceState := by
+        simpa using
+          StepsN.succ 0 before.carrier.sourceState target.carrier.sourceState
+            target.carrier.sourceState [.effect ready.effect] [] publicStep
+            (.zero _)
+      simpa [GlobalTransitionKind.sourceCost,
+        GlobalTransitionKind.sourceEvents, AssertionTransitionLabel.of,
+        ResolverPhaseState.sourceState, ProductPhaseState.sourceState,
+        target] using one
 
 /-- The answer pull and selected-head equality are two present fine steps.
 Neither is erased into the scheduled-success macro edge. -/
@@ -566,6 +642,13 @@ theorem fineSteps
       simpa [GlobalTransitionKind.fineCost,
         ResolverPhaseState.fineState, ProductPhaseState.fineState,
         PersistentFreeScheduledPayloadState.fineState] using paired
+  | assertion before ready =>
+      have one :=
+        CertifiedTransition.oneFineStep
+          (RepresentativeActivePayloadState.afterAssertion_fineStep
+            prog gt before ready)
+      simpa [GlobalTransitionKind.fineCost,
+        ResolverPhaseState.fineState, ProductPhaseState.fineState] using one
 
 theorem sessionHighWaters
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
@@ -578,6 +661,11 @@ theorem sessionHighWaters
       exact SessionHighWatersExtend.refl _
   | scheduledSuccess relation successor =>
       exact SessionHighWatersExtend.refl _
+  | assertion before ready =>
+      simpa [ResolverPhaseState.session, ProductPhaseState.session] using
+        SessionHighWatersExtend.of_rawStep
+          (RepresentativeActivePayloadState.afterAssertion_sourceStep
+            prog gt before ready)
 
 theorem executableCounter_mono
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
@@ -594,6 +682,13 @@ theorem executableCounter_mono
         (successfulFineState transition installed).persistent.counter
       rw [relation.finePersistent]
       simp [selectedFineState, privateAnswerTarget_persistent]
+  | assertion before ready =>
+      change
+        before.carrier.index.openConf.persistent.counter ≤
+          (RepresentativeActivePayloadState.afterAssertion prog gt before
+            ready).carrier.index.openConf.persistent.counter
+      rw [RepresentativeActivePayloadState.afterAssertion_openConf]
+      simp [RepresentativeAssertionReady.executableAfter]
 
 theorem alphaIncluded
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
@@ -607,6 +702,9 @@ theorem alphaIncluded
       exact present
   | scheduledSuccess relation successor =>
       exact relation.alphaIncluded
+  | assertion before ready =>
+      intro pair present
+      exact present
 
 theorem alphaEvolution
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
@@ -662,6 +760,7 @@ theorem alphaEvolution
             before.carrier.index.openConf.persistent.counter :=
         Nat.le_trans selectedCounterLeFinal endpointBounds.2
       exact ⟨relation.extensionAbove, referenceFloor, executableFloor⟩
+  | assertion before ready => rfl
 
 theorem representativeEvolution
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
@@ -674,6 +773,133 @@ theorem representativeEvolution
         step.representativeEvolution
   | activeAdministrative before positive steps => rfl
   | scheduledSuccess relation successor => rfl
+  | assertion before ready => rfl
+
+/-- Inverting an assertion edge recovers the one producer package which
+fixes its label and literal active successor.  Thus no caller-supplied effect
+or endpoint can inhabit the assertion constructor merely because separate
+source and fine traces happen to exist. -/
+theorem assertion_target_exact
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {label : AssertionTransitionLabel}
+    {start after : ResolverPhaseState}
+    (step :
+      GlobalCertifiedTransition prog gt (.assertion label)
+        start after) :
+    ∃ before : RepresentativeActivePayloadState,
+      ∃ ready : RepresentativeAssertionReady gt before,
+        start =
+            .ordinary
+              (.active
+                (RepresentativePersistentFreeActivePayloadState.ofLegacy
+                  before)) ∧
+          label = AssertionTransitionLabel.of before ready ∧
+          after =
+            .ordinary
+              (.active
+                (RepresentativePersistentFreeActivePayloadState.ofLegacy
+                  (RepresentativeActivePayloadState.afterAssertion
+                    prog gt before ready))) := by
+  cases step with
+  | assertion before ready => exact ⟨before, ready, rfl, rfl, rfl⟩
+
+/-- An assertion edge cannot launder its persistent mutation through the
+committed phase.  The result follows from the producer-indexed target rather
+than from comparing projected source or executable endpoints. -/
+theorem assertion_not_committed
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {label : AssertionTransitionLabel}
+    (start : ResolverPhaseState)
+    (target : RepresentativeCommittedPayloadState) :
+    IsEmpty
+      (GlobalCertifiedTransition prog gt (.assertion label) start
+        (.ordinary (.committed target))) := by
+  constructor
+  intro step
+  obtain ⟨_before, _ready, _start, _label, impossible⟩ :=
+    step.assertion_target_exact
+  cases impossible
+
+/-- Every inhabited assertion label records exactly one logical-update
+generation advance.  A zero-generation stutter cannot be relabelled as a
+database mutation. -/
+theorem assertion_generation_succ
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {label : AssertionTransitionLabel}
+    {start after : ResolverPhaseState}
+    (step :
+      GlobalCertifiedTransition prog gt (.assertion label)
+        start after) :
+    label.afterGeneration = label.beforeGeneration + 1 := by
+  cases step with
+  | assertion before ready =>
+      change
+        (ready.operation.update
+          before.carrier.index.session.resolver.database
+          ready.referenceClause).generation =
+            before.carrier.index.session.resolver.database.generation + 1
+      exact
+        AssertionOperation.update_generation ready.operation
+          before.carrier.index.session.resolver.database ready.referenceClause
+
+/-- The unlabelled fine world action erases only the exact singleton source
+effect justified by the producer-derived database mutation certificate. -/
+theorem assertion_effectErasure
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {label : AssertionTransitionLabel}
+    {start after : ResolverPhaseState}
+    (step :
+      GlobalCertifiedTransition prog gt (.assertion label)
+        start after) :
+    ∃ before : RepresentativeActivePayloadState,
+      ∃ ready : RepresentativeAssertionReady gt before,
+        start =
+            .ordinary
+              (.active
+                (RepresentativePersistentFreeActivePayloadState.ofLegacy
+                  before)) ∧
+          label = AssertionTransitionLabel.of before ready ∧
+          SourceDatabaseEffectErasure [.effect label.effect]
+            before.carrier.index.session
+            (RepresentativeActivePayloadState.afterAssertion prog gt before
+              ready).carrier.index.session
+            before.carrier.index.openConf.persistent
+            (RepresentativeActivePayloadState.afterAssertion prog gt before
+              ready).carrier.index.openConf.persistent := by
+  cases step with
+  | assertion before ready =>
+      exact
+        ⟨before, ready, rfl, rfl,
+          RepresentativeActivePayloadState.afterAssertion_effectErasure
+            prog gt before ready⟩
+
+/-- Assertion is resource-neutral: it mutates persistent world state without
+moving, duplicating, or deleting any retained payload cell. -/
+theorem assertion_payloadCells_exact
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    (RepresentativePersistentFreeActivePayloadState.ofLegacy
+        (RepresentativeActivePayloadState.afterAssertion
+          prog gt before ready)).carrier.cellIdentities =
+      (RepresentativePersistentFreeActivePayloadState.ofLegacy
+        before).carrier.cellIdentities := by
+  simp
+
+/-- Root ownership is unchanged by a persistent assertion. -/
+theorem assertion_rootClosed_iff
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativeActivePayloadState)
+    (ready : RepresentativeAssertionReady gt before) :
+    ProductPhaseState.RootClosed
+        (.active
+          (RepresentativePersistentFreeActivePayloadState.ofLegacy
+            (RepresentativeActivePayloadState.afterAssertion
+              prog gt before ready))) ↔
+      ProductPhaseState.RootClosed
+        (.active
+          (RepresentativePersistentFreeActivePayloadState.ofLegacy before)) := by
+  simp [ProductPhaseState.RootClosed, ProductPhaseState.baseAlts]
 
 /-- The closed label cannot turn a successful scheduled transition into a
 different phase. -/
