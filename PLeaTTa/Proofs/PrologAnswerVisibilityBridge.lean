@@ -6,7 +6,7 @@ Purpose: Classify one answer as public or collector-private from the exact
   source-collection/executable-frame occurrence correspondence
 Trusted boundary: none
 Main exports: AnswerVisibility, AnswerVisibility.classify,
-  RepresentativeScheduledPayloadState.sourceCellsEmpty,
+  RepresentativePersistentFreeScheduledPayloadState.sourceCellsEmpty,
   RootClosedAnswerReady.withPublicAnswerOfOccurrences
 -/
 import PLeaTTa.Proofs.PrologScheduledAnswerValueBridge
@@ -24,6 +24,7 @@ open PrologFindallFrameZipperBridge
 open PrologHeterogeneousPrefixBridge
 open PrologMguBridge
 open PrologOrdinaryStepBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologProductSchedulingBridge
 open PrologRecursiveCallPayloadBridge
 open PrologRootClosedAnswerBridge
@@ -153,34 +154,34 @@ theorem activeProductContext_plug_cells
 boundary.  Collection context, when present, belongs to the separate active
 control zipper rather than this product carrier. -/
 @[simp] theorem scheduledSourceProduct_cells
-    (callerScope : CutScopeId) (opened : OpenedCall)
+    (callerScope predicateScope : CutScopeId)
     (finish : PeTTaSpec.PrologCore.Resolver.PreparedCursor)
     (branch : PeTTaSpec.PrologCore.Resolver.ClauseBranch)
     (branchTail : List PeTTaSpec.PrologCore.Resolver.ClauseBranch)
     (current : Substitution)
     (referenceRest : List PeTTaSpec.PrologCore.Goal) :
     activeCollectionCells
-        (scheduledSourceProduct callerScope opened finish branch branchTail
+        (scheduledSourceProductAt callerScope predicateScope finish branch branchTail
           current referenceRest) = some [] := by
-  simp [scheduledSourceProduct, scheduledSourceProductAt,
-    activeCollectionCells]
+  simp [scheduledSourceProductAt, activeCollectionCells]
 
-namespace RepresentativeScheduledPayloadState
+namespace RepresentativePersistentFreeScheduledPayloadState
 
 /-- Every scheduled product carrier is a source-root focus with respect to
 collection visibility.  This follows from its literal source-shape equation;
 it is not inferred from the executable frame stack. -/
-theorem sourceCellsEmpty (state : RepresentativeScheduledPayloadState) :
+theorem sourceCellsEmpty
+    (state : RepresentativePersistentFreeScheduledPayloadState) :
     activeCollectionCells state.carrier.index.source = some [] := by
-  rw [state.carrier.agreement.core.sourceShape,
+  rw [state.carrier.agreement.sourceShape,
     activeProductContext_plug_cells]
   exact
     scheduledSourceProduct_cells state.carrier.index.callerScope
-      state.carrier.index.opened state.carrier.index.finish
+      state.carrier.index.predicateScope state.carrier.index.finish
       state.carrier.index.branch state.carrier.index.branchTail
       state.carrier.index.current state.carrier.index.callerReferences
 
-end RepresentativeScheduledPayloadState
+end RepresentativePersistentFreeScheduledPayloadState
 
 namespace RootClosedAnswerReady
 
@@ -192,7 +193,7 @@ production of that premise remains separate work. -/
 theorem withPublicAnswerOfOccurrences
     {sourceQuery : Term}
     {prog : Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (ready : RootClosedAnswerReady before)
     (queryAgreement :
       AlphaTermAgrees before.carrier.index.alpha sourceQuery
@@ -207,7 +208,7 @@ theorem withPublicAnswerOfOccurrences
   PLeaTTa.PrologScheduledAnswerValueBridge.RootClosedAnswerReady.withPublicAnswer
     ready queryAgreement querySupported
       (AnswerVisibility.publicOwner_of_sourceCellsEmpty occurrences
-        (PLeaTTa.PrologAnswerVisibilityBridge.RepresentativeScheduledPayloadState.sourceCellsEmpty
+        (PLeaTTa.PrologAnswerVisibilityBridge.RepresentativePersistentFreeScheduledPayloadState.sourceCellsEmpty
           before))
 
 end RootClosedAnswerReady
@@ -222,7 +223,7 @@ context. -/
 theorem withPublicAnswerOfOccurrences
     {sourceQuery : Term}
     {prog : Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Metta.Subst}
     {selectedTail : List PLeaTTa.Alt}
@@ -243,7 +244,7 @@ theorem withPublicAnswerOfOccurrences
       selectedGoals selectedBinding selectedTail count target := by
   have framesEmpty :=
     AnswerVisibility.framesEmpty_of_sourceCellsEmpty occurrences
-      (PLeaTTa.PrologAnswerVisibilityBridge.RepresentativeScheduledPayloadState.sourceCellsEmpty
+      (PLeaTTa.PrologAnswerVisibilityBridge.RepresentativePersistentFreeScheduledPayloadState.sourceCellsEmpty
         before)
   exact
     PLeaTTa.PrologScheduledAnswerValueBridge.RootClosedLocalLiveAnswerRelates.withPublicAnswer

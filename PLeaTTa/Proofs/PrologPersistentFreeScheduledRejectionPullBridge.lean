@@ -358,7 +358,7 @@ origins.  No call-opening packet is reconstructed: the head origin comes from
 the consumed occurrence and the tail origins are literal suffix facts. -/
 theorem postPayload_controlOriginCells
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     {ready : PrologRootClosedAnswerBridge.RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -405,7 +405,7 @@ equality step.  The live case carries the dependent occurrence route; the
 terminal case accounts for every payload cell. -/
 inductive ScheduledRejectedFinePullOutcome
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     {ready : PrologRootClosedAnswerBridge.RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -449,7 +449,7 @@ fine-lane theorem; relating the source frontier after the rejected occurrence
 to a later selected payload occurrence is a separate catch-up obligation. -/
 def classifyRejectedFinePull
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     {ready : PrologRootClosedAnswerBridge.RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}

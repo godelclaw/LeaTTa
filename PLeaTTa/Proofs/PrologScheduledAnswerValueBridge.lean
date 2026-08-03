@@ -5,7 +5,7 @@ Module: PLeaTTa.Proofs.PrologScheduledAnswerValueBridge
 Purpose: Relate one scheduled independent answer's query denotation to the
   exact public executable answer appended by the fine machine
 Trusted boundary: none
-Main exports: RepresentativeScheduledPayloadState.answerValueAgrees,
+Main exports: RepresentativePersistentFreeScheduledPayloadState.answerValueAgrees,
   RootClosedPublicAnswerRelates,
   RootClosedLocalLivePublicAnswerRelates,
   RootClosedAnswerReady.withPublicAnswer,
@@ -28,18 +28,19 @@ open PrologHeterogeneousPrefixBridge
 open PrologMguBridge
 open PrologMguComposition
 open PrologOrdinaryStepBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologRecursiveCallPayloadBridge
 open PrologRootClosedAnswerBridge
 open PrologRootClosedLocalLiveBridge
 open PrologScheduledPayloadResumeBridge
 open PrologStateBridge
 
-namespace RepresentativeScheduledPayloadState
+namespace RepresentativePersistentFreeScheduledPayloadState
 
 /-- The scheduled representative's existing task invariant, exposed under a
 stable name instead of making observation proofs depend on the nested product
 payload projection path.  No new existential representative is selected. -/
-theorem taskData (state : RepresentativeScheduledPayloadState) :
+theorem taskData (state : RepresentativePersistentFreeScheduledPayloadState) :
     TaskDataAgrees state.carrier.index.alpha state.carrier.index.support
       state.carrier.index.canonical state.carrier.index.referenceBase
       state.carrier.index.current state.carrier.index.runtime :=
@@ -48,7 +49,7 @@ theorem taskData (state : RepresentativeScheduledPayloadState) :
 /-- Package an explicit source/runtime query spelling with the task invariant
 already carried by the scheduled state. -/
 theorem answerValueProducer
-    (state : RepresentativeScheduledPayloadState)
+    (state : RepresentativePersistentFreeScheduledPayloadState)
     {sourceQuery : Term} {runtimeQuery : Atom}
     (queryAgreement :
       AlphaTermAgrees state.carrier.index.alpha sourceQuery runtimeQuery)
@@ -59,14 +60,14 @@ theorem answerValueProducer
       state.carrier.index.support state.carrier.index.current
       state.carrier.index.runtime sourceQuery runtimeQuery :=
   AnswerValueProducerAgrees.ofTaskData
-    (RepresentativeScheduledPayloadState.taskData state) queryAgreement
+    (RepresentativePersistentFreeScheduledPayloadState.taskData state) queryAgreement
     querySupported
 
 /-- The live cumulative substitutions materialize an explicitly related query
 to runtime-alpha-equivalent source and executable values.  This is a value
 theorem only; the public answer step is coupled below. -/
 theorem answerValueAgrees
-    (state : RepresentativeScheduledPayloadState)
+    (state : RepresentativePersistentFreeScheduledPayloadState)
     {sourceQuery : Term} {runtimeQuery : Atom}
     (queryAgreement :
       AlphaTermAgrees state.carrier.index.alpha sourceQuery runtimeQuery)
@@ -76,10 +77,10 @@ theorem answerValueAgrees
     RuntimeTermAgrees
       (state.carrier.index.current.applyTerm sourceQuery)
       (PLeaTTa.subst state.carrier.index.runtime runtimeQuery) :=
-  (RepresentativeScheduledPayloadState.answerValueProducer state
+  (RepresentativePersistentFreeScheduledPayloadState.answerValueProducer state
     queryAgreement querySupported).runtimeTermAgrees
 
-end RepresentativeScheduledPayloadState
+end RepresentativePersistentFreeScheduledPayloadState
 
 /-- Exact source-answer/value/public-executable coupling at the rooted
 pre-pull boundary.
@@ -92,7 +93,7 @@ falls through is deliberately not part of this relation. -/
 structure RootClosedPublicAnswerRelates
     (sourceQuery : Term)
     (prog : Prog) (gt : Metta.GroundingTable)
-    (before : RepresentativeScheduledPayloadState)
+    (before : RepresentativePersistentFreeScheduledPayloadState)
     (ready : RootClosedAnswerReady before) : Prop where
   sourceBindingExact :
     ready.result.history.bindings = before.carrier.index.current
@@ -133,7 +134,7 @@ task invariant and structural public-answer ownership. -/
 theorem withPublicAnswer
     {sourceQuery : Term}
     {prog : Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (ready : RootClosedAnswerReady before)
     (queryAgreement :
       AlphaTermAgrees before.carrier.index.alpha sourceQuery
@@ -184,7 +185,7 @@ theorem withPublicAnswer
       querySupported := querySupported
       publicOwner := publicOwner
       valueAgreement :=
-        RepresentativeScheduledPayloadState.answerValueAgrees before
+        RepresentativePersistentFreeScheduledPayloadState.answerValueAgrees before
           queryAgreement querySupported
       publicAnswer := publicStep.2 }
 
@@ -202,7 +203,7 @@ do not provide either to that constructor. -/
 structure RootClosedLocalLivePublicAnswerRelates
     (sourceQuery : Term)
     (prog : Prog) (gt : Metta.GroundingTable)
-    (before : RepresentativeScheduledPayloadState)
+    (before : RepresentativePersistentFreeScheduledPayloadState)
     (ready : RootClosedAnswerReady before)
     (selectedGoals : List PLeaTTa.Goal) (selectedBinding : Subst)
     (selectedTail : List PLeaTTa.Alt)
@@ -221,7 +222,7 @@ the actual sealed answer step plus an empty frame stack derives the append. -/
 theorem withPublicAnswer
     {sourceQuery : Term}
     {prog : Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
     {selectedTail : List PLeaTTa.Alt}

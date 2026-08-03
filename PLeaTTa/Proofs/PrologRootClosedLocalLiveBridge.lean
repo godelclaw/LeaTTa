@@ -23,6 +23,7 @@ open PrologAnswerPullClassificationBridge
 open PrologAnswerSourceCatchupBridge
 open PrologFindallAnswerResourceBridge
 open PrologHeterogeneousPrefixBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologRootClosedAnswerBridge
 open PrologScheduledAnswerPropagationBridge
 open PrologScheduledPayloadResumeBridge
@@ -49,7 +50,7 @@ state.
 [SPEC metta.pl:251-256, translator.pl:320-321] -/
 structure RootClosedLocalLiveAnswerRelates
     (prog : Prog) (gt : Metta.GroundingTable)
-    (before : RepresentativeScheduledPayloadState)
+    (before : RepresentativePersistentFreeScheduledPayloadState)
     (ready : RootClosedAnswerReady before)
     (selectedGoals : List PLeaTTa.Goal) (selectedBinding : Subst)
     (selectedTail : List PLeaTTa.Alt)
@@ -110,7 +111,7 @@ step, so a post-answer payload transition cannot silently retain the
 pre-prefix cache depth. -/
 theorem fineBarrierCacheCoherent
     {prog : Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
     {selectedTail : List PLeaTTa.Alt}
@@ -144,7 +145,7 @@ branch-indexed `OriginPrefixLanding`; callers cannot provide a compatible but
 unrelated endpoint. -/
 theorem localLiveAnswer
     {prog : Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (ready : RootClosedAnswerReady before)
     {selectedGoals : List PLeaTTa.Goal} {selectedBinding : Subst}
     {selectedTail : List PLeaTTa.Alt}
@@ -241,7 +242,7 @@ fall-through.  In particular, the local theorem cannot be inhabited by a
 landing chosen independently of the bank classifier. -/
 theorem classifyPullAndRelate
     {prog : Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (ready : RootClosedAnswerReady before) :
     (exists selectedGoals selectedBinding selectedTail count target,
         RootClosedLocalLiveAnswerRelates prog gt before ready selectedGoals

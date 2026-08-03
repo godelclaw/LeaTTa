@@ -27,6 +27,7 @@ open PrologBodyFailureOuterResourceCatchupBridge
 open PrologBodyFailureResourceTransitionBridge
 open PrologControlSegmentSpineBridge
 open PrologHeterogeneousPrefixBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologMguBridge
 open PrologMguComposition
 open PrologMguOpenAgreement
@@ -58,7 +59,7 @@ association-list spelling of the MGU.
 /-- Exact number of source transitions after the answer observation and
 through successful activation of the selected retained head. -/
 def postAnswerSuccessfulHeadCount
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (ready : RootClosedAnswerReady before)
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -103,7 +104,7 @@ def successfulSourceFrontier
 
 /-- Exact fine successor of successful full-head unification. -/
 def successfulFineState
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -210,7 +211,7 @@ denotations through one extended alpha graph rather than requiring equal
 association-list orientation. -/
 structure ScheduledSuccessfulHeadRelates
     (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
-    (before : RepresentativeScheduledPayloadState)
+    (before : RepresentativePersistentFreeScheduledPayloadState)
     (ready : RootClosedAnswerReady before)
     (selection : ScheduledLocalSelection ready.result.historyBuild.cells)
     (scope : CutScopeId)
@@ -339,7 +340,7 @@ the retained call-start allocation gap proves that interval was absent from
 the old graph.  Therefore the chronological suffix cannot be empty. -/
 theorem strictAlphaExtension_of_nonemptyInterval
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -429,7 +430,7 @@ query identity, clause occurrence, copied body, and cumulative MGU state are
 all derived from the carrier and selected payload path. -/
 theorem resolveHead
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -469,18 +470,18 @@ theorem resolveHead
           before.carrier.index.openConf.control.qterm := by
         simp [selectedFineState]
       _ = before.carrier.index.qterm :=
-        before.carrier.agreement.core.control.ready.2.2.1
+        before.carrier.agreement.ready.2.2.1
       _ = selection.selected.resource.qterm :=
         transition.selectedResourceQueryExact.symm
   have currentShared : SharedRuntimeAlpha before.carrier.index.alpha :=
-    before.carrier.agreement.core.control.ready.2.2.2.data.alphaShared
+    before.carrier.agreement.ready.2.2.2.data.alphaShared
   have persistentBefore :
       SessionRelatesPersistent
         (AlphaFreshFrontier before.carrier.index.alpha)
         before.carrier.index.session
         before.carrier.index.openConf.persistent := by
     simpa only [freshFrontierExact] using
-      before.carrier.agreement.core.control.ready.1
+      before.carrier.agreement.ready.1
   have currentPersistent :
       SessionRelatesPersistent
         (AlphaFreshFrontier before.carrier.index.alpha)

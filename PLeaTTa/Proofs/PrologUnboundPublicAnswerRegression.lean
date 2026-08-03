@@ -168,7 +168,7 @@ theorem reachable_unbound_p_q_public_answer
       scheduled.carrier.index.baseAlts = [] := by
     simpa [scheduled] using baseAltsEmpty
   let ready : RootClosedAnswerReady scheduled :=
-    PLeaTTa.PrologRootClosedAnswerBridge.RepresentativeScheduledPayloadState.rootClosedAnswerReady
+    PLeaTTa.PrologRootClosedAnswerBridge.RepresentativePersistentFreeScheduledPayloadState.rootClosedAnswerReady
       scheduled scheduledCallerReferencesEmpty scheduledOuterReferencesEmpty
         scheduledBaseAltsEmpty
   have scheduledQueryAgreement :
@@ -191,7 +191,7 @@ theorem reachable_unbound_p_q_public_answer
     simpa [scheduled] using framesEmpty
   have scheduledSourceCellsEmpty :
       activeCollectionCells scheduled.carrier.index.source = some [] :=
-    PLeaTTa.PrologAnswerVisibilityBridge.RepresentativeScheduledPayloadState.sourceCellsEmpty
+    PLeaTTa.PrologAnswerVisibilityBridge.RepresentativePersistentFreeScheduledPayloadState.sourceCellsEmpty
       scheduled
   have scheduledOccurrences :
       CollectionOccurrenceAgrees scheduled.carrier.index.source

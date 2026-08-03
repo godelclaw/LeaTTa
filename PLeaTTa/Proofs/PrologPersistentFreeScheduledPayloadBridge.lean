@@ -325,6 +325,68 @@ structure PersistentFreeScheduledPayloadState where
 
 namespace PersistentFreeScheduledPayloadState
 
+/-- Package a native packet-free scheduled relation without constructing or
+erasing any historical call-entry packet. -/
+def ofAgreement
+    {freshFrontier : FreshFrontierRelation}
+    {alpha support : List (LogicVar × String)}
+    {canonical : TreeSubstitution} {referenceBase : Substitution}
+    {predicateScope : CutScopeId} {session : Session}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {altTail : List PLeaTTa.Alt}
+    {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {current : Substitution} {runtime : Subst} {qterm : Atom}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext} {baseAlts : List PLeaTTa.Alt}
+    {source : Search} {openConf : OpenConf}
+    {payloadContext :
+      ScheduledProductPayloadContextAt alpha support qterm predicateScope
+        finish branch branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context}
+    (agreement :
+      PersistentFreeScheduledProductPayloadResourceRelatesAt freshFrontier
+        alpha support canonical referenceBase predicateScope session finish
+        branch branchTail altTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer current runtime qterm active resources
+        callerScope outerScope context baseAlts source openConf
+        payloadContext) : PersistentFreeScheduledPayloadState :=
+  { index :=
+      { freshFrontier := freshFrontier
+        alpha := alpha
+        support := support
+        canonical := canonical
+        referenceBase := referenceBase
+        predicateScope := predicateScope
+        session := session
+        finish := finish
+        branch := branch
+        branchTail := branchTail
+        altTail := altTail
+        bodyBarrier := bodyBarrier
+        callerBarrier := callerBarrier
+        callerReferences := callerReferences
+        callerExecutables := callerExecutables
+        outer := outer
+        current := current
+        runtime := runtime
+        qterm := qterm
+        active := active
+        resources := resources
+        callerScope := callerScope
+        outerScope := outerScope
+        context := context
+        baseAlts := baseAlts
+        source := source
+        openConf := openConf }
+    payloadContext := payloadContext
+    agreement := agreement }
+
 def sourceState (state : PersistentFreeScheduledPayloadState) : State :=
   .running state.index.session state.index.source
 

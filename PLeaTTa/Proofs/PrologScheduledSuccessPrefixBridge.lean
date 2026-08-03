@@ -327,7 +327,7 @@ structure ScheduledSuccessLabel where
 namespace ScheduledSuccessLabel
 
 def of
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (ready : RootClosedAnswerReady before)
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -422,7 +422,7 @@ inductive GlobalCertifiedTransition
             (RepresentativePersistentFreeActivePayloadState.afterAdministrative
               before steps)))
   | scheduledSuccess
-      {before : RepresentativeScheduledPayloadState}
+      {before : RepresentativePersistentFreeScheduledPayloadState}
       {ready : RootClosedAnswerReady before}
       {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
       {scope : CutScopeId}
@@ -446,10 +446,7 @@ inductive GlobalCertifiedTransition
       GlobalCertifiedTransition prog gt
         (.scheduledSuccess
           (ScheduledSuccessLabel.of ready transition partition flattened))
-        (.ordinary
-          (.scheduled
-            (RepresentativePersistentFreeScheduledPayloadState.ofLegacy
-              before)))
+        (.ordinary (.scheduled before))
         (.ordinary (.active successor.after))
 
 namespace GlobalCertifiedTransition
@@ -568,7 +565,7 @@ theorem fineSteps
             answerFine resolvedFine
       simpa [GlobalTransitionKind.fineCost,
         ResolverPhaseState.fineState, ProductPhaseState.fineState,
-        ScheduledPayloadState.fineState] using paired
+        PersistentFreeScheduledPayloadState.fineState] using paired
 
 theorem sessionHighWaters
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
@@ -744,7 +741,7 @@ Type-valued successor and transition together.  The transition itself stores
 the explicit successor; `Nonempty` is not a phase field. -/
 theorem scheduledSuccess_nonempty
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -769,10 +766,7 @@ theorem scheduledSuccess_nonempty
         GlobalCertifiedTransition prog gt
           (.scheduledSuccess
             (ScheduledSuccessLabel.of ready transition partition flattened))
-          (.ordinary
-            (.scheduled
-              (RepresentativePersistentFreeScheduledPayloadState.ofLegacy
-                before)))
+          (.ordinary (.scheduled before))
           (.ordinary (.active successor.after))) := by
   rcases
       ScheduledSelectedHeadTransition.ScheduledSuccessfulHeadSuccessor.nonempty
@@ -1064,7 +1058,7 @@ itself, so the success midpoint cannot be rebuilt from historical packets or
 replaced by an endpoint-compatible state. -/
 def scheduledSuccessThenAdministrative
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -1094,9 +1088,7 @@ def scheduledSuccessThenAdministrative
       [ .scheduledSuccess
           (ScheduledSuccessLabel.of ready transition partition flattened),
         .activeAdministrative count ]
-      (.ordinary
-        (.scheduled
-          (RepresentativePersistentFreeScheduledPayloadState.ofLegacy before)))
+      (.ordinary (.scheduled before))
       (.ordinary
         (.active
           (RepresentativePersistentFreeActivePayloadState.afterAdministrative
@@ -1111,7 +1103,7 @@ def scheduledSuccessThenAdministrative
 
 @[simp] theorem scheduledSuccessThenAdministrative_states
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -1139,10 +1131,7 @@ def scheduledSuccessThenAdministrative
         successor.after.carrier.index.bodyReferences afterBody) :
     (scheduledSuccessThenAdministrative relation successor positive
       steps).states =
-      [ .ordinary
-          (.scheduled
-            (RepresentativePersistentFreeScheduledPayloadState.ofLegacy
-              before)),
+      [ .ordinary (.scheduled before),
         .ordinary (.active successor.after),
         .ordinary
           (.active
@@ -1153,7 +1142,7 @@ def scheduledSuccessThenAdministrative
 Type-valued active successor as its dependent midpoint. -/
 @[simp] theorem scheduledSuccessThenAdministrative_split_middle
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}

@@ -6,7 +6,7 @@ Purpose: Eliminate the unreachable older-base pull branch for rooted local
   scheduled answers
 Trusted boundary: none
 Main exports: AllEmptyHistoryResult,
-  RepresentativeScheduledPayloadState.rootClosedAnswerReady,
+  RepresentativePersistentFreeScheduledPayloadState.rootClosedAnswerReady,
   RootClosedAnswerReady.classifyPull
 -/
 import PLeaTTa.Proofs.PrologScheduledPayloadResumeBridge
@@ -28,6 +28,7 @@ open PrologControlSegmentSpineBridge
 open PrologCurrentSessionPayloadTransitionBridge
 open PrologHeterogeneousPrefixBridge
 open PrologProductResourceContextBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologRetainedPayloadSnapshotBridge
 open PrologScheduledAnswerPropagationBridge
 open PrologScheduledHistoryBuildBridge
@@ -222,7 +223,7 @@ end ClosedScheduledPullOutcome
 /-- Literal source endpoint after every empty caller frame has privately
 absorbed the current scheduled answer. -/
 def fullyAbsorbedSource
-    (before : RepresentativeScheduledPayloadState) : Search :=
+    (before : RepresentativePersistentFreeScheduledPayloadState) : Search :=
   absorbContextTarget before.carrier.index.context
     (currentAnswerHistory before).bindings
     (ScheduledAnswerHistory.oneLevelSource
@@ -239,24 +240,24 @@ def fullyAbsorbedSource
 history.  The cursor ownership is extracted from the same dependent payload
 zipper carried by `before`. -/
 def currentAnswerHistoryBuild
-    (before : RepresentativeScheduledPayloadState) :
+    (before : RepresentativePersistentFreeScheduledPayloadState) :
     ScheduledHistoryBuild (currentAnswerHistory before) :=
   .oneLevel before.carrier.index.callerScope
     before.carrier.index.predicateScope before.carrier.index.current
     (before.carrier.index.finish.advance before.carrier.index.branch
       before.carrier.index.branchTail)
     before.carrier.index.active
-    (ActiveProductPayloadContext.activeOwnership
+    (ActiveProductPayloadContextAt.activeOwnership
       before.carrier.payloadContext)
 
 /-- A live scheduled carrier whose complete private caller spine has been
 absorbed and whose locally owned resource bank is the entire executable bank.
 -/
 structure RootClosedAnswerReady
-    (before : RepresentativeScheduledPayloadState) : Type where
+    (before : RepresentativePersistentFreeScheduledPayloadState) : Type where
   result :
     AllEmptyHistoryResult
-      (ActiveProductPayloadContext.outerPayload before.carrier.payloadContext)
+      (ActiveProductPayloadContextAt.outerPayload before.carrier.payloadContext)
       (currentAnswerHistory before) (currentAnswerHistoryBuild before)
       (fullyAbsorbedSource before)
   sourceSteps :
@@ -273,14 +274,14 @@ structure RootClosedAnswerReady
     before.carrier.index.openConf.toConf.cur =
       some ([], before.carrier.index.runtime)
 
-namespace RepresentativeScheduledPayloadState
+namespace RepresentativePersistentFreeScheduledPayloadState
 
 /-- Construct the exact closed answer frontier from a rooted live scheduled
 carrier.  Root closure and all-empty caller tails are inherited from the
 actual phase state; the final history and bank cannot be supplied separately.
 -/
 noncomputable def rootClosedAnswerReady
-    (before : RepresentativeScheduledPayloadState)
+    (before : RepresentativePersistentFreeScheduledPayloadState)
     (referenceEmpty : before.carrier.index.callerReferences = [])
     (allEmpty :
       forall segment, segment ∈ before.carrier.index.outer ->
@@ -288,7 +289,7 @@ noncomputable def rootClosedAnswerReady
     (rootClosed : before.carrier.index.baseAlts = []) :
     RootClosedAnswerReady before := by
   let payloadTail :=
-    ActiveProductPayloadContext.outerPayload before.carrier.payloadContext
+    ActiveProductPayloadContextAt.outerPayload before.carrier.payloadContext
   let result :=
     absorbAllEmptyHistory payloadTail (currentAnswerHistory before)
       (currentAnswerHistoryBuild before)
@@ -304,7 +305,7 @@ noncomputable def rootClosedAnswerReady
             before.carrier.index.current
             (before.carrier.index.finish.advance before.carrier.index.branch
               before.carrier.index.branchTail)) := by
-    rw [before.carrier.agreement.core.sourceShape, referenceEmpty]
+    rw [before.carrier.agreement.sourceShape, referenceEmpty]
     rfl
   have exactSourceSteps :
       StepsN before.carrier.index.outer.length before.carrier.sourceState []
@@ -322,10 +323,10 @@ noncomputable def rootClosedAnswerReady
   have bankExact :
       before.carrier.index.openConf.control.alts =
         flattenOwnedAlts result.history.resources [] := by
-    rw [before.carrier.agreement.core.resourceStack.actualAlts, rootClosed]
+    rw [before.carrier.agreement.actualAlts, rootClosed]
     rw [result.resourcesExact, currentAnswerHistory_resources]
     rfl
-  have scheduledReady := before.carrier.agreement.core.control.ready
+  have scheduledReady := before.carrier.agreement.ready
   rcases scheduledReady with
     ⟨_persistent, currentControl, _queryTerm, payload⟩
   have callerExecutablesEmpty :
@@ -348,7 +349,7 @@ noncomputable def rootClosedAnswerReady
       callerReferencesEmpty := referenceEmpty
       fineHead := fineHead }
 
-end RepresentativeScheduledPayloadState
+end RepresentativePersistentFreeScheduledPayloadState
 
 namespace RootClosedAnswerReady
 
@@ -357,7 +358,7 @@ the same occurrence cells in the same order.  This strengthens the older
 resource-list equation with exact cursors, so duplicate-but-equal executable
 banks cannot select the wrong snapshot. -/
 theorem historyCells_eq_payloadCells
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (ready : RootClosedAnswerReady before) :
     ready.result.historyBuild.cells =
       (payloadCells before.carrier.payloadContext).map
@@ -371,7 +372,7 @@ including the active predicate cell which is absent from the older-only
 `index.context`.  Thus payload occurrence identity and cut/product context
 identity are coupled by the same Type-valued construction tree. -/
 theorem historyContext_eq_fullContext
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (ready : RootClosedAnswerReady before) :
     ready.result.historyBuild.activeContext =
       { callerScope := before.carrier.index.callerScope
@@ -390,7 +391,7 @@ theorem historyContext_eq_fullContext
 /-- Package the exact positional bridge used by later answer-landing
 classification. -/
 def payloadAlignment
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (ready : RootClosedAnswerReady before) :
     ScheduledPayloadAlignment before.carrier.payloadContext
       ready.result.historyBuild :=
@@ -400,7 +401,7 @@ def payloadAlignment
 result is local-live or terminal; an unowned older-base branch is absent by
 construction. -/
 theorem classifyPull
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (ready : RootClosedAnswerReady before) :
     exists events,
       ClosedScheduledPullOutcome ready.result.history events /\

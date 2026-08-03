@@ -16,6 +16,7 @@ open PeTTaSpec.PrologCore.GoalSemantics
 open PrologAnswerPullClassificationBridge
 open PrologHeterogeneousPrefixBridge
 open PrologProductResourceContextBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologRootClosedAnswerBridge
 open PrologScheduledAnswerPropagationBridge
 open PrologScheduledHistoryBuildBridge
@@ -41,7 +42,7 @@ as independent compatible witnesses.
 [SPEC metta.pl:251-256, translator.pl:320-321] -/
 theorem rejected_prefix_root_pull_selects_exact_payload_occurrence
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-  exists before : RepresentativeScheduledPayloadState,
+  exists before : RepresentativePersistentFreeScheduledPayloadState,
       exists ready : RootClosedAnswerReady before,
         exists selection :
             ScheduledLocalSelection ready.result.historyBuild.cells,
@@ -99,7 +100,7 @@ pull coupling: independently quantified source landing data is forced to the
 Type-valued selection's exact goals, binding, and complete residual bank. -/
 theorem rejected_prefix_source_payload_pull_coupling_is_inhabited
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    exists before : RepresentativeScheduledPayloadState,
+  exists before : RepresentativePersistentFreeScheduledPayloadState,
       exists ready : RootClosedAnswerReady before,
         exists selection :
             ScheduledLocalSelection ready.result.historyBuild.cells,

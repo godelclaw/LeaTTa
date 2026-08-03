@@ -17,6 +17,7 @@ open PrologBodyFailureExhaustedResourceTransitionBridge
 open PrologBodyFailureOuterResourceCatchupBridge
 open PrologBodyFailureResourceTransitionBridge
 open PrologHeterogeneousPrefixBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologRootClosedAnswerBridge
 open PrologScheduledHistoryBuildBridge
 open PrologScheduledPayloadLandingBridge
@@ -28,7 +29,7 @@ open PrologScheduledPayloadRejectionBridge.ScheduledSelectedHeadTransition
 The proof observes the literal remaining-clause list, whose head is removed
 by `PreparedCursor.advance`. -/
 theorem selected_head_advance_is_not_stutter
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -45,7 +46,7 @@ theorem selected_head_advance_is_not_stutter
 /-- Nor can an arbitrary outer product stack hide that cursor advance.  This
 is the source-endpoint discriminator for the composed theorem. -/
 theorem selected_head_advance_changes_source_frontier
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -68,7 +69,7 @@ theorem selected_head_advance_changes_source_frontier
 addition to every pre-selection rejected pull.  Omitting it is a strict
 off-by-one error even when every earlier prefix is empty. -/
 theorem selected_failure_cost_is_strictly_additive
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -92,7 +93,7 @@ theorem selected_failure_cost_is_strictly_additive
 both lanes and ends at the non-stuttering advanced source frontier. -/
 theorem paired_rejection_exposes_both_real_steps
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -125,7 +126,7 @@ enabled cache cannot be the stale post-answer cache.  The premise is
 deliberately conditional: selecting an adjacent branch need not cross a
 barrier, while crossing an exhausted resource does. -/
 theorem changed_rejection_barrier_count_rejects_stale_cache
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}

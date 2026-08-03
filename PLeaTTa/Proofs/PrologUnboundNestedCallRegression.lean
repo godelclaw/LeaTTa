@@ -38,6 +38,7 @@ open PrologPrefilterCallBridge
 open PrologPrefilterScanBridge
 open PrologProductResourceContextBridge
 open PrologPersistentFreeActivePayloadBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologRepresentativeCallFrontierBridge
 open PrologRepresentativeProductActivationBridge
 open PrologRecursiveCallPayloadBridge
@@ -2154,7 +2155,7 @@ paired head resolver.  Strictness follows from interval coverage plus the
 retained allocation gap; no particular MGU alias orientation is assumed. -/
 theorem reachable_scheduled_success_strict_alpha
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    ∃ (before : RepresentativeScheduledPayloadState)
+    ∃ (before : RepresentativePersistentFreeScheduledPayloadState)
         (ready : RootClosedAnswerReady before)
         (selection : ScheduledLocalSelection ready.result.historyBuild.cells)
         (scope : CutScopeId)

@@ -777,7 +777,7 @@ namespace ScheduledSelectedHeadTransition
 has been consumed and rejected. -/
 abbrev PostRejectedPayloadPartition
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     {ready : PrologRootClosedAnswerBridge.RootClosedAnswerReady before}
     {selection :
       ScheduledLocalSelection ready.result.historyBuild.cells}
@@ -805,7 +805,7 @@ The equality follows from the constructor-indexed payload context.  It does
 not search for the consumed resource or recover any historical session. -/
 theorem rejectedSourceFrontier_eq_entered
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     {ready : PrologRootClosedAnswerBridge.RootClosedAnswerReady before}
     {selection :
       ScheduledLocalSelection ready.result.historyBuild.cells}
@@ -897,7 +897,7 @@ ranked partition and the selected clause offset, so a later composition can
 identify the fine installed head without comparing resource values. -/
 theorem catchupAfterRejectedHead
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     {ready : PrologRootClosedAnswerBridge.RootClosedAnswerReady before}
     {selection :
       ScheduledLocalSelection ready.result.historyBuild.cells}
@@ -965,7 +965,7 @@ source catch-up to the fine classifier's next selected occurrence. -/
 theorem continueToNextSelectedReady
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     {ready : PrologRootClosedAnswerBridge.RootClosedAnswerReady before}
     {selection :
       ScheduledLocalSelection ready.result.historyBuild.cells}
@@ -1024,7 +1024,7 @@ without exposing or inspecting the proof value. -/
 def ScheduledRejectedLiveCatchupCertificate
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     {ready : PrologRootClosedAnswerBridge.RootClosedAnswerReady before}
     {selection :
       ScheduledLocalSelection ready.result.historyBuild.cells}
@@ -1072,7 +1072,7 @@ result remains in `Prop`; no runtime successor data is recovered from them. -/
 theorem liveCatchupCertificate
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     {ready : PrologRootClosedAnswerBridge.RootClosedAnswerReady before}
     {selection :
       ScheduledLocalSelection ready.result.historyBuild.cells}
@@ -1134,7 +1134,7 @@ inferred from an empty executable bank. -/
 inductive ScheduledRejectedFineSourceCatchupOutcome
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     {ready : PrologRootClosedAnswerBridge.RootClosedAnswerReady before}
     {selection :
       ScheduledLocalSelection ready.result.historyBuild.cells}
@@ -1182,7 +1182,7 @@ proof certificate. -/
 def classifyFineAndCatchup
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     {ready : PrologRootClosedAnswerBridge.RootClosedAnswerReady before}
     {selection :
       ScheduledLocalSelection ready.result.historyBuild.cells}

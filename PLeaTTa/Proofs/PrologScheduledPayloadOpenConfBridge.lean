@@ -23,6 +23,7 @@ open DemandDrivenStep
 open PrologActivationMacro
 open PrologFindallAnswerResourceBridge
 open PrologHeterogeneousPrefixBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologProductResourceContextBridge
 open PrologRootClosedAnswerBridge
 open PrologScheduledAnswerPropagationBridge
@@ -47,7 +48,7 @@ equations for the same literal alternative head force the executable current
 goal below; no compatible OpenConf or independently chosen clause is
 accepted. -/
 theorem fineCurrentExact
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -119,7 +120,7 @@ theorem fineCurrentExact
 /-- The real answer-and-pull successor owns exactly the flattened resources
 of the transformed dependent payload. -/
 theorem fineAltsExact
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -156,7 +157,7 @@ theorem fineAltsExact
 the real pre/post OpenConf alternative banks differ by exactly one barrier
 marker for every dropped earlier cell. -/
 theorem fineBarrierCountDroppedExact
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -214,7 +215,7 @@ count of the transformed dependent payload.
 This is stronger than `BarrierCacheCoherent`: the uncached `none` lane cannot
 inhabit the conclusion. -/
 theorem fineBarrierCacheExact
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -267,7 +268,7 @@ theorem fineBarrierCacheExact
 /-- The enabled cache equation above names the actual OpenConf field; this
 corollary rewrites that field to the exact transformed dependent payload. -/
 theorem fineBarrierCachePayloadExact
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}

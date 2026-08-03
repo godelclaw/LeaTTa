@@ -83,6 +83,61 @@ abbrev CommittedProductPayloadContext
   SourceControlResourcePayloadContextAgrees alpha support qterm callerBarrier
     outer resources callerScope context outerScope
 
+namespace ActiveProductPayloadContextAt
+
+/-- Remove the active scheduled cell using only its live typed predicate
+scope.  No `OpenedCall` packet is required to identify the zipper head. -/
+def outerPayload
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {predicateScope : CutScopeId}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    (payloadContext :
+      ActiveProductPayloadContextAt alpha support qterm predicateScope finish
+        branch branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context) :
+    CommittedProductPayloadContext alpha support qterm callerBarrier outer
+      resources callerScope outerScope context :=
+  match payloadContext with
+  | .cons _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ outerAgrees =>
+      outerAgrees
+
+/-- The active scheduled cell owns its literal advanced cursor independently
+of any historical call-entry packet. -/
+def activeOwnership
+    {alpha support : List (LogicVar × String)} {qterm : Atom}
+    {predicateScope : CutScopeId}
+    {finish : PreparedCursor} {branch : ClauseBranch}
+    {branchTail : List ClauseBranch} {bodyBarrier callerBarrier : Nat}
+    {callerReferences : List PeTTaSpec.PrologCore.Goal}
+    {callerExecutables : List PLeaTTa.Goal}
+    {outer : List ControlSegment}
+    {active : RetainedAlternativeSegment}
+    {resources : List RetainedAlternativeSegment}
+    {callerScope outerScope : CutScopeId}
+    {context : ActiveProductContext}
+    (payloadContext :
+      ActiveProductPayloadContextAt alpha support qterm predicateScope finish
+        branch branchTail bodyBarrier callerBarrier callerReferences
+        callerExecutables outer active resources callerScope outerScope
+        context) :
+    active.HasIndexedOwnershipAt alpha (finish.advance branch branchTail) := by
+  cases payloadContext with
+  | cons currentBarrier currentScope nextScope outerScope segment segments
+      resource resources cursor context segmentAgrees resourceRest
+      resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees =>
+      exact resourceOwnership
+
+end ActiveProductPayloadContextAt
+
 namespace ActiveProductPayloadContext
 
 /- `ActiveProductPayloadContext` is an abbreviation whose head symbol unfolds

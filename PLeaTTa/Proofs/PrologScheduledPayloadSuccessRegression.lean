@@ -18,6 +18,7 @@ open PrologActivatedProductStepBridge
 open PrologBodyFailureOuterResourceCatchupBridge
 open PrologBodyFailureResourceTransitionBridge
 open PrologHeterogeneousPrefixBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologRootClosedAnswerBridge
 open PrologRepresentativeProductActivationBridge
 open PrologScheduledHistoryBuildBridge
@@ -31,7 +32,7 @@ open PrologSourceProductContextBridge
 /-- Successful head activation contributes one real source transition after
 all scheduled-history, outer-resource, and internal-rejection catch-up. -/
 theorem selected_success_cost_is_strictly_additive
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -54,7 +55,7 @@ theorem selected_success_cost_is_strictly_additive
 /-- The executable success step cannot stutter: it removes the selected
 full-head equality from `cur` before installing the cumulative MGU. -/
 theorem successful_fine_step_is_not_stutter
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -95,7 +96,7 @@ ready frontier: it installs an active left clause body and retained right
 cursor under the predicate cut boundary.  Arbitrary outer frames cannot hide
 that change. -/
 theorem successful_source_step_is_not_stutter
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -114,7 +115,7 @@ theorem successful_source_step_is_not_stutter
 and both literal endpoints reject a stuttering interpretation. -/
 theorem paired_success_exposes_both_real_steps
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}

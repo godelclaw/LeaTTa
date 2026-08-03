@@ -965,8 +965,8 @@ theorem afterAdministrative_beforeTruth_twice
 /-- Source focus after the selected clause body succeeds. -/
 def bodyAnswerSource (state : RepresentativeActivePayloadState) : Search :=
   ActiveProductContext.plug state.carrier.index.context
-    (scheduledSourceProduct state.carrier.index.callerScope
-      state.carrier.index.opened state.carrier.index.finish
+    (scheduledSourceProductAt state.carrier.index.callerScope
+      state.carrier.index.opened.scope state.carrier.index.finish
       state.carrier.index.branch state.carrier.index.branchTail
       state.carrier.index.current state.carrier.index.callerReferences)
 
@@ -977,7 +977,7 @@ def afterBodyAnswer
     (state : RepresentativeActivePayloadState)
     (referenceEmpty : state.carrier.index.bodyReferences = [])
     (executableEmpty : state.carrier.index.bodyExecutables = []) :
-    RepresentativeScheduledPayloadState :=
+    RepresentativePersistentFreeScheduledPayloadState :=
   let activeAgreement :
       SpinedActiveProductPayloadResourceRelatesAt
         state.carrier.index.freshFrontier state.carrier.index.alpha
@@ -997,7 +997,7 @@ def afterBodyAnswer
         state.carrier.index.openConf state.carrier.payloadContext := by
     simpa only [ActivePayloadIndex.Relates, referenceEmpty, executableEmpty]
       using state.carrier.agreement
-  let nextAgreement :
+  let scheduledAgreement :
       SpinedScheduledProductPayloadResourceRelatesAt
         state.carrier.index.freshFrontier state.carrier.index.alpha
         state.carrier.index.support state.carrier.index.canonical
@@ -1017,11 +1017,35 @@ def afterBodyAnswer
     exact
       (PrologCurrentSessionPayloadTransitionBridge.SpinedActiveProductPayloadResourceRelatesAt.afterBodyAnswer
         (prog := prog) (gt := gt) activeAgreement).2.2
-  let nextCarrier := ScheduledPayloadState.ofAgreement nextAgreement
+  let nextAgreement :
+      PersistentFreeScheduledProductPayloadResourceRelatesAt
+        state.carrier.index.freshFrontier state.carrier.index.alpha
+        state.carrier.index.support state.carrier.index.canonical
+        state.carrier.index.referenceBase state.carrier.index.opened.scope
+        state.carrier.index.session state.carrier.index.finish
+        state.carrier.index.branch state.carrier.index.branchTail
+        state.carrier.index.altTail state.carrier.index.bodyBarrier
+        state.carrier.index.callerBarrier state.carrier.index.callerReferences
+        state.carrier.index.callerExecutables state.carrier.index.outer
+        state.carrier.index.current state.carrier.index.runtime
+        state.carrier.index.qterm state.carrier.index.active
+        state.carrier.index.resources state.carrier.index.callerScope
+        state.carrier.index.outerScope state.carrier.index.context
+        state.carrier.index.baseAlts (bodyAnswerSource state)
+        state.carrier.index.openConf state.carrier.payloadContext :=
+    { ready := scheduledAgreement.core.control.ready
+      activeAlts := scheduledAgreement.core.resourceStack.activeAlts
+      actualAlts := scheduledAgreement.core.resourceStack.actualAlts
+      sourceShape := rfl
+      endpointsCurrent := scheduledAgreement.endpointsCurrent
+      activationOrdered := scheduledAgreement.activationOrdered
+      activationOrigins := scheduledAgreement.activationOrigins
+      controlOrigins := scheduledAgreement.controlOrigins }
+  let nextCarrier := PersistentFreeScheduledPayloadState.ofAgreement nextAgreement
   { carrier := nextCarrier
     representative := state.representative
     cumulative := by
-      simpa [nextCarrier, ScheduledPayloadState.ofAgreement] using
+      simpa [nextCarrier, PersistentFreeScheduledPayloadState.ofAgreement] using
         state.cumulative }
 
 @[simp] theorem afterBodyAnswer_sourceState
@@ -2119,9 +2143,8 @@ inductive CertifiedTransition (prog : PLeaTTa.Prog)
       CertifiedTransition prog gt .bodyAnswer
         (.active (RepresentativePersistentFreeActivePayloadState.ofLegacy before))
         (.scheduled
-          (RepresentativePersistentFreeScheduledPayloadState.ofLegacy
-            (RepresentativeActivePayloadState.afterBodyAnswer
-              prog gt before referenceEmpty executableEmpty)))
+          (RepresentativeActivePayloadState.afterBodyAnswer
+            prog gt before referenceEmpty executableEmpty))
   | cut
       (before : RepresentativeActivePayloadState)
       (bodyRest : List PeTTaSpec.PrologCore.Goal)
@@ -2241,7 +2264,8 @@ theorem sourceSteps
           (prog := prog) (gt := gt) activeAgreement).1
       simpa [TransitionKind.sourceCost, TransitionKind.sourceEvents,
         ProductPhaseState.sourceState, ActivePayloadState.sourceState,
-        RepresentativeActivePayloadState.bodyAnswerSource] using
+        RepresentativeActivePayloadState.bodyAnswerSource,
+        scheduledSourceProduct] using
         oneSourceStep raw
   | cut before bodyRest bodyExecutableTail referenceHead executableHead
       coherent =>
@@ -3042,9 +3066,8 @@ inductive Produces (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable) :
       Produces prog gt
         (ActiveStepReady.bodyAnswer state referenceEmpty executableEmpty)
         (.scheduled
-          (RepresentativePersistentFreeScheduledPayloadState.ofLegacy
-            (RepresentativeActivePayloadState.afterBodyAnswer
-              prog gt state referenceEmpty executableEmpty)))
+          (RepresentativeActivePayloadState.afterBodyAnswer
+            prog gt state referenceEmpty executableEmpty))
   | cut
       (state : RepresentativeActivePayloadState)
       (bodyRest : List PeTTaSpec.PrologCore.Goal)
@@ -3207,9 +3230,8 @@ theorem produces
   | bodyAnswer state referenceEmpty executableEmpty =>
       exact
         ⟨.scheduled
-            (RepresentativePersistentFreeScheduledPayloadState.ofLegacy
-              (RepresentativeActivePayloadState.afterBodyAnswer
-                prog gt state referenceEmpty executableEmpty)),
+            (RepresentativeActivePayloadState.afterBodyAnswer
+              prog gt state referenceEmpty executableEmpty),
           .bodyAnswer state referenceEmpty executableEmpty⟩
   | cut state bodyRest bodyExecutableTail referenceHead executableHead
       coherent =>

@@ -18,6 +18,7 @@ open PeTTaSpec.PrologCore.GoalSemantics
 open DemandDrivenStep
 open PrologHeterogeneousPrefixBridge
 open PrologOrdinaryStepBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologRecursiveCallPayloadBridge
 open PrologRootClosedAnswerBridge
 open PrologRootClosedLocalLiveBridge
@@ -40,7 +41,7 @@ coverage combined with a selected nonempty compiled body remains separate.
 [SPEC metta.pl:251-256, translator.pl:320-321] -/
 theorem rejected_prefix_then_root_answer_is_genuinely_local_live
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    exists before : RepresentativeScheduledPayloadState,
+    exists before : RepresentativePersistentFreeScheduledPayloadState,
       exists ready : RootClosedAnswerReady before,
         exists retainedGoals retainedBinding selectedGoals selectedBinding
             selectedTail count target,
@@ -103,14 +104,15 @@ theorem rejected_prefix_then_root_answer_is_genuinely_local_live
   have qtermExact :
       before.carrier.index.openConf.control.qterm =
         PrologRootRejectedPrefixRegression.queryAtom :=
-    before.carrier.agreement.core.control.ready.2.2.1.trans indexQterm
+    before.carrier.agreement.ready.2.2.1.trans indexQterm
   have allOuterEmpty :
       forall segment, segment ∈ before.carrier.index.outer ->
         segment.references = [] := by
     rw [outerEmpty]
     simp
   let ready :=
-    RepresentativeScheduledPayloadState.rootClosedAnswerReady before
+    PrologRootClosedAnswerBridge.RepresentativePersistentFreeScheduledPayloadState.rootClosedAnswerReady
+      before
       callerEmpty allOuterEmpty baseEmpty
   obtain ⟨retainedGoals, retainedBinding, retainedAltShape⟩ :=
     PrologRootRejectedPrefixRegression.retainedAlt_is_branch
@@ -180,7 +182,7 @@ load-bearing for that content.  Producing arbitrary query spellings from
 source/compiler input remains a global composition obligation. -/
 theorem rejected_prefix_then_root_answer_ground_public_append_smoke
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    exists before : RepresentativeScheduledPayloadState,
+    exists before : RepresentativePersistentFreeScheduledPayloadState,
       exists ready : RootClosedAnswerReady before,
         exists retainedGoals retainedBinding selectedGoals selectedBinding
             selectedTail count target,

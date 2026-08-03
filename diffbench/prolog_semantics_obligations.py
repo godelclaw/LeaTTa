@@ -621,6 +621,49 @@ def axiom_audit_targets() -> set[str]:
     ))
 
 
+def packet_free_scheduled_consumer_errors() -> list[str]:
+    """Pin the exact legacy scheduled compatibility surface.
+
+    All PLeaTTa Lean sources are checked, not only the Prolog proof glob.
+    Axiom-audit directives may name compatibility declarations, but executable
+    declarations and proofs may use the legacy carrier only at the exact
+    definition/adapter occurrences already present in the compatibility
+    module.  Exact occurrence counts also reject an alias added inside that
+    module and consumed elsewhere.
+    """
+    errors: list[str] = []
+    legacy_patterns = (
+        ("legacy scheduled carrier", re.compile(
+            r"(?<!Free)ScheduledPayloadState")),
+        ("scheduled one-way adapter", re.compile(
+            r"PersistentFreeScheduledPayloadState\.ofLegacy")),
+    )
+    # These are a reviewed compatibility budget, not values to update merely
+    # because this gate turns red: increasing either count expands the legacy
+    # surface and requires an explicit adequacy review.
+    allowed_counts = {
+        PROLOG_HETEROGENEOUS_PREFIX_BRIDGE: (32, 2),
+    }
+    for path in sorted((ROOT / "PLeaTTa").rglob("*.lean")):
+        text = "\n".join(
+            line for line in path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#print axioms")
+        )
+        actual = tuple(len(pattern.findall(text))
+                       for _label, pattern in legacy_patterns)
+        expected = allowed_counts.get(path, (0, 0))
+        if actual != expected:
+            relative = path.relative_to(ROOT)
+            detail = ", ".join(
+                f"{label}={count} (expected {wanted})"
+                for (label, _pattern), count, wanted
+                in zip(legacy_patterns, actual, expected)
+                if count != wanted
+            )
+            errors.append(f"{relative}: {detail}")
+    return errors
+
+
 def load_ledger() -> tuple[dict[str, str], list[dict[str, str]]]:
     metadata: dict[str, str] = {}
     table: list[str] = []
@@ -1038,6 +1081,7 @@ def check() -> list[str]:
                 errors.append(
                     f"{row_id}: reference is not axiom-audited: {target}"
                 )
+    errors.extend(packet_free_scheduled_consumer_errors())
     return errors
 
 

@@ -116,7 +116,7 @@ The three summands are intentionally not fused:
 This theorem ends *before* consuming the selected head. -/
 theorem postAnswerToSelectedReady
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -233,7 +233,7 @@ partition: current caller references, selected resource, and selected frame
 are not erased to the older-only context. -/
 abbrev RootPayloadPartition
     (before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState) :=
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState) :=
   OuterResourceCatchupPartition before.carrier.index.alpha
     ({ barrier := before.carrier.index.callerBarrier
        references := before.carrier.index.callerReferences
@@ -253,7 +253,7 @@ abbrev RootPayloadPartition
 through rejection of the selected retained head. -/
 def postAnswerRejectedHeadCount
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     (ready : RootClosedAnswerReady before)
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -269,14 +269,14 @@ def postAnswerRejectedHeadCount
 next locally owned clause occurrence. -/
 def selectedFineState
     (before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState) :
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState) :
     OpenConf :=
   privateAnswerTarget before.carrier.index.openConf before.carrier.index.runtime
 
 /-- The real fine successor of rejecting that selected occurrence. -/
 def rejectedFineState
     (before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState) :
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState) :
     OpenConf :=
   PrologOrdinaryStepBridge.unifyFailureSuccessor (selectedFineState before)
 
@@ -290,7 +290,7 @@ successor and takes the sealed equality-failure step. -/
 structure ScheduledRejectedHeadRelates
     (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
     (before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState)
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState)
     (ready : RootClosedAnswerReady before)
     (selection : ScheduledLocalSelection ready.result.historyBuild.cells)
     (scope : CutScopeId)
@@ -351,7 +351,7 @@ The conclusion names the actual `unifyFailureSuccessor`; it does not inherit
 the post-answer depth or choose a compatible alternative suffix. -/
 theorem rejectedFineBarrierCacheExact
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -378,7 +378,7 @@ in `Prop`.  No runtime state is chosen by eliminating that evidence. -/
 theorem rejectHead
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {before :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState}
+      PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}

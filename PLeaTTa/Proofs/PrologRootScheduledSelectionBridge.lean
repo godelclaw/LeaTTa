@@ -14,15 +14,6 @@ import PLeaTTa.Proofs.PrologRootCallReadyBridge
 
 namespace PLeaTTa.PrologRootScheduledSelectionBridge
 
-/-- Explicit one-way ingress for packet-bearing producer fixtures. -/
-private abbrev legacyScheduled
-    (state :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState) :
-    PrologHeterogeneousPrefixBridge.ProductPhaseState :=
-  .scheduled
-    (PrologHeterogeneousPrefixBridge.RepresentativePersistentFreeScheduledPayloadState.ofLegacy
-      state)
-
 open Metta (Atom Subst)
 open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.Canonical
@@ -35,6 +26,7 @@ open PrologCurrentSessionPayloadTransitionBridge
 open PrologNestedCallReadyBridge
 open PrologOrdinaryStepBridge
 open PrologPersistentFreeActivePayloadBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologProductResourceContextBridge
 open PrologRootCallReadyBridge
 open PrologRootClosedAnswerBridge
@@ -62,7 +54,7 @@ structure RootClosedSingletonSelectedPrefix
     (retainedCursor : PreparedCursor)
     (retainedSupport : List (LogicVar × String))
     (retainedQuery : Atom) : Type where
-  before : RepresentativeScheduledPayloadState
+  before : RepresentativePersistentFreeScheduledPayloadState
   ready : RootClosedAnswerReady before
   selection : ScheduledLocalSelection ready.result.historyBuild.cells
   scope : CutScopeId
@@ -176,7 +168,8 @@ theorem toScheduledSelected
     rw [outerEmpty]
     simp
   let ready :=
-    RepresentativeScheduledPayloadState.rootClosedAnswerReady before
+    PrologRootClosedAnswerBridge.RepresentativePersistentFreeScheduledPayloadState.rootClosedAnswerReady
+      before
       callerEmpty allOuterEmpty baseEmpty
   have activeAltsShape :
       before.carrier.index.active.alts =
@@ -203,10 +196,10 @@ theorem toScheduledSelected
     exact (List.cons.inj mapped).1
   have tailCellsEmpty :
       payloadCells
-          (ActiveProductPayloadContext.outerPayload
+          (ActiveProductPayloadContextAt.outerPayload
             before.carrier.payloadContext) = [] := by
     have mapped := payloadCells_map_resource
-      (ActiveProductPayloadContext.outerPayload before.carrier.payloadContext)
+      (ActiveProductPayloadContextAt.outerPayload before.carrier.payloadContext)
     have mappedEmpty := mapped.trans resourcesEmpty
     apply List.eq_nil_of_length_eq_zero
     have lengths := congrArg List.length mappedEmpty
@@ -238,12 +231,12 @@ theorem toScheduledSelected
           (.active
             (PLeaTTa.PrologPersistentFreeActivePayloadBridge.RepresentativePersistentFreeActivePayloadState.ofLegacy
               active))
-          (legacyScheduled before) :=
+          (.scheduled before) :=
       .cons (.administrative active administration)
         (.cons
           (.bodyAnswer normalized normalizedReferencesEmpty
             normalizedExecutablesEmpty)
-          (.nil (legacyScheduled before)))
+          (.nil (.scheduled before)))
     have combined := facts.sourceSteps.trans activeToBefore.sourceSteps
     simpa [
       PLeaTTa.PrologHeterogeneousPrefixBridge.TransitionSchedule.sourceCost,
@@ -262,12 +255,12 @@ theorem toScheduledSelected
           (.active
             (PLeaTTa.PrologPersistentFreeActivePayloadBridge.RepresentativePersistentFreeActivePayloadState.ofLegacy
               active))
-          (legacyScheduled before) :=
+          (.scheduled before) :=
       .cons (.administrative active administration)
         (.cons
           (.bodyAnswer normalized normalizedReferencesEmpty
             normalizedExecutablesEmpty)
-          (.nil (legacyScheduled before)))
+          (.nil (.scheduled before)))
     have combined := facts.fineSteps.trans activeToBefore.fineSteps
     simpa [
       PLeaTTa.PrologHeterogeneousPrefixBridge.TransitionSchedule.fineCost,

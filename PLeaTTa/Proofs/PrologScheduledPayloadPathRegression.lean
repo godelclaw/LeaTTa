@@ -16,6 +16,7 @@ open PeTTaSpec.PrologCore.GoalSemantics
 open PrologHeterogeneousPrefixBridge
 open PrologNestedCallChainBridge
 open PrologNestedCallReadyBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologProductResourceContextBridge
 open PrologScheduledPayloadPathBridge
 open PrologScheduledHistoryBuildBridge
@@ -149,7 +150,7 @@ coordinates recover the same-occurrence payload cell (including its immutable
 snapshot) at positions 0, 1, and 2. -/
 theorem ground_root_closed_history_paths_recover_exact_payload_cells
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    ∃ before : RepresentativeScheduledPayloadState,
+    ∃ before : RepresentativePersistentFreeScheduledPayloadState,
       ∃ ready : RootClosedAnswerReady before,
         ∃ first second third :
             ScheduledHistoryBuild.Path ready.result.historyBuild,

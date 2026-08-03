@@ -27,6 +27,7 @@ open PrologBodyFailureResourceTransitionBridge
 open PrologControlSegmentSpineBridge
 open PrologCurrentSessionPayloadBridge
 open PrologHeterogeneousPrefixBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologMguComposition
 open PrologOrdinaryStepBridge
 open PrologPersistentFreeActivePayloadBridge
@@ -578,7 +579,7 @@ namespace RootClosedAnswerReady
 to be literally empty; it is not merely hidden behind an equal flattened
 bank. -/
 theorem baseAlts_eq_nil
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (ready : RootClosedAnswerReady before) :
     before.carrier.index.baseAlts = [] := by
   have historyResources :
@@ -597,7 +598,7 @@ theorem baseAlts_eq_nil
           (before.carrier.index.active :: before.carrier.index.resources)
           before.carrier.index.baseAlts =
           before.carrier.index.openConf.control.alts :=
-        before.carrier.agreement.core.resourceStack.actualAlts.symm
+        before.carrier.agreement.actualAlts.symm
       _ = flattenOwnedAlts ready.result.history.resources [] :=
         ready.bankExact
       _ = flattenOwnedAlts
@@ -632,7 +633,7 @@ namespace ScheduledSelectedHeadTransition
 /-- The selected occurrence followed by the transformed literal tail is the
 exact positional suffix of the original payload spine. -/
 theorem selectedCellSpineExact
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -663,7 +664,7 @@ theorem selectedCellSpineExact
 /-- The exact selected historical activation is dominated by the current
 session and names the selected predicate's typed cut high-water. -/
 theorem selectedActivationOriginFacts
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -685,7 +686,7 @@ theorem selectedActivationOriginFacts
 /-- Rejected-prefix cursor motion preserves the selected occurrence's compact
 control origin exactly. -/
 theorem selectedSnapshotAtFinish_controlOrigin
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -703,7 +704,7 @@ theorem selectedSnapshotAtFinish_controlOrigin
 the selected activation remains dominated by the current session and retains
 the exact typed cut high-water. -/
 theorem selectedSnapshotAtFinish_activationFacts
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -741,7 +742,7 @@ theorem selectedSnapshotAtFinish_activationFacts
 /-- The selected occurrence records the exact later alternative bank and
 the unchanged fine-lane frame stack. -/
 theorem selectedControlOriginFacts
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -772,7 +773,7 @@ The proof follows the positional payload prefix.  Every earlier occurrence
 is structurally empty, so its marker is crossed once; the selected branch is
 then pulled without crossing its own marker. -/
 theorem selectedFineBarriersExact
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -849,7 +850,7 @@ theorem selectedFineBarriersExact
           flattenOwnedAlts
             (before.carrier.index.active :: before.carrier.index.resources)
             before.carrier.index.baseAlts :=
-        before.carrier.agreement.core.resourceStack.actualAlts
+        before.carrier.agreement.actualAlts
       _ =
           flattenOwnedAlts
             (before.carrier.index.active :: before.carrier.index.resources)
@@ -885,7 +886,7 @@ theorem selectedFineBarriersExact
 /-- The selected answer-and-pull state still dominates every later retained
 payload endpoint at the current source/executable high-waters. -/
 theorem postTailEndpointsCurrent
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -913,7 +914,7 @@ theorem postTailEndpointsCurrent
 /-- Prefix elimination preserves the complete recursive allocation chronology
 of every cell later than the selected occurrence. -/
 theorem postTailActivationOrdered
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -939,7 +940,7 @@ theorem postTailActivationOrdered
 fresh interval and executable resolution seed.  This is the exact premise
 needed to alpha-extend that suffix after successful head unification. -/
 theorem postTailEndpointsAtActivation
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -1000,7 +1001,7 @@ theorem postTailEndpointsAtActivation
 /-- Prefix elimination preserves current-session domination of each exact
 later historical activation. -/
 theorem postTailActivationOrigins
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -1026,7 +1027,7 @@ theorem postTailActivationOrigins
 for the literal later suffix.  Root closure discharges the older base rather
 than hiding it behind flattened-bank equality. -/
 theorem postTailControlOrigins
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -1084,7 +1085,7 @@ The current session and every live executable component come from the actual
 post-step state. -/
 theorem toPersistentFreeActivePayload
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -1160,7 +1161,7 @@ theorem toPersistentFreeActivePayload
           before.carrier.index.openConf.control.qterm := by
         simp [selectedFineState]
       _ = before.carrier.index.qterm :=
-        before.carrier.agreement.core.control.ready.2.2.1
+        before.carrier.agreement.ready.2.2.1
       _ = selection.selected.resource.qterm :=
         transition.selectedResourceQueryExact.symm
   let oldTail :=
@@ -1370,7 +1371,7 @@ theorem toPersistentFreeActivePayload
     refine ⟨?_, ?_⟩
     · rw [relation.finePersistent]
       simpa [selectedFineState] using
-        before.carrier.agreement.core.control.ready.1.database
+        before.carrier.agreement.ready.1.database
     · rw [relation.finePersistent]
       exact relation.freshFrontier
   have targetCurrent :
@@ -1481,7 +1482,7 @@ constructive producer: it can establish `Nonempty` for this package, while an
 actual global transition stores the package itself. -/
 structure ScheduledSuccessfulHeadSuccessor
     (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
-    (before : RepresentativeScheduledPayloadState)
+    (before : RepresentativePersistentFreeScheduledPayloadState)
     (ready : RootClosedAnswerReady before)
     (selection : ScheduledLocalSelection ready.result.historyBuild.cells)
     (scope : CutScopeId)
@@ -1560,7 +1561,7 @@ carrier.  Every index is the literal endpoint already certified by
 `agreement`; no historical creation packet is reconstructed. -/
 def carrier
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -1622,7 +1623,7 @@ def carrier
 /-- The representative-bearing phase endpoint stored by the global zipper. -/
 def after
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -1650,7 +1651,7 @@ def after
 
 @[simp] theorem after_sourceState
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -1676,7 +1677,7 @@ def after
 
 @[simp] theorem after_fineState
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -1701,7 +1702,7 @@ def after
 
 @[simp] theorem after_session
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -1725,7 +1726,7 @@ def after
 
 @[simp] theorem after_openConf
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -1750,7 +1751,7 @@ def after
 
 @[simp] theorem after_representative
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}
@@ -1779,7 +1780,7 @@ def after
 phase data. -/
 theorem nonempty
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     {ready : RootClosedAnswerReady before}
     {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
     {scope : CutScopeId}

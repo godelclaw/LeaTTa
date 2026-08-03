@@ -17,6 +17,7 @@ open DemandDrivenStep
 open PrologHeterogeneousPrefixBridge
 open PrologNestedCallChainBridge
 open PrologNestedCallReadyBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologRootClosedAnswerBridge
 open PrologRootClosedLocalLiveBridge
 open PrologScheduledPayloadResumeBridge
@@ -26,7 +27,7 @@ with all hypotheses needed by both private absorption and closed public-pull
 classification. -/
 private theorem groundRootClosedScheduledCarrier
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    ∃ before : RepresentativeScheduledPayloadState,
+    ∃ before : RepresentativePersistentFreeScheduledPayloadState,
       before.carrier.index.callerReferences = [] ∧
         before.carrier.index.baseAlts = [] ∧
         before.carrier.index.outer.length = 2 ∧
@@ -66,7 +67,7 @@ fixture with the general absorption theorem rather than placing the two facts
 in separate existentials. -/
 theorem ground_two_frame_live_absorption_is_inhabited
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    ∃ before : RepresentativeScheduledPayloadState, ∃ target : Search,
+    ∃ before : RepresentativePersistentFreeScheduledPayloadState, ∃ target : Search,
       before.carrier.index.outer.length = 2 ∧
       StepsN 2 before.carrier.sourceState []
         (.running before.carrier.index.session target) ∧
@@ -88,7 +89,7 @@ the literal executable bank; no independent empty suffix or compatible
 history can be supplied. -/
 theorem ground_two_frame_root_closed_pull_is_inhabited
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    ∃ before : RepresentativeScheduledPayloadState,
+    ∃ before : RepresentativePersistentFreeScheduledPayloadState,
       ∃ ready : RootClosedAnswerReady before,
         before.carrier.index.outer.length = 2 ∧
           ∃ events,
@@ -105,7 +106,7 @@ theorem ground_two_frame_root_closed_pull_is_inhabited
     ⟨before, callerEmpty, baseEmpty, outerLength, outerEmpty⟩ :=
     groundRootClosedScheduledCarrier (prog := prog) (gt := gt)
   let ready :=
-    PrologRootClosedAnswerBridge.RepresentativeScheduledPayloadState.rootClosedAnswerReady
+    PrologRootClosedAnswerBridge.RepresentativePersistentFreeScheduledPayloadState.rootClosedAnswerReady
       before callerEmpty outerEmpty baseEmpty
   obtain ⟨events, outcome, classified⟩ :=
     PrologRootClosedAnswerBridge.RootClosedAnswerReady.classifyPull ready
@@ -118,7 +119,7 @@ fall-through.  This is deliberately a dichotomy because the p/q/r fixture has
 one clause per predicate and therefore need not inhabit the local-live arm. -/
 theorem ground_two_frame_root_closed_answer_couples_or_terminates
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    ∃ before : RepresentativeScheduledPayloadState,
+    ∃ before : RepresentativePersistentFreeScheduledPayloadState,
       ∃ ready : RootClosedAnswerReady before,
         before.carrier.index.outer.length = 2 ∧
           ((∃ selectedGoals selectedBinding selectedTail count target,
@@ -131,7 +132,7 @@ theorem ground_two_frame_root_closed_answer_couples_or_terminates
     ⟨before, callerEmpty, baseEmpty, outerLength, outerEmpty⟩ :=
     groundRootClosedScheduledCarrier (prog := prog) (gt := gt)
   let ready :=
-    PrologRootClosedAnswerBridge.RepresentativeScheduledPayloadState.rootClosedAnswerReady
+    PrologRootClosedAnswerBridge.RepresentativePersistentFreeScheduledPayloadState.rootClosedAnswerReady
       before callerEmpty outerEmpty baseEmpty
   have classified :=
     PLeaTTa.PrologRootClosedLocalLiveBridge.RootClosedAnswerReady.classifyPullAndRelate

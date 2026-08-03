@@ -12,15 +12,6 @@ import PLeaTTa.Proofs.PrologRootScheduledSelectionBridge
 
 namespace PLeaTTa.PrologScheduledRejectionReachabilityRegression
 
-/-- Explicit one-way ingress for packet-bearing producer fixtures. -/
-private abbrev legacyScheduled
-    (state :
-      PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState) :
-    PrologHeterogeneousPrefixBridge.ProductPhaseState :=
-  .scheduled
-    (PrologHeterogeneousPrefixBridge.RepresentativePersistentFreeScheduledPayloadState.ofLegacy
-      state)
-
 open Metta (Atom Subst)
 open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.Canonical
@@ -47,6 +38,7 @@ open PrologMguVariant
 open PrologOrdinaryStepBridge
 open PrologPersistentFreeScheduledRejectionCatchupBridge
 open PrologPersistentFreeScheduledRejectionPullBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologPrefilterBridge
 open PrologPrefilterCallBridge
 open PrologPrefilterScanBridge
@@ -1208,7 +1200,7 @@ tail as `[hidden, live]`; no equality or injectivity principle over candidate
 values is used to recover the occurrence. -/
 private theorem reachable_false_positive_selected
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    ∃ (before : RepresentativeScheduledPayloadState)
+    ∃ (before : RepresentativePersistentFreeScheduledPayloadState)
         (ready : RootClosedAnswerReady before)
         (selection : ScheduledLocalSelection ready.result.historyBuild.cells)
         (scope : CutScopeId)
@@ -1270,7 +1262,8 @@ private theorem reachable_false_positive_selected
     rw [outerEmpty]
     simp
   let ready :=
-    RepresentativeScheduledPayloadState.rootClosedAnswerReady before
+    PrologRootClosedAnswerBridge.RepresentativePersistentFreeScheduledPayloadState.rootClosedAnswerReady
+      before
       callerEmpty allOuterEmpty baseEmpty
   have activeAltsShape :
       before.carrier.index.active.alts = [rejectedAlt, liveAlt] := by
@@ -1300,10 +1293,10 @@ private theorem reachable_false_positive_selected
     exact (List.cons.inj mapped).1
   have tailCellsEmpty :
       payloadCells
-          (ActiveProductPayloadContext.outerPayload
+          (ActiveProductPayloadContextAt.outerPayload
             before.carrier.payloadContext) = [] := by
     have mapped := payloadCells_map_resource
-      (ActiveProductPayloadContext.outerPayload before.carrier.payloadContext)
+      (ActiveProductPayloadContextAt.outerPayload before.carrier.payloadContext)
     have mappedEmpty := mapped.trans resourcesEmpty
     apply List.eq_nil_of_length_eq_zero
     have lengths := congrArg List.length mappedEmpty
@@ -1419,7 +1412,7 @@ This is constructed from the selected runtime equality rather than from a
 global candidate-injectivity assumption. -/
 private theorem reachable_false_positive_rejected
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    ∃ (before : RepresentativeScheduledPayloadState)
+    ∃ (before : RepresentativePersistentFreeScheduledPayloadState)
         (ready : RootClosedAnswerReady before)
         (selection : ScheduledLocalSelection ready.result.historyBuild.cells)
         (scope : CutScopeId)
@@ -1518,7 +1511,7 @@ assumed, so duplicate-valued occurrences remain distinguished by the frozen
 cursor and payload coordinates. -/
 theorem four_occurrence_rejection_then_one_source_skip_exact
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    ∃ (before : RepresentativeScheduledPayloadState)
+    ∃ (before : RepresentativePersistentFreeScheduledPayloadState)
         (ready : RootClosedAnswerReady before)
         (selection : ScheduledLocalSelection ready.result.historyBuild.cells)
         (scope : CutScopeId)
@@ -2251,7 +2244,7 @@ The administrative proof is indexed by the literal scheduled-success
 successor, and the prefix endpoint is indexed by that same proof. -/
 structure ReachableScheduledSuccessAdministrativePrefix
     (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
-    (before : RepresentativeScheduledPayloadState)
+    (before : RepresentativePersistentFreeScheduledPayloadState)
     (ready : RootClosedAnswerReady before)
     (selection : ScheduledLocalSelection ready.result.historyBuild.cells)
     (scope : CutScopeId)
@@ -2277,7 +2270,7 @@ structure ReachableScheduledSuccessAdministrativePrefix
       [ .scheduledSuccess
           (ScheduledSuccessLabel.of ready transition partition flattened),
         .activeAdministrative 1 ]
-      (.ordinary (legacyScheduled before))
+      (.ordinary (.scheduled before))
       (.ordinary
         (.active
           (RepresentativePersistentFreeActivePayloadState.afterAdministrative
@@ -2291,7 +2284,7 @@ successor and exact two-edge global prefix, so the acceptance path is not a
 conditional theorem over an assumed success relation. -/
 theorem double_selected_scheduled_success_then_administrative_exact
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
-    ∃ (before : RepresentativeScheduledPayloadState)
+    ∃ (before : RepresentativePersistentFreeScheduledPayloadState)
         (ready : RootClosedAnswerReady before)
         (selection : ScheduledLocalSelection ready.result.historyBuild.cells)
         (scope : CutScopeId)
@@ -2360,7 +2353,8 @@ theorem double_selected_scheduled_success_then_administrative_exact
     rw [outerEmpty]
     simp
   let ready :=
-    RepresentativeScheduledPayloadState.rootClosedAnswerReady before
+    PrologRootClosedAnswerBridge.RepresentativePersistentFreeScheduledPayloadState.rootClosedAnswerReady
+      before
       callerEmpty allOuterEmpty baseEmpty
   have activeAltsShape :
       before.carrier.index.active.alts = [secondSelectedAlt] := by
@@ -2382,10 +2376,10 @@ theorem double_selected_scheduled_success_then_administrative_exact
     exact (List.cons.inj mapped).1
   have tailCellsEmpty :
       payloadCells
-          (ActiveProductPayloadContext.outerPayload
+          (ActiveProductPayloadContextAt.outerPayload
             before.carrier.payloadContext) = [] := by
     have mapped := payloadCells_map_resource
-      (ActiveProductPayloadContext.outerPayload before.carrier.payloadContext)
+      (ActiveProductPayloadContextAt.outerPayload before.carrier.payloadContext)
     have mappedEmpty := mapped.trans resourcesEmpty
     apply List.eq_nil_of_length_eq_zero
     have lengths := congrArg List.length mappedEmpty
@@ -2430,12 +2424,12 @@ theorem double_selected_scheduled_success_then_administrative_exact
         (.active
           (PLeaTTa.PrologPersistentFreeActivePayloadBridge.RepresentativePersistentFreeActivePayloadState.ofLegacy
             active))
-        (legacyScheduled before) :=
+        (.scheduled before) :=
     .cons (.administrative active administration)
       (.cons
         (.bodyAnswer normalized normalizedReferencesEmpty
           normalizedExecutablesEmpty)
-        (.nil (legacyScheduled before)))
+        (.nil (.scheduled before)))
   have sourceRoot :
       StepsN 4
         (.running doubleSelectedSession

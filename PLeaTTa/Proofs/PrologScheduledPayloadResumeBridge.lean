@@ -8,7 +8,7 @@ Trusted boundary: none
 Main exports:
   RepresentativePrivateScheduledResume,
   RepresentativePrivateScheduledResume.sourceStepsN,
-  RepresentativeScheduledPayloadState.privateScheduledResume
+  RepresentativePersistentFreeScheduledPayloadState.privateScheduledResume
 -/
 import PLeaTTa.Proofs.PrologHeterogeneousPrefixBridge
 import PLeaTTa.Proofs.PrologScheduledAnswerPropagationBridge
@@ -23,6 +23,7 @@ open PeTTaSpec.PrologCore.Resolver
 open DemandDrivenStep
 open PrologCurrentSessionPayloadTransitionBridge
 open PrologHeterogeneousPrefixBridge
+open PrologPersistentFreeScheduledPayloadBridge
 open PrologNestedCallChainBridge
 open PrologNestedCallReadyBridge
 open PrologProductResourceContextBridge
@@ -62,7 +63,7 @@ Snapshots restore pre-head substitutions only after failure/backtracking;
 successful answer propagation must carry the live `current`, runtime state,
 and representative forward unchanged. -/
 def currentAnswerHistory
-    (state : RepresentativeScheduledPayloadState) :
+    (state : RepresentativePersistentFreeScheduledPayloadState) :
     ScheduledAnswerHistory state.carrier.index.alpha
       (ScheduledAnswerHistory.oneLevelSource
         state.carrier.index.callerScope state.carrier.index.predicateScope
@@ -79,11 +80,11 @@ def currentAnswerHistory
     (state.carrier.index.finish.advance state.carrier.index.branch
       state.carrier.index.branchTail)
     state.carrier.index.active
-    (_root_.PLeaTTa.PrologCurrentSessionPayloadTransitionBridge.ActiveProductPayloadContext.activeOwnership
+    (_root_.PLeaTTa.PrologCurrentSessionPayloadTransitionBridge.ActiveProductPayloadContextAt.activeOwnership
       state.carrier.payloadContext)
 
 @[simp] theorem currentAnswerHistory_resources
-    (state : RepresentativeScheduledPayloadState) :
+    (state : RepresentativePersistentFreeScheduledPayloadState) :
     (currentAnswerHistory state).resources = [state.carrier.index.active] :=
   ScheduledAnswerHistory.oneLevel_resources _ _ _ _ _ _
 
@@ -91,7 +92,7 @@ def currentAnswerHistory
 retains the live cumulative source substitution selected by the current
 clause body. -/
 @[simp] theorem currentAnswerHistory_bindings
-    (state : RepresentativeScheduledPayloadState) :
+    (state : RepresentativePersistentFreeScheduledPayloadState) :
     (currentAnswerHistory state).bindings = state.carrier.index.current := rfl
 
 /-! ## One exact live private resume -/
@@ -104,7 +105,7 @@ and immutable snapshot in one object.  Only its structural ownership is used
 on this successful path.  No snapshot field can generate the target
 substitution, persistent state, representative, or answer payload. -/
 structure RepresentativePrivateScheduledResume
-    (before : RepresentativeScheduledPayloadState) where
+    (before : RepresentativePersistentFreeScheduledPayloadState) where
   outerSegment : PrologControlSegmentSpineBridge.ControlSegment
   remainingSegments : List PrologControlSegmentSpineBridge.ControlSegment
   outerResource : RetainedAlternativeSegment
@@ -133,7 +134,7 @@ namespace RepresentativePrivateScheduledResume
 /-- The structurally certified one-frame resume.  Its ownership comes from
 the same `outerCell` that fixes the source frame and retained cursor. -/
 def resume
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (facts : RepresentativePrivateScheduledResume before) :
     PrivateScheduledResume before.carrier.index.alpha
       (currentAnswerHistory before) facts.outerFrame.callerScope
@@ -146,7 +147,7 @@ def resume
 
 /-- Literal source successor after this one private propagation layer. -/
 def targetSource
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (facts : RepresentativePrivateScheduledResume before) : Search :=
   ActiveProductContext.plug facts.remainingContext
     (privateResumeTarget (currentAnswerHistory before)
@@ -155,26 +156,26 @@ def targetSource
 
 /-- The target source session is the live current session, not a snapshot. -/
 def targetSourceState
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (facts : RepresentativePrivateScheduledResume before) : State :=
   .running before.carrier.index.session facts.targetSource
 
 /-- Literal current source session carried by the historical target. -/
 def targetSession
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (_facts : RepresentativePrivateScheduledResume before) : Session :=
   before.carrier.index.session
 
 /-- Literal current fine configuration carried by the historical target. -/
 def targetOpenConf
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (_facts : RepresentativePrivateScheduledResume before) : OpenConf :=
   before.carrier.index.openConf
 
 /-- The fine machine already exposes the caller continuation; source-only
 scheduling therefore leaves its literal open configuration unchanged. -/
 def targetFineState
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (_facts : RepresentativePrivateScheduledResume before) :
     DemandDrivenCallStep.FineConf :=
   before.carrier.fineState
@@ -182,14 +183,14 @@ def targetFineState
 /-- Successful propagation carries the live cumulative representative
 forward; it never restores `outerCell.snapshot.residualRepresentative`. -/
 def targetRepresentative
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (_facts : RepresentativePrivateScheduledResume before) :
     TreeSubstitution :=
   before.representative
 
 /-- No payload cell is retired or duplicated by private scheduling. -/
 def targetCellIdentities
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (_facts : RepresentativePrivateScheduledResume before) :
     List PrologNestedCallChainBridge.PayloadCellIdentity :=
   before.carrier.cellIdentities
@@ -197,7 +198,7 @@ def targetCellIdentities
 /-- One private live resume is exactly one silent source transition and keeps
 the current persistent session definitionally unchanged. -/
 theorem sourceStep
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (facts : RepresentativePrivateScheduledResume before) :
     RawStep before.carrier.index.session before.carrier.index.source [] .none
       before.carrier.index.session (.running facts.targetSource) := by
@@ -209,7 +210,7 @@ theorem sourceStep
 
 /-- Exact step-indexed form of `sourceStep`. -/
 theorem sourceStepsN
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (facts : RepresentativePrivateScheduledResume before) :
     StepsN 1 before.carrier.sourceState [] facts.targetSourceState := by
   exact .succ 0 _ _ _ [] [] (.ordinary _ [] _ _ _ facts.sourceStep) (.zero _)
@@ -217,36 +218,36 @@ theorem sourceStepsN
 /-- The fine side takes exactly zero steps across this source-only resume. -/
 theorem fineStepsN
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (facts : RepresentativePrivateScheduledResume before) :
     DemandDrivenCallStep.StepsN prog gt 0 before.carrier.fineState
       facts.targetFineState :=
   .zero _
 
 @[simp] theorem targetRepresentative_exact
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (facts : RepresentativePrivateScheduledResume before) :
     facts.targetRepresentative = before.representative := rfl
 
 @[simp] theorem targetSession_exact
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (facts : RepresentativePrivateScheduledResume before) :
     facts.targetSession = before.carrier.index.session := rfl
 
 @[simp] theorem targetOpenConf_exact
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (facts : RepresentativePrivateScheduledResume before) :
     facts.targetOpenConf = before.carrier.index.openConf := rfl
 
 @[simp] theorem targetCellIdentities_exact
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (facts : RepresentativePrivateScheduledResume before) :
     facts.targetCellIdentities = before.carrier.cellIdentities := rfl
 
 /-- The new historical right region contains exactly the current resource
 followed by the older resource certified by this payload cell. -/
 theorem resumedResources_exact
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (facts : RepresentativePrivateScheduledResume before) :
     (currentAnswerHistory before).resources ++ [facts.outerResource] =
       [before.carrier.index.active, facts.outerResource] := by
@@ -256,7 +257,7 @@ theorem resumedResources_exact
 exactly the current active resource plus the first older resource, followed
 by the untouched older tail. -/
 theorem resumedResourceBank_exact
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (facts : RepresentativePrivateScheduledResume before) :
     ((currentAnswerHistory before).resources ++ [facts.outerResource]) ++
         facts.remainingResources =
@@ -267,7 +268,7 @@ theorem resumedResourceBank_exact
 /-- Exactly two resource markers inhabit the new scheduled right region;
 the count is derived from its actual ownership certificate. -/
 theorem resumedBarrierCount_exact
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (facts : RepresentativePrivateScheduledResume before) :
     PLeaTTa.barrierCount
         (flattenOwnedAlts
@@ -283,7 +284,7 @@ theorem resumedBarrierCount_exact
 The target representative is the live one even when the two values are
 observably different. -/
 theorem targetRepresentative_ne_snapshot_of_ne
-    {before : RepresentativeScheduledPayloadState}
+    {before : RepresentativePersistentFreeScheduledPayloadState}
     (facts : RepresentativePrivateScheduledResume before)
     (different :
       before.representative ≠
@@ -305,13 +306,13 @@ same dependent zipper constructor.  The snapshot itself is retained only as
 identity evidence and is never read to construct the successful target.
 [SPEC metta.pl:251-256; ISO:SLD leftmost depth-first selection] -/
 theorem
-    _root_.PLeaTTa.PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState.privateScheduledResume
-    (before : RepresentativeScheduledPayloadState)
+    _root_.PLeaTTa.PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState.privateScheduledResume
+    (before : RepresentativePersistentFreeScheduledPayloadState)
     (referenceEmpty : before.carrier.index.callerReferences = [])
     (outerNonempty : before.carrier.index.context ≠ []) :
     Nonempty (RepresentativePrivateScheduledResume before) := by
   let payloadTail :=
-    ActiveProductPayloadContext.outerPayload before.carrier.payloadContext
+    ActiveProductPayloadContextAt.outerPayload before.carrier.payloadContext
   have lengths :=
     SourceControlResourcePayloadContextAgrees.lengths_eq payloadTail
   have segmentsNonempty : before.carrier.index.outer ≠ [] := by
@@ -361,7 +362,7 @@ theorem
                 contextExact := contextExact
                 outerCell := cell
                 sourceExact := ?_ }⟩
-              rw [before.carrier.agreement.core.sourceShape, referenceEmpty,
+              rw [before.carrier.agreement.sourceShape, referenceEmpty,
                 contextExact]
               simp only [ActiveProductContext.plug_cons]
               simp only [ActiveProductFrame.wrap, privateResumeSource,
@@ -379,9 +380,9 @@ already been flattened into its one retained alternative bank.  No
 intermediate historical state is admitted into the global phase vocabulary.
 [SPEC metta.pl:251-256; ISO:SLD leftmost depth-first selection] -/
 theorem
-    _root_.PLeaTTa.PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState.absorbPrivatePrefix
+    _root_.PLeaTTa.PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState.absorbPrivatePrefix
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    (before : RepresentativeScheduledPayloadState)
+    (before : RepresentativePersistentFreeScheduledPayloadState)
     (referenceEmpty : before.carrier.index.callerReferences = []) :
     ∃ target : Search,
       StepsN (privateResumeCost before.carrier.index.outer)
@@ -390,7 +391,7 @@ theorem
       DemandDrivenCallStep.StepsN prog gt 0 before.carrier.fineState
         before.carrier.fineState := by
   let payloadTail :=
-    ActiveProductPayloadContext.outerPayload before.carrier.payloadContext
+    ActiveProductPayloadContextAt.outerPayload before.carrier.payloadContext
   let alignment :=
     SourceControlResourcePayloadContextAgrees.alignment payloadTail
   let target :=
@@ -416,7 +417,7 @@ theorem
             before.carrier.index.current
             (before.carrier.index.finish.advance before.carrier.index.branch
               before.carrier.index.branchTail)) := by
-    rw [before.carrier.agreement.core.sourceShape, referenceEmpty]
+    rw [before.carrier.agreement.sourceShape, referenceEmpty]
     rfl
   refine ⟨target, ?_, .zero _⟩
   change
@@ -429,9 +430,9 @@ theorem
 /-- If every older caller tail is empty, the live source performs exactly one
 silent step per outer payload frame and the fine machine remains literal. -/
 theorem
-    _root_.PLeaTTa.PrologHeterogeneousPrefixBridge.RepresentativeScheduledPayloadState.absorbAllEmptyFrames
+    _root_.PLeaTTa.PrologPersistentFreeScheduledPayloadBridge.RepresentativePersistentFreeScheduledPayloadState.absorbAllEmptyFrames
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
-    (before : RepresentativeScheduledPayloadState)
+    (before : RepresentativePersistentFreeScheduledPayloadState)
     (referenceEmpty : before.carrier.index.callerReferences = [])
     (allEmpty :
       ∀ segment ∈ before.carrier.index.outer, segment.references = []) :
