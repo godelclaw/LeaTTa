@@ -115,6 +115,9 @@ theorem activateSelectedHead
               branch branchTail bodyBarrier callerBarrier callerReferences
               callerExecutables outer (afterPulledHead resource remainingAlts)
               resources callerScope outerScope context,
+        RetainedCallPayloadSnapshot.RestorationDataAgrees
+            (SourceControlResourcePayloadContextAgrees.headCell
+              nextPayloadContext).snapshot restored ∧
         SharedRuntimeAlpha nextAlpha ∧
           (∀ pair, pair ∈ alpha → pair ∈ nextAlpha) ∧
         SourceControlResourcePayloadContextAgrees.tail nextPayloadContext =
@@ -273,7 +276,8 @@ theorem activateSelectedHead
       (by simp [afterPulledHead])
 
   rcases nextSnapshotExists with
-    ⟨nextSnapshot, nextSnapshotOrigin, nextSnapshotActivationOrigin⟩
+    ⟨nextSnapshot, nextSnapshotRestoration, nextSnapshotOrigin,
+      nextSnapshotActivationOrigin⟩
   have callerAgrees :
       ({ barrier := callerBarrier
          references := callerReferences
@@ -584,7 +588,7 @@ theorem activateSelectedHead
     simpa [currentQuery] using cumulative
   exact
     ⟨nextAlpha, sourceCanonical, flattened, installed, extension,
-      nextPayloadContext, nextShared, alphaIncluded,
+      nextPayloadContext, nextSnapshotRestoration, nextShared, alphaIncluded,
       nextOuterPayloadExact, sourceStep, sealedStep, fineStep,
       cumulativeAtStateQuery, targetPayload⟩
 

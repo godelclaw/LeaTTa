@@ -6,13 +6,14 @@ Purpose: Reject stuttering and hidden-head readings of the paired scheduled
   retained-head success transition.
 Trusted boundary: none
 -/
-import PLeaTTa.Proofs.PrologScheduledPayloadSuccessBridge
+import PLeaTTa.Proofs.PrologScheduledPayloadSuccessCarrierBridge
 
 namespace PLeaTTa.PrologScheduledPayloadSuccessRegression
 
 open PeTTaSpec.PrologCore
 open PeTTaSpec.PrologCore.GoalSemantics
 open PeTTaSpec.PrologCore.OpenSubstitution
+open PeTTaSpec.PrologCore.Resolver
 open PrologActivatedProductStepBridge
 open PrologBodyFailureOuterResourceCatchupBridge
 open PrologBodyFailureResourceTransitionBridge
@@ -107,8 +108,7 @@ theorem successful_source_step_is_not_stutter
   intro equality
   have inner :=
     ActiveProductContext.plug_injective transition.postLaterContext equality
-  simp [sourceFrame, frameRetainedFrontier, activeSourceProduct,
-    selectedOpened] at inner
+  simp [sourceFrame, frameRetainedFrontier, activeSourceProductAt] at inner
 
 /-- Any inhabited paired result exposes genuine source and fine transitions
 and both literal endpoints reject a stuttering interpretation. -/
@@ -143,5 +143,32 @@ theorem paired_success_exposes_both_real_steps
     ⟨relation.sourceActivation, relation.fineStep,
       successful_source_step_is_not_stutter transition independentResult,
       successful_fine_step_is_not_stutter transition installed⟩
+
+/-- A retained call-start cursor and a call freshly prepared from the current
+post-retraction database can have observably different clause occurrence
+views.
+
+This is the logical-update anti-vacuity guard for the persistent-free success
+carrier: current-session domination must not be strengthened to current
+database membership of every retained clause.  The old occurrence remains a
+valid backtracking resource while the new call correctly cannot see it. -/
+theorem retained_snapshot_need_not_equal_current_call_view :
+    ∃ retained current : PreparedCursor,
+      retained.callGeneration < current.callGeneration ∧
+        1 ∈ retained.remaining.map (fun branch => branch.sourceId) ∧
+        1 ∉ current.remaining.map (fun branch => branch.sourceId) := by
+  let current :=
+    (prepareCall
+      { database := Resolver.witnessAfterRetract, nextFresh := 10 }
+      Resolver.witnessRequest).1
+  refine ⟨Resolver.witnessPreparedCursor, current, ?_, ?_, ?_⟩
+  · simpa [current] using
+      Resolver.witness_prepared_nested_call_has_new_generation.2
+  · exact Resolver.witness_prepared_call_retains_retracted_clause
+  · rw [show
+        current.remaining.map (fun branch => branch.sourceId) = [0, 2] by
+          simpa [current] using
+            Resolver.witness_prepared_new_call_hides_retraction]
+    simp
 
 end PLeaTTa.PrologScheduledPayloadSuccessRegression

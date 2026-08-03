@@ -334,6 +334,8 @@ structure SpinedScheduledProductPayloadResourceRelatesAt
     endpointsBelow payloadContext session.resolver.nextFresh
       state.persistent.counter
   activationOrdered : ActivationOrdered payloadContext
+  activationOrigins :
+    LocalActivationOriginSpineRelates session payloadContext
   controlOrigins :
     LocalControlOriginSpineRelates baseAlts state.frames
       state.control.barriers payloadContext
@@ -371,6 +373,8 @@ structure SpinedCommittedProductPayloadResourceRelatesAt
     endpointsBelow payloadContext session.resolver.nextFresh
       state.persistent.counter
   activationOrdered : ActivationOrdered payloadContext
+  activationOrigins :
+    LocalActivationOriginSpineRelates session payloadContext
   controlOrigins :
     LocalControlOriginSpineRelates baseAlts state.frames
       state.control.barriers payloadContext
@@ -483,6 +487,8 @@ def reindex
       endpointsBelow_mono payloadContext agreement.endpointsCurrent
         advanced.fresh (Nat.le_refl _),
       agreement.activationOrdered,
+      LocalActivationOriginSpineRelates.advance payloadContext
+        agreement.activationOrigins advanced,
       agreement.controlOrigins⟩
 
 /-- A scheduled successor cannot be indexed by a fresh allocator below its
@@ -623,6 +629,8 @@ def reindex
       endpointsBelow_mono payloadContext agreement.endpointsCurrent
         advanced.fresh (Nat.le_refl _),
       agreement.activationOrdered,
+      LocalActivationOriginSpineRelates.advance payloadContext
+        agreement.activationOrigins advanced,
       agreement.controlOrigins⟩
 
 /-- A committed successor cannot be indexed by a fresh allocator below its
@@ -720,6 +728,7 @@ theorem afterBodyAnswer
     ⟨sourceStep, executableSteps,
       ⟨scheduled, agreement.endpointsCurrent,
         agreement.activationOrdered,
+        agreement.activationOrigins,
         agreement.controlOrigins⟩⟩
 
 /-- Clause-local cut consumes the exact head payload cell while preserving the
@@ -821,6 +830,13 @@ theorem afterCut
         (ActiveProductPayloadContext.outerPayload payloadContext) := by
     rw [ActiveProductPayloadContext.outerPayload_eq_tail payloadContext]
     exact ActivationOrdered.tail payloadContext agreement.activationOrdered
+  have outerActivationOrigins :
+      LocalActivationOriginSpineRelates session
+        (ActiveProductPayloadContext.outerPayload payloadContext) := by
+    rw [ActiveProductPayloadContext.outerPayload_eq_tail payloadContext]
+    exact
+      LocalActivationOriginSpineRelates.tail payloadContext
+        agreement.activationOrigins
   let nextState :=
     cutSuccessor state bodyBarrier
       (bodyExecutableTail ++
@@ -857,7 +873,8 @@ theorem afterCut
       poppedOrigins
   exact
     ⟨executableHead, sourceStep, executableStep,
-      ⟨committed, outerEndpoints, outerOrdered, outerOrigins⟩,
+      ⟨committed, outerEndpoints, outerOrdered, outerActivationOrigins,
+        outerOrigins⟩,
       ActiveProductPayloadContext.cellCount_outerPayload payloadContext,
       countDrop⟩
 

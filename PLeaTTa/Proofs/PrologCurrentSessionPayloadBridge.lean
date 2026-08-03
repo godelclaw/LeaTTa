@@ -37,11 +37,17 @@ open PrologSourceProductContextBridge
 open PrologStateBridge
 
 /-- The unique payload-bearing zipper shape belonging to one active product
-resource state.  Naming this dependent index keeps subsequent relations
-readable without weakening any cursor/resource/scope equality. -/
-abbrev ActiveProductPayloadContext
+resource state, indexed only by the predicate cut scope actually present in
+the source and control spines.
+
+No historical `Session` is needed to state this shape.  That omission is
+load-bearing for reactivation of an older retained occurrence: its frozen
+cursor may be used with the current persistent state without fabricating an
+`OpenedCall` which never existed. -/
+abbrev ActiveProductPayloadContextAt
     (alpha support : List (LogicVar × String)) (qterm : Atom)
-    (opened : OpenedCall) (finish : PreparedCursor) (branch : ClauseBranch)
+    (predicateScope : CutScopeId)
+    (finish : PreparedCursor) (branch : ClauseBranch)
     (branchTail : List ClauseBranch) (bodyBarrier callerBarrier : Nat)
     (callerReferences : List PeTTaSpec.PrologCore.Goal)
     (callerExecutables : List PLeaTTa.Goal)
@@ -55,14 +61,31 @@ abbrev ActiveProductPayloadContext
        references := callerReferences
        executables := callerExecutables } ::
      outer)
-    (active :: resources) opened.scope
+    (active :: resources) predicateScope
     ({ callerScope := callerScope
-       predicateScope := opened.scope
+       predicateScope := predicateScope
        retained :=
-         .clauses opened.scope (finish.advance branch branchTail)
+         .clauses predicateScope (finish.advance branch branchTail)
        callerRest := callerReferences } ::
      context)
     outerScope
+
+/-- Compatibility spelling for a literal call-entry packet.  Only its typed
+predicate scope participates in the dependent payload shape. -/
+abbrev ActiveProductPayloadContext
+    (alpha support : List (LogicVar × String)) (qterm : Atom)
+    (opened : OpenedCall) (finish : PreparedCursor) (branch : ClauseBranch)
+    (branchTail : List ClauseBranch) (bodyBarrier callerBarrier : Nat)
+    (callerReferences : List PeTTaSpec.PrologCore.Goal)
+    (callerExecutables : List PLeaTTa.Goal)
+    (outer : List ControlSegment)
+    (active : RetainedAlternativeSegment)
+    (resources : List RetainedAlternativeSegment)
+    (callerScope outerScope : CutScopeId)
+    (context : ActiveProductContext) :=
+  ActiveProductPayloadContextAt alpha support qterm opened.scope finish branch
+    branchTail bodyBarrier callerBarrier callerReferences callerExecutables
+    outer active resources callerScope outerScope context
 
 /-- One active local-product state with its complete retained logical payload.
 

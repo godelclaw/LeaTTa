@@ -9,6 +9,7 @@ Main exports:
   RetainedCallControlOrigin,
   CallActivationOrigin,
   RetainedCallPayloadSnapshot,
+  RetainedCallPayloadSnapshot.RestorationDataAgrees,
   installedBarrierCache,
   recordedBaseBarrierCache,
   ControlOriginSpineAgrees,
@@ -313,6 +314,226 @@ structure RetainedCallPayloadSnapshot
 
 namespace RetainedCallPayloadSnapshot
 
+/-- Two retained snapshots carry the same immutable logical restore state.
+
+Operational indices, current alpha graphs, and allocation-gap proofs may
+differ after cursor motion or alpha growth.  These five data fields may not:
+they determine the historical query payload and residual orientation that a
+later backtrack resumes. -/
+structure RestorationDataAgrees
+    {leftAlpha leftSupport : List (LogicVar × String)}
+    {leftResource : RetainedAlternativeSegment}
+    {leftCursor : PreparedCursor}
+    {leftCaller : ControlSegment} {leftOuter : List ControlSegment}
+    (left :
+      RetainedCallPayloadSnapshot leftAlpha leftSupport leftResource
+        leftCursor leftCaller leftOuter)
+    {rightAlpha rightSupport : List (LogicVar × String)}
+    {rightResource : RetainedAlternativeSegment}
+    {rightCursor : PreparedCursor}
+    {rightCaller : ControlSegment} {rightOuter : List ControlSegment}
+    (right :
+      RetainedCallPayloadSnapshot rightAlpha rightSupport rightResource
+        rightCursor rightCaller rightOuter) : Prop where
+  snapshotAlpha : left.snapshotAlpha = right.snapshotAlpha
+  canonical : left.canonical = right.canonical
+  referenceBase : left.referenceBase = right.referenceBase
+  referencePayload : left.referencePayload = right.referencePayload
+  residualRepresentative :
+    left.residualRepresentative = right.residualRepresentative
+
+/-- Exact restore-data agreement is reflexive even when the operational
+snapshot packages carry dependent indices. -/
+theorem RestorationDataAgrees.refl
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {cursor : PreparedCursor}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support resource cursor caller
+        outer) :
+    RestorationDataAgrees snapshot snapshot :=
+  ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+/-- Restore-data agreement can be consumed in either orientation. -/
+theorem RestorationDataAgrees.symm
+    {leftAlpha leftSupport : List (LogicVar × String)}
+    {leftResource : RetainedAlternativeSegment}
+    {leftCursor : PreparedCursor}
+    {leftCaller : ControlSegment} {leftOuter : List ControlSegment}
+    {left :
+      RetainedCallPayloadSnapshot leftAlpha leftSupport leftResource
+        leftCursor leftCaller leftOuter}
+    {rightAlpha rightSupport : List (LogicVar × String)}
+    {rightResource : RetainedAlternativeSegment}
+    {rightCursor : PreparedCursor}
+    {rightCaller : ControlSegment} {rightOuter : List ControlSegment}
+    {right :
+      RetainedCallPayloadSnapshot rightAlpha rightSupport rightResource
+        rightCursor rightCaller rightOuter}
+    (agreement : RestorationDataAgrees left right) :
+    RestorationDataAgrees right left :=
+  ⟨agreement.snapshotAlpha.symm, agreement.canonical.symm,
+    agreement.referenceBase.symm, agreement.referencePayload.symm,
+    agreement.residualRepresentative.symm⟩
+
+/-- Restore-data agreement composes across arbitrarily many retained-head
+motions without re-exposing the proof-only fields of either snapshot. -/
+theorem RestorationDataAgrees.trans
+    {leftAlpha leftSupport : List (LogicVar × String)}
+    {leftResource : RetainedAlternativeSegment}
+    {leftCursor : PreparedCursor}
+    {leftCaller : ControlSegment} {leftOuter : List ControlSegment}
+    {left :
+      RetainedCallPayloadSnapshot leftAlpha leftSupport leftResource
+        leftCursor leftCaller leftOuter}
+    {middleAlpha middleSupport : List (LogicVar × String)}
+    {middleResource : RetainedAlternativeSegment}
+    {middleCursor : PreparedCursor}
+    {middleCaller : ControlSegment} {middleOuter : List ControlSegment}
+    {middle :
+      RetainedCallPayloadSnapshot middleAlpha middleSupport middleResource
+        middleCursor middleCaller middleOuter}
+    {rightAlpha rightSupport : List (LogicVar × String)}
+    {rightResource : RetainedAlternativeSegment}
+    {rightCursor : PreparedCursor}
+    {rightCaller : ControlSegment} {rightOuter : List ControlSegment}
+    {right :
+      RetainedCallPayloadSnapshot rightAlpha rightSupport rightResource
+        rightCursor rightCaller rightOuter}
+    (leftMiddle : RestorationDataAgrees left middle)
+    (middleRight : RestorationDataAgrees middle right) :
+    RestorationDataAgrees left right :=
+  ⟨leftMiddle.snapshotAlpha.trans middleRight.snapshotAlpha,
+    leftMiddle.canonical.trans middleRight.canonical,
+    leftMiddle.referenceBase.trans middleRight.referenceBase,
+    leftMiddle.referencePayload.trans middleRight.referencePayload,
+    leftMiddle.residualRepresentative.trans
+      middleRight.residualRepresentative⟩
+
+/-- Transport the two operational indices of a retained snapshot along exact
+resource and cursor identities.
+
+This constructor is preferable to an elaborator-generated dependent `cast`:
+the equalities are explicit inputs, and independent payload projections have
+stable reduction theorems below.  It cannot retag a snapshot across merely
+similar resources or cursors. -/
+def transportResourceCursor
+    {currentAlpha support : List (LogicVar × String)}
+    {sourceResource targetResource : RetainedAlternativeSegment}
+    {sourceCursor targetCursor : PreparedCursor}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    (resourceExact : sourceResource = targetResource)
+    (cursorExact : sourceCursor = targetCursor)
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support sourceResource
+        sourceCursor caller outer) :
+    RetainedCallPayloadSnapshot currentAlpha support targetResource
+      targetCursor caller outer := by
+  subst targetResource
+  subst targetCursor
+  exact snapshot
+
+@[simp] theorem controlOrigin_transportResourceCursor
+    {currentAlpha support : List (LogicVar × String)}
+    {sourceResource targetResource : RetainedAlternativeSegment}
+    {sourceCursor targetCursor : PreparedCursor}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    (resourceExact : sourceResource = targetResource)
+    (cursorExact : sourceCursor = targetCursor)
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support sourceResource
+        sourceCursor caller outer) :
+    (transportResourceCursor resourceExact cursorExact snapshot).controlOrigin =
+      snapshot.controlOrigin := by
+  subst targetResource
+  subst targetCursor
+  rfl
+
+@[simp] theorem activationNextFresh_transportResourceCursor
+    {currentAlpha support : List (LogicVar × String)}
+    {sourceResource targetResource : RetainedAlternativeSegment}
+    {sourceCursor targetCursor : PreparedCursor}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    (resourceExact : sourceResource = targetResource)
+    (cursorExact : sourceCursor = targetCursor)
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support sourceResource
+        sourceCursor caller outer) :
+    (transportResourceCursor resourceExact cursorExact snapshot).activationOrigin.nextFresh =
+      snapshot.activationOrigin.nextFresh := by
+  subst targetResource
+  subst targetCursor
+  rfl
+
+@[simp] theorem activationNextCutScope_transportResourceCursor
+    {currentAlpha support : List (LogicVar × String)}
+    {sourceResource targetResource : RetainedAlternativeSegment}
+    {sourceCursor targetCursor : PreparedCursor}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    (resourceExact : sourceResource = targetResource)
+    (cursorExact : sourceCursor = targetCursor)
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support sourceResource
+        sourceCursor caller outer) :
+    (transportResourceCursor resourceExact cursorExact snapshot).activationOrigin.nextCutScope =
+      snapshot.activationOrigin.nextCutScope := by
+  subst targetResource
+  subst targetCursor
+  rfl
+
+@[simp] theorem activationNextExceptionScope_transportResourceCursor
+    {currentAlpha support : List (LogicVar × String)}
+    {sourceResource targetResource : RetainedAlternativeSegment}
+    {sourceCursor targetCursor : PreparedCursor}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    (resourceExact : sourceResource = targetResource)
+    (cursorExact : sourceCursor = targetCursor)
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support sourceResource
+        sourceCursor caller outer) :
+    (transportResourceCursor resourceExact cursorExact snapshot).activationOrigin.nextExceptionScope =
+      snapshot.activationOrigin.nextExceptionScope := by
+  subst targetResource
+  subst targetCursor
+  rfl
+
+@[simp] theorem activationNextCollectionScope_transportResourceCursor
+    {currentAlpha support : List (LogicVar × String)}
+    {sourceResource targetResource : RetainedAlternativeSegment}
+    {sourceCursor targetCursor : PreparedCursor}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    (resourceExact : sourceResource = targetResource)
+    (cursorExact : sourceCursor = targetCursor)
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support sourceResource
+        sourceCursor caller outer) :
+    (transportResourceCursor resourceExact cursorExact snapshot).activationOrigin.nextCollectionScope =
+      snapshot.activationOrigin.nextCollectionScope := by
+  subst targetResource
+  subst targetCursor
+  rfl
+
+/-- Exact operational-index transport preserves domination by a current
+session, including the phantom logical-update generation. -/
+theorem activationExtends_transportResourceCursor
+    {currentAlpha support : List (LogicVar × String)}
+    {sourceResource targetResource : RetainedAlternativeSegment}
+    {sourceCursor targetCursor : PreparedCursor}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    {current : Session}
+    (resourceExact : sourceResource = targetResource)
+    (cursorExact : sourceCursor = targetCursor)
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support sourceResource
+        sourceCursor caller outer)
+    (dominated : snapshot.activationOrigin.Extends current) :
+    (transportResourceCursor resourceExact cursorExact snapshot).activationOrigin.Extends
+      current := by
+  subst targetResource
+  subst targetCursor
+  exact dominated
+
 /-- Nested execution may extend the global alpha, but it cannot mutate a
 retained resource's frozen pre-head payload. -/
 def mono
@@ -438,6 +659,60 @@ def transportCursor
       simpa [reservedUntil] using advanced
     payload := by
       simpa [context.predicate_eq, context.bindings_eq] using snapshot.payload }
+
+@[simp] theorem controlOrigin_transportCursor
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {before after : PreparedCursor}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    (context :
+      CursorCallContext after before.callGeneration before.predicate
+        before.arguments before.bindings)
+    (reservationOrdered : before.reservationStart ≤ after.reservationStart)
+    (reservedUntil : after.reservedUntil = before.reservedUntil)
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support resource before caller
+        outer) :
+    (transportCursor context reservationOrdered reservedUntil snapshot).controlOrigin =
+      snapshot.controlOrigin := rfl
+
+@[simp] theorem activationNextCutScope_transportCursor
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {before after : PreparedCursor}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    (context :
+      CursorCallContext after before.callGeneration before.predicate
+        before.arguments before.bindings)
+    (reservationOrdered : before.reservationStart ≤ after.reservationStart)
+    (reservedUntil : after.reservedUntil = before.reservedUntil)
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support resource before caller
+        outer) :
+    (transportCursor context reservationOrdered reservedUntil snapshot).activationOrigin.nextCutScope =
+      snapshot.activationOrigin.nextCutScope := rfl
+
+/-- Cursor-only transport reindexes the activation origin along the cursor's
+exact generation identity and therefore preserves current-session
+domination. -/
+theorem activationExtends_transportCursor
+    {currentAlpha support : List (LogicVar × String)}
+    {resource : RetainedAlternativeSegment}
+    {before after : PreparedCursor}
+    {caller : ControlSegment} {outer : List ControlSegment}
+    {current : Session}
+    (context :
+      CursorCallContext after before.callGeneration before.predicate
+        before.arguments before.bindings)
+    (reservationOrdered : before.reservationStart ≤ after.reservationStart)
+    (reservedUntil : after.reservedUntil = before.reservedUntil)
+    (snapshot :
+      RetainedCallPayloadSnapshot currentAlpha support resource before caller
+        outer)
+    (dominated : snapshot.activationOrigin.Extends current) :
+    (transportCursor context reservationOrdered reservedUntil snapshot).activationOrigin.Extends
+      current := by
+  simpa [transportCursor] using dominated.reindex context.generation
 
 /-- Consume the executable alternative corresponding to the selected head
 without changing any payload-bearing resource field.

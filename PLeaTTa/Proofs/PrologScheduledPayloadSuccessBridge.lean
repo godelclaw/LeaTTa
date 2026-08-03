@@ -69,34 +69,6 @@ def postAnswerSuccessfulHeadCount
     (partition.rejectionSteps + partition.crossedFrames.length + 1) +
     transition.frontier.rejectedCount + 1
 
-/-- Proof-local opened-call packet for the exact selected predicate scope.
-
-Only `scope` is semantically consumed by `activeSourceProduct`; retaining the
-literal finish cursor and current session prevents a compatible historical
-opener from entering the statement. -/
-def selectedOpened
-    {alpha support : List (LogicVar × String)} {qterm : Atom}
-    {currentBarrier : Nat}
-    {segments : List ControlSegment}
-    {resources : List RetainedAlternativeSegment}
-    {inner outer : CutScopeId}
-    {context : ActiveProductContext}
-    {payload :
-      SourceControlResourcePayloadContextAgrees alpha support qterm
-        currentBarrier segments resources inner context outer}
-    {source next : Search}
-    {history : ScheduledAnswerHistory alpha source next}
-    {build : ScheduledHistoryBuild history}
-    {alignment : ScheduledPayloadAlignment payload build}
-    {selection : ScheduledLocalSelection build.cells}
-    {scope : CutScopeId} {session : Session}
-    (transition :
-      ScheduledSelectedHeadTransition alignment selection scope session) :
-    OpenedCall :=
-  { scope := transition.selectedPayloadCell.currentScope
-    cursor := transition.finish
-    session := session }
-
 /-- Exact source focus after the selected clause head has unified.
 
 The selected clause body is the left DFS branch.  The same advanced cursor is
@@ -123,8 +95,8 @@ def successfulSourceFrontier
       ScheduledSelectedHeadTransition alignment selection scope session)
     (independentResult : Substitution) : Search :=
   ActiveProductContext.plug transition.postLaterContext
-    (activeSourceProduct transition.selectedPayloadCell.nextScope
-      (selectedOpened transition) transition.finish transition.branch
+    (activeSourceProductAt transition.selectedPayloadCell.nextScope
+      transition.selectedPayloadCell.currentScope transition.finish transition.branch
       transition.branchTail independentResult transition.branch.body
       transition.selectedPayloadCell.segment.references)
 
@@ -212,12 +184,11 @@ theorem liftMatchedSourceStep
         (frameRetainedFrontier (sourceFrame transition) transition.finish)
         [] .none session
         (.running
-          (activeSourceProduct transition.selectedPayloadCell.nextScope
-            (selectedOpened transition) transition.finish transition.branch
+          (activeSourceProductAt transition.selectedPayloadCell.nextScope
+            transition.selectedPayloadCell.currentScope transition.finish transition.branch
             transition.branchTail independentResult transition.branch.body
             transition.selectedPayloadCell.segment.references)) := by
-    simpa [frameRetainedFrontier, sourceFrame, activeSourceProduct,
-      selectedOpened] using
+    simpa [frameRetainedFrontier, sourceFrame, activeSourceProductAt] using
       (RawStep.productProgress transition.selectedPayloadCell.nextScope _ _
         transition.selectedPayloadCell.segment.references [] .none session
         session boundary (by simp [Trace.AnswerFree]))
@@ -322,7 +293,9 @@ structure ScheduledSuccessfulHeadRelates
         (transition.finish.advance transition.branch transition.branchTail)
         transition.selectedPayloadCell.segment
         transition.selectedPayloadCell.outerSegments,
-      snapshot.controlOrigin =
+      RetainedCallPayloadSnapshot.RestorationDataAgrees snapshot
+          transition.selectedSnapshotAtFinish ∧
+        snapshot.controlOrigin =
           transition.selectedSnapshotAtFinish.controlOrigin ∧
         snapshot.activationOrigin =
           transition.selectedSnapshotAtFinish.activationOrigin

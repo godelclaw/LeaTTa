@@ -559,6 +559,10 @@ structure RetainedActivationSuccessor
       (afterPulledHead before.index.resource before.index.remainingAlts)
       before.index.resources before.index.callerScope before.index.outerScope
       before.index.context
+  headRestoration :
+    RetainedCallPayloadSnapshot.RestorationDataAgrees
+      (SourceControlResourcePayloadContextAgrees.headCell
+        nextPayloadContext).snapshot before.restoredSnapshot
   shared : SharedRuntimeAlpha nextAlpha
   alphaIncluded :
     ∀ pair, pair ∈ before.index.alpha → pair ∈ nextAlpha
@@ -672,7 +676,8 @@ theorem retainedActivationSuccessor
   rw [before.exactFresh] at exactAgreement
   obtain
       ⟨nextAlpha, sourceCanonical, flattened, installed, extension,
-        nextPayloadContext, shared, alphaIncluded, outerPayloadExact,
+        nextPayloadContext, headRestoration, shared, alphaIncluded,
+        outerPayloadExact,
         sourceStep, sealedStep, fineStep, cumulative, targetAgreement⟩ :=
     PrologCurrentSessionPostFailureActivationBridge.SpinedPostFailureFrontierPayloadResourceRelatesAt.activateSelectedHead
       (prog := prog) (gt := gt) exactAgreement currentShared below live
@@ -685,6 +690,7 @@ theorem retainedActivationSuccessor
        installed := installed,
        extension := extension,
        nextPayloadContext := nextPayloadContext,
+       headRestoration := headRestoration,
        shared := shared,
        alphaIncluded := alphaIncluded,
        outerPayloadExact := outerPayloadExact,

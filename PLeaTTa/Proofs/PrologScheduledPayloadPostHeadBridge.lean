@@ -383,9 +383,9 @@ def selectedSnapshot
       ScheduledSelectedHeadTransition alignment selection scope session) :
     RetainedCallPayloadSnapshot alpha support selection.selected.resource
       selection.selected.cursor transition.selectedPayloadCell.segment
-      transition.selectedPayloadCell.outerSegments := by
-  simpa only [transition.selectedResourceExact,
-    transition.selectedCursorExact] using
+      transition.selectedPayloadCell.outerSegments :=
+  RetainedCallPayloadSnapshot.transportResourceCursor
+    transition.selectedResourceExact transition.selectedCursorExact
     transition.selectedPayloadCell.snapshot
 
 /-- The selected source cursor is well formed before its counted conservative

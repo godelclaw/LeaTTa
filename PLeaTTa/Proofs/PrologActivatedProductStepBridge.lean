@@ -38,17 +38,28 @@ The retained immutable cursor stays in the right branch at the predicate cut
 scope.  The caller tail remains outside that cut boundary in `product`.
 Keeping both delimiters explicit is what later lets a clause-local cut prune
 later clauses without pruning the caller's alternatives. -/
+def activeSourceProductAt
+    (callerScope predicateScope : CutScopeId)
+    (finish : PreparedCursor) (branch : ClauseBranch)
+    (branchTail : List ClauseBranch) (current : Substitution)
+    (body referenceRest : List PeTTaSpec.PrologCore.Goal) : Search :=
+  .product callerScope
+    (.cutBoundary predicateScope
+      (.choice predicateScope
+        (.task predicateScope body current)
+        (.clauses predicateScope (finish.advance branch branchTail))))
+    referenceRest
+
+/-- Compatibility spelling for a literal call-entry packet.  The active
+source shape consumes only its predicate cut scope; persistent call-entry
+state is intentionally not required by `activeSourceProductAt`. -/
 def activeSourceProduct
     (callerScope : CutScopeId) (opened : OpenedCall)
     (finish : PreparedCursor) (branch : ClauseBranch)
     (branchTail : List ClauseBranch) (current : Substitution)
     (body referenceRest : List PeTTaSpec.PrologCore.Goal) : Search :=
-  .product callerScope
-    (.cutBoundary opened.scope
-      (.choice opened.scope
-        (.task opened.scope body current)
-        (.clauses opened.scope (finish.advance branch branchTail))))
-    referenceRest
+  activeSourceProductAt callerScope opened.scope finish branch branchTail
+    current body referenceRest
 
 @[simp] theorem activeSourceProduct_initial
     (callerScope : CutScopeId) (opened : OpenedCall)
@@ -453,7 +464,7 @@ theorem activeSourceProduct_cut
     RawStep.cutBoundaryCatch opened.scope _ _
       [.pruned (retainedCursorToken opened finish branch branchTail)]
       session session choiceStep
-  simpa [activeSourceProduct, cutSourceProduct] using
+  simpa [activeSourceProduct, activeSourceProductAt, cutSourceProduct] using
     (RawStep.productProgress callerScope _ _
       referenceRest
       [.pruned (retainedCursorToken opened finish branch branchTail)]

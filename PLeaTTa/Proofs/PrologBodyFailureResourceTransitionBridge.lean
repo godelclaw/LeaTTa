@@ -264,7 +264,7 @@ theorem post_failure_frontier_is_not_active
   intro equality
   have focusEquality :=
     ActiveProductContext.plug_injective context equality
-  simp [sourceProductFrontier, activeSourceProduct] at focusEquality
+  simp [sourceProductFrontier, activeSourceProduct, activeSourceProductAt] at focusEquality
 
 /-! ## Exact post-failure phase relations -/
 

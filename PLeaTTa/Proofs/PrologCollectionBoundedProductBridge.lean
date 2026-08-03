@@ -114,7 +114,7 @@ theorem spinedActiveProduct_activeCollectionCells_empty
     (activeSourceProduct callerScope opened finish branch branchTail current
       bodyReferences callerReferences)]
   rw [ActiveControlContext.plug_activeCollectionCells]
-  simp [activeSourceProduct, activeCollectionCells,
+  simp [activeSourceProduct, activeSourceProductAt, activeCollectionCells,
     collectionCells_toActiveControlContext]
 
 /-- At a collection boundary the exact active-product resource bank has the

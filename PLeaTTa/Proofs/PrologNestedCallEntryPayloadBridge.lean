@@ -245,7 +245,7 @@ theorem SpinedActiveProductPayloadResourceRelatesAt.sourceCallEntry
     ActiveProductContext.liftProgress currentContext throughCurrent
       (by simp [Trace.AnswerFree])
   rw [agreement.core.sourceShape]
-  simpa [currentFrame, activeSourceProduct,
+  simpa [currentFrame, activeSourceProduct, activeSourceProductAt,
     ActiveProductFrame.wrap, ActiveProductContext.plug] using throughOuter
 
 /-- A call-headed active product supplies the complete outer invariant for

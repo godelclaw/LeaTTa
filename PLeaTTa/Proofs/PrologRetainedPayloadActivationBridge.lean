@@ -360,7 +360,9 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
       (∃ nextSnapshot : RetainedCallPayloadSnapshot nextAlpha support
           (afterPulledHead resource remainingAlts)
           (finish.advance branch branchTail) caller outer,
-        nextSnapshot.controlOrigin = snapshot.controlOrigin ∧
+        RetainedCallPayloadSnapshot.RestorationDataAgrees nextSnapshot
+            snapshot ∧
+          nextSnapshot.controlOrigin = snapshot.controlOrigin ∧
           nextSnapshot.activationOrigin = snapshot.activationOrigin) ∧
       ConfBelowResolutionCounter
         (unifySuccessor state (copied.body ++ resource.rest)
@@ -562,6 +564,10 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
       CallActivationOrigin.reindex]
     cases snapshot.activationOrigin
     rfl
+  have nextSnapshotRestoration :
+      RetainedCallPayloadSnapshot.RestorationDataAgrees nextSnapshot
+        snapshot := by
+    exact ⟨rfl, rfl, rfl, rfl, rfl⟩
   have successorBelow :
       ConfBelowResolutionCounter
         (unifySuccessor state (copied.body ++ resource.rest)
@@ -589,7 +595,8 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
       independentShape,
       sourceOrdered, sourceStep, sealedStep, fineStep, cumulativeCopied,
       taskCopied,
-      ⟨nextSnapshot, nextSnapshotOrigin, nextSnapshotActivationOrigin⟩,
+      ⟨nextSnapshot, nextSnapshotRestoration, nextSnapshotOrigin,
+        nextSnapshotActivationOrigin⟩,
       successorBelow,
       ?_, ?_, ?_⟩
   · exact unifySuccessor_persistent state _ installed
