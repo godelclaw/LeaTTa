@@ -83,6 +83,208 @@ def firstLiveReadySourceFrontier
   ActiveProductContext.plug partition.survivingContext
     (frameRetainedFrontier partition.firstFrame finish)
 
+/-- Consume the maximal conservative rejection prefix inside the first live
+resource using only its ranked partition and the current persistent session.
+
+This is the source-only kernel of the later body-failure composition theorem.
+It starts at the literal first-live frontier, performs exactly one silent
+transition per rejected occurrence, and stops immediately before selecting
+the retained head.  No historical call packet, executable predecessor, or
+fine-machine state occurs in the statement. -/
+theorem OuterResourceCatchupPartition.consumeRejectedPrefix
+    {alpha : List (LogicVar × String)}
+    {segments : List ControlSegment}
+    {resources : List RetainedAlternativeSegment}
+    {context : ActiveProductContext}
+    (partition :
+      OuterResourceCatchupPartition alpha segments resources context)
+    (session : Session) :
+    ∃ (count : Nat)
+        (skippedBranches : List ClauseBranch)
+        (skippedClauses candidates : List PLeaTTa.Clause)
+        (finish : PreparedCursor)
+        (branch : ClauseBranch) (clause : PLeaTTa.Clause)
+        (branchTail : List ClauseBranch)
+        (clauseTail : List PLeaTTa.Clause)
+        (copied : PLeaTTa.Clause),
+      partition.firstCursor.remaining =
+        skippedBranches ++ (branch :: branchTail) ∧
+      candidates = skippedClauses ++ (clause :: clauseTail) ∧
+      skippedBranches.length = count ∧
+      skippedClauses.length = count ∧
+      StepsN count
+        (.running session (firstLiveSourceFrontier partition))
+        []
+        (.running session
+          (firstLiveReadySourceFrontier partition finish)) ∧
+      RejectedPrefixPulledHeadOffsetAgrees alpha partition.firstCursor finish
+        count branch clause branchTail copied partition.first partition.tail ∧
+      resolutionAlt partition.first.argsv partition.first.args
+          partition.first.res partition.first.rest partition.first.binding
+          partition.first.qterm partition.first.barrier
+          partition.first.counter clause =
+        .br partition.goals partition.binding := by
+  rcases partition.firstOwnership with
+    ⟨callStart, firstPosition, firstOwnership⟩
+  rcases firstOwnership.scan with
+    ⟨candidates, cursorWellFormed, query, substitutedArgs,
+      supportedCandidates, candidateArities, candidateScan⟩
+  obtain
+    ⟨count, skippedBranches, skippedClauses, finish,
+      readyBranches, readyClauses, branchesEq, clausesEq,
+      branchCount, clauseCount, pulls, finishRemaining,
+      finishContext, ready⟩ :=
+    PLeaTTa.PrologRepresentativeCallFrontierBridge.ResolutionScan.decomposeRepresentativeRejectedPrefix
+      candidateScan supportedCandidates query cursorWellFormed
+      (.refl partition.firstCursor) (.refl partition.firstCursor) rfl
+      (fun _branch member => member) candidateArities
+  have firstNonempty : partition.first.alts ≠ [] := by
+    rw [partition.firstHead]
+    simp
+  have readyNonempty : readyBranches ≠ [] :=
+    ready.branches_nonempty_of_alts_nonempty firstNonempty
+  obtain
+    ⟨branch, clause, branchTail, clauseTail, altTail,
+      readyBranchesEq, readyClausesEq, priorAlts, supported, arity,
+      retained, tailSupported, tailScan⟩ :=
+    ready.retained_shape readyNonempty
+  let copied :=
+    PLeaTTa.freshenResolutionClause partition.first.argsv
+      partition.first.args partition.first.res partition.first.rest
+      partition.first.binding partition.first.qterm partition.first.counter
+      partition.first.barrier clause
+  have cursorRemaining :
+      finish.remaining = branch :: branchTail :=
+    finishRemaining.trans readyBranchesEq
+  have finishWellFormed : finish.WellFormed :=
+    PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_wellFormed
+      pulls cursorWellFormed
+  have queryAtFinish :
+      RepresentativeNormalizedCallAgrees alpha finish partition.first.argsv
+        (PLeaTTa.subst partition.first.binding partition.first.res) :=
+    PLeaTTa.PrologRepresentativeCallFrontierBridge.CursorCallContext.representativeNormalizedCallAgrees
+      finishContext (.refl partition.firstCursor) query
+  have supportedAtFinish :
+      SupportedPreparedCandidateAgrees finish.callGeneration finish.predicate
+        finish.arguments finish.bindings branch clause :=
+    finishContext.supportedPreparedCandidate supported
+  have advancedContext :
+      CursorCallContext (finish.advance branch branchTail)
+        partition.firstCursor.callGeneration
+        partition.firstCursor.predicate
+        partition.firstCursor.arguments
+        partition.firstCursor.bindings :=
+    finishContext.advance branch branchTail
+  have advancedWellFormed :
+      (finish.advance branch branchTail).WellFormed :=
+    finish.advance_wellFormed finishWellFormed cursorRemaining
+  have queryAtAdvanced :
+      RepresentativeNormalizedCallAgrees alpha
+        (finish.advance branch branchTail) partition.first.argsv
+        (PLeaTTa.subst partition.first.binding partition.first.res) :=
+    PLeaTTa.PrologRepresentativeCallFrontierBridge.CursorCallContext.representativeNormalizedCallAgrees
+      advancedContext finishContext queryAtFinish
+  have tailArities :
+      ∀ candidate, candidate ∈ clauseTail →
+        candidate.params.length = partition.first.argsv.length := by
+    intro candidate member
+    apply candidateArities candidate
+    rw [clausesEq, readyClausesEq]
+    simp [member]
+  have tailSupportedAtAdvanced :
+      List.Forall₂
+        (SupportedPreparedCandidateAgrees
+          (finish.advance branch branchTail).callGeneration
+          (finish.advance branch branchTail).predicate
+          (finish.advance branch branchTail).arguments
+          (finish.advance branch branchTail).bindings)
+        (finish.advance branch branchTail).remaining clauseTail := by
+    have transported :
+        List.Forall₂
+          (SupportedPreparedCandidateAgrees
+            (finish.advance branch branchTail).callGeneration
+            (finish.advance branch branchTail).predicate
+            (finish.advance branch branchTail).arguments
+            (finish.advance branch branchTail).bindings)
+          branchTail clauseTail :=
+      tailSupported.imp
+        (fun _branch _clause item =>
+          advancedContext.supportedPreparedCandidate item)
+    simpa [PreparedCursor.advance] using transported
+  have finishPositioned :
+      CallScopedCursorPosition callStart finish
+        (firstPosition + count) :=
+    CallScopedCursorPosition.afterRejected pulls firstOwnership.positioned
+  have tailOwnership :
+      (afterPulledHead partition.first altTail).Owns alpha
+        callStart (finish.advance branch branchTail)
+          ((firstPosition + count) + 1) := by
+    have advancedIdentity :
+        PreparedCallIdentity.ofCursor (finish.advance branch branchTail) =
+          PreparedCallIdentity.ofCursor partition.firstCursor := by
+      apply PreparedCallIdentity.ofCursor_eq_of_callContext advancedContext
+      simpa [PreparedCursor.advance] using
+        (PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_reservedUntil
+          pulls)
+    refine ⟨?_, ?_, finishPositioned.advance cursorRemaining⟩
+    · calc
+        (afterPulledHead partition.first altTail).callIdentity =
+            partition.first.callIdentity := rfl
+        _ = PreparedCallIdentity.ofCursor partition.firstCursor :=
+          firstOwnership.identity
+        _ = PreparedCallIdentity.ofCursor
+            (finish.advance branch branchTail) := advancedIdentity.symm
+    · exact
+        ⟨clauseTail, advancedWellFormed, queryAtAdvanced,
+          substitutedArgs, tailSupportedAtAdvanced, tailArities, tailScan⟩
+  have offsetAtAltTail :
+      PulledHeadOffsetAgrees alpha finish branch clause branchTail copied
+        partition.first altTail :=
+    ⟨cursorRemaining, finishWellFormed, queryAtFinish, substitutedArgs,
+      supportedAtFinish, arity, retained, priorAlts, rfl,
+      ⟨callStart, firstPosition + count, finishPositioned, tailOwnership⟩⟩
+  have banksEqual :
+      resolutionAlt partition.first.argsv partition.first.args
+            partition.first.res partition.first.rest partition.first.binding
+            partition.first.qterm partition.first.barrier
+            partition.first.counter clause ::
+          altTail =
+        .br partition.goals partition.binding :: partition.tail :=
+    priorAlts.symm.trans partition.firstHead
+  have altTailExact : altTail = partition.tail :=
+    (List.cons.inj banksEqual).2
+  have headExact :
+      resolutionAlt partition.first.argsv partition.first.args
+          partition.first.res partition.first.rest partition.first.binding
+          partition.first.qterm partition.first.barrier
+          partition.first.counter clause =
+        .br partition.goals partition.binding :=
+    (List.cons.inj banksEqual).1
+  have offset :
+      PulledHeadOffsetAgrees alpha finish branch clause branchTail copied
+        partition.first partition.tail := by
+    simpa [altTailExact] using offsetAtAltTail
+  have sourceSteps :
+      StepsN count
+        (.running session (firstLiveSourceFrontier partition))
+        []
+        (.running session
+          (firstLiveReadySourceFrontier partition finish)) := by
+    have lifted :=
+      PLeaTTa.PrologBodyFailureOuterResourceCatchupBridge.RejectedPullsN.frameRetainedFrontierContextStepsN
+        pulls partition.survivingContext partition.firstFrame session
+    simpa [firstLiveSourceFrontier, firstLiveReadySourceFrontier] using lifted
+  refine
+    ⟨count, skippedBranches, skippedClauses, candidates, finish, branch,
+      clause, branchTail, clauseTail, copied, ?_, ?_, branchCount,
+      clauseCount, sourceSteps, ⟨pulls, offset⟩, headExact⟩
+  · calc
+      partition.firstCursor.remaining =
+          skippedBranches ++ readyBranches := branchesEq
+      _ = skippedBranches ++ (branch :: branchTail) := by
+        rw [readyBranchesEq]
+  · rw [clausesEq, readyClausesEq]
+
 /-- Exact executable state after its eager pull has installed the retained
 clause which the source is about to select.
 
@@ -202,158 +404,21 @@ theorem
         qterm outerScope suffixBarrier segments resources context baseAlts
         predecessor partition count finish branch clause branchTail copied
         (firstLiveReadySourceFrontier partition finish) successor := by
-  rcases partition.firstOwnership with
-    ⟨callStart, firstPosition, firstOwnership⟩
-  rcases firstOwnership.scan with
-    ⟨candidates, cursorWellFormed, query, substitutedArgs,
-      supportedCandidates, candidateArities, candidateScan⟩
   obtain
-    ⟨count, skippedBranches, skippedClauses, finish,
-      readyBranches, readyClauses, branchesEq, clausesEq,
-      branchCount, clauseCount, pulls, finishRemaining,
-      finishContext, ready⟩ :=
-    PLeaTTa.PrologRepresentativeCallFrontierBridge.ResolutionScan.decomposeRepresentativeRejectedPrefix
-      candidateScan supportedCandidates query cursorWellFormed
-      (.refl partition.firstCursor) (.refl partition.firstCursor) rfl
-      (fun _branch member => member) candidateArities
-  have firstNonempty : partition.first.alts ≠ [] := by
-    rw [partition.firstHead]
-    simp
-  have readyNonempty : readyBranches ≠ [] :=
-    ready.branches_nonempty_of_alts_nonempty firstNonempty
-  obtain
-    ⟨branch, clause, branchTail, clauseTail, altTail,
-      readyBranchesEq, readyClausesEq, priorAlts, supported, arity,
-      retained, tailSupported, tailScan⟩ :=
-    ready.retained_shape readyNonempty
-  let copied :=
-    PLeaTTa.freshenResolutionClause partition.first.argsv
-      partition.first.args partition.first.res partition.first.rest
-      partition.first.binding partition.first.qterm partition.first.counter
-      partition.first.barrier clause
-  have cursorRemaining :
-      finish.remaining = branch :: branchTail :=
-    finishRemaining.trans readyBranchesEq
-  have finishWellFormed : finish.WellFormed :=
-    PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_wellFormed
-      pulls cursorWellFormed
-  have queryAtFinish :
-      RepresentativeNormalizedCallAgrees alpha finish partition.first.argsv
-        (PLeaTTa.subst partition.first.binding partition.first.res) :=
-    PLeaTTa.PrologRepresentativeCallFrontierBridge.CursorCallContext.representativeNormalizedCallAgrees
-      finishContext (.refl partition.firstCursor) query
-  have supportedAtFinish :
-      SupportedPreparedCandidateAgrees finish.callGeneration finish.predicate
-        finish.arguments finish.bindings branch clause :=
-    finishContext.supportedPreparedCandidate supported
-  have advancedContext :
-      CursorCallContext (finish.advance branch branchTail)
-        partition.firstCursor.callGeneration
-        partition.firstCursor.predicate
-        partition.firstCursor.arguments
-        partition.firstCursor.bindings :=
-    finishContext.advance branch branchTail
-  have advancedWellFormed :
-      (finish.advance branch branchTail).WellFormed :=
-    finish.advance_wellFormed finishWellFormed cursorRemaining
-  have queryAtAdvanced :
-      RepresentativeNormalizedCallAgrees alpha
-        (finish.advance branch branchTail) partition.first.argsv
-        (PLeaTTa.subst partition.first.binding partition.first.res) :=
-    PLeaTTa.PrologRepresentativeCallFrontierBridge.CursorCallContext.representativeNormalizedCallAgrees
-      advancedContext finishContext queryAtFinish
-  have tailArities :
-      ∀ candidate, candidate ∈ clauseTail →
-        candidate.params.length = partition.first.argsv.length := by
-    intro candidate member
-    apply candidateArities candidate
-    rw [clausesEq, readyClausesEq]
-    simp [member]
-  have tailSupportedAtAdvanced :
-      List.Forall₂
-        (SupportedPreparedCandidateAgrees
-          (finish.advance branch branchTail).callGeneration
-          (finish.advance branch branchTail).predicate
-          (finish.advance branch branchTail).arguments
-          (finish.advance branch branchTail).bindings)
-        (finish.advance branch branchTail).remaining clauseTail := by
-    have transported :
-        List.Forall₂
-          (SupportedPreparedCandidateAgrees
-            (finish.advance branch branchTail).callGeneration
-            (finish.advance branch branchTail).predicate
-            (finish.advance branch branchTail).arguments
-            (finish.advance branch branchTail).bindings)
-          branchTail clauseTail :=
-      tailSupported.imp
-        (fun _branch _clause item =>
-          advancedContext.supportedPreparedCandidate item)
-    simpa [PreparedCursor.advance] using transported
-  have finishPositioned :
-      CallScopedCursorPosition callStart finish
-        (firstPosition + count) :=
-    CallScopedCursorPosition.afterRejected pulls firstOwnership.positioned
-  have tailOwnership :
-      (afterPulledHead partition.first altTail).Owns alpha
-        callStart (finish.advance branch branchTail)
-          ((firstPosition + count) + 1) :=
-    by
-      have advancedIdentity :
-          PreparedCallIdentity.ofCursor (finish.advance branch branchTail) =
-            PreparedCallIdentity.ofCursor partition.firstCursor := by
-        apply PreparedCallIdentity.ofCursor_eq_of_callContext advancedContext
-        simpa [PreparedCursor.advance] using
-          (PLeaTTa.PrologSupportedCallFrontierBridge.RejectedPullsN.preserves_reservedUntil
-            pulls)
-      refine ⟨?_, ?_, finishPositioned.advance cursorRemaining⟩
-      · calc
-          (afterPulledHead partition.first altTail).callIdentity =
-              partition.first.callIdentity := rfl
-          _ = PreparedCallIdentity.ofCursor partition.firstCursor :=
-            firstOwnership.identity
-          _ = PreparedCallIdentity.ofCursor
-              (finish.advance branch branchTail) := advancedIdentity.symm
-      · exact
-          ⟨clauseTail, advancedWellFormed, queryAtAdvanced,
-            substitutedArgs, tailSupportedAtAdvanced, tailArities, tailScan⟩
-  have offsetAtAltTail :
-      PulledHeadOffsetAgrees alpha finish branch clause branchTail copied
-        partition.first altTail :=
-    ⟨cursorRemaining, finishWellFormed, queryAtFinish, substitutedArgs,
-      supportedAtFinish, arity, retained, priorAlts, rfl,
-      ⟨callStart, firstPosition + count, finishPositioned, tailOwnership⟩⟩
-  have banksEqual :
-      resolutionAlt partition.first.argsv partition.first.args
-            partition.first.res partition.first.rest partition.first.binding
-            partition.first.qterm partition.first.barrier
-            partition.first.counter clause ::
-          altTail =
-        .br partition.goals partition.binding :: partition.tail :=
-    priorAlts.symm.trans partition.firstHead
-  have altTailExact : altTail = partition.tail :=
-    (List.cons.inj banksEqual).2
-  have headExact :
-      resolutionAlt partition.first.argsv partition.first.args
-          partition.first.res partition.first.rest partition.first.binding
-          partition.first.qterm partition.first.barrier
-          partition.first.counter clause =
-        .br partition.goals partition.binding :=
-    (List.cons.inj banksEqual).1
-  have offset :
-      PulledHeadOffsetAgrees alpha finish branch clause branchTail copied
-        partition.first partition.tail := by
-    simpa [altTailExact] using offsetAtAltTail
+    ⟨count, skippedBranches, skippedClauses, candidates, finish, branch,
+      clause, branchTail, clauseTail, copied, cursorSplit, candidatesSplit,
+      branchCount, clauseCount, sourceStepsAtFrontier, rejectedPrefix,
+      headExact⟩ :=
+    PLeaTTa.PrologBodyFailureOuterResourceActivationBridge.OuterResourceCatchupPartition.consumeRejectedPrefix
+      partition opened.session
   have sourceSteps :
       StepsN count
         (.running opened.session source)
         []
         (.running opened.session
           (firstLiveReadySourceFrontier partition finish)) := by
-    have lifted :=
-      PLeaTTa.PrologBodyFailureOuterResourceCatchupBridge.RejectedPullsN.frameRetainedFrontierContextStepsN
-        pulls partition.survivingContext partition.firstFrame opened.session
     rw [agreement.sourceShape]
-    simpa [firstLiveSourceFrontier, firstLiveReadySourceFrontier] using lifted
+    exact sourceStepsAtFrontier
   have selectedHead :
       PLeaTTa.Alt.br
           (PLeaTTa.Goal.eq
@@ -363,7 +428,8 @@ theorem
               copied.body ++ partition.first.rest)
           partition.first.binding =
         PLeaTTa.Alt.br partition.goals partition.binding := by
-    simpa [resolutionAlt, copied] using headExact
+    rw [rejectedPrefix.offset.copiedExact]
+    simpa [resolutionAlt] using headExact
   have selectedFields :
       (PLeaTTa.Goal.eq
             (.expr (partition.first.args ++ [partition.first.res]))
@@ -391,19 +457,14 @@ theorem
       agreement.suffixAlignment, rfl, agreement.executableExact⟩
   refine
     ⟨count, skippedBranches, skippedClauses, candidates, finish, branch,
-      clause, branchTail, clauseTail, copied, ?_, ?_, branchCount,
+      clause, branchTail, clauseTail, copied, cursorSplit, candidatesSplit,
+      branchCount,
       clauseCount, sourceSteps, ?_⟩
-  · calc
-      partition.firstCursor.remaining =
-          skippedBranches ++ readyBranches := branchesEq
-      _ = skippedBranches ++ (branch :: branchTail) := by
-        rw [readyBranchesEq]
-  · rw [clausesEq, readyClausesEq]
-  · exact
-      ⟨initial,
-        ⟨pulls, offset⟩,
-        rfl,
-        executableExact⟩
+  exact
+    ⟨initial,
+      rejectedPrefix,
+      rfl,
+      executableExact⟩
 
 /-! ## Anti-vacuity: a rejected occurrence before a retained head -/
 

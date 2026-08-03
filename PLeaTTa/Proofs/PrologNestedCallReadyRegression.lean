@@ -1694,7 +1694,7 @@ private theorem siblingPSecondBranch_resolves_empty :
         [] [] [] (.reflexive (Term.denote resultTerm)) OrderedTreeMgu.nil)
   · simp [siblingPSecondBranch]
 
-private theorem siblingPActive
+theorem siblingPActive
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
     ∃ state : ActivePayloadState,
       state.index.bodyReferences = [.call "q" [resultTerm]] ∧

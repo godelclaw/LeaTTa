@@ -380,8 +380,7 @@ def inTail
         resource resources cursor context segmentAgrees resourceRest
         resourceQuery resourceBarrier resourceOwnership snapshot outerAgrees) :=
   ⟨⟨path.position.val + 1, by
-      simpa [payloadCells, Nat.succ_eq_add_one] using
-        Nat.succ_lt_succ path.position.isLt⟩⟩
+      simp [payloadCells]⟩⟩
 
 @[simp] theorem atHead_cell
     {alpha support : List (LogicVar × String)} {qterm : Metta.Atom}
@@ -825,9 +824,7 @@ def route
       _ =
         path.cell ::
           (payloadCells payload).drop (path.position.val + 1) := by
-        simpa [PayloadPath.cell] using
-          (List.cons_get_drop_succ
-            (l := payloadCells payload) (n := path.position)).symm
+        simp [PayloadPath.cell]
   refine
     { suffixBarrier := dropped.1
       suffixInner := dropped.2.1

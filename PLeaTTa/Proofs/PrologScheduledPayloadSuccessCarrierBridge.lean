@@ -651,10 +651,7 @@ theorem selectedCellSpineExact
         (ready.payloadAlignment.payloadPath selection.path).cell ::
           (payloadCells before.carrier.payloadContext).drop
             (selection.path.position.val + 1) := by
-      simpa [PayloadPath.cell] using
-        (List.cons_get_drop_succ
-          (l := payloadCells before.carrier.payloadContext)
-          (n := ready.payloadAlignment.payloadPath selection.path)).symm
+      simp [PayloadPath.cell]
     _ = transition.selectedPayloadCell ::
           payloadCells
             (SourceControlResourcePayloadContextAgrees.tail
@@ -813,11 +810,7 @@ theorem selectedFineBarriersExact
               (payloadCells before.carrier.payloadContext).drop
                 (selection.path.position.val + 1) := by
         congr 1
-        simpa [PayloadPath.cell] using
-          (List.cons_get_drop_succ
-            (l := payloadCells before.carrier.payloadContext)
-            (n :=
-              (ready.payloadAlignment.payloadPath selection.path).position)).symm
+        simp [PayloadPath.cell]
       _ =
           (payloadCells before.carrier.payloadContext).take
               selection.path.position.val ++
@@ -973,10 +966,7 @@ theorem postTailEndpointsAtActivation
           (ready.payloadAlignment.payloadPath selection.path).cell ::
             (payloadCells before.carrier.payloadContext).drop
               (selection.path.position.val + 1) := by
-        simpa [PayloadPath.cell] using
-          (List.cons_get_drop_succ
-            (l := payloadCells before.carrier.payloadContext)
-            (n := ready.payloadAlignment.payloadPath selection.path)).symm
+        simp [PayloadPath.cell]
       _ = transition.selectedPayloadCell ::
             (payloadCells before.carrier.payloadContext).drop
               (selection.path.position.val + 1) := by
@@ -1067,10 +1057,7 @@ theorem postTailControlOrigins
           (ready.payloadAlignment.payloadPath selection.path).cell ::
             (payloadCells before.carrier.payloadContext).drop
               (selection.path.position.val + 1) := by
-        simpa [PayloadPath.cell] using
-          (List.cons_get_drop_succ
-            (l := payloadCells before.carrier.payloadContext)
-            (n := ready.payloadAlignment.payloadPath selection.path)).symm
+        simp [PayloadPath.cell]
       _ = transition.selectedPayloadCell ::
             (payloadCells before.carrier.payloadContext).drop
               (selection.path.position.val + 1) := by

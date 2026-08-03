@@ -588,7 +588,7 @@ theorem selection_resources_exact
 predicate.  This is the generic maximal-prefix fact coupling the independent
 payload classifier to the executable classifier without comparing resource
 values after the fact. -/
-private theorem first_live_resource_decomposition_unique
+theorem first_live_resource_decomposition_unique
     (leftPrefix : List RetainedAlternativeSegment)
     (leftFirst : RetainedAlternativeSegment)
     (leftSuffix : List RetainedAlternativeSegment)
