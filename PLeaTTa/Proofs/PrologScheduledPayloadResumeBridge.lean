@@ -65,16 +65,16 @@ def currentAnswerHistory
     (state : RepresentativeScheduledPayloadState) :
     ScheduledAnswerHistory state.carrier.index.alpha
       (ScheduledAnswerHistory.oneLevelSource
-        state.carrier.index.callerScope state.carrier.index.opened.scope
+        state.carrier.index.callerScope state.carrier.index.predicateScope
         state.carrier.index.current
         (state.carrier.index.finish.advance state.carrier.index.branch
           state.carrier.index.branchTail))
       (ScheduledAnswerHistory.oneLevelNext
-        state.carrier.index.callerScope state.carrier.index.opened.scope
+        state.carrier.index.callerScope state.carrier.index.predicateScope
         (state.carrier.index.finish.advance state.carrier.index.branch
           state.carrier.index.branchTail)) :=
   ScheduledAnswerHistory.oneLevel
-    state.carrier.index.callerScope state.carrier.index.opened.scope
+    state.carrier.index.callerScope state.carrier.index.predicateScope
     state.carrier.index.current
     (state.carrier.index.finish.advance state.carrier.index.branch
       state.carrier.index.branchTail)
@@ -397,12 +397,12 @@ theorem
     absorbContextTarget before.carrier.index.context
       (currentAnswerHistory before).bindings
       (ScheduledAnswerHistory.oneLevelSource
-        before.carrier.index.callerScope before.carrier.index.opened.scope
+        before.carrier.index.callerScope before.carrier.index.predicateScope
         before.carrier.index.current
         (before.carrier.index.finish.advance before.carrier.index.branch
           before.carrier.index.branchTail))
       (ScheduledAnswerHistory.oneLevelNext
-        before.carrier.index.callerScope before.carrier.index.opened.scope
+        before.carrier.index.callerScope before.carrier.index.predicateScope
         (before.carrier.index.finish.advance before.carrier.index.branch
           before.carrier.index.branchTail))
   have sourceSteps :=
@@ -412,7 +412,7 @@ theorem
       before.carrier.index.source =
         ActiveProductContext.plug before.carrier.index.context
           (ScheduledAnswerHistory.oneLevelSource
-            before.carrier.index.callerScope before.carrier.index.opened.scope
+            before.carrier.index.callerScope before.carrier.index.predicateScope
             before.carrier.index.current
             (before.carrier.index.finish.advance before.carrier.index.branch
               before.carrier.index.branchTail)) := by

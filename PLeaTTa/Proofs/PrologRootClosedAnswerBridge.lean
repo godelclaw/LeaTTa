@@ -226,12 +226,12 @@ def fullyAbsorbedSource
   absorbContextTarget before.carrier.index.context
     (currentAnswerHistory before).bindings
     (ScheduledAnswerHistory.oneLevelSource
-      before.carrier.index.callerScope before.carrier.index.opened.scope
+      before.carrier.index.callerScope before.carrier.index.predicateScope
       before.carrier.index.current
       (before.carrier.index.finish.advance before.carrier.index.branch
         before.carrier.index.branchTail))
     (ScheduledAnswerHistory.oneLevelNext
-      before.carrier.index.callerScope before.carrier.index.opened.scope
+      before.carrier.index.callerScope before.carrier.index.predicateScope
       (before.carrier.index.finish.advance before.carrier.index.branch
         before.carrier.index.branchTail))
 
@@ -242,7 +242,7 @@ def currentAnswerHistoryBuild
     (before : RepresentativeScheduledPayloadState) :
     ScheduledHistoryBuild (currentAnswerHistory before) :=
   .oneLevel before.carrier.index.callerScope
-    before.carrier.index.opened.scope before.carrier.index.current
+    before.carrier.index.predicateScope before.carrier.index.current
     (before.carrier.index.finish.advance before.carrier.index.branch
       before.carrier.index.branchTail)
     before.carrier.index.active
@@ -300,7 +300,7 @@ noncomputable def rootClosedAnswerReady
       before.carrier.index.source =
         ActiveProductContext.plug before.carrier.index.context
           (ScheduledAnswerHistory.oneLevelSource
-            before.carrier.index.callerScope before.carrier.index.opened.scope
+            before.carrier.index.callerScope before.carrier.index.predicateScope
             before.carrier.index.current
             (before.carrier.index.finish.advance before.carrier.index.branch
               before.carrier.index.branchTail)) := by
@@ -375,9 +375,9 @@ theorem historyContext_eq_fullContext
     (ready : RootClosedAnswerReady before) :
     ready.result.historyBuild.activeContext =
       { callerScope := before.carrier.index.callerScope
-        predicateScope := before.carrier.index.opened.scope
+        predicateScope := before.carrier.index.predicateScope
         retained :=
-          .clauses before.carrier.index.opened.scope
+          .clauses before.carrier.index.predicateScope
             (before.carrier.index.finish.advance before.carrier.index.branch
               before.carrier.index.branchTail)
         callerRest := before.carrier.index.callerReferences } ::

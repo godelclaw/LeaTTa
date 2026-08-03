@@ -91,6 +91,15 @@ structure ScheduledPayloadIndex where
 
 namespace ScheduledPayloadIndex
 
+/-- The only live scheduled-phase datum historically recovered from the
+`OpenedCall` creation packet.  Naming it here lets downstream scheduled
+relations depend on the typed predicate scope without retaining the packet. -/
+abbrev predicateScope (index : ScheduledPayloadIndex) : CutScopeId :=
+  index.opened.scope
+
+@[simp] theorem predicateScope_eq_opened_scope (index : ScheduledPayloadIndex) :
+    index.predicateScope = index.opened.scope := rfl
+
 abbrev PayloadContext (index : ScheduledPayloadIndex) :=
   ScheduledProductPayloadContext index.alpha index.support index.qterm
     index.opened index.finish index.branch index.branchTail index.bodyBarrier
@@ -230,7 +239,7 @@ def ofLegacy (state : ScheduledPayloadState) :
         support := state.index.support
         canonical := state.index.canonical
         referenceBase := state.index.referenceBase
-        predicateScope := state.index.opened.scope
+        predicateScope := state.index.predicateScope
         session := state.index.session
         finish := state.index.finish
         branch := state.index.branch
@@ -276,7 +285,7 @@ def ofLegacy (state : ScheduledPayloadState) :
     (ofLegacy state).index.baseAlts = state.index.baseAlts := rfl
 
 @[simp] theorem ofLegacy_predicateScope (state : ScheduledPayloadState) :
-    (ofLegacy state).index.predicateScope = state.index.opened.scope := rfl
+    (ofLegacy state).index.predicateScope = state.index.predicateScope := rfl
 
 @[simp] theorem ofLegacy_cellIdentities (state : ScheduledPayloadState) :
     (ofLegacy state).cellIdentities = state.cellIdentities := rfl

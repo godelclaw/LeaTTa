@@ -131,9 +131,9 @@ theorem postAnswerToSelectedReady
           before.carrier.index.outer)
         (before.carrier.index.active :: before.carrier.index.resources)
         ({ callerScope := before.carrier.index.callerScope
-           predicateScope := before.carrier.index.opened.scope
+           predicateScope := before.carrier.index.predicateScope
            retained :=
-             .clauses before.carrier.index.opened.scope
+             .clauses before.carrier.index.predicateScope
                (before.carrier.index.finish.advance
                  before.carrier.index.branch before.carrier.index.branchTail)
            callerRest := before.carrier.index.callerReferences } ::
@@ -156,9 +156,9 @@ theorem postAnswerToSelectedReady
   have historyContext :
       ready.result.historyBuild.activeContext =
         { callerScope := before.carrier.index.callerScope
-          predicateScope := before.carrier.index.opened.scope
+          predicateScope := before.carrier.index.predicateScope
           retained :=
-            .clauses before.carrier.index.opened.scope
+            .clauses before.carrier.index.predicateScope
               (before.carrier.index.finish.advance before.carrier.index.branch
                 before.carrier.index.branchTail)
           callerRest := before.carrier.index.callerReferences } ::
@@ -166,9 +166,9 @@ theorem postAnswerToSelectedReady
     ready.historyContext_eq_fullContext
   have partitionContext :
       ({ callerScope := before.carrier.index.callerScope
-         predicateScope := before.carrier.index.opened.scope
+         predicateScope := before.carrier.index.predicateScope
          retained :=
-           .clauses before.carrier.index.opened.scope
+           .clauses before.carrier.index.predicateScope
              (before.carrier.index.finish.advance before.carrier.index.branch
                before.carrier.index.branchTail)
          callerRest := before.carrier.index.callerReferences } :
@@ -241,9 +241,9 @@ abbrev RootPayloadPartition
       before.carrier.index.outer)
     (before.carrier.index.active :: before.carrier.index.resources)
     ({ callerScope := before.carrier.index.callerScope
-       predicateScope := before.carrier.index.opened.scope
+       predicateScope := before.carrier.index.predicateScope
        retained :=
-         .clauses before.carrier.index.opened.scope
+         .clauses before.carrier.index.predicateScope
            (before.carrier.index.finish.advance before.carrier.index.branch
              before.carrier.index.branchTail)
        callerRest := before.carrier.index.callerReferences } ::
