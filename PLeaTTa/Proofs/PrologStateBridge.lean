@@ -1812,6 +1812,29 @@ theorem referenceFreshTargets_generated_lower
         exact ⟨index, targetShape, Nat.le_trans
           (Nat.le_add_right seed 1) lower⟩
 
+/-- Every generated identity in the advertised half-open allocation interval
+actually occurs in the consecutive target list.
+
+Together with `referenceFreshTargets_generated_lower` and
+`referenceFreshTargets_generatedBelow`, this closes the interval in both
+directions: the list contains exactly the generated identities allocated by
+the source copier, not merely some identities lying between its endpoints. -/
+theorem referenceFreshTargets_generated_mem
+    (seed : Nat) (support : List LogicVar) (index : Nat)
+    (lower : seed ≤ index) (upper : index < seed + support.length) :
+    .generated index ∈ referenceFreshTargets seed support := by
+  induction support generalizing seed index with
+  | nil =>
+      simp only [List.length_nil, Nat.add_zero] at upper
+      omega
+  | cons head tail inductionHypothesis =>
+      simp only [referenceFreshTargets, List.mem_cons]
+      by_cases same : index = seed
+      · exact Or.inl (congrArg LogicVar.generated same)
+      · exact Or.inr
+          (inductionHypothesis (seed := seed + 1) (index := index)
+            (by omega) (by simp only [List.length_cons] at upper; omega))
+
 /-- Consecutive independent fresh targets never alias. -/
 theorem referenceFreshTargets_nodup (seed : Nat)
     (support : List LogicVar) :

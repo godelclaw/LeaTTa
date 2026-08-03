@@ -8,7 +8,7 @@ Trusted boundary: none
 -/
 import PLeaTTa.Proofs.PrologPersistentFreeScheduledRejectionCatchupBridge
 import PLeaTTa.Proofs.PrologRepresentativeCallPrefilterBridge
-import PLeaTTa.Proofs.PrologScheduledSuccessPrefixBridge
+import PLeaTTa.Proofs.PrologRootScheduledSelectionBridge
 
 namespace PLeaTTa.PrologScheduledRejectionReachabilityRegression
 
@@ -49,6 +49,7 @@ open PrologRecursiveCallPayloadBridge
 open PrologRetainedPayloadSnapshotBridge
 open PrologRootCallReadyBridge
 open PrologRootClosedAnswerBridge
+open PrologRootScheduledSelectionBridge
 open PrologScheduledAnswerPropagationBridge
 open PrologScheduledHistoryBuildBridge
 open PrologScheduledPayloadLandingBridge
@@ -2187,6 +2188,50 @@ private theorem double_selected_root_activation
       representative, nextAlpha, sourceCanonical, flattened, installed,
       after, facts, rfl, doubleSelected_openedRemaining,
       facts.bodyReferences, facts.bodyExecutables⟩
+
+/-- The generic root-to-selection producer is inhabited by the concrete
+duplicate-success program.  This theorem keeps the shared scheduling prefix
+separate from the later success decision, so the same producer can feed a
+failed selected head without rebuilding answer-history alignment. -/
+theorem double_selected_root_to_scheduled_selected
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    Nonempty
+      (RootClosedSingletonSelectedPrefix prog gt
+        (.running doubleSelectedSession
+          (.task rootScope [.call "p" queryTerms] []))
+        (.ready doubleSelectedOpenConf)
+        [.opened (requestFor "p" queryTerms [])] 4 3
+        ((openedFor doubleSelectedSession "p" queryTerms []).cursor.advance
+          firstSelectedPrepared [secondSelectedPrepared]) [] okAtom) := by
+  obtain
+    ⟨finish, _representative, _nextAlpha, _sourceCanonical, _flattened,
+      _installed, active, facts, finishExact, _finishRemaining,
+      bodyReferences, bodyExecutables⟩ :=
+    double_selected_root_activation (prog := prog) (gt := gt)
+  subst finish
+  have referenceConjunction :
+      active.carrier.index.bodyReferences = [.conjunction []] := by
+    simpa [selectedReference] using bodyReferences
+  have executableEmpty : active.carrier.index.bodyExecutables = [] :=
+    bodyExecutables.trans (by rfl)
+  have administration :
+      AdministrativeStepsN 1 active.carrier.index.bodyReferences [] := by
+    rw [referenceConjunction]
+    exact .succ 0 _ _ _ (.conjunction [] []) (.zero [])
+  have produced :=
+    PrologRootScheduledSelectionBridge.RepresentativeRootCallSuccessorFacts.toScheduledSelected
+      facts administration executableEmpty
+      (retainedGoals :=
+        [PLeaTTa.Goal.eq
+          (.expr (queryArgs ++ [okAtom]))
+          (.expr
+            ((PLeaTTa.freshenResolutionClause queryArgs queryArgs okAtom [] []
+              okAtom 1 1 selectedExecutable).params ++
+              [(PLeaTTa.freshenResolutionClause queryArgs queryArgs okAtom
+                [] [] okAtom 1 1 selectedExecutable).result]))])
+      (retainedBinding := [])
+      (by rfl)
+  simpa [doubleSelectedOpenConf] using produced
 
 private def postFirstSelectedCursor : PreparedCursor :=
   (openedFor doubleSelectedSession "p" queryTerms []).cursor.advance

@@ -917,6 +917,8 @@ theorem
       AlphaFreshFrontier alpha referenceFrontier executableFrontier ∧
       AlphaAllocationGap alpha branch.nextFresh cursor.reservedUntil
         (seed + 1) protectedExecutableEnd ∧
+      (∀ index, branch.firstFresh ≤ index → index < branch.nextFresh →
+        AlphaCovers alpha (.generated index)) ∧
       AlphaGoalsAgree alpha barrier branch.body
         (freshenResolutionClause
           (args.map (PLeaTTa.subst binding)) args result rest binding
@@ -1241,6 +1243,32 @@ theorem
               cursor.bindings freshSeed reference).nextFresh
             cursor.reservedUntil (seed + 1) protectedExecutableEnd :=
         ambientNextGap.append clauseNextGap
+      have selectedIntervalCovered :
+          ∀ index,
+            (preparedBranchOf cursor.callGeneration cursor.arguments
+                cursor.bindings freshSeed reference).firstFresh ≤ index →
+            index <
+              (preparedBranchOf cursor.callGeneration cursor.arguments
+                cursor.bindings freshSeed reference).nextFresh →
+            AlphaCovers alpha (.generated index) := by
+        intro index lower upper
+        have targetMember :
+            .generated index ∈
+              referenceFreshTargets
+                (reference.clause.freshCopy freshSeed).firstFresh
+                reference.clause.variables := by
+          apply referenceFreshTargets_generated_mem
+          · simpa [preparedBranchOf] using lower
+          · simpa [preparedBranchOf, LocalClause.freshCopy_next] using upper
+        have projectionMember :
+            .generated index ∈ clauseAlpha.map Prod.fst := by
+          rw [clauseAgreement.graph_reference]
+          exact targetMember
+        obtain ⟨⟨identity, name⟩, pairMember, identityExact⟩ :=
+          List.mem_map.mp projectionMember
+        simp only at identityExact
+        subst identity
+        exact ⟨name, List.mem_append_right ambientAlpha pairMember⟩
       have bodyAgreement :=
         freshenClause_body_alpha_agrees
           base bodySupported freshSeed
@@ -1445,6 +1473,7 @@ theorem
           queryIncluded, by simpa [preparedBranchOf] using extensionAbove,
           by simpa [preparedBranchOf] using combinedFresh,
           by simpa [preparedBranchOf] using combinedGap,
+          by simpa [preparedBranchOf] using selectedIntervalCovered,
           by simpa [preparedBranchOf] using bodyControl,
           rfl,
           by simpa [sourceExtensionShape] using independentShape,
@@ -1624,7 +1653,7 @@ theorem
         ⟨alpha, sourceCanonical, representative, semanticCanonical,
           flattened, generated, installed, resultBundle.1,
           resultBundle.2.1, resultBundle.2.2.2.1,
-          resultBundle.2.2.2.2.2⟩
+          resultBundle.2.2.2.2.2.2⟩
 
 /-- Existential compatibility view of
 `unifyB_representativeWith_of_headResolution`.

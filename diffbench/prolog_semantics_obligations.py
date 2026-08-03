@@ -320,6 +320,10 @@ PROLOG_UNBOUND_NESTED_CALL_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologUnboundNestedCallRegression.lean"
 )
+PROLOG_ROOT_SCHEDULED_SELECTION_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologRootScheduledSelectionBridge.lean"
+)
 PROLOG_HETEROGENEOUS_PREFIX_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologHeterogeneousPrefixBridge.lean"
@@ -808,6 +812,8 @@ def check() -> list[str]:
             digest(PROLOG_NESTED_CALL_READY_REGRESSION),
         "prolog_unbound_nested_call_regression_sha256":
             digest(PROLOG_UNBOUND_NESTED_CALL_REGRESSION),
+        "prolog_root_scheduled_selection_bridge_sha256":
+            digest(PROLOG_ROOT_SCHEDULED_SELECTION_BRIDGE),
         "prolog_heterogeneous_prefix_bridge_sha256":
             digest(PROLOG_HETEROGENEOUS_PREFIX_BRIDGE),
         "prolog_heterogeneous_prefix_regression_sha256":

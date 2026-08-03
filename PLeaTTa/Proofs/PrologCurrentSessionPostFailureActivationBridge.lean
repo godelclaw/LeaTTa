@@ -179,7 +179,8 @@ theorem activateSelectedHead
       ⟨nextAlpha, sourceCanonical, flattened, installed,
         nextShared, alphaIncluded, extension,
         freshFrontier,
-        independentShape, sourceOrdered, sourceLeaf, sealedStep, fineStep,
+        _selectedIntervalCovered, independentShape, sourceOrdered, sourceLeaf,
+        sealedStep, fineStep,
         cumulative, bodyPayload, nextSnapshotExists, successorBelow,
         persistentExact, framesExact, altsExact⟩ :=
     RetainedCallPayloadSnapshot.activateSelectedHead

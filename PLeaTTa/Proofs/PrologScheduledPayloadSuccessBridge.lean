@@ -29,6 +29,7 @@ open PrologControlSegmentSpineBridge
 open PrologHeterogeneousPrefixBridge
 open PrologMguBridge
 open PrologMguComposition
+open PrologMguOpenAgreement
 open PrologOrdinaryStepBridge
 open PrologProductResourceContextBridge
 open PrologRetainedPayloadActivationBridge
@@ -235,6 +236,11 @@ structure ScheduledSuccessfulHeadRelates
     AlphaFreshFrontier nextAlpha
       before.carrier.index.session.resolver.nextFresh
       (selectedFineState before).persistent.counter
+  selectedIntervalCovered :
+    ∀ index,
+      transition.branch.firstFresh ≤ index →
+      index < transition.branch.nextFresh →
+      AlphaCovers nextAlpha (.generated index)
   independentShape :
     independentResult =
       TreeSubstitution.reify
@@ -320,6 +326,92 @@ structure ScheduledSuccessfulHeadRelates
   fineAnswers :
     (successfulFineState transition installed).control.answers =
       (selectedFineState before).control.answers
+
+namespace ScheduledSuccessfulHeadRelates
+
+/-- A selected clause which allocates at least one independent variable
+forces a genuinely strict alpha extension.
+
+This theorem is orientation-independent: it does not inspect which side the
+ordered source MGU or executable Robinson unifier chooses as an alias.  The
+new graph covers the selected clause's complete generated interval, while
+the retained call-start allocation gap proves that interval was absent from
+the old graph.  Therefore the chronological suffix cannot be empty. -/
+theorem strictAlphaExtension_of_nonemptyInterval
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : RepresentativeScheduledPayloadState}
+    {ready : RootClosedAnswerReady before}
+    {selection : ScheduledLocalSelection ready.result.historyBuild.cells}
+    {scope : CutScopeId}
+    {transition :
+      ScheduledSelectedHeadTransition ready.payloadAlignment selection scope
+        before.carrier.index.session}
+    {partition : RootPayloadPartition before}
+    {independentResult : Substitution}
+    {nextAlpha : List (LogicVar × String)}
+    {sourceCanonical flattened : TreeSubstitution}
+    {installed : Subst}
+    (relation :
+      ScheduledSuccessfulHeadRelates prog gt before ready selection scope
+        transition partition independentResult nextAlpha sourceCanonical
+        flattened installed)
+    (allocates : transition.branch.firstFresh < transition.branch.nextFresh) :
+    ∃ suffix : List (LogicVar × String),
+      suffix ≠ [] ∧
+        nextAlpha = before.carrier.index.alpha ++ suffix ∧
+        nextAlpha ≠ before.carrier.index.alpha ∧
+        ∃ name,
+          (.generated transition.branch.firstFresh, name) ∈ suffix := by
+  have branchMember : transition.branch ∈ transition.finish.remaining := by
+    rw [transition.offset.cursorRemaining]
+    simp
+  have reservationStarts :
+      transition.finish.reservationStart ≤
+        transition.branch.firstFresh :=
+    transition.offset.cursorWellFormed.1.start_le_member_first branchMember
+  have reservationEnds :
+      transition.branch.nextFresh ≤ transition.finish.reservedUntil :=
+    transition.offset.cursorWellFormed.1.member_next_le_final branchMember
+  have oldNotCovered :
+      ¬ AlphaCovers before.carrier.index.alpha
+          (.generated transition.branch.firstFresh) := by
+    rintro ⟨name, linked⟩
+    have oldMember :
+        .generated transition.branch.firstFresh ∈
+          before.carrier.index.alpha.map Prod.fst :=
+      List.mem_map.mpr
+        ⟨(.generated transition.branch.firstFresh, name), linked, rfl⟩
+    rcases
+        transition.selectedSnapshotAtFinish.allocationGap.1
+          transition.branch.firstFresh oldMember with below | above
+    · omega
+    · omega
+  have newCovered :
+      AlphaCovers nextAlpha (.generated transition.branch.firstFresh) :=
+    relation.selectedIntervalCovered transition.branch.firstFresh
+      (Nat.le_refl _) allocates
+  have different : nextAlpha ≠ before.carrier.index.alpha := by
+    intro equality
+    apply oldNotCovered
+    simpa [equality] using newCovered
+  rcases relation.extensionAbove with
+    ⟨suffix, exactShape, generated, referenceAbove, executableAbove⟩
+  obtain ⟨selectedName, selectedMember⟩ := newCovered
+  have selectedSuffixMember :
+      (.generated transition.branch.firstFresh, selectedName) ∈ suffix := by
+    rw [exactShape] at selectedMember
+    rcases List.mem_append.mp selectedMember with oldMember | suffixMember
+    · exact False.elim (oldNotCovered ⟨selectedName, oldMember⟩)
+    · exact suffixMember
+  have suffixNonempty : suffix ≠ [] := by
+    intro suffixEmpty
+    apply different
+    simpa [suffixEmpty] using exactShape
+  exact
+    ⟨suffix, suffixNonempty, exactShape, different, selectedName,
+      selectedSuffixMember⟩
+
+end ScheduledSuccessfulHeadRelates
 
 namespace ScheduledSelectedHeadTransition
 
@@ -420,7 +512,8 @@ theorem resolveHead
   obtain
     ⟨nextAlpha, sourceCanonical, flattened, installed,
       nextShared, alphaIncluded, extensionAbove, freshFrontier,
-      independentShape, sourceOrdered, sourceStep, sealedStep, fineStep,
+      selectedIntervalCovered, independentShape, sourceOrdered, sourceStep,
+      sealedStep, fineStep,
       successorCumulative, successorTask, nextSnapshot, successorBelow,
       finePersistent, fineFrames, fineAlts⟩ :=
     RetainedCallPayloadSnapshot.activateSelectedHead
@@ -497,6 +590,7 @@ theorem resolveHead
         alphaIncluded := alphaIncluded
         extensionAbove := extensionAbove
         freshFrontier := freshFrontier
+        selectedIntervalCovered := selectedIntervalCovered
         independentShape := independentShape
         sourceOrdered := sourceOrdered
         sourceActivation := sourceActivation

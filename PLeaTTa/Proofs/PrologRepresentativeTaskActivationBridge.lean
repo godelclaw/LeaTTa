@@ -174,6 +174,8 @@ theorem
       AlphaFreshFrontier alpha referenceFrontier executableFrontier ∧
       AlphaAllocationGap alpha branch.nextFresh cursor.reservedUntil
         (seed + 1) protectedExecutableEnd ∧
+      (∀ index, branch.firstFresh ≤ index → index < branch.nextFresh →
+        AlphaCovers alpha (.generated index)) ∧
       independentResult =
         TreeSubstitution.reify (sourceCanonical ++ oldCanonical) ++
           referenceBase ∧
@@ -232,7 +234,8 @@ theorem
   obtain
     ⟨alpha, sourceCanonical, representative, _semanticCanonical,
       flattened, generated, installed, shared, queryIncluded, extensionAbove,
-      freshFrontier, allocationGap, bodyControl, representativeExact,
+      freshFrontier, allocationGap, selectedIntervalCovered, bodyControl,
+      representativeExact,
       independentShape,
       sourceOrdered,
       successorVariants, _semanticOrdered, _equationAgreement,
@@ -749,8 +752,9 @@ theorem
   refine
     ⟨alpha, sourceCanonical, flattened, generated, installed,
       shared, queryIncluded, extensionAbove, freshFrontier, allocationGap,
-      compositeResultShape, sourceOrdered, generatedExact, installedExact,
-      ?_, trimmedCumulative, task, bodyHeadMaterialized⟩
+      selectedIntervalCovered, compositeResultShape, sourceOrdered,
+      generatedExact, installedExact, ?_, trimmedCumulative, task,
+      bodyHeadMaterialized⟩
   exact
     { substitution := generatedAgreement
       topological := ⟨generatedTopological⟩
@@ -924,7 +928,7 @@ theorem
         ⟨alpha, sourceCanonical, flattened, generated, installed,
           resultBundle.1, resultBundle.2.1, resultBundle.2.2.1,
           resultBundle.2.2.2.1,
-          resultBundle.2.2.2.2.2⟩
+          resultBundle.2.2.2.2.2.2⟩
 
 /-! ## Anti-vacuity: previously bound support really composes -/
 

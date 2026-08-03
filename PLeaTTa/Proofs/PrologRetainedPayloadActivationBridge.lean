@@ -29,6 +29,7 @@ open PrologBodyFailureResourceTransitionBridge
 open PrologControlSegmentSpineBridge
 open PrologMguBridge
 open PrologMguComposition
+open PrologMguOpenAgreement
 open PrologOrdinaryStepBridge
 open PrologPrefilterScanBridge
 open PrologProductResourceContextBridge
@@ -327,6 +328,8 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
         resource.counter ∧
       AlphaFreshFrontier nextAlpha session.resolver.nextFresh
         state.persistent.counter ∧
+      (∀ index, branch.firstFresh ≤ index → index < branch.nextFresh →
+        AlphaCovers nextAlpha (.generated index)) ∧
       independentResult =
         TreeSubstitution.reify
             (sourceCanonical ++ snapshot.canonical) ++
@@ -444,7 +447,7 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
   obtain
     ⟨nextAlpha, sourceCanonical, flattened, generated, installed,
       nextShared, alphaIncluded, extensionAbove, freshFrontier, allocationGap,
-      independentShape,
+      selectedIntervalCovered, independentShape,
       sourceOrdered, _generatedExact, installedExact, _generatedAgreement,
       successorCumulative, successorTask, _materializedHeads⟩ :=
     PLeaTTa.PrologRepresentativeTaskActivationBridge.SupportedPreparedCandidateAgrees.unifyB_body_cumulativeWith_of_headResolution_extension
@@ -592,7 +595,7 @@ theorem RetainedCallPayloadSnapshot.activateSelectedHead
   refine
     ⟨nextAlpha, sourceCanonical, flattened, installed,
       nextShared, alphaIncluded, extensionAbove, freshFrontier,
-      independentShape,
+      selectedIntervalCovered, independentShape,
       sourceOrdered, sourceStep, sealedStep, fineStep, cumulativeCopied,
       taskCopied,
       ⟨nextSnapshot, nextSnapshotRestoration, nextSnapshotOrigin,
