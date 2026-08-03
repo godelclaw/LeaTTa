@@ -5717,12 +5717,14 @@ theorem installPredicateClause_coherent_of_no_descendants
   exact coherent
 
 /-- Source-facing syntax for one executable goal during `retract/1`
-matching.  The two executable representations admitted by `GoalAgrees` for
-each independent source constructor deliberately share one tag: ordinary
-and grounded calls both denote `$goal.call`, while runtime equality and a
-leaked compile alias both denote `$goal.unify`.  Runtime-tagged cuts retain
-the source cut syntax because the barrier index is operational metadata, not
-part of the stored clause.
+matching.  Every syntax constructor uses the private `prologCompoundC`
+representation: the source terms are Prolog compounds, not forgeable MeTTa
+lists.  The two executable representations admitted by `GoalAgrees` for each
+independent source constructor deliberately share one tag: ordinary and
+grounded calls both denote `$goal.call`, while runtime equality and a leaked
+compile alias both denote `$goal.unify`.  Runtime-tagged cuts retain the
+source cut syntax because the barrier index is operational metadata, not part
+of the stored clause.
 
 Every other executable-only form is kept structurally disjoint below the
 `$goal.executable` tag.  That fallback makes this function total without
@@ -5730,30 +5732,34 @@ claiming source adequacy for a construct outside the independently decoded
 dynamic-clause fragment. -/
 def retractGoalSyntaxAtom : Goal → Atom
   | .call predicate arguments result =>
-      .expr [.sym "$goal.call", .sym predicate,
-        chainOf (arguments ++ [result])]
+      prologCompoundC "$goal.call"
+        (chainOf [.sym predicate, chainOf (arguments ++ [result])])
   | .bin predicate arguments result =>
-      .expr [.sym "$goal.call", .sym predicate,
-        chainOf (arguments ++ [result])]
+      prologCompoundC "$goal.call"
+        (chainOf [.sym predicate, chainOf (arguments ++ [result])])
   | .eq left right =>
-      .expr [.sym "$goal.unify", left, right]
+      prologCompoundC "$goal.unify" (chainOf [left, right])
   | .compileAlias left right =>
-      .expr [.sym "$goal.unify", left, right]
-  | .cut => .expr [.sym "$goal.cut"]
-  | .cutAt _ => .expr [.sym "$goal.cut"]
-  | goal => .expr [.sym "$goal.executable", goalAlphaAtom goal]
+      prologCompoundC "$goal.unify" (chainOf [left, right])
+  | .cut => prologCompoundC "$goal.cut" nilA
+  | .cutAt _ => prologCompoundC "$goal.cut" nilA
+  | goal => prologCompoundC "$goal.executable" (chainOf [goalAlphaAtom goal])
 
 /-- Ordered source-facing syntax for an executable goal sequence. -/
 def retractGoalsSyntaxAtom (goals : List Goal) : Atom :=
   chainOf (goals.map retractGoalSyntaxAtom)
 
 /-- Encode a complete output-last executable clause as the same first-order
-syntax shape used by the independent `clauseSyntaxTerm`.  The predicate name
-is explicit so clauses of different locally owned predicates cannot unify. -/
+syntax shape used by the independent `clauseSyntaxTerm`.  The outer private
+Prolog-compound tag is load-bearing: an ordinary quoted MeTTa list headed by
+`$clause` cannot masquerade as this internal unification term.  The predicate
+name is explicit so clauses of different locally owned predicates cannot
+unify. -/
 def retractClauseSyntaxAtom (functor : String) (clause : Clause) : Atom :=
-  .expr [.sym "$clause", .sym functor,
-    chainOf (clause.params ++ [clause.result]),
-    retractGoalsSyntaxAtom clause.body]
+  prologCompoundC "$clause"
+    (chainOf [.sym functor,
+      chainOf (clause.params ++ [clause.result]),
+      retractGoalsSyntaxAtom clause.body])
 
 /-- One live executable clause paired with its aligned source-removal key.
 Keeping the key beside the clause throughout the scan makes removal preserve

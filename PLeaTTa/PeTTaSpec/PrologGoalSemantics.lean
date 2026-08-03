@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: Apache-2.0
+
 /-
 Module: PLeaTTa.PeTTaSpec.PrologGoalSemantics
 Purpose: Independent finite small-step execution of locally owned Prolog goals.
@@ -1798,33 +1800,42 @@ theorem task_deterministic {before : Session} {scope : CutScopeId}
     rename_i payloadOne resultOne rest patternOne entryOne extensionOne
       nextFreshOne afterDatabaseOne predicate arguments scanOne retractedOne
       payloadTwo resultTwo patternTwo entryTwo extensionTwo nextFreshTwo
-      afterDatabaseTwo patternEquality scanTwo reachableTwo retractedTwo
+      afterDatabaseTwo scanTwo patternEquality reachableTwo retractedTwo
       actionEquality decodedTwo
+    subst patternTwo
     have outcomeEquality := RetractScan.deterministic scanOne scanTwo
-    cases outcomeEquality
+    injection outcomeEquality with entryEquality extensionEquality
+      nextFreshEquality
+    subst entryTwo
+    subst extensionTwo
+    subst nextFreshTwo
     rw [retractedOne] at retractedTwo
     cases retractedTwo
     exact ⟨rfl, rfl, rfl⟩
   case taskRetractMatched.taskRetractMissing =>
     rename_i payloadOne resultOne rest patternOne entry extension nextFreshOne
       afterDatabase predicate arguments scanOne reachable retracted payloadTwo
-      resultTwo patternTwo nextFreshTwo patternEquality scanTwo actionEquality
+      resultTwo patternTwo nextFreshTwo scanTwo patternEquality actionEquality
       decodedTwo
+    subst patternTwo
     have outcomeEquality := RetractScan.deterministic scanOne scanTwo
     cases outcomeEquality
   case taskRetractMissing.taskRetractMatched =>
     rename_i payloadOne resultOne rest patternOne nextFreshOne predicate
       arguments scanOne payloadTwo resultTwo patternTwo entry extension
-      nextFreshTwo afterDatabase patternEquality scanTwo reachable retracted
+      nextFreshTwo afterDatabase scanTwo patternEquality reachable retracted
       actionEquality decodedTwo
+    subst patternTwo
     have outcomeEquality := RetractScan.deterministic scanOne scanTwo
     cases outcomeEquality
   case taskRetractMissing.taskRetractMissing =>
     rename_i payloadOne resultOne rest patternOne nextFreshOne predicate
       arguments scanOne payloadTwo resultTwo patternTwo nextFreshTwo
-      patternEquality scanTwo actionEquality decodedTwo
+      scanTwo patternEquality actionEquality decodedTwo
+    subst patternTwo
     have outcomeEquality := RetractScan.deterministic scanOne scanTwo
-    cases outcomeEquality
+    injection outcomeEquality with nextFreshEquality
+    subst nextFreshTwo
     rfl
 
 /-- Every recognized database-action call has one concrete successor on a
@@ -1899,7 +1910,7 @@ theorem databaseAction_progress
                     { kind := .retract, payload := payload, result := result }
                     recognized decoded⟩
           | some pattern =>
-              obtain ⟨outcome, scan⟩ :=
+              obtain ⟨⟨outcome, scan⟩⟩ :=
                 RetractScan.exists_scan pattern session.resolver.nextFresh
                   (currentEntries session.resolver.database)
               cases outcome with

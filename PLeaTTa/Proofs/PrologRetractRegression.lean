@@ -29,6 +29,17 @@ def variableCandidate : RetractClauseCandidate :=
 def unrelatedCandidate : RetractClauseCandidate :=
   (("other", unrelatedClause), clauseAlphaKey unrelatedClause)
 
+/-- A quoted MeTTa expression with the same visible `$clause` spelling is not
+the private Prolog compound used by the retract matcher.  This prevents source
+data from forging the internal clause-syntax constructor. -/
+theorem raw_quoted_clause_syntax_rejected (functor : String)
+    (clause : Clause) :
+    retractClauseSyntaxAtom functor clause ≠
+      .expr [.sym "$clause", .sym functor,
+        chainOf (clause.params ++ [clause.result]),
+        retractGoalsSyntaxAtom clause.body] := by
+  simp [retractClauseSyntaxAtom, prologCompoundC, prologCompoundTagA]
+
 def fixtureWorld : PWorld :=
   installPredicateClause
     (installPredicateClause (({} : PWorld).reindexClauses) false

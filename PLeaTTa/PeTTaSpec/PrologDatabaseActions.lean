@@ -226,9 +226,16 @@ def RetractOutcome.nextFresh : RetractOutcome → Nat
   | .matched _ _ nextFresh | .missing nextFresh => nextFresh
 
 /-- Source-order, first-unifying retract scan over an already-frozen live
-occurrence list. -/
+occurrence list.
+
+This derivation is deliberately `Type`-valued.  Its nested `skipped`
+constructors retain the exact rejected prefix and the final `matched`
+constructor retains the selected occurrence's literal suffix.  A later
+source/executable correspondence may therefore consume the scan as data;
+packaging it in `Prop` would erase precisely the occurrence provenance needed
+to prevent pairing a returned MGU with a different database member. -/
 inductive RetractScan (pattern : LocalClause) :
-    Nat → List VersionedClause → RetractOutcome → Prop where
+    Nat → List VersionedClause → RetractOutcome → Type where
   | exhausted (freshSeed : Nat) :
       RetractScan pattern freshSeed [] (.missing freshSeed)
   | matched (freshSeed : Nat) (entry : VersionedClause)
@@ -256,11 +263,151 @@ inductive RetractScan (pattern : LocalClause) :
 
 namespace RetractScan
 
+/-- Fresh frontier after standardizing an exact rejected occurrence prefix
+apart in source order.  Different clauses may reserve intervals of different
+widths; this function deliberately counts identities rather than clauses. -/
+def freshAfterPrefix : Nat → List VersionedClause → Nat
+  | freshSeed, [] => freshSeed
+  | freshSeed, entry :: rest =>
+      freshAfterPrefix (entry.clause.freshCopy freshSeed).nextFresh rest
+
+/-- Exact rejected occurrence prefix retained by the Type-valued scan. -/
+def rejectedPrefix {pattern : LocalClause} {freshSeed : Nat}
+    {entries : List VersionedClause} {outcome : RetractOutcome} :
+    RetractScan pattern freshSeed entries outcome → List VersionedClause
+  | .exhausted _ => []
+  | .matched _ _ _ _ _ => []
+  | .skipped _ entry _ _ _ tail => entry :: rejectedPrefix tail
+
+/-- Literal suffix after the selected occurrence.  It is meaningful for a
+`matched` index; the missing case returns the empty list only to keep the
+projection total. -/
+def selectedAfter {pattern : LocalClause} {freshSeed : Nat}
+    {entries : List VersionedClause} {outcome : RetractOutcome} :
+    RetractScan pattern freshSeed entries outcome → List VersionedClause
+  | .exhausted _ => []
+  | .matched _ _ rest _ _ => rest
+  | .skipped _ _ _ _ _ tail => selectedAfter tail
+
+private theorem partition_general {pattern : LocalClause} {freshSeed : Nat}
+    {entries : List VersionedClause} {outcome : RetractOutcome}
+    (scan : RetractScan pattern freshSeed entries outcome) :
+    match outcome with
+    | .matched entry _ _ =>
+        entries = scan.rejectedPrefix ++ entry :: scan.selectedAfter
+    | .missing _ => entries = scan.rejectedPrefix := by
+  induction scan with
+  | exhausted => rfl
+  | matched => rfl
+  | skipped freshSeed skipped rest outcome clash tail inductionHypothesis =>
+      cases outcome with
+      | matched =>
+          simp only [rejectedPrefix, selectedAfter, List.cons_append]
+          exact congrArg (fun suffix => skipped :: suffix) inductionHypothesis
+      | missing =>
+          simp only [rejectedPrefix]
+          exact congrArg (fun suffix => skipped :: suffix) inductionHypothesis
+
+/-- A matched Type-valued scan exposes the exact source-order partition; the
+selected occurrence cannot be paired with a prefix or suffix from another
+run. -/
+theorem matched_partition {pattern : LocalClause} {freshSeed : Nat}
+    {entries : List VersionedClause} {entry : VersionedClause}
+    {extension : Substitution} {nextFresh : Nat}
+    (scan : RetractScan pattern freshSeed entries
+      (.matched entry extension nextFresh)) :
+    entries = scan.rejectedPrefix ++ entry :: scan.selectedAfter :=
+  partition_general scan
+
+/-- A missing scan rejected the complete frozen occurrence list. -/
+theorem missing_rejected_exact {pattern : LocalClause} {freshSeed : Nat}
+    {entries : List VersionedClause} {nextFresh : Nat}
+    (scan : RetractScan pattern freshSeed entries (.missing nextFresh)) :
+    entries = scan.rejectedPrefix :=
+  partition_general scan
+
+private theorem computes_general {pattern : LocalClause} {freshSeed : Nat}
+    {entries : List VersionedClause} {outcome : RetractOutcome}
+    (scan : RetractScan pattern freshSeed entries outcome) :
+    match outcome with
+    | .matched entry extension _ =>
+        ComputesDenotationalMgu
+          [(clauseSyntaxTerm pattern,
+            clauseSyntaxTerm
+              (entry.clause.freshCopy
+                (freshAfterPrefix freshSeed scan.rejectedPrefix)).clause)]
+          extension
+    | .missing _ => True := by
+  induction scan with
+  | exhausted => trivial
+  | matched freshSeed entry rest extension computed =>
+      simpa [rejectedPrefix, freshAfterPrefix] using computed
+  | skipped freshSeed skipped rest outcome clash tail inductionHypothesis =>
+      cases outcome with
+      | matched =>
+          simp only [rejectedPrefix, freshAfterPrefix] at inductionHypothesis ⊢
+          exact inductionHypothesis
+      | missing => trivial
+
+/-- The selected source MGU is computed against the candidate copy beginning
+exactly after the retained rejected prefix. -/
+theorem matched_computes {pattern : LocalClause} {freshSeed : Nat}
+    {entries : List VersionedClause} {entry : VersionedClause}
+    {extension : Substitution} {nextFresh : Nat}
+    (scan : RetractScan pattern freshSeed entries
+      (.matched entry extension nextFresh)) :
+    ComputesDenotationalMgu
+      [(clauseSyntaxTerm pattern,
+        clauseSyntaxTerm
+          (entry.clause.freshCopy
+            (freshAfterPrefix freshSeed scan.rejectedPrefix)).clause)]
+      extension :=
+  computes_general scan
+
+private theorem frontier_general {pattern : LocalClause} {freshSeed : Nat}
+    {entries : List VersionedClause} {outcome : RetractOutcome}
+    (scan : RetractScan pattern freshSeed entries outcome) :
+    match outcome with
+    | .matched entry _ nextFresh =>
+        nextFresh =
+          (entry.clause.freshCopy
+            (freshAfterPrefix freshSeed scan.rejectedPrefix)).nextFresh
+    | .missing nextFresh =>
+        nextFresh = freshAfterPrefix freshSeed entries := by
+  induction scan with
+  | exhausted => rfl
+  | matched => rfl
+  | skipped freshSeed skipped rest outcome clash tail inductionHypothesis =>
+      cases outcome <;>
+        simpa [rejectedPrefix, freshAfterPrefix] using inductionHypothesis
+
+/-- The matched source frontier is the selected copy's exact upper bound,
+after every differently-sized rejected occurrence has paid its reservation. -/
+theorem matched_nextFresh_exact {pattern : LocalClause} {freshSeed : Nat}
+    {entries : List VersionedClause} {entry : VersionedClause}
+    {extension : Substitution} {nextFresh : Nat}
+    (scan : RetractScan pattern freshSeed entries
+      (.matched entry extension nextFresh)) :
+    nextFresh =
+      (entry.clause.freshCopy
+        (freshAfterPrefix freshSeed scan.rejectedPrefix)).nextFresh :=
+  frontier_general scan
+
+/-- Exhaustion pays exactly the source-variable reservation of every frozen
+occurrence, not merely the number of occurrences. -/
+theorem missing_nextFresh_exact {pattern : LocalClause} {freshSeed : Nat}
+    {entries : List VersionedClause} {nextFresh : Nat}
+    (scan : RetractScan pattern freshSeed entries (.missing nextFresh)) :
+    nextFresh = freshAfterPrefix freshSeed entries :=
+  frontier_general scan
+
 /-- Every finite occurrence list has one scan result. -/
 theorem exists_scan (pattern : LocalClause) :
     ∀ (freshSeed : Nat) (entries : List VersionedClause),
-      ∃ outcome, RetractScan pattern freshSeed entries outcome
-  | freshSeed, [] => ⟨.missing freshSeed, .exhausted freshSeed⟩
+      Nonempty (Sigma fun outcome =>
+        RetractScan pattern freshSeed entries outcome)
+  | freshSeed, [] =>
+      ⟨⟨.missing freshSeed, .exhausted freshSeed⟩⟩
   | freshSeed, entry :: rest => by
       classical
       by_cases computes :
@@ -271,15 +418,16 @@ theorem exists_scan (pattern : LocalClause) :
                   (entry.clause.freshCopy freshSeed).clause)]
               extension
       · let extension := Classical.choose computes
-        exact
-          ⟨.matched entry extension
+        exact ⟨⟨.matched entry extension
               (entry.clause.freshCopy freshSeed).nextFresh,
             .matched freshSeed entry rest extension
-              (Classical.choose_spec computes)⟩
+              (Classical.choose_spec computes)⟩⟩
       · rcases exists_scan pattern
           (entry.clause.freshCopy freshSeed).nextFresh rest with
-        ⟨outcome, tail⟩
-        exact ⟨outcome, .skipped freshSeed entry rest outcome computes tail⟩
+        ⟨⟨outcome, tail⟩⟩
+        exact
+          ⟨⟨outcome,
+            .skipped freshSeed entry rest outcome computes tail⟩⟩
 
 /-- The ordered scan cannot choose a later matching occurrence or a different
 MGU spelling. -/

@@ -626,6 +626,11 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.RetractScan.deterministic
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.RetractScan.nextFresh_mono
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.RetractScan.matched_mem
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.RetractScan.matched_partition
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.RetractScan.missing_rejected_exact
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.RetractScan.matched_computes
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.RetractScan.matched_nextFresh_exact
+#print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.RetractScan.missing_nextFresh_exact
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseGenerationClosed.empty
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseGenerationClosed.asserta
 #print axioms PLeaTTa.PeTTaSpec.PrologCore.DatabaseActions.DatabaseGenerationClosed.assertz
@@ -2687,6 +2692,7 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologRetractRegression.variable_binding_high_water_exact
 #print axioms PLeaTTa.PrologRetractRegression.variable_matched_counter_noop
 #print axioms PLeaTTa.PrologRetractRegression.persistent_step_erases_exact
+#print axioms PLeaTTa.PrologRetractRegression.raw_quoted_clause_syntax_rejected
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.asserta_of_projection
 #print axioms PLeaTTa.PrologStateBridge.DatabaseRelatesWorld.assertz_of_projection
 #print axioms PLeaTTa.PrologDatabaseActionStepBridge.AssertionOperation.mutation
