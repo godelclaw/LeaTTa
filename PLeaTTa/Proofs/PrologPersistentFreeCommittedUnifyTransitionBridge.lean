@@ -524,6 +524,51 @@ structure RepresentativePersistentFreeCommittedUnifySuccessorFacts
 
 namespace RepresentativePersistentFreeCommittedUnifySuccessorFacts
 
+/-- The selected executable equality is literally the head of the committed
+body segment, not merely the head of a compatible flattened control list.
+Cancelling the unchanged caller suffix recovers the exact body tail needed by
+the whole-body materialization invariant. -/
+theorem bodyExecutableHeadExact
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before after : RepresentativePersistentFreeCommittedPayloadState}
+    {left right : Term} {result : Substitution}
+    {bodyRest : List PeTTaSpec.PrologCore.Goal}
+    {bodyExecutableTail : List PLeaTTa.Goal}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installed : Subst}
+    (facts :
+      RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt before
+        after left right result bodyRest bodyExecutableTail sourceExtension
+        executableExtension generated installed) :
+    ∃ (spelling : NormalizedAlphaGoalsAgree.ExecutableUnifySpelling)
+        (executableLeft executableRight : Atom),
+      before.carrier.index.bodyExecutables =
+          spelling.goal executableLeft executableRight :: bodyExecutableTail ∧
+        SelectedUnifySuccessData before.carrier.index.alpha
+          before.carrier.index.support before.carrier.index.canonical
+          before.representative before.carrier.index.referenceBase
+          before.carrier.index.current before.carrier.index.runtime left right
+          left right executableLeft executableRight result sourceExtension
+          executableExtension generated installed := by
+  obtain
+    ⟨spelling, executableLeft, executableRight, _leftAgreement,
+      _rightAgreement, selectedHead, selected⟩ := facts.selectedExecution
+  refine ⟨spelling, executableLeft, executableRight, ?_, selected⟩
+  have currentControl := before.carrier.agreement.ready.2.1
+  have pairEqual := Option.some.inj (currentControl.symm.trans selectedHead)
+  have goalsEqual := congrArg Prod.fst pairEqual
+  let suffix :=
+    before.carrier.index.callerExecutables ++
+      flattenExecutables before.carrier.index.outer
+  have appended :
+      before.carrier.index.bodyExecutables ++ suffix =
+        (spelling.goal executableLeft executableRight ::
+          bodyExecutableTail) ++ suffix := by
+    simpa [suffix, flattenExecutables, ControlSegment.executableGoals,
+      RepresentativePersistentFreeCommittedPayloadState.unifyExecutableTail,
+      List.append_assoc] using goalsEqual
+  exact List.append_cancel_right appended
+
 /-- A nonempty executable residual extension cannot be hidden behind literal
 representative equality. -/
 theorem executableExtension_eq_nil_of_representative_eq
@@ -758,9 +803,14 @@ end RepresentativePersistentFreeCommittedPayloadState
 
 namespace MaterializedRepresentativePersistentFreeCommittedPayloadState
 
-/-- Consume the current committed equality from the whole-body certificate,
-without requiring the freshly standardized clause variables to occur in the
-caller's immutable support. -/
+/-- Consume the current committed equality and transport the whole residual
+body certificate to the literal successor.
+
+The selected MGU first extends the residual representative and installed
+runtime; the machine then trims that runtime around the exact flattened
+continuation.  Every remaining equality occurrence supplies its own trim
+roots, so freshly standardized clause variables never need to be inserted
+into the caller's immutable public support. -/
 theorem exists_afterUnifySuccess
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     (before : MaterializedRepresentativePersistentFreeCommittedPayloadState)
@@ -777,16 +827,61 @@ theorem exists_afterUnifySuccess
     ∃ bodyExecutableTail : List PLeaTTa.Goal,
       ∃ sourceExtension executableExtension : TreeSubstitution,
       ∃ generated installed : Subst,
-      ∃ after : RepresentativePersistentFreeCommittedPayloadState,
+      ∃ after : MaterializedRepresentativePersistentFreeCommittedPayloadState,
         RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt
-          before.carrier after left right result bodyRest bodyExecutableTail
+          before.carrier after.carrier left right result bodyRest
+          bodyExecutableTail
           sourceExtension executableExtension generated installed := by
   have current := before.materializedUnifyGoals
   rw [referenceHead] at current
   have headReady := current.unifyHeadReady
-  exact
+  obtain
+    ⟨bodyExecutableTail, sourceExtension, executableExtension, generated,
+      installed, after, facts⟩ :=
     PLeaTTa.PrologPersistentFreeCommittedUnifyTransitionBridge.RepresentativePersistentFreeCommittedPayloadState.exists_afterUnifySuccessWithMaterializedLive
       before.carrier referenceHead headReady continuationLive resolved
+  obtain
+    ⟨spelling, executableLeft, executableRight, bodyExecutableHead,
+      selected⟩ := facts.bodyExecutableHeadExact
+  have residualBefore :
+      MaterializedUnifyGoalsAgreeWith
+        before.carrier.carrier.index.alpha before.carrier.representative
+        before.carrier.carrier.index.referenceBase
+        before.carrier.carrier.index.runtime
+        before.carrier.carrier.index.bodyBarrier bodyRest
+        bodyExecutableTail :=
+    current.unifyHeadTail bodyExecutableHead
+  let executableTail :=
+    RepresentativePersistentFreeCommittedPayloadState.unifyExecutableTail
+      before.carrier bodyExecutableTail
+  have residualAfter :
+      MaterializedUnifyGoalsAgreeWith
+        before.carrier.carrier.index.alpha
+        (executableExtension ++ before.carrier.representative)
+        before.carrier.carrier.index.referenceBase
+        (PLeaTTa.trimFor executableTail
+          before.carrier.carrier.index.qterm installed)
+        before.carrier.carrier.index.bodyBarrier bodyRest bodyExecutableTail :=
+    residualBefore.afterSelectedUnifyTrim selected
+      before.carrier.carrier.index.qterm
+      (fun goal member => by
+        exact List.mem_append_left
+          (before.carrier.carrier.index.callerExecutables ++
+            flattenExecutables before.carrier.carrier.index.outer)
+          member)
+  let materializedAfter :
+      MaterializedRepresentativePersistentFreeCommittedPayloadState :=
+    { carrier := after
+      materializedUnifyGoals := by
+        rw [RepresentativePersistentFreeCommittedUnifySuccessorFacts.representativeExact
+              (prog := prog) (gt := gt) facts,
+          RepresentativePersistentFreeCommittedUnifySuccessorFacts.afterIndexExact
+              (prog := prog) (gt := gt) facts]
+        simpa [RepresentativePersistentFreeCommittedPayloadState.unifyIndex,
+          executableTail] using residualAfter }
+  exact
+    ⟨bodyExecutableTail, sourceExtension, executableExtension, generated,
+      installed, materializedAfter, facts⟩
 
 end MaterializedRepresentativePersistentFreeCommittedPayloadState
 

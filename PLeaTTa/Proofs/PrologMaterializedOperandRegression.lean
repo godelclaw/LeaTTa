@@ -7,6 +7,7 @@ Purpose: Prove that fresh live operands can be interpreted without widening
 Trusted boundary: none
 -/
 import PLeaTTa.Proofs.PrologRootRejectedPrefixRegression
+import PLeaTTa.Proofs.PrologMaterializedGlobalPrefixBridge
 
 namespace PLeaTTa.PrologMaterializedOperandRegression
 
@@ -63,6 +64,7 @@ open PrologMguBridge
 open PrologMguComposition
 open PrologMguTopology
 open PrologMguVariant
+open PrologMaterializedGlobalPrefixBridge
 open PrologOrdinaryStepBridge
 open PrologPersistentFreeActivePayloadBridge
 open PrologPersistentFreeCommittedPayloadBridge
@@ -97,7 +99,9 @@ def valueAtom : Atom := .gnd (.int 9)
 def selectedReference : LocalClause :=
   { predicate := "cutv"
     arguments := [clauseTerm]
-    body := [.cut, .conjunction [], .unify clauseTerm valueTerm] }
+    body :=
+      [.cut, .conjunction [], .unify clauseTerm valueTerm,
+        .unify clauseTerm valueTerm] }
 
 def retainedReference : LocalClause :=
   { predicate := "cutv"
@@ -107,7 +111,7 @@ def retainedReference : LocalClause :=
 def selectedExecutable : PLeaTTa.Clause :=
   { params := []
     result := clauseAtom
-    body := [.cut, .eq clauseAtom valueAtom] }
+    body := [.cut, .eq clauseAtom valueAtom, .eq clauseAtom valueAtom] }
 
 def retainedExecutable : PLeaTTa.Clause :=
   { params := []
@@ -194,7 +198,10 @@ private def selectedBodyAgreement :
       (.cons
         (.unify (CompilerAdequacy.TermAgrees.sourceVariable "x")
           (CompilerAdequacy.TermAgrees.integer 9))
-        .nil))
+        (.cons
+          (.unify (CompilerAdequacy.TermAgrees.sourceVariable "x")
+            (CompilerAdequacy.TermAgrees.integer 9))
+          .nil)))
 
 private theorem selectedClauseAgrees :
     LocalClauseAgrees selectedReference ("cutv", selectedExecutable) := by
@@ -295,9 +302,13 @@ private theorem selectedBodySupported :
         (CompilerAdequacy.GoalsAgree.conjunction
           CompilerAdequacy.GoalsAgree.nil
           (CompilerAdequacy.GoalsAgree.cons unifyAgreement
-            CompilerAdequacy.GoalsAgree.nil))) := Subsingleton.elim _ _
+            (CompilerAdequacy.GoalsAgree.cons unifyAgreement
+              CompilerAdequacy.GoalsAgree.nil)))) := Subsingleton.elim _ _
   rw [bodyEq]
-  exact .cons .cut (.conjunction .nil (.cons unifySupported .nil))
+  exact
+    .cons .cut
+      (.conjunction .nil
+        (.cons unifySupported (.cons unifySupported .nil)))
 
 private theorem candidateBank :
     SupportedCandidateBank "cutv"
@@ -437,7 +448,8 @@ private def retainedAlt : PLeaTTa.Alt :=
 
 theorem selectedCopied_body_exact :
     selectedCopied.body =
-      [.cutAt 1, .eq selectedCopied.result valueAtom] := by
+      [.cutAt 1, .eq selectedCopied.result valueAtom,
+        .eq selectedCopied.result valueAtom] := by
   simp [selectedCopied, selectedExecutable, valueAtom,
     PLeaTTa.freshenResolutionClause, PLeaTTa.renameGoalSuffix,
     PLeaTTa.renameAtomSuffix]
@@ -706,6 +718,7 @@ theorem root_variable_cut_selected_retained_exact
 theorem selectedPrepared_body_exact :
     selectedPrepared.body =
       [.cut, .conjunction [],
+        .unify (.variable (.generated 0)) valueTerm,
         .unify (.variable (.generated 0)) valueTerm] := by
   rfl
 
@@ -713,11 +726,17 @@ theorem selectedPrepared_body_exact :
 administrative step. -/
 def afterCutAdministrative :
     AdministrativeStepsN 1
-      [.conjunction [], .unify (.variable (.generated 0)) valueTerm]
-      [.unify (.variable (.generated 0)) valueTerm] :=
+      [.conjunction [], .unify (.variable (.generated 0)) valueTerm,
+        .unify (.variable (.generated 0)) valueTerm]
+      [.unify (.variable (.generated 0)) valueTerm,
+        .unify (.variable (.generated 0)) valueTerm] :=
   .succ 0 _ _ _
-    (.conjunction [] [.unify (.variable (.generated 0)) valueTerm])
-    (.zero [.unify (.variable (.generated 0)) valueTerm])
+    (.conjunction []
+      [.unify (.variable (.generated 0)) valueTerm,
+        .unify (.variable (.generated 0)) valueTerm])
+    (.zero
+      [.unify (.variable (.generated 0)) valueTerm,
+        .unify (.variable (.generated 0)) valueTerm])
 
 /-- Exact non-ground execution through root activation, cut, and the
 compiler-erased conjunction wrapper.  The retained occurrence is visibly
@@ -729,7 +748,8 @@ theorem root_variable_cut_then_committed_unify_ready
         (before : MaterializedRepresentativePersistentFreeCommittedPayloadState),
       active.carrier.carrier.index.active.alts = [retainedAlt] ∧
       before.carrier.carrier.index.bodyReferences =
-        [.unify (.variable (.generated 0)) valueTerm] ∧
+        [.unify (.variable (.generated 0)) valueTerm,
+          .unify (.variable (.generated 0)) valueTerm] ∧
       before.carrier.carrier.index.support = rootAlpha ∧
       before.carrier.carrier.index.current = selectedSourceExtension ∧
       before.carrier.carrier.index.openConf.control.qterm = queryAtom ∧
@@ -748,7 +768,20 @@ theorem root_variable_cut_then_committed_unify_ready
               active.carrier.carrier.index.branchTail) ]
         before.carrier.carrier.sourceState ∧
       DemandDrivenCallStep.StepsN prog gt 4
-        (.ready initialOpenConf) before.carrier.carrier.fineState := by
+        (.ready initialOpenConf) before.carrier.carrier.fineState ∧
+      Nonempty
+        (MaterializedGlobalCertifiedPrefix prog gt
+          [ .resolver
+              (.forward
+                (.cut
+                  (PrologActivatedProductStepBridge.retainedCursorTokenAt
+                    active.carrier.carrier.index.predicateScope
+                    active.carrier.carrier.index.finish
+                    active.carrier.carrier.index.branch
+                    active.carrier.carrier.index.branchTail))),
+            .committedAdministrative 1 ]
+          (.ordinary (.active active.carrier))
+          (.ordinary (.committed before.carrier))) := by
   obtain
       ⟨finish, representative, nextAlpha, sourceCanonical, flattened,
         installed, legacy, facts, finishRemaining, bodyReferences,
@@ -758,9 +791,11 @@ theorem root_variable_cut_then_committed_unify_ready
   have referenceHead :
       active.carrier.carrier.index.bodyReferences =
         [.cut, .conjunction [],
+          .unify (.variable (.generated 0)) valueTerm,
           .unify (.variable (.generated 0)) valueTerm] := by
     change legacy.carrier.index.bodyReferences =
       [.cut, .conjunction [],
+        .unify (.variable (.generated 0)) valueTerm,
         .unify (.variable (.generated 0)) valueTerm]
     calc
       legacy.carrier.index.bodyReferences = selectedPrepared.body :=
@@ -768,9 +803,11 @@ theorem root_variable_cut_then_committed_unify_ready
       _ = _ := selectedPrepared_body_exact
   have executableKnown :
       active.carrier.carrier.index.bodyExecutables =
-        [.cutAt 1, .eq selectedCopied.result valueAtom] := by
+        [.cutAt 1, .eq selectedCopied.result valueAtom,
+          .eq selectedCopied.result valueAtom] := by
     change legacy.carrier.index.bodyExecutables =
-      [.cutAt 1, .eq selectedCopied.result valueAtom]
+      [.cutAt 1, .eq selectedCopied.result valueAtom,
+        .eq selectedCopied.result valueAtom]
     calc
       legacy.carrier.index.bodyExecutables = selectedCopied.body :=
         bodyExecutables
@@ -791,6 +828,7 @@ theorem root_variable_cut_then_committed_unify_ready
   have executableHead :
       active.carrier.carrier.index.bodyExecutables =
         [.cutAt active.carrier.carrier.index.bodyBarrier,
+          .eq selectedCopied.result valueAtom,
           .eq selectedCopied.result valueAtom] := by
     simpa [barrierExact] using executableKnown
   have activeAlts :
@@ -874,21 +912,32 @@ theorem root_variable_cut_then_committed_unify_ready
   let committed :=
     RepresentativePersistentFreeActivePayloadState.afterCutMaterialized
       prog gt active
-      [.conjunction [], .unify (.variable (.generated 0)) valueTerm]
-      [.eq selectedCopied.result valueAtom] referenceHead executableHead coherent
+      [.conjunction [], .unify (.variable (.generated 0)) valueTerm,
+        .unify (.variable (.generated 0)) valueTerm]
+      [.eq selectedCopied.result valueAtom,
+        .eq selectedCopied.result valueAtom]
+      referenceHead executableHead coherent
   let before :=
     committed.afterAdministrative afterCutAdministrative
-  have localPrefix :=
-    PrologScheduledSuccessPrefixBridge.GlobalCertifiedPrefix.activeCutThenCommittedAdministrative
-      (prog := prog) (gt := gt) active.carrier
-      [.conjunction [], .unify (.variable (.generated 0)) valueTerm]
-      [.eq selectedCopied.result valueAtom] referenceHead executableHead coherent
-      (by omega) afterCutAdministrative
+  have cutPrefix :=
+    MaterializedGlobalCertifiedPrefix.activeCut
+      (prog := prog) (gt := gt) active
+      [.conjunction [], .unify (.variable (.generated 0)) valueTerm,
+        .unify (.variable (.generated 0)) valueTerm]
+      [.eq selectedCopied.result valueAtom,
+        .eq selectedCopied.result valueAtom]
+      referenceHead executableHead coherent
+  have administrativePrefix :=
+    MaterializedGlobalCertifiedPrefix.committedAdministrative
+      (prog := prog) (gt := gt) committed (by omega)
+      afterCutAdministrative
+  have localPrefix := cutPrefix.append administrativePrefix
   have sourceAll := rootSource.trans localPrefix.sourceSteps
   have fineAll := rootFine.trans localPrefix.fineSteps
   have beforeReference :
       before.carrier.carrier.index.bodyReferences =
-        [.unify (.variable (.generated 0)) valueTerm] := by
+        [.unify (.variable (.generated 0)) valueTerm,
+          .unify (.variable (.generated 0)) valueTerm] := by
     simp [before, committed,
       MaterializedRepresentativePersistentFreeCommittedPayloadState.afterAdministrative,
       RepresentativePersistentFreeCommittedPayloadState.afterAdministrative]
@@ -929,7 +978,7 @@ theorem root_variable_cut_then_committed_unify_ready
     rw [beforeSupport] at old
     simp [rootAlpha, queryIdentity] at old
   refine ⟨active, before, activeAlts, beforeReference, beforeSupport,
-    beforeCurrent, beforeQterm, unsupported, ?_, ?_⟩
+    beforeCurrent, beforeQterm, unsupported, ?_, ?_, ⟨localPrefix⟩⟩
   · simpa [active, committed, before,
       RepresentativePersistentFreeActivePayloadState.afterCutMaterialized,
       MaterializedRepresentativePersistentFreeCommittedPayloadState.afterAdministrative,
@@ -987,6 +1036,32 @@ theorem finalSourceResult_answers_query :
     valueTerm, Substitution.applyTerm, TreeSubstitution.reify, Tree.reify,
     Term.denote, Term.instantiateOne]
 
+/-- The first equality changes the clause-local operand observed by the
+second equality from a fresh variable to the concrete value `9`. -/
+theorem finalSourceResult_materializes_clause_variable :
+    finalSourceResult.applyTerm (.variable (.generated 0)) = valueTerm := by
+  simp [finalSourceResult, selectedSourceExtension, queryIdentity, valueTerm,
+    Substitution.applyTerm, TreeSubstitution.reify, Tree.reify, Term.denote,
+    Term.instantiateOne]
+
+/-- The second source equality is a real subsequent resolution under the
+binding installed by the first, rather than a replay against the old
+activation substitution. -/
+theorem selectedBodyResolvesAgain :
+    UnifyResolution finalSourceResult
+      (.variable (.generated 0)) valueTerm finalSourceResult := by
+  refine ⟨TreeSubstitution.reify [], ?_, ?_⟩
+  have rightUnchanged : finalSourceResult.applyTerm valueTerm = valueTerm := by
+    simp [valueTerm]
+  rw [finalSourceResult_materializes_clause_variable, rightUnchanged]
+  have reflexive :
+      OrderedTreeMgu (denoteEquations [(valueTerm, valueTerm)]) [] := by
+    simpa [denoteEquations] using
+      (OrderedTreeMgu.cons (Term.denote valueTerm) (Term.denote valueTerm)
+        [] [] [] (.reflexive (Term.denote valueTerm)) OrderedTreeMgu.nil)
+  exact reflexive.computesReified
+  rfl
+
 /-- End-to-end discriminator for the materialized-operand repair.
 
 The selected clause introduces a fresh local variable, commits past a retained
@@ -999,20 +1074,38 @@ theorem root_variable_cut_then_materialized_unify_exact
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
     ∃ (active : MaterializedRepresentativePersistentFreeActivePayloadState)
         (before : MaterializedRepresentativePersistentFreeCommittedPayloadState)
-        (after : RepresentativePersistentFreeCommittedPayloadState)
+        (after : MaterializedRepresentativePersistentFreeCommittedPayloadState)
         (bodyExecutableTail : List PLeaTTa.Goal)
         (sourceExtension executableExtension : TreeSubstitution)
-        (generated installed : Subst),
+        (generated installed : Subst)
+        (facts :
+          RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt
+            before.carrier after.carrier (.variable (.generated 0)) valueTerm
+            finalSourceResult
+            [.unify (.variable (.generated 0)) valueTerm]
+            bodyExecutableTail sourceExtension executableExtension generated
+            installed),
       active.carrier.carrier.index.active.alts = [retainedAlt] ∧
       before.carrier.carrier.index.bodyReferences =
-        [.unify (.variable (.generated 0)) valueTerm] ∧
+        [.unify (.variable (.generated 0)) valueTerm,
+          .unify (.variable (.generated 0)) valueTerm] ∧
       ¬ AlphaTreeSupported before.carrier.carrier.index.alpha
           before.carrier.carrier.index.support
           (Term.denote (.variable (.generated 0))) ∧
-      RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt
-        before.carrier after (.variable (.generated 0)) valueTerm
-        finalSourceResult [] bodyExecutableTail sourceExtension
-        executableExtension generated installed ∧
+      Nonempty
+        (MaterializedGlobalCertifiedPrefix prog gt
+          [ .resolver
+              (.forward
+                (.cut
+                  (PrologActivatedProductStepBridge.retainedCursorTokenAt
+                    active.carrier.carrier.index.predicateScope
+                    active.carrier.carrier.index.finish
+                    active.carrier.carrier.index.branch
+                    active.carrier.carrier.index.branchTail))),
+            .committedAdministrative 1,
+            .committedUnify (CommittedUnifyTransitionLabel.of facts) ]
+          (.ordinary (.active active.carrier))
+          (.ordinary (.committed after.carrier))) ∧
       StepsN 5
         (.running initialSession
           (.task rootScope [.call "cutv" [queryTerm]] []))
@@ -1023,17 +1116,22 @@ theorem root_variable_cut_then_materialized_unify_exact
               active.carrier.carrier.index.finish
               active.carrier.carrier.index.branch
               active.carrier.carrier.index.branchTail) ]
-        after.carrier.sourceState ∧
+        after.carrier.carrier.sourceState ∧
       DemandDrivenCallStep.StepsN prog gt 5
-        (.ready initialOpenConf) after.carrier.fineState ∧
-      before.carrier.carrier.fineState ≠ after.carrier.fineState ∧
-      after.carrier.index.current.applyTerm queryTerm = valueTerm ∧
-      after.carrier.index.bodyReferences = [] := by
+        (.ready initialOpenConf) after.carrier.carrier.fineState ∧
+      before.carrier.carrier.fineState ≠ after.carrier.carrier.fineState ∧
+      after.carrier.carrier.index.support = rootAlpha ∧
+      after.carrier.carrier.index.openConf.control.qterm = queryAtom ∧
+      after.carrier.carrier.index.current = finalSourceResult ∧
+      after.carrier.carrier.index.current.applyTerm queryTerm = valueTerm ∧
+      after.carrier.carrier.index.bodyReferences =
+        [.unify (.variable (.generated 0)) valueTerm] := by
   obtain
       ⟨active, before, activeAlts, beforeReference, beforeSupport,
-        beforeCurrent, beforeQterm, unsupported, rootSource, rootFine⟩ :=
+        beforeCurrent, beforeQterm, unsupported, rootSource, remaining⟩ :=
     root_variable_cut_then_committed_unify_ready
       (prog := prog) (gt := gt)
+  obtain ⟨rootFine, ⟨localPrefix⟩⟩ := remaining
   have continuationLive :
       ReadyUnifyContinuationLive before.carrier.carrier.index.support
         before.carrier.carrier.index.openConf := by
@@ -1052,39 +1150,194 @@ theorem root_variable_cut_then_materialized_unify_exact
     exact selectedBodyResolves
   obtain
       ⟨bodyExecutableTail, sourceExtension, executableExtension, generated,
-        installed, after, facts⟩ :=
-    MaterializedRepresentativePersistentFreeCommittedPayloadState.exists_afterUnifySuccess
-      before (prog := prog) (gt := gt) (bodyRest := []) beforeReference
-      continuationLive resolved
-  let edge :
-      GlobalCertifiedTransition prog gt
-        (.committedUnify (CommittedUnifyTransitionLabel.of facts))
-        (.ordinary (.committed before.carrier))
-        (.ordinary (.committed after)) :=
-    .committedUnify facts
-  have sourceAll := rootSource.trans edge.sourceSteps
-  have fineAll := rootFine.trans edge.fineSteps
+        installed, after, facts, ⟨unifyPrefix⟩⟩ :=
+    MaterializedGlobalCertifiedPrefix.exists_committedUnify
+      before (prog := prog) (gt := gt)
+      (bodyRest := [.unify (.variable (.generated 0)) valueTerm])
+      beforeReference continuationLive resolved
+  have combinedPrefix := localPrefix.append unifyPrefix
+  have sourceAll := rootSource.trans unifyPrefix.sourceSteps
+  have fineAll := rootFine.trans unifyPrefix.fineSteps
   have afterCurrent :
-      after.carrier.index.current = finalSourceResult := by
+      after.carrier.carrier.index.current = finalSourceResult := by
     rw [facts.afterIndexExact]
     rfl
   have queryAnswer :
-      after.carrier.index.current.applyTerm queryTerm = valueTerm := by
+      after.carrier.carrier.index.current.applyTerm queryTerm = valueTerm := by
     rw [afterCurrent]
     exact finalSourceResult_answers_query
-  have afterBody : after.carrier.index.bodyReferences = [] := by
+  have afterSupport : after.carrier.carrier.index.support = rootAlpha := by
+    rw [facts.afterIndexExact]
+    exact beforeSupport
+  have afterQterm :
+      after.carrier.carrier.index.openConf.control.qterm = queryAtom := by
+    rw [facts.afterIndexExact]
+    exact beforeQterm
+  have afterBody :
+      after.carrier.carrier.index.bodyReferences =
+        [.unify (.variable (.generated 0)) valueTerm] := by
     rw [facts.afterIndexExact]
     rfl
   refine
     ⟨active, before, after, bodyExecutableTail, sourceExtension,
-      executableExtension, generated, installed, activeAlts, beforeReference,
-      unsupported, facts, ?_, ?_, facts.fineState_ne, queryAnswer, afterBody⟩
+      executableExtension, generated, installed, facts, activeAlts,
+      beforeReference, unsupported, ⟨combinedPrefix⟩, ?_, ?_, facts.fineState_ne,
+      afterSupport, afterQterm, afterCurrent, queryAnswer, afterBody⟩
   · simpa [GlobalTransitionKind.sourceCost,
       GlobalTransitionKind.sourceEvents,
+      GlobalTransitionSchedule.sourceCost,
+      GlobalTransitionSchedule.sourceEvents,
       PrologFailureRebasePrefixBridge.ResolverPhaseState.sourceState,
       PrologHeterogeneousPrefixBridge.ProductPhaseState.sourceState] using
       sourceAll
   · simpa [GlobalTransitionKind.fineCost,
+      GlobalTransitionSchedule.fineCost,
+      PrologFailureRebasePrefixBridge.ResolverPhaseState.fineState,
+      PrologHeterogeneousPrefixBridge.ProductPhaseState.fineState] using
+      fineAll
+
+/-- One literal invariant-carrying prefix consumes both equalities in the
+selected clause.
+
+The second equality is evaluated after the first has changed generated
+operand `0` into `9`; it therefore cannot be justified by replaying the
+activation substitution or by retaining only a one-step materialization
+certificate.  Its resolution is reflexive under that inherited binding, so
+this witness establishes dependent materialization across two equality
+transitions but does not claim two nonempty MGU extensions.  Both source and
+fine executions advance once more, while the same public query remains
+exactly `9`. -/
+theorem root_variable_cut_then_two_materialized_unifies_exact
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ∃ (active : MaterializedRepresentativePersistentFreeActivePayloadState)
+        (before first second :
+          MaterializedRepresentativePersistentFreeCommittedPayloadState)
+        (firstExecutableTail secondExecutableTail : List PLeaTTa.Goal)
+        (firstSourceExtension firstExecutableExtension : TreeSubstitution)
+        (secondSourceExtension secondExecutableExtension : TreeSubstitution)
+        (firstGenerated firstInstalled secondGenerated secondInstalled :
+          Subst)
+        (firstFacts :
+          RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt
+            before.carrier first.carrier (.variable (.generated 0)) valueTerm
+            finalSourceResult
+            [.unify (.variable (.generated 0)) valueTerm]
+            firstExecutableTail firstSourceExtension firstExecutableExtension
+            firstGenerated firstInstalled)
+        (secondFacts :
+          RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt
+            first.carrier second.carrier (.variable (.generated 0)) valueTerm
+            finalSourceResult [] secondExecutableTail secondSourceExtension
+            secondExecutableExtension secondGenerated secondInstalled),
+      active.carrier.carrier.index.active.alts = [retainedAlt] ∧
+      before.carrier.carrier.index.bodyReferences =
+        [.unify (.variable (.generated 0)) valueTerm,
+          .unify (.variable (.generated 0)) valueTerm] ∧
+      first.carrier.carrier.index.bodyReferences =
+        [.unify (.variable (.generated 0)) valueTerm] ∧
+      first.carrier.carrier.index.current.applyTerm
+          (.variable (.generated 0)) = valueTerm ∧
+      Nonempty
+        (MaterializedGlobalCertifiedPrefix prog gt
+          [ .resolver
+              (.forward
+                (.cut
+                  (PrologActivatedProductStepBridge.retainedCursorTokenAt
+                    active.carrier.carrier.index.predicateScope
+                    active.carrier.carrier.index.finish
+                    active.carrier.carrier.index.branch
+                    active.carrier.carrier.index.branchTail))),
+            .committedAdministrative 1,
+            .committedUnify (CommittedUnifyTransitionLabel.of firstFacts),
+            .committedUnify (CommittedUnifyTransitionLabel.of secondFacts) ]
+          (.ordinary (.active active.carrier))
+          (.ordinary (.committed second.carrier))) ∧
+      StepsN 6
+        (.running initialSession
+          (.task rootScope [.call "cutv" [queryTerm]] []))
+        [ .opened (requestFor "cutv" [queryTerm] []),
+          .pruned
+            (PrologActivatedProductStepBridge.retainedCursorTokenAt
+              active.carrier.carrier.index.predicateScope
+              active.carrier.carrier.index.finish
+              active.carrier.carrier.index.branch
+              active.carrier.carrier.index.branchTail) ]
+        second.carrier.carrier.sourceState ∧
+      DemandDrivenCallStep.StepsN prog gt 6
+        (.ready initialOpenConf) second.carrier.carrier.fineState ∧
+      before.carrier.carrier.fineState ≠ first.carrier.carrier.fineState ∧
+      first.carrier.carrier.fineState ≠ second.carrier.carrier.fineState ∧
+      second.carrier.carrier.index.current = finalSourceResult ∧
+      second.carrier.carrier.index.current.applyTerm queryTerm = valueTerm ∧
+      second.carrier.carrier.index.bodyReferences = [] := by
+  obtain
+      ⟨active, before, first, firstExecutableTail, firstSourceExtension,
+        firstExecutableExtension, firstGenerated, firstInstalled, firstFacts,
+        activeAlts, beforeBody, _unsupported, firstPrefixNonempty, sourceOne,
+        fineOne, firstFineNe, firstSupport, firstQterm, firstCurrent,
+        _firstQuery, firstBody⟩ :=
+    root_variable_cut_then_materialized_unify_exact
+      (prog := prog) (gt := gt)
+  obtain ⟨firstPrefix⟩ := firstPrefixNonempty
+  have continuationLive :
+      ReadyUnifyContinuationLive first.carrier.carrier.index.support
+        first.carrier.carrier.index.openConf := by
+    intro executableHead rest runtime current identity name linked
+    rw [firstSupport] at linked
+    simp only [rootAlpha, List.mem_singleton] at linked
+    have nameExact : name = "z" := congrArg Prod.snd linked
+    subst name
+    rw [firstQterm]
+    exact PLeaTTa.isTrimRoot_qterm_mem rest queryAtom "z"
+      (by simp [queryAtom, Metta.Atom.vars])
+  have resolved :
+      UnifyResolution first.carrier.carrier.index.current
+        (.variable (.generated 0)) valueTerm finalSourceResult := by
+    rw [firstCurrent]
+    exact selectedBodyResolvesAgain
+  obtain
+      ⟨secondExecutableTail, secondSourceExtension,
+        secondExecutableExtension, secondGenerated, secondInstalled, second,
+        secondFacts, ⟨secondPrefix⟩⟩ :=
+    MaterializedGlobalCertifiedPrefix.exists_committedUnify
+      first (prog := prog) (gt := gt) (bodyRest := []) firstBody
+      continuationLive resolved
+  have combinedPrefix := firstPrefix.append secondPrefix
+  have sourceAll := sourceOne.trans secondPrefix.sourceSteps
+  have fineAll := fineOne.trans secondPrefix.fineSteps
+  have firstOperand :
+      first.carrier.carrier.index.current.applyTerm
+          (.variable (.generated 0)) = valueTerm := by
+    rw [firstCurrent]
+    exact finalSourceResult_materializes_clause_variable
+  have secondCurrent :
+      second.carrier.carrier.index.current = finalSourceResult := by
+    rw [secondFacts.afterIndexExact]
+    rfl
+  have secondQuery :
+      second.carrier.carrier.index.current.applyTerm queryTerm = valueTerm := by
+    rw [secondCurrent]
+    exact finalSourceResult_answers_query
+  have secondBody : second.carrier.carrier.index.bodyReferences = [] := by
+    rw [secondFacts.afterIndexExact]
+    rfl
+  refine
+    ⟨active, before, first, second, firstExecutableTail, secondExecutableTail,
+      firstSourceExtension, firstExecutableExtension, secondSourceExtension,
+      secondExecutableExtension, firstGenerated, firstInstalled,
+      secondGenerated, secondInstalled, firstFacts, secondFacts, activeAlts,
+      beforeBody, firstBody, firstOperand, ⟨combinedPrefix⟩, ?_, ?_,
+      firstFineNe, secondFacts.fineState_ne, secondCurrent, secondQuery,
+      secondBody⟩
+  · simpa [GlobalTransitionKind.sourceCost,
+      GlobalTransitionKind.sourceEvents,
+      GlobalTransitionSchedule.sourceCost,
+      GlobalTransitionSchedule.sourceEvents,
+      PrologFailureRebasePrefixBridge.ResolverPhaseState.sourceState,
+      PrologHeterogeneousPrefixBridge.ProductPhaseState.sourceState] using
+      sourceAll
+  · simpa [GlobalTransitionKind.fineCost,
+      GlobalTransitionSchedule.fineCost,
       PrologFailureRebasePrefixBridge.ResolverPhaseState.fineState,
       PrologHeterogeneousPrefixBridge.ProductPhaseState.fineState] using
       fineAll

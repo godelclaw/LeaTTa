@@ -1278,6 +1278,49 @@ structure MaterializedOperandsAgreeWith
           (PLeaTTa.subst runtime atom))
       references executables
 
+namespace MaterializedOperandsAgreeWith
+
+/-- Liveness trimming preserves every already-materialized operand.
+
+The callback is indexed by literal membership in the executable operand list,
+so a caller must justify the roots of the exact occurrence being transported;
+an unrelated atom cannot be smuggled through the trim. -/
+theorem trimFor
+    {alpha : List (LogicVar × String)}
+    {representative : TreeSubstitution} {referenceBase : Substitution}
+    {runtime : Metta.Subst} {references : List Term}
+    {executables : List Metta.Atom}
+    (materialized :
+      MaterializedOperandsAgreeWith alpha representative referenceBase runtime
+        references executables)
+    (goals : List PLeaTTa.Goal) (qterm : Metta.Atom)
+    (topological : Nonempty (PLeaTTa.SubstTopological runtime))
+    (live :
+      ∀ atom, atom ∈ executables →
+        ∀ name, name ∈ atom.vars →
+          PLeaTTa.isTrimRoot goals qterm name = true) :
+    MaterializedOperandsAgreeWith alpha representative referenceBase
+      (PLeaTTa.trimFor goals qterm runtime) references executables := by
+  obtain ⟨topological⟩ := topological
+  refine ⟨?_⟩
+  induction materialized.operands with
+  | nil =>
+      exact .nil
+  | @cons reference executable references executables head tail
+      inductionHypothesis =>
+      apply List.Forall₂.cons
+      · rw [PLeaTTa.subst_trimFor_eq_of_topological goals qterm runtime
+          topological executable]
+        exact head
+        intro name nameMember
+        exact live executable (by simp) name nameMember
+      · exact inductionHypothesis
+          ⟨tail⟩
+          (fun atom member name nameMember =>
+            live atom (List.mem_cons_of_mem executable member) name nameMember)
+
+end MaterializedOperandsAgreeWith
+
 /-- Exact current equality head after its operands have been materialized.
 
 The executable shape and normalized tail tie the certificate to the current
@@ -1519,6 +1562,72 @@ theorem unifyHeadReady
             ⟨.compilerAlias, _, _, _, rfl, leftAgreement, rightAgreement,
               tail.toNormalized,
               materialized (spelling := .compilerAlias) rfl rfl⟩
+
+/-- Expose both the current materialized equality and the exact materialized
+tail.  Unlike `unifyHeadReady`, this projection retains the induction
+hypothesis needed to execute another non-ground equality after the current
+one succeeds. -/
+theorem unifyHeadSplit
+    {alpha : List (LogicVar × String)}
+    {representative : TreeSubstitution} {referenceBase : Substitution}
+    {runtime : Metta.Subst} {barrier : Nat}
+    {left right : Term}
+    {referenceTail : List PeTTaSpec.PrologCore.Goal}
+    {executables : List PLeaTTa.Goal}
+    (agreement :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier (.unify left right :: referenceTail) executables) :
+    ∃ (spelling : NormalizedAlphaGoalsAgree.ExecutableUnifySpelling)
+        (executableLeft executableRight : Metta.Atom)
+        (executableTail : List PLeaTTa.Goal),
+      executables =
+          spelling.goal executableLeft executableRight :: executableTail ∧
+        AlphaTermAgrees alpha left executableLeft ∧
+        AlphaTermAgrees alpha right executableRight ∧
+        MaterializedOperandsAgreeWith alpha representative referenceBase
+          runtime [left, right] [executableLeft, executableRight] ∧
+        MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+          runtime barrier referenceTail executableTail := by
+  cases agreement with
+  | cons control materialized tail =>
+      cases control with
+      | unify leftAgreement rightAgreement =>
+          exact
+            ⟨.equality, _, _, _, rfl, leftAgreement, rightAgreement,
+              materialized (spelling := .equality) rfl rfl, tail⟩
+      | compileAlias leftAgreement rightAgreement =>
+          exact
+            ⟨.compilerAlias, _, _, _, rfl, leftAgreement, rightAgreement,
+              materialized (spelling := .compilerAlias) rfl rfl, tail⟩
+
+/-- Recover the residual whole-body certificate at any executable head shape
+already pinned by the live machine state.  Taking list tails makes the result
+independent of equality spelling or operand representation while still tying
+it to the exact selected occurrence. -/
+theorem unifyHeadTail
+    {alpha : List (LogicVar × String)}
+    {representative : TreeSubstitution} {referenceBase : Substitution}
+    {runtime : Metta.Subst} {barrier : Nat}
+    {left right : Term}
+    {referenceTail : List PeTTaSpec.PrologCore.Goal}
+    {executables executableTail : List PLeaTTa.Goal}
+    {spelling : NormalizedAlphaGoalsAgree.ExecutableUnifySpelling}
+    {executableLeft executableRight : Metta.Atom}
+    (agreement :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier (.unify left right :: referenceTail) executables)
+    (headShape :
+      executables =
+        spelling.goal executableLeft executableRight :: executableTail) :
+    MaterializedUnifyGoalsAgreeWith alpha representative referenceBase runtime
+      barrier referenceTail executableTail := by
+  obtain
+    ⟨_, _, _, actualTail, actualShape, _, _, _, tail⟩ :=
+      agreement.unifyHeadSplit
+  have tailsEqual : actualTail = executableTail := by
+    have := congrArg List.tail (actualShape.symm.trans headShape)
+    simpa using this
+  simpa [tailsEqual] using tail
 
 /-- Enrich two structurally identical alpha-goal derivations with one
 materialized equality certificate at every aligned occurrence.
@@ -2303,6 +2412,161 @@ theorem installedTopological
       generatedTopological success.topExact.generatedAvoidsRuntime⟩
 
 end SelectedUnifySuccessData
+
+namespace MaterializedOperandsAgreeWith
+
+/-- A selected primitive-unification residual transports every already
+materialized operand through the literal source and executable successor
+orientations.  This theorem deliberately precedes trimming: the caller can
+then justify retention from the exact post-equality continuation. -/
+theorem afterSelectedUnify
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {selectedSourceLeft selectedSourceRight selectedRuntimeLeft
+      selectedRuntimeRight : Term}
+    {selectedExecutableLeft selectedExecutableRight : Metta.Atom}
+    {result : Substitution}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installed : Metta.Subst}
+    {references : List Term} {executables : List Metta.Atom}
+    (materialized :
+      MaterializedOperandsAgreeWith alpha representative referenceBase runtime
+        references executables)
+    (selected :
+      SelectedUnifySuccessData alpha support canonical representative
+        referenceBase current runtime selectedSourceLeft selectedSourceRight
+        selectedRuntimeLeft selectedRuntimeRight selectedExecutableLeft
+        selectedExecutableRight result sourceExtension executableExtension
+        generated installed) :
+    MaterializedOperandsAgreeWith alpha
+      (executableExtension ++ representative) referenceBase installed
+      references executables := by
+  refine ⟨materialized.operands.imp ?_⟩
+  intro term atom agreement
+  have lifted :=
+    canonicalRuntimeAgrees_apply agreement
+      selected.topExact.generatedValuation
+  rw [selected.subst_installed_eq_generated_after_runtime atom]
+  simpa only [List.append_assoc, TreeSubstitution.apply_append] using lifted
+
+end MaterializedOperandsAgreeWith
+
+namespace MaterializedUnifyGoalAgreesWith
+
+/-- Transport one aligned goal's materialized equality operands through the
+selected MGU and the exact successor trim.  Literal goal membership supplies
+both operand-root obligations for either executable equality spelling. -/
+theorem afterSelectedUnifyTrim
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {selectedSourceLeft selectedSourceRight selectedRuntimeLeft
+      selectedRuntimeRight : Term}
+    {selectedExecutableLeft selectedExecutableRight : Metta.Atom}
+    {result : Substitution}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installed : Metta.Subst}
+    {reference : PeTTaSpec.PrologCore.Goal}
+    {executable : PLeaTTa.Goal}
+    (materialized :
+      MaterializedUnifyGoalAgreesWith alpha representative referenceBase
+        runtime reference executable)
+    (selected :
+      SelectedUnifySuccessData alpha support canonical representative
+        referenceBase current runtime selectedSourceLeft selectedSourceRight
+        selectedRuntimeLeft selectedRuntimeRight selectedExecutableLeft
+        selectedExecutableRight result sourceExtension executableExtension
+        generated installed)
+    (goals : List PLeaTTa.Goal) (qterm : Metta.Atom)
+    (member : executable ∈ goals) :
+    MaterializedUnifyGoalAgreesWith alpha
+      (executableExtension ++ representative) referenceBase
+      (PLeaTTa.trimFor goals qterm installed) reference executable := by
+  intro left right spelling executableLeft executableRight referenceShape
+    executableShape
+  have operands := materialized referenceShape executableShape
+  have transported := operands.afterSelectedUnify selected
+  apply transported.trimFor goals qterm selected.installedTopological
+  intro atom atomMember name nameMember
+  have goalMember :
+      spelling.goal executableLeft executableRight ∈ goals := by
+    simpa only [executableShape] using member
+  have atomCases : atom = executableLeft ∨ atom = executableRight := by
+    simpa using atomMember
+  rcases atomCases with atomLeft | atomRight
+  · subst atom
+    cases spelling with
+    | equality =>
+        exact PLeaTTa.isTrimRoot_eq_left_atom_of_mem _ qterm
+          executableLeft executableRight name goalMember nameMember
+    | compilerAlias =>
+        exact PLeaTTa.isTrimRoot_compileAlias_left_atom_of_mem _ qterm
+          executableLeft executableRight name goalMember nameMember
+  · subst atom
+    cases spelling with
+    | equality =>
+        exact PLeaTTa.isTrimRoot_eq_right_of_mem _ qterm
+          executableLeft executableRight name goalMember nameMember
+    | compilerAlias =>
+        exact PLeaTTa.isTrimRoot_compileAlias_right_of_mem _ qterm
+          executableLeft executableRight name goalMember nameMember
+
+end MaterializedUnifyGoalAgreesWith
+
+namespace MaterializedUnifyGoalsAgreeWith
+
+/-- A selected equality success transports the complete residual-body
+certificate through its installed MGU and liveness trim.  The executable
+inclusion premise keeps every root proof tied to the literal flattened
+continuation consumed by the machine. -/
+theorem afterSelectedUnifyTrim
+    {alpha support : List (LogicVar × String)}
+    {canonical representative : TreeSubstitution}
+    {referenceBase current : Substitution} {runtime : Metta.Subst}
+    {selectedSourceLeft selectedSourceRight selectedRuntimeLeft
+      selectedRuntimeRight : Term}
+    {selectedExecutableLeft selectedExecutableRight : Metta.Atom}
+    {result : Substitution}
+    {sourceExtension executableExtension : TreeSubstitution}
+    {generated installed : Metta.Subst} {barrier : Nat}
+    {references : List PeTTaSpec.PrologCore.Goal}
+    {executables goals : List PLeaTTa.Goal}
+    (agreement :
+      MaterializedUnifyGoalsAgreeWith alpha representative referenceBase
+        runtime barrier references executables)
+    (selected :
+      SelectedUnifySuccessData alpha support canonical representative
+        referenceBase current runtime selectedSourceLeft selectedSourceRight
+        selectedRuntimeLeft selectedRuntimeRight selectedExecutableLeft
+        selectedExecutableRight result sourceExtension executableExtension
+        generated installed)
+    (qterm : Metta.Atom)
+    (included : ∀ goal, goal ∈ executables → goal ∈ goals) :
+    MaterializedUnifyGoalsAgreeWith alpha
+      (executableExtension ++ representative) referenceBase
+      (PLeaTTa.trimFor goals qterm installed) barrier references executables := by
+  induction agreement with
+  | nil =>
+      exact .nil
+  | truth tail inductionHypothesis =>
+      exact .truth (inductionHypothesis included)
+  | cons control materialized tail inductionHypothesis =>
+      exact .cons control
+        (materialized.afterSelectedUnifyTrim selected goals qterm
+          (included _ (by simp)))
+        (inductionHypothesis
+          (fun goal member => included goal (by simp [member])))
+  | conjunction block tail blockIH tailIH =>
+      exact .conjunction
+        (blockIH
+          (fun goal member => included goal
+            (List.mem_append_left _ member)))
+        (tailIH
+          (fun goal member => included goal
+            (List.mem_append_right _ member)))
+
+end MaterializedUnifyGoalsAgreeWith
 
 /-- Install one already selected executable MGU while retaining its literal
 canonical orientation in the successor valuation.
