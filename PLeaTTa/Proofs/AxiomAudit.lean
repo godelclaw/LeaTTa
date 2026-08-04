@@ -232,6 +232,10 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.ReaderAdequacy.readsFile_deterministic
 #print axioms PLeaTTa.ReaderAdequacy.parseFile_rejected_iff_no_read
 #print axioms PLeaTTa.CompilerAdequacy.compileExprFuel_initial_sound
+#print axioms PLeaTTa.compileExprFuel_eval_eq
+#print axioms PLeaTTa.CompilerAdequacy.compileExprFuel_eval_adequate
+#print axioms PLeaTTa.CompilerAdequacy.compileExpr_eval_adequate
+#print axioms PLeaTTa.CompilerAdequacy.translatesExpr_eval_adequate
 #print axioms PLeaTTa.compileExprFuel_assertaPredicate_eq
 #print axioms PLeaTTa.compileExprFuel_assertzPredicate_eq
 #print axioms PLeaTTa.compileExprFuel_retractPredicate_eq

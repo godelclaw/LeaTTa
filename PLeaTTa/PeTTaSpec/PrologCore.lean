@@ -364,6 +364,18 @@ inductive TranslatesExpr : TranslatorState → Nat → Atom → Term → List Go
       (notShadowed : ¬ state.hasRule "cut") :
       TranslatesExpr state counter (.expr [.sym "cut"]) (.atom "true") [.cut]
         counter
+  /-- Pinned `eval` preserves its sole argument as raw Prolog syntax and
+  defers translation until the runtime `eval/2` call.  The outer translator
+  allocates only the result variable.
+  [SPEC translator.pl:293-295; metta.pl:251-253] -/
+  | eval {state : TranslatorState} {counter : Nat} {source : Atom}
+      {code : Term}
+      (notShadowed : ¬ state.hasRule "eval")
+      (quoted : Quotes source code) :
+      TranslatesExpr state counter (.expr [.sym "eval", source])
+        (.variable (.generated counter))
+        [.call "eval" [code, .variable (.generated counter)]]
+        (counter + 1)
   /-- Pinned PeTTa registers `assertaPredicate/2` as an ordinary function,
   translates its payload before the generated output, and leaves the actual
   database effect to that predicate.  PLeaTTa later lowers the same owned

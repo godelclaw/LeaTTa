@@ -5793,21 +5793,22 @@ private theorem compileAppCoreFuel_hEval_generatedNames (fuel : Nat)
       origin env start head _ term goals next originStart envAllowed
       argumentsAllowed compiled
   rename_i _ _ source _
-  exact compileExprThenFresh_generatedNames fuel ih external origin env start
-    source term goals next
-    (fun compiledTerm compiledGoals result =>
-      compiledGoals ++ [Goal.evalg compiledTerm result])
-    originStart envAllowed (by simpa using argumentsAllowed)
-    (by
-      intro limit compiledTerm compiledGoals result _ termAllowed goalsAllowed
-        resultAllowed
-      apply (compilerGoalsNamesAllowed_append_iff external origin limit
-        compiledGoals [Goal.evalg compiledTerm result]).2
-      exact ⟨goalsAllowed, by
-        simp only [compilerGoalsNamesAllowed_cons_iff,
-          compilerGoalsNamesAllowed_nil, and_true]
-        exact compilerGoalNamesAllowed_evalg termAllowed resultAllowed⟩)
-    compiled
+  simp only [fresh] at compiled
+  rcases Except.ok.inj compiled with ⟨rfl, rfl, rfl⟩
+  have sourceAllowed : CompilerAtomNamesAllowed external origin start
+      (chainify source) := by
+    apply chainify_namesAllowed
+    simpa using argumentsAllowed
+  have resultAllowed : CompilerAtomNamesAllowed external origin (start + 1)
+      (Atom.var (compilerGeneratedName start)) := by
+    simp only [compilerAtomNamesAllowed_var_iff]
+    exact .generated originStart (by omega)
+  constructor
+  · exact resultAllowed
+  · simp only [compilerGoalsNamesAllowed_cons_iff,
+        compilerGoalsNamesAllowed_nil, and_true]
+    exact compilerGoalNamesAllowed_evalg
+      (sourceAllowed.mono (Nat.le_succ start)) resultAllowed
 
 private theorem compileAppCoreFuel_hCatch_generatedNames (fuel : Nat)
     (ih : CompilerGeneratedNamesAt fuel) :

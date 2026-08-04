@@ -1479,9 +1479,13 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         .ok (r, [Goal.findall t1 g1 l1, Goal.findall t2 g2 l2,
                  Goal.bin "subtraction-atom" [l1, l2] cc, Goal.spread cc r], n6)
     | .hEval, [e] => do
-        let (te, ge, n1) ← compileExprFuel fuel env n e
-        let (r, n2) := fresh n1
-        .ok (r, ge ++ [Goal.evalg te r], n2)
+        -- [SPEC translator.pl:293-295] `eval` receives its argument as code:
+        -- the source translator does not translate that argument before the
+        -- runtime `eval/2` call.  Preserve the raw syntax as a runtime value;
+        -- `Goal.evalg` substitutes caller variables, unchainifies it, and
+        -- translates it against the live world when the goal is executed.
+        let (r, n1) := fresh n
+        .ok (r, [Goal.evalg (chainify e) r], n1)
     | .hCatch, [e] => do
         -- [SPEC translator.pl:293-300] catch wraps the translated goals for
         -- the expression, returning normal answers, failing on ordinary no
@@ -3392,6 +3396,24 @@ theorem compileExprFuel_quote_eq (fuel counter : Nat) (env : CEnv)
   simp only [noHook, Bool.false_eq_true, ↓reduceIte]
   rw [compileAppCoreFuel.eq_2]
   all_goals try simp only [classifyAppCoreHead]
+
+set_option maxHeartbeats 2000000 in
+/-- Exact one-argument `eval` staging: its argument is preserved as raw code
+and the only compile-time allocation is the result variable.  Runtime
+translation happens later in `Goal.evalg` against the live world. -/
+theorem compileExprFuel_eval_eq (fuel counter : Nat) (env : CEnv)
+    (source : Atom)
+    (noHook : env.translatorRules.contains "eval" = false) :
+    compileExprFuel (fuel + 3) env counter
+        (.expr [.sym "eval", source]) =
+      .ok (.var (compilerGeneratedName counter),
+        [Goal.evalg (chainify source)
+          (.var (compilerGeneratedName counter))], counter + 1) := by
+  rw [show fuel + 3 = (fuel + 1) + 2 by omega]
+  rw [compileExprFuel_unshadowed_app_eq (fuel + 1) env counter
+    "eval" [source] (by rfl) (by simp) noHook]
+  simp [compileAppCoreFuel, classifyAppCoreHead, fresh,
+    compilerGeneratedName]
 
 set_option maxHeartbeats 2000000 in
 /-- The implementation equation for zero-argument `empty` when no translator

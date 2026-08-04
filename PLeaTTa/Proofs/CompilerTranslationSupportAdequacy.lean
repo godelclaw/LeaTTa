@@ -108,6 +108,7 @@ theorem TranslatesExpr.counter_le
   | literal => omega
   | quote => omega
   | cut => omega
+  | eval => omega
   | assertaPredicate _ payload =>
       have bound := TranslatesExpr.counter_le payload
       omega
@@ -418,6 +419,16 @@ theorem TranslatesExpr.variablesIn
       exact ⟨Quotes.termVariablesIn_of_sourceVars value
           (sourceSupported.expression_member (by simp)), trivial⟩
   | cut => exact ⟨trivial, by simp [goalsVariablesIn, goalVariablesIn]⟩
+  | eval _ quotation =>
+      have codeSupported := Quotes.termVariablesIn_of_sourceVars quotation
+        (sourceSupported.expression_member (by simp))
+      have resultSupported :
+          termVariablesIn domain (.variable (.generated counter)) :=
+        generatedSupported counter (by omega) (by omega)
+      exact ⟨resultSupported, by
+        simp only [goalsVariablesIn, goalVariablesIn, termsVariablesIn,
+          and_true]
+        exact ⟨codeSupported, resultSupported⟩⟩
   | @assertaPredicate _ payloadCounter _ payload _ _ payloadTranslation =>
       have payloadCounterBound :=
         TranslatesExpr.counter_le payloadTranslation

@@ -641,6 +641,12 @@ inductive GoalAgrees : PeTTaSpec.PrologCore.Goal → PLeaTTa.Goal → Prop where
       GoalAgrees (.unify referenceLeft referenceRight)
         (.compileAlias executableLeft executableRight)
   | cut : GoalAgrees .cut .cut
+  | eval {referenceCode referenceResult : Term}
+      {executableCode executableResult : Atom}
+      (code : TermAgrees referenceCode executableCode)
+      (result : TermAgrees referenceResult executableResult) :
+      GoalAgrees (.call "eval" [referenceCode, referenceResult])
+        (.evalg executableCode executableResult)
   | builtin {predicate : String} {referenceArguments : List Term}
       {referenceResult : Term} {executableArguments : List Atom}
       {executableResult : Atom}
@@ -1997,6 +2003,75 @@ theorem translatesExpr_quote_adequate {state : TranslatorState} (env : CEnv)
   exact compileExpr_quote_adequate env counter
     (agreement.notContains notShadowed) quotation
 
+/-- One-argument `eval` preserves the independently quoted source as its
+runtime code payload and allocates exactly one result variable. -/
+theorem compileExprFuel_eval_adequate {source : Atom} {code : Term}
+    (fuel : Nat) (env : CEnv) (counter : Nat)
+    (noHook : env.translatorRules.contains "eval" = false)
+    (quotation : Quotes source code) :
+    compileExprFuel (fuel + 3) env counter
+        (.expr [.sym "eval", source]) =
+        .ok (.var (compilerGeneratedName counter),
+          [PLeaTTa.Goal.evalg (chainify source)
+            (.var (compilerGeneratedName counter))], counter + 1) ∧
+      TermAgrees (.variable (.generated counter))
+        (.var (compilerGeneratedName counter)) ∧
+      GoalsAgree
+        [.call "eval" [code, .variable (.generated counter)]]
+        [PLeaTTa.Goal.evalg (chainify source)
+          (.var (compilerGeneratedName counter))] := by
+  have resultAgreement :
+      TermAgrees (.variable (.generated counter))
+        (.var (compilerGeneratedName counter)) := by
+    simpa [compilerGeneratedName] using TermAgrees.generatedVariable counter
+  exact ⟨compileExprFuel_eval_eq fuel counter env source noHook,
+    resultAgreement,
+    .cons (.eval (quotes_term_agrees quotation) resultAgreement) .nil⟩
+
+/-- The public compiler wrapper preserves raw-code `eval` staging. -/
+theorem compileExpr_eval_adequate {source : Atom} {code : Term}
+    (env : CEnv) (counter : Nat)
+    (noHook : env.translatorRules.contains "eval" = false)
+    (quotation : Quotes source code) :
+    compileExpr env counter (.expr [.sym "eval", source]) =
+        .ok (.var (compilerGeneratedName counter),
+          [PLeaTTa.Goal.evalg (chainify source)
+            (.var (compilerGeneratedName counter))], counter + 1) ∧
+      TermAgrees (.variable (.generated counter))
+        (.var (compilerGeneratedName counter)) ∧
+      GoalsAgree
+        [.call "eval" [code, .variable (.generated counter)]]
+        [PLeaTTa.Goal.evalg (chainify source)
+          (.var (compilerGeneratedName counter))] := by
+  simpa only [compileExpr, Nat.add_assoc, Nat.reduceAdd] using
+    compileExprFuel_eval_adequate
+      (compilerFuel (.expr [.sym "eval", source]) + 61) env counter noHook
+      quotation
+
+/-- Adequacy of pinned one-argument `eval`, including translator-hook
+priority and the raw-code/runtime-translation phase boundary. -/
+theorem translatesExpr_eval_adequate {state : TranslatorState} (env : CEnv)
+    (agreement : EnvAgrees state env) (counter : Nat) {source : Atom}
+    {code : Term} (notShadowed : ¬ state.hasRule "eval")
+    (quotation : Quotes source code) :
+    TranslatesExpr state counter (.expr [.sym "eval", source])
+        (.variable (.generated counter))
+        [.call "eval" [code, .variable (.generated counter)]]
+        (counter + 1) ∧
+      compileExpr env counter (.expr [.sym "eval", source]) =
+        .ok (.var (compilerGeneratedName counter),
+          [PLeaTTa.Goal.evalg (chainify source)
+            (.var (compilerGeneratedName counter))], counter + 1) ∧
+      TermAgrees (.variable (.generated counter))
+        (.var (compilerGeneratedName counter)) ∧
+      GoalsAgree
+        [.call "eval" [code, .variable (.generated counter)]]
+        [PLeaTTa.Goal.evalg (chainify source)
+          (.var (compilerGeneratedName counter))] := by
+  refine ⟨.eval notShadowed quotation, ?_⟩
+  exact compileExpr_eval_adequate env counter
+    (agreement.notContains notShadowed) quotation
+
 /-- The pinned zero-argument `cut` translation is represented by exactly one
 cut goal and leaves the compiler counter unchanged. -/
 theorem compileExprFuel_cut_adequate (fuel : Nat) (env : CEnv) (counter : Nat)
@@ -2210,6 +2285,17 @@ theorem compileExprFuel_initial_sound {state : TranslatorState} (env : CEnv)
           simpa [Nat.add_comm] using
             compileExprFuel_cut_adequate extraFuel env counter
               (agreement.notContains notShadowed)⟩
+  | eval notShadowed quotation =>
+      refine ⟨3, by omega, ?_, ?_⟩
+      · simp [Atom.size]
+        omega
+      · intro extraFuel
+        exact ⟨.var (compilerGeneratedName counter),
+          [PLeaTTa.Goal.evalg (chainify _)
+            (.var (compilerGeneratedName counter))], by
+          simpa [Nat.add_comm] using
+            compileExprFuel_eval_adequate extraFuel env counter
+              (agreement.notContains notShadowed) quotation⟩
   | @assertaPredicate _ payloadCounter _ _ _ notShadowed
       payloadTranslation =>
       obtain ⟨payloadFuel, payloadPositive, payloadBound, payloadCompiles⟩ :=

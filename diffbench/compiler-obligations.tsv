@@ -1,8 +1,8 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=81520a71bb614db29976086dbf8ef6160fc023641036f9089f406c601354e6da
-# prolog_core_sha256=c971b21c94ec1c71a861ed4ce564d5a2b165c1ec7a3cc48929113b60927b77b0
-# compiler_adequacy_sha256=904f42d172e85e6474cd238eca65678e2f4e5877e838df8edb27e299d3da17e8
-# compiler_translation_support_adequacy_sha256=e660b57913f5c14e57b615661621cee8504cc7801374dcf8a71d5a3c81be4dfb
+# compiler_sha256=7fae4adc140eb8c122129246746db8e786d9cc7eb742a89de13ecde87e013dd9
+# prolog_core_sha256=341a288728f4385dfc59b5f9f7f1167a662e89149fb0173c9e49282f155421f0
+# compiler_adequacy_sha256=9b53e75bd9ec46bc4a8be9d57ad630abe49882a10f50b8346cc84a73467675ca
+# compiler_translation_support_adequacy_sha256=96243bfa88601971fcc6187ab72a002409dd8bd4e6b914f4133b1dcdf69e07a8
 # class: X=exact-translation S=semantic-shortcut L=library-defined H=host-boundary P=pleatta-only M=missing
 # proof: SC=sound-complete BC=behavioral-sound-complete SH=shape-only EQ=implementation-equation N=none
 # status: PASS=adequate-for-stated-model FAIL=known-mismatch GAP=open-proof-or-model BOUNDARY=explicit-trusted-boundary
@@ -85,7 +85,7 @@ APP.unique	T76-77	X	-	N	GAP	exact-rewrite-value-differential-pass; independent-r
 APP.union	T80-82	X	TranslatesBinaryStream	SC	GAP	nonempty-literal-branch-fragment-sound-complete; empty-and-effectful-branches-open
 APP.intersection	T83-85	X	TranslatesBinaryStream	SC	GAP	nonempty-literal-branch-fragment-sound-complete; empty-and-effectful-branches-open
 APP.subtraction	T86-88	X	TranslatesBinaryStream	SC	GAP	nonempty-literal-branch-fragment-sound-complete; empty-and-effectful-branches-open
-APP.eval	T293-295	S	-	N	FAIL	precompiles-code-argument
+APP.eval	T293-295,M251-253	S	TranslatesExpr.eval	SC	PASS	literal-symbol-head-one-argument-raw-code-preserved-and-runtime-staged; partial-compound-runtime-gap-is-MISS.eval_partial_roundtrip
 APP.catch	T300-308	X	-	N	GAP	catch-goal-agreement-missing
 APP.call	T278-283	S	-	N	GAP	superpose-dispatch-runtime-pass; general-typed-argument-staging-unproved
 APP.reduce	T285-291	S	-	N	FAIL	incorrectly-aliased-to-eval
@@ -166,3 +166,4 @@ SEQ.fact	F27-30	X	-	N	GAP	program-reference-missing
 APP.alpha_unique	T78-79	X	-	N	GAP	exact-rewrite-value-differential-pass; independent-rule-open
 MISS.sealed	T191-192	M	-	N	FAIL	pinned-translation-absent
 MISS.dynamic_lambda_eval	T225-261	M	-	N	FAIL	prepass-only-runtime-code-bypasses-translation
+MISS.eval_partial_roundtrip	T293-295,M251-253	M	-	N	FAIL	runtime-unchainify-erases-partial-compound-identity
