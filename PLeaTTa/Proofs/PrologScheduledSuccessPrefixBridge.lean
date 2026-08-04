@@ -4,7 +4,8 @@
 Module: PLeaTTa.Proofs.PrologScheduledSuccessPrefixBridge
 Purpose: Add successful scheduled-head activation to the exact global
   transition zipper, compose its literal persistent-free midpoint, and add
-  producer-derived owned assertion effects to the same global vocabulary.
+  producer-derived owned assertion effects plus post-cut body exit to the
+  same global vocabulary.
 Trusted boundary: none
 Main exports:
   RepresentativePersistentFreeActivePayloadState.afterAdministrative,
@@ -12,6 +13,7 @@ Main exports:
   GlobalCertifiedTransition,
   GlobalCertifiedTransition.assertion_target_exact,
   GlobalCertifiedTransition.assertion_effectErasure,
+  GlobalCertifiedTransition.committedBodyAnswer_target_committedScheduled,
   GlobalCertifiedPrefix,
   GlobalCertifiedPrefix.scheduledSuccessThenAdministrative
 -/
@@ -44,6 +46,7 @@ open PrologNestedCallReadyBridge
 open PrologOrdinaryStepBridge
 open PrologPersistentFreeActivePayloadBridge
 open PrologPersistentFreeCommittedPayloadBridge
+open PrologPersistentFreeCommittedScheduledPayloadBridge
 open PrologPersistentFreeCommittedUnifyTransitionBridge
 open PrologPersistentFreeScheduledPayloadBridge
 open PrologProductResourceContextBridge
@@ -417,6 +420,7 @@ inductive GlobalTransitionKind where
   | activeAdministrative (count : Nat)
   | committedAdministrative (count : Nat)
   | committedUnify (label : CommittedUnifyTransitionLabel)
+  | committedBodyAnswer
   | scheduledSuccess (label : ScheduledSuccessLabel)
   | assertion (label : AssertionTransitionLabel)
 
@@ -427,6 +431,7 @@ def sourceCost : GlobalTransitionKind → Nat
   | .activeAdministrative count => count
   | .committedAdministrative count => count
   | .committedUnify _ => 1
+  | .committedBodyAnswer => 1
   | .scheduledSuccess label => label.sourceCost
   | .assertion _ => 1
 
@@ -435,6 +440,7 @@ def sourceEvents : GlobalTransitionKind → List Observation
   | .activeAdministrative _ => []
   | .committedAdministrative _ => []
   | .committedUnify _ => []
+  | .committedBodyAnswer => []
   | .scheduledSuccess label => [.answer label.answer]
   | .assertion label => [.effect label.effect]
 
@@ -443,6 +449,7 @@ def fineCost : GlobalTransitionKind → Nat
   | .activeAdministrative _ => 0
   | .committedAdministrative _ => 0
   | .committedUnify _ => 1
+  | .committedBodyAnswer => 0
   | .scheduledSuccess _ => 2
   | .assertion _ => 1
 
@@ -456,6 +463,7 @@ def AlphaEvolution (kind : GlobalTransitionKind)
   | .activeAdministrative _ => after.alpha = before.alpha
   | .committedAdministrative _ => after.alpha = before.alpha
   | .committedUnify _ => after.alpha = before.alpha
+  | .committedBodyAnswer => after.alpha = before.alpha
   | .scheduledSuccess label =>
       AlphaExtendsAbove before.alpha after.alpha
           label.referenceFloor label.executableFloor ∧
@@ -475,6 +483,8 @@ def RepresentativeEvolution (kind : GlobalTransitionKind)
       after.representative = before.representative
   | .committedUnify label =>
       after.representative = label.targetRepresentative
+  | .committedBodyAnswer =>
+      after.representative = before.representative
   | .scheduledSuccess label =>
       after.representative = label.targetRepresentative
   | .assertion _ => after.representative = before.representative
@@ -531,6 +541,16 @@ inductive GlobalCertifiedTransition
         (.committedUnify (CommittedUnifyTransitionLabel.of facts))
         (.ordinary (.committed before))
         (.ordinary (.committed after))
+  | committedBodyAnswer
+      (before : RepresentativePersistentFreeCommittedPayloadState)
+      (referenceEmpty : before.carrier.index.bodyReferences = [])
+      (executableEmpty : before.carrier.index.bodyExecutables = []) :
+      GlobalCertifiedTransition prog gt .committedBodyAnswer
+        (.ordinary (.committed before))
+        (.ordinary
+          (.committedScheduled
+            (RepresentativePersistentFreeCommittedPayloadState.afterBodyAnswer
+              prog gt before referenceEmpty executableEmpty)))
   | scheduledSuccess
       {before : RepresentativePersistentFreeScheduledPayloadState}
       {ready : RootClosedAnswerReady before}
@@ -633,6 +653,23 @@ theorem committedAdministrative_not_active
     IsEmpty
       (GlobalCertifiedTransition prog gt (.committedAdministrative count)
         (.ordinary (.committed before)) (.ordinary (.active target))) := by
+  constructor
+  intro step
+  obtain ⟨after, impossible⟩ := step.committedAdministrative_target_committed
+  cases impossible
+
+/-- Committed administration cannot be confused with successful body exit.
+Both edges cost one source step, zero fine steps, and emit no observation, so
+their distinct target phases are the load-bearing discriminator. -/
+theorem committedAdministrative_not_committedScheduled
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : RepresentativePersistentFreeCommittedPayloadState)
+    (count : Nat)
+    (target : RepresentativePersistentFreeCommittedScheduledPayloadState) :
+    IsEmpty
+      (GlobalCertifiedTransition prog gt (.committedAdministrative count)
+        (.ordinary (.committed before))
+        (.ordinary (.committedScheduled target))) := by
   constructor
   intro step
   obtain ⟨after, impossible⟩ := step.committedAdministrative_target_committed
@@ -758,6 +795,50 @@ theorem committedUnify_fineState_ne
   cases step with
   | committedUnify facts => exact facts.fineState_ne
 
+/-- A successful committed clause body enters the exhausted scheduled phase;
+it cannot be represented as another live committed body. -/
+theorem committedBodyAnswer_target_committedScheduled
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : RepresentativePersistentFreeCommittedPayloadState}
+    {after : ResolverPhaseState}
+    (step :
+      GlobalCertifiedTransition prog gt .committedBodyAnswer
+        (.ordinary (.committed before)) after) :
+    ∃ target : RepresentativePersistentFreeCommittedScheduledPayloadState,
+      after = .ordinary (.committedScheduled target) := by
+  cases step with
+  | committedBodyAnswer before referenceEmpty executableEmpty => exact ⟨_, rfl⟩
+
+/-- The successful body exit cannot be laundered into the target phase of a
+committed administrative step. -/
+theorem committedBodyAnswer_not_committed
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before target : RepresentativePersistentFreeCommittedPayloadState) :
+    IsEmpty
+      (GlobalCertifiedTransition prog gt .committedBodyAnswer
+        (.ordinary (.committed before)) (.ordinary (.committed target))) := by
+  constructor
+  intro step
+  obtain ⟨after, impossible⟩ := step.committedBodyAnswer_target_committedScheduled
+  cases impossible
+
+/-- The target source state is the caller-first choice with an exhausted
+predicate boundary, not the still-executing committed product. -/
+theorem committedBodyAnswer_target_source_exact
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    {before : RepresentativePersistentFreeCommittedPayloadState}
+    {after : RepresentativePersistentFreeCommittedScheduledPayloadState}
+    (step :
+      GlobalCertifiedTransition prog gt .committedBodyAnswer
+        (.ordinary (.committed before))
+        (.ordinary (.committedScheduled after))) :
+    after.carrier.sourceState =
+      .running before.carrier.index.session
+        (RepresentativePersistentFreeCommittedPayloadState.bodyAnswerSource
+          before) := by
+  cases step with
+  | committedBodyAnswer before referenceEmpty executableEmpty => rfl
+
 theorem sourceSteps
     {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
     {kind : GlobalTransitionKind} {before after : ResolverPhaseState}
@@ -793,6 +874,15 @@ theorem sourceSteps
         GlobalTransitionKind.sourceEvents, ResolverPhaseState.sourceState,
         ProductPhaseState.sourceState,
         PersistentFreeCommittedPayloadState.sourceState, sessionEq] using one
+  | committedBodyAnswer before referenceEmpty executableEmpty =>
+      have one :=
+        CertifiedTransition.oneSourceStep
+          (RepresentativePersistentFreeCommittedPayloadState.afterBodyAnswer_sourceStep
+            prog gt before referenceEmpty executableEmpty)
+      simpa [GlobalTransitionKind.sourceCost,
+        GlobalTransitionKind.sourceEvents, ResolverPhaseState.sourceState,
+        ProductPhaseState.sourceState,
+        PersistentFreeCommittedPayloadState.sourceState] using one
   | scheduledSuccess relation successor =>
       simpa [GlobalTransitionKind.sourceCost,
         GlobalTransitionKind.sourceEvents, ScheduledSuccessLabel.of,
@@ -846,6 +936,8 @@ theorem fineSteps
         ResolverPhaseState.fineState, ProductPhaseState.fineState,
         PersistentFreeCommittedPayloadState.fineState] using
         CertifiedTransition.oneFineStep facts.fineStep
+  | committedBodyAnswer before referenceEmpty executableEmpty =>
+      exact .zero _
   | @scheduledSuccess before ready selection scope transition partition
       independentResult nextAlpha sourceCanonical flattened installed
       relation successor =>
@@ -919,6 +1011,8 @@ theorem sessionHighWaters
           after.carrier.index.session
       rw [facts.afterIndexExact]
       exact SessionHighWatersExtend.refl _
+  | committedBodyAnswer before referenceEmpty executableEmpty =>
+      exact SessionHighWatersExtend.refl _
   | scheduledSuccess relation successor =>
       exact SessionHighWatersExtend.refl _
   | assertion before ready =>
@@ -945,6 +1039,8 @@ theorem executableCounter_mono
       rw [facts.afterIndexExact]
       simp [RepresentativePersistentFreeCommittedPayloadState.unifyIndex,
         RepresentativePersistentFreeCommittedPayloadState.unifyOpenConf]
+  | committedBodyAnswer before referenceEmpty executableEmpty =>
+      exact Nat.le_refl _
   | @scheduledSuccess before ready selection scope transition partition
       independentResult nextAlpha sourceCanonical flattened installed
       relation successor =>
@@ -981,6 +1077,9 @@ theorem alphaIncluded
       change pair ∈ before.carrier.index.alpha at present
       rw [facts.afterIndexExact]
       exact present
+  | committedBodyAnswer before referenceEmpty executableEmpty =>
+      intro pair present
+      exact present
   | scheduledSuccess relation successor =>
       exact relation.alphaIncluded
   | assertion before ready =>
@@ -1003,6 +1102,7 @@ theorem alphaEvolution
       change after.carrier.index.alpha = before.carrier.index.alpha
       rw [facts.afterIndexExact]
       rfl
+  | committedBodyAnswer before referenceEmpty executableEmpty => rfl
   | @scheduledSuccess before ready selection scope transition partition
       independentResult nextAlpha sourceCanonical flattened installed
       relation successor =>
@@ -1064,6 +1164,7 @@ theorem representativeEvolution
   | @committedUnify before after left right result bodyRest
       bodyExecutableTail sourceExtension executableExtension generated
       installed facts => rfl
+  | committedBodyAnswer before referenceEmpty executableEmpty => rfl
   | scheduledSuccess relation successor => rfl
   | assertion before ready => rfl
 

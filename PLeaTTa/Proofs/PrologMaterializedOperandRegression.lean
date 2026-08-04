@@ -68,6 +68,7 @@ open PrologMaterializedGlobalPrefixBridge
 open PrologOrdinaryStepBridge
 open PrologPersistentFreeActivePayloadBridge
 open PrologPersistentFreeCommittedPayloadBridge
+open PrologPersistentFreeCommittedScheduledPayloadBridge
 open PrologPersistentFreeCommittedUnifyTransitionBridge
 open PrologPrefilterBridge
 open PrologPrefilterCallBridge
@@ -747,6 +748,7 @@ theorem root_variable_cut_then_committed_unify_ready
     ∃ (active : MaterializedRepresentativePersistentFreeActivePayloadState)
         (before : MaterializedRepresentativePersistentFreeCommittedPayloadState),
       active.carrier.carrier.index.active.alts = [retainedAlt] ∧
+      before.carrier.carrier.index.openConf.control.alts = [] ∧
       before.carrier.carrier.index.bodyReferences =
         [.unify (.variable (.generated 0)) valueTerm,
           .unify (.variable (.generated 0)) valueTerm] ∧
@@ -835,6 +837,14 @@ theorem root_variable_cut_then_committed_unify_ready
       active.carrier.carrier.index.active.alts = [retainedAlt] := by
     change legacy.carrier.index.active.alts = [retainedAlt]
     exact facts.activeAltsExact
+  have activeResources :
+      active.carrier.carrier.index.resources = [] := by
+    change legacy.carrier.index.resources = []
+    exact facts.resourcesEmpty
+  have activeBaseAlts :
+      active.carrier.carrier.index.baseAlts = [] := by
+    change legacy.carrier.index.baseAlts = []
+    exact facts.baseAltsEmpty
   have database :
       DatabaseRelatesWorld initialSession.resolver.database
         initialOpenConf.persistent.world := by
@@ -941,6 +951,21 @@ theorem root_variable_cut_then_committed_unify_ready
     simp [before, committed,
       MaterializedRepresentativePersistentFreeCommittedPayloadState.afterAdministrative,
       RepresentativePersistentFreeCommittedPayloadState.afterAdministrative]
+  have beforeAlts :
+      before.carrier.carrier.index.openConf.control.alts = [] := by
+    change committed.carrier.carrier.index.openConf.control.alts = []
+    rw [show committed.carrier.carrier.index.openConf.control.alts =
+        PrologProductResourceContextBridge.flattenOwnedAlts
+          active.carrier.carrier.index.resources
+          active.carrier.carrier.index.baseAlts from
+      RepresentativePersistentFreeActivePayloadState.afterCut_alts_exact
+        prog gt active.carrier
+          [.conjunction [], .unify (.variable (.generated 0)) valueTerm,
+            .unify (.variable (.generated 0)) valueTerm]
+          [.eq selectedCopied.result valueAtom,
+            .eq selectedCopied.result valueAtom]
+          referenceHead executableHead coherent]
+    simp [activeResources, activeBaseAlts]
   have beforeSupport :
       before.carrier.carrier.index.support = rootAlpha := by
     change active.carrier.carrier.index.support = rootAlpha
@@ -977,7 +1002,7 @@ theorem root_variable_cut_then_committed_unify_ready
     have old := observed name linked
     rw [beforeSupport] at old
     simp [rootAlpha, queryIdentity] at old
-  refine ⟨active, before, activeAlts, beforeReference, beforeSupport,
+  refine ⟨active, before, activeAlts, beforeAlts, beforeReference, beforeSupport,
     beforeCurrent, beforeQterm, unsupported, ?_, ?_, ⟨localPrefix⟩⟩
   · simpa [active, committed, before,
       RepresentativePersistentFreeActivePayloadState.afterCutMaterialized,
@@ -1121,13 +1146,14 @@ theorem root_variable_cut_then_materialized_unify_exact
         (.ready initialOpenConf) after.carrier.carrier.fineState ∧
       before.carrier.carrier.fineState ≠ after.carrier.carrier.fineState ∧
       after.carrier.carrier.index.support = rootAlpha ∧
+      after.carrier.carrier.index.openConf.control.alts = [] ∧
       after.carrier.carrier.index.openConf.control.qterm = queryAtom ∧
       after.carrier.carrier.index.current = finalSourceResult ∧
       after.carrier.carrier.index.current.applyTerm queryTerm = valueTerm ∧
       after.carrier.carrier.index.bodyReferences =
         [.unify (.variable (.generated 0)) valueTerm] := by
   obtain
-      ⟨active, before, activeAlts, beforeReference, beforeSupport,
+      ⟨active, before, activeAlts, beforeAlts, beforeReference, beforeSupport,
         beforeCurrent, beforeQterm, unsupported, rootSource, remaining⟩ :=
     root_variable_cut_then_committed_unify_ready
       (prog := prog) (gt := gt)
@@ -1169,6 +1195,10 @@ theorem root_variable_cut_then_materialized_unify_exact
   have afterSupport : after.carrier.carrier.index.support = rootAlpha := by
     rw [facts.afterIndexExact]
     exact beforeSupport
+  have afterAlts :
+      after.carrier.carrier.index.openConf.control.alts = [] := by
+    rw [facts.afterIndexExact]
+    exact beforeAlts
   have afterQterm :
       after.carrier.carrier.index.openConf.control.qterm = queryAtom := by
     rw [facts.afterIndexExact]
@@ -1182,7 +1212,7 @@ theorem root_variable_cut_then_materialized_unify_exact
     ⟨active, before, after, bodyExecutableTail, sourceExtension,
       executableExtension, generated, installed, facts, activeAlts,
       beforeReference, unsupported, ⟨combinedPrefix⟩, ?_, ?_, facts.fineState_ne,
-      afterSupport, afterQterm, afterCurrent, queryAnswer, afterBody⟩
+      afterSupport, afterAlts, afterQterm, afterCurrent, queryAnswer, afterBody⟩
   · simpa [GlobalTransitionKind.sourceCost,
       GlobalTransitionKind.sourceEvents,
       GlobalTransitionSchedule.sourceCost,
@@ -1267,6 +1297,7 @@ theorem root_variable_cut_then_two_materialized_unifies_exact
         (.ready initialOpenConf) second.carrier.carrier.fineState ∧
       before.carrier.carrier.fineState ≠ first.carrier.carrier.fineState ∧
       first.carrier.carrier.fineState ≠ second.carrier.carrier.fineState ∧
+      second.carrier.carrier.index.openConf.control.alts = [] ∧
       second.carrier.carrier.index.current = finalSourceResult ∧
       second.carrier.carrier.index.current.applyTerm queryTerm = valueTerm ∧
       second.carrier.carrier.index.bodyReferences = [] := by
@@ -1274,7 +1305,7 @@ theorem root_variable_cut_then_two_materialized_unifies_exact
       ⟨active, before, first, firstExecutableTail, firstSourceExtension,
         firstExecutableExtension, firstGenerated, firstInstalled, firstFacts,
         activeAlts, beforeBody, _unsupported, firstPrefixNonempty, sourceOne,
-        fineOne, firstFineNe, firstSupport, firstQterm, firstCurrent,
+        fineOne, firstFineNe, firstSupport, firstAlts, firstQterm, firstCurrent,
         _firstQuery, firstBody⟩ :=
     root_variable_cut_then_materialized_unify_exact
       (prog := prog) (gt := gt)
@@ -1314,6 +1345,10 @@ theorem root_variable_cut_then_two_materialized_unifies_exact
       second.carrier.carrier.index.current = finalSourceResult := by
     rw [secondFacts.afterIndexExact]
     rfl
+  have secondAlts :
+      second.carrier.carrier.index.openConf.control.alts = [] := by
+    rw [secondFacts.afterIndexExact]
+    exact firstAlts
   have secondQuery :
       second.carrier.carrier.index.current.applyTerm queryTerm = valueTerm := by
     rw [secondCurrent]
@@ -1327,7 +1362,7 @@ theorem root_variable_cut_then_two_materialized_unifies_exact
       secondExecutableExtension, firstGenerated, firstInstalled,
       secondGenerated, secondInstalled, firstFacts, secondFacts, activeAlts,
       beforeBody, firstBody, firstOperand, ⟨combinedPrefix⟩, ?_, ?_,
-      firstFineNe, secondFacts.fineState_ne, secondCurrent, secondQuery,
+      firstFineNe, secondFacts.fineState_ne, secondAlts, secondCurrent, secondQuery,
       secondBody⟩
   · simpa [GlobalTransitionKind.sourceCost,
       GlobalTransitionKind.sourceEvents,
@@ -1341,5 +1376,139 @@ theorem root_variable_cut_then_two_materialized_unifies_exact
       PrologFailureRebasePrefixBridge.ResolverPhaseState.fineState,
       PrologHeterogeneousPrefixBridge.ProductPhaseState.fineState] using
       fineAll
+
+/-- Reachable exact discriminator for the post-cut body-answer seam.
+
+After the retained sibling is visibly pruned and both materialized equalities
+run, the successful clause body contributes one private source transition and
+no fine transition: the fine machine already exposes the flattened caller
+continuation.  The post-answer executable bank remains literally empty and is
+also tied to the same dependent outer-resource suffix, so this witness rejects
+both a fabricated fine step and resurrection of the consumed cursor. -/
+theorem root_variable_cut_then_body_answer_exact
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable} :
+    ∃ (active : MaterializedRepresentativePersistentFreeActivePayloadState)
+        (before first second :
+          MaterializedRepresentativePersistentFreeCommittedPayloadState)
+        (firstExecutableTail secondExecutableTail : List PLeaTTa.Goal)
+        (firstSourceExtension firstExecutableExtension : TreeSubstitution)
+        (secondSourceExtension secondExecutableExtension : TreeSubstitution)
+        (firstGenerated firstInstalled secondGenerated secondInstalled :
+          Subst)
+        (firstFacts :
+          RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt
+            before.carrier first.carrier (.variable (.generated 0)) valueTerm
+            finalSourceResult
+            [.unify (.variable (.generated 0)) valueTerm]
+            firstExecutableTail firstSourceExtension firstExecutableExtension
+            firstGenerated firstInstalled)
+        (secondFacts :
+          RepresentativePersistentFreeCommittedUnifySuccessorFacts prog gt
+            first.carrier second.carrier (.variable (.generated 0)) valueTerm
+            finalSourceResult [] secondExecutableTail secondSourceExtension
+            secondExecutableExtension secondGenerated secondInstalled)
+        (after : RepresentativePersistentFreeCommittedScheduledPayloadState),
+      active.carrier.carrier.index.active.alts = [retainedAlt] ∧
+      second.carrier.carrier.index.bodyReferences = [] ∧
+      second.carrier.carrier.index.bodyExecutables = [] ∧
+      Nonempty
+        (MaterializedGlobalCertifiedPrefix prog gt
+          [ .resolver
+              (.forward
+                (.cut
+                  (PrologActivatedProductStepBridge.retainedCursorTokenAt
+                    active.carrier.carrier.index.predicateScope
+                    active.carrier.carrier.index.finish
+                    active.carrier.carrier.index.branch
+                    active.carrier.carrier.index.branchTail))),
+            .committedAdministrative 1,
+            .committedUnify (CommittedUnifyTransitionLabel.of firstFacts),
+            .committedUnify (CommittedUnifyTransitionLabel.of secondFacts),
+            .committedBodyAnswer ]
+          (.ordinary (.active active.carrier))
+          (.ordinary (.committedScheduled after))) ∧
+      StepsN 7
+        (.running initialSession
+          (.task rootScope [.call "cutv" [queryTerm]] []))
+        [ .opened (requestFor "cutv" [queryTerm] []),
+          .pruned
+            (PrologActivatedProductStepBridge.retainedCursorTokenAt
+              active.carrier.carrier.index.predicateScope
+              active.carrier.carrier.index.finish
+              active.carrier.carrier.index.branch
+              active.carrier.carrier.index.branchTail) ]
+        after.carrier.sourceState ∧
+      DemandDrivenCallStep.StepsN prog gt 6
+        (.ready initialOpenConf) after.carrier.fineState ∧
+      after.carrier.index.openConf.control.alts = [] ∧
+      after.carrier.index.openConf.control.alts =
+        PrologProductResourceContextBridge.flattenOwnedAlts
+          second.carrier.carrier.index.resources
+          second.carrier.carrier.index.baseAlts ∧
+      after.carrier.cellIdentities = second.carrier.carrier.cellIdentities ∧
+      after.carrier.index.current.applyTerm queryTerm = valueTerm := by
+  obtain
+      ⟨active, before, first, second, firstExecutableTail,
+        secondExecutableTail, firstSourceExtension, firstExecutableExtension,
+        secondSourceExtension, secondExecutableExtension, firstGenerated,
+        firstInstalled, secondGenerated, secondInstalled, firstFacts,
+        secondFacts, activeAlts, _beforeBody, _firstBody, _firstOperand,
+        ⟨priorPrefix⟩, sourceSix, fineSix, _firstFineNe, _secondFineNe,
+        secondAlts, _secondCurrent, secondQuery, secondBody⟩ :=
+    root_variable_cut_then_two_materialized_unifies_exact
+      (prog := prog) (gt := gt)
+  have secondExecutableEmpty :
+      second.carrier.carrier.index.bodyExecutables = [] :=
+    NormalizedAlphaGoalsAgree.executables_eq_nil_of_references_eq_nil
+      second.materializedUnifyGoals.toNormalized secondBody
+  let after :=
+    RepresentativePersistentFreeCommittedPayloadState.afterBodyAnswer
+      prog gt second.carrier secondBody secondExecutableEmpty
+  have answerPrefix :=
+    MaterializedGlobalCertifiedPrefix.committedBodyAnswer
+      (prog := prog) (gt := gt) second secondBody secondExecutableEmpty
+  have combinedPrefix := priorPrefix.append answerPrefix
+  have sourceSeven := sourceSix.trans answerPrefix.sourceSteps
+  have fineStillSix := fineSix.trans answerPrefix.fineSteps
+  have afterAlts : after.carrier.index.openConf.control.alts = [] := by
+    change second.carrier.carrier.index.openConf.control.alts = []
+    exact secondAlts
+  have afterActualAlts :
+      after.carrier.index.openConf.control.alts =
+        PrologProductResourceContextBridge.flattenOwnedAlts
+          second.carrier.carrier.index.resources
+          second.carrier.carrier.index.baseAlts := by
+    exact
+      RepresentativePersistentFreeCommittedPayloadState.afterBodyAnswer_actualAlts
+        prog gt second.carrier secondBody secondExecutableEmpty
+  have afterCells :
+      after.carrier.cellIdentities = second.carrier.carrier.cellIdentities := by
+    exact
+      RepresentativePersistentFreeCommittedPayloadState.afterBodyAnswer_cellIdentities
+        prog gt second.carrier secondBody secondExecutableEmpty
+  have afterQuery :
+      after.carrier.index.current.applyTerm queryTerm = valueTerm := by
+    change second.carrier.carrier.index.current.applyTerm queryTerm = valueTerm
+    exact secondQuery
+  refine
+    ⟨active, before, first, second, firstExecutableTail,
+      secondExecutableTail, firstSourceExtension, firstExecutableExtension,
+      secondSourceExtension, secondExecutableExtension, firstGenerated,
+      firstInstalled, secondGenerated, secondInstalled, firstFacts,
+      secondFacts, after, activeAlts, secondBody, secondExecutableEmpty,
+      ⟨combinedPrefix⟩, ?_, ?_, afterAlts, afterActualAlts, afterCells,
+      afterQuery⟩
+  · simpa [after, GlobalTransitionKind.sourceCost,
+      GlobalTransitionKind.sourceEvents,
+      GlobalTransitionSchedule.sourceCost,
+      GlobalTransitionSchedule.sourceEvents,
+      PrologFailureRebasePrefixBridge.ResolverPhaseState.sourceState,
+      PrologHeterogeneousPrefixBridge.ProductPhaseState.sourceState] using
+      sourceSeven
+  · simpa [after, GlobalTransitionKind.fineCost,
+      GlobalTransitionSchedule.fineCost,
+      PrologFailureRebasePrefixBridge.ResolverPhaseState.fineState,
+      PrologHeterogeneousPrefixBridge.ProductPhaseState.fineState] using
+      fineStillSix
 
 end PLeaTTa.PrologMaterializedOperandRegression.VariableCutCommit
