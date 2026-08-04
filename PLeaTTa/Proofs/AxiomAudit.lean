@@ -71,6 +71,7 @@ import PLeaTTa.Proofs.PrologProductSchedulingBridge
 import PLeaTTa.Proofs.PrologSourceProductContextBridge
 import PLeaTTa.Proofs.PrologSpinedSourceActivationBridge
 import PLeaTTa.Proofs.PrologProductResourceContextBridge
+import PLeaTTa.Proofs.PrologAltBankCharacterization
 import PLeaTTa.Proofs.PrologProductResourceTransitionBridge
 import PLeaTTa.Proofs.PrologRetainedPayloadSnapshotBridge
 import PLeaTTa.Proofs.PrologNestedRetainedPayloadBridge
@@ -3188,3 +3189,10 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.PrologMaterializedOperandRegression.VariableCutCommit.finalSourceResult_materializes_clause_variable
 #print axioms PLeaTTa.PrologMaterializedOperandRegression.VariableCutCommit.selectedBodyResolvesAgain
 #print axioms PLeaTTa.PrologMaterializedOperandRegression.VariableCutCommit.root_variable_cut_then_two_materialized_unifies_exact
+
+/-! Retained-resource alternative-bank pull characterizations. -/
+#print axioms PLeaTTa.PrologAltBankCharacterization.BranchOnlyResources.ofPayload
+#print axioms PLeaTTa.PrologAltBankCharacterization.source_occurrence_can_emit_zero_alternatives
+#print axioms PLeaTTa.PrologAltBankCharacterization.pullAux_flattenOwnedAlts_shape
+#print axioms PLeaTTa.PrologAltBankCharacterization.pullAuxTracked_flattenOwnedAlts_all_empty
+#print axioms PLeaTTa.PrologAltBankCharacterization.pullAuxTracked_flattenOwnedAlts_local
