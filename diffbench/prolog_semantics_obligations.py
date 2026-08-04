@@ -343,6 +343,10 @@ PROLOG_MATERIALIZED_OPERAND_REGRESSION = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologMaterializedOperandRegression.lean"
 )
+PROLOG_COMMITTED_SCHEDULED_TERMINAL_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologCommittedScheduledTerminalBridge.lean"
+)
 PROLOG_MATERIALIZED_GLOBAL_PREFIX_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologMaterializedGlobalPrefixBridge.lean"
@@ -944,6 +948,8 @@ def check() -> list[str]:
             digest(PROLOG_ROOT_REJECTED_PREFIX_REGRESSION),
         "prolog_materialized_operand_regression_sha256":
             digest(PROLOG_MATERIALIZED_OPERAND_REGRESSION),
+        "prolog_committed_scheduled_terminal_bridge_sha256":
+            digest(PROLOG_COMMITTED_SCHEDULED_TERMINAL_BRIDGE),
         "prolog_materialized_global_prefix_bridge_sha256":
             digest(PROLOG_MATERIALIZED_GLOBAL_PREFIX_BRIDGE),
         "prolog_retained_payload_snapshot_bridge_sha256":

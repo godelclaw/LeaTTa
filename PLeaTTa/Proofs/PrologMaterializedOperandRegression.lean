@@ -8,6 +8,7 @@ Trusted boundary: none
 -/
 import PLeaTTa.Proofs.PrologRootRejectedPrefixRegression
 import PLeaTTa.Proofs.PrologMaterializedGlobalPrefixBridge
+import PLeaTTa.Proofs.PrologCommittedScheduledTerminalBridge
 
 namespace PLeaTTa.PrologMaterializedOperandRegression
 
@@ -59,6 +60,7 @@ open PrologActivationMacro
 open PrologAlphaFreshFrontierBridge
 open PrologCallEntryBridge
 open PrologCallStepBridge
+open PrologCommittedScheduledTerminalBridge
 open PrologControlSegmentSpineBridge
 open PrologMguBridge
 open PrologMguComposition
@@ -749,6 +751,13 @@ theorem root_variable_cut_then_committed_unify_ready
         (before : MaterializedRepresentativePersistentFreeCommittedPayloadState),
       active.carrier.carrier.index.active.alts = [retainedAlt] ∧
       before.carrier.carrier.index.openConf.control.alts = [] ∧
+      before.carrier.carrier.index.callerReferences = [] ∧
+      before.carrier.carrier.index.callerExecutables = [] ∧
+      before.carrier.carrier.index.outer = [] ∧
+      before.carrier.carrier.index.resources = [] ∧
+      before.carrier.carrier.index.context = [] ∧
+      before.carrier.carrier.index.baseAlts = [] ∧
+      before.carrier.carrier.index.openConf.frames = [] ∧
       before.carrier.carrier.index.bodyReferences =
         [.unify (.variable (.generated 0)) valueTerm,
           .unify (.variable (.generated 0)) valueTerm] ∧
@@ -845,6 +854,23 @@ theorem root_variable_cut_then_committed_unify_ready
       active.carrier.carrier.index.baseAlts = [] := by
     change legacy.carrier.index.baseAlts = []
     exact facts.baseAltsEmpty
+  have activeCallerReferences :
+      active.carrier.carrier.index.callerReferences = [] := by
+    change legacy.carrier.index.callerReferences = []
+    exact facts.callerReferencesEmpty
+  have activeCallerExecutables :
+      active.carrier.carrier.index.callerExecutables = [] := by
+    change legacy.carrier.index.callerExecutables = []
+    exact facts.callerExecutablesEmpty
+  have activeOuter : active.carrier.carrier.index.outer = [] := by
+    change legacy.carrier.index.outer = []
+    exact facts.outerEmpty
+  have activeContext : active.carrier.carrier.index.context = [] := by
+    change legacy.carrier.index.context = []
+    exact facts.contextEmpty
+  have activeFrames : active.carrier.carrier.index.openConf.frames = [] := by
+    change legacy.carrier.index.openConf.frames = []
+    exact facts.framesEmpty
   have database :
       DatabaseRelatesWorld initialSession.resolver.database
         initialOpenConf.persistent.world := by
@@ -966,6 +992,37 @@ theorem root_variable_cut_then_committed_unify_ready
             .eq selectedCopied.result valueAtom]
           referenceHead executableHead coherent]
     simp [activeResources, activeBaseAlts]
+  have beforeCallerReferences :
+      before.carrier.carrier.index.callerReferences = [] := by
+    change active.carrier.carrier.index.callerReferences = []
+    exact activeCallerReferences
+  have beforeCallerExecutables :
+      before.carrier.carrier.index.callerExecutables = [] := by
+    change active.carrier.carrier.index.callerExecutables = []
+    exact activeCallerExecutables
+  have beforeOuter : before.carrier.carrier.index.outer = [] := by
+    change active.carrier.carrier.index.outer = []
+    exact activeOuter
+  have beforeResources : before.carrier.carrier.index.resources = [] := by
+    change active.carrier.carrier.index.resources = []
+    exact activeResources
+  have beforeContext : before.carrier.carrier.index.context = [] := by
+    change active.carrier.carrier.index.context = []
+    exact activeContext
+  have beforeBaseAlts : before.carrier.carrier.index.baseAlts = [] := by
+    change active.carrier.carrier.index.baseAlts = []
+    exact activeBaseAlts
+  have beforeFrames :
+      before.carrier.carrier.index.openConf.frames = [] := by
+    change committed.carrier.carrier.index.openConf.frames = []
+    change
+      (RepresentativePersistentFreeActivePayloadState.committedOpenConf
+        active.carrier
+        [.eq selectedCopied.result valueAtom,
+          .eq selectedCopied.result valueAtom]).frames = []
+    simpa [RepresentativePersistentFreeActivePayloadState.committedOpenConf,
+      cutSuccessor, OpenConf.stepOpen, OpenConf.ofConfWith]
+      using activeFrames
   have beforeSupport :
       before.carrier.carrier.index.support = rootAlpha := by
     change active.carrier.carrier.index.support = rootAlpha
@@ -1002,8 +1059,11 @@ theorem root_variable_cut_then_committed_unify_ready
     have old := observed name linked
     rw [beforeSupport] at old
     simp [rootAlpha, queryIdentity] at old
-  refine ⟨active, before, activeAlts, beforeAlts, beforeReference, beforeSupport,
-    beforeCurrent, beforeQterm, unsupported, ?_, ?_, ⟨localPrefix⟩⟩
+  refine
+    ⟨active, before, activeAlts, beforeAlts, beforeCallerReferences,
+      beforeCallerExecutables, beforeOuter, beforeResources, beforeContext,
+      beforeBaseAlts, beforeFrames, beforeReference, beforeSupport,
+      beforeCurrent, beforeQterm, unsupported, ?_, ?_, ⟨localPrefix⟩⟩
   · simpa [active, committed, before,
       RepresentativePersistentFreeActivePayloadState.afterCutMaterialized,
       MaterializedRepresentativePersistentFreeCommittedPayloadState.afterAdministrative,
@@ -1147,13 +1207,22 @@ theorem root_variable_cut_then_materialized_unify_exact
       before.carrier.carrier.fineState ≠ after.carrier.carrier.fineState ∧
       after.carrier.carrier.index.support = rootAlpha ∧
       after.carrier.carrier.index.openConf.control.alts = [] ∧
+      after.carrier.carrier.index.callerReferences = [] ∧
+      after.carrier.carrier.index.callerExecutables = [] ∧
+      after.carrier.carrier.index.outer = [] ∧
+      after.carrier.carrier.index.resources = [] ∧
+      after.carrier.carrier.index.context = [] ∧
+      after.carrier.carrier.index.baseAlts = [] ∧
+      after.carrier.carrier.index.openConf.frames = [] ∧
       after.carrier.carrier.index.openConf.control.qterm = queryAtom ∧
       after.carrier.carrier.index.current = finalSourceResult ∧
       after.carrier.carrier.index.current.applyTerm queryTerm = valueTerm ∧
       after.carrier.carrier.index.bodyReferences =
         [.unify (.variable (.generated 0)) valueTerm] := by
   obtain
-      ⟨active, before, activeAlts, beforeAlts, beforeReference, beforeSupport,
+      ⟨active, before, activeAlts, beforeAlts, beforeCallerReferences,
+        beforeCallerExecutables, beforeOuter, beforeResources, beforeContext,
+        beforeBaseAlts, beforeFrames, beforeReference, beforeSupport,
         beforeCurrent, beforeQterm, unsupported, rootSource, remaining⟩ :=
     root_variable_cut_then_committed_unify_ready
       (prog := prog) (gt := gt)
@@ -1199,6 +1268,31 @@ theorem root_variable_cut_then_materialized_unify_exact
       after.carrier.carrier.index.openConf.control.alts = [] := by
     rw [facts.afterIndexExact]
     exact beforeAlts
+  have afterCallerReferences :
+      after.carrier.carrier.index.callerReferences = [] := by
+    rw [facts.afterIndexExact]
+    exact beforeCallerReferences
+  have afterCallerExecutables :
+      after.carrier.carrier.index.callerExecutables = [] := by
+    rw [facts.afterIndexExact]
+    exact beforeCallerExecutables
+  have afterOuter : after.carrier.carrier.index.outer = [] := by
+    rw [facts.afterIndexExact]
+    exact beforeOuter
+  have afterResources : after.carrier.carrier.index.resources = [] := by
+    rw [facts.afterIndexExact]
+    exact beforeResources
+  have afterContext : after.carrier.carrier.index.context = [] := by
+    rw [facts.afterIndexExact]
+    exact beforeContext
+  have afterBaseAlts : after.carrier.carrier.index.baseAlts = [] := by
+    rw [facts.afterIndexExact]
+    exact beforeBaseAlts
+  have afterFrames : after.carrier.carrier.index.openConf.frames = [] := by
+    rw [facts.afterIndexExact]
+    simpa [RepresentativePersistentFreeCommittedPayloadState.unifyIndex,
+      RepresentativePersistentFreeCommittedPayloadState.unifyOpenConf]
+      using beforeFrames
   have afterQterm :
       after.carrier.carrier.index.openConf.control.qterm = queryAtom := by
     rw [facts.afterIndexExact]
@@ -1212,7 +1306,9 @@ theorem root_variable_cut_then_materialized_unify_exact
     ⟨active, before, after, bodyExecutableTail, sourceExtension,
       executableExtension, generated, installed, facts, activeAlts,
       beforeReference, unsupported, ⟨combinedPrefix⟩, ?_, ?_, facts.fineState_ne,
-      afterSupport, afterAlts, afterQterm, afterCurrent, queryAnswer, afterBody⟩
+      afterSupport, afterAlts, afterCallerReferences, afterCallerExecutables,
+      afterOuter, afterResources, afterContext, afterBaseAlts, afterFrames,
+      afterQterm, afterCurrent, queryAnswer, afterBody⟩
   · simpa [GlobalTransitionKind.sourceCost,
       GlobalTransitionKind.sourceEvents,
       GlobalTransitionSchedule.sourceCost,
@@ -1298,6 +1394,13 @@ theorem root_variable_cut_then_two_materialized_unifies_exact
       before.carrier.carrier.fineState ≠ first.carrier.carrier.fineState ∧
       first.carrier.carrier.fineState ≠ second.carrier.carrier.fineState ∧
       second.carrier.carrier.index.openConf.control.alts = [] ∧
+      second.carrier.carrier.index.callerReferences = [] ∧
+      second.carrier.carrier.index.callerExecutables = [] ∧
+      second.carrier.carrier.index.outer = [] ∧
+      second.carrier.carrier.index.resources = [] ∧
+      second.carrier.carrier.index.context = [] ∧
+      second.carrier.carrier.index.baseAlts = [] ∧
+      second.carrier.carrier.index.openConf.frames = [] ∧
       second.carrier.carrier.index.current = finalSourceResult ∧
       second.carrier.carrier.index.current.applyTerm queryTerm = valueTerm ∧
       second.carrier.carrier.index.bodyReferences = [] := by
@@ -1305,8 +1408,10 @@ theorem root_variable_cut_then_two_materialized_unifies_exact
       ⟨active, before, first, firstExecutableTail, firstSourceExtension,
         firstExecutableExtension, firstGenerated, firstInstalled, firstFacts,
         activeAlts, beforeBody, _unsupported, firstPrefixNonempty, sourceOne,
-        fineOne, firstFineNe, firstSupport, firstAlts, firstQterm, firstCurrent,
-        _firstQuery, firstBody⟩ :=
+        fineOne, firstFineNe, firstSupport, firstAlts, firstCallerReferences,
+        firstCallerExecutables, firstOuter, firstResources, firstContext,
+        firstBaseAlts, firstFrames, firstQterm, firstCurrent, _firstQuery,
+        firstBody⟩ :=
     root_variable_cut_then_materialized_unify_exact
       (prog := prog) (gt := gt)
   obtain ⟨firstPrefix⟩ := firstPrefixNonempty
@@ -1349,6 +1454,31 @@ theorem root_variable_cut_then_two_materialized_unifies_exact
       second.carrier.carrier.index.openConf.control.alts = [] := by
     rw [secondFacts.afterIndexExact]
     exact firstAlts
+  have secondCallerReferences :
+      second.carrier.carrier.index.callerReferences = [] := by
+    rw [secondFacts.afterIndexExact]
+    exact firstCallerReferences
+  have secondCallerExecutables :
+      second.carrier.carrier.index.callerExecutables = [] := by
+    rw [secondFacts.afterIndexExact]
+    exact firstCallerExecutables
+  have secondOuter : second.carrier.carrier.index.outer = [] := by
+    rw [secondFacts.afterIndexExact]
+    exact firstOuter
+  have secondResources : second.carrier.carrier.index.resources = [] := by
+    rw [secondFacts.afterIndexExact]
+    exact firstResources
+  have secondContext : second.carrier.carrier.index.context = [] := by
+    rw [secondFacts.afterIndexExact]
+    exact firstContext
+  have secondBaseAlts : second.carrier.carrier.index.baseAlts = [] := by
+    rw [secondFacts.afterIndexExact]
+    exact firstBaseAlts
+  have secondFrames : second.carrier.carrier.index.openConf.frames = [] := by
+    rw [secondFacts.afterIndexExact]
+    simpa [RepresentativePersistentFreeCommittedPayloadState.unifyIndex,
+      RepresentativePersistentFreeCommittedPayloadState.unifyOpenConf]
+      using firstFrames
   have secondQuery :
       second.carrier.carrier.index.current.applyTerm queryTerm = valueTerm := by
     rw [secondCurrent]
@@ -1362,8 +1492,10 @@ theorem root_variable_cut_then_two_materialized_unifies_exact
       secondExecutableExtension, firstGenerated, firstInstalled,
       secondGenerated, secondInstalled, firstFacts, secondFacts, activeAlts,
       beforeBody, firstBody, firstOperand, ⟨combinedPrefix⟩, ?_, ?_,
-      firstFineNe, secondFacts.fineState_ne, secondAlts, secondCurrent, secondQuery,
-      secondBody⟩
+      firstFineNe, secondFacts.fineState_ne, secondAlts,
+      secondCallerReferences, secondCallerExecutables, secondOuter,
+      secondResources, secondContext, secondBaseAlts, secondFrames,
+      secondCurrent, secondQuery, secondBody⟩
   · simpa [GlobalTransitionKind.sourceCost,
       GlobalTransitionKind.sourceEvents,
       GlobalTransitionSchedule.sourceCost,
@@ -1407,7 +1539,8 @@ theorem root_variable_cut_then_body_answer_exact
             first.carrier second.carrier (.variable (.generated 0)) valueTerm
             finalSourceResult [] secondExecutableTail secondSourceExtension
             secondExecutableExtension secondGenerated secondInstalled)
-        (after : RepresentativePersistentFreeCommittedScheduledPayloadState),
+        (after : RepresentativePersistentFreeCommittedScheduledPayloadState)
+        (ready : RootCommittedScheduledAnswerReady after),
       active.carrier.carrier.index.active.alts = [retainedAlt] ∧
       second.carrier.carrier.index.bodyReferences = [] ∧
       second.carrier.carrier.index.bodyExecutables = [] ∧
@@ -1446,7 +1579,29 @@ theorem root_variable_cut_then_body_answer_exact
           second.carrier.carrier.index.resources
           second.carrier.carrier.index.baseAlts ∧
       after.carrier.cellIdentities = second.carrier.carrier.cellIdentities ∧
-      after.carrier.index.current.applyTerm queryTerm = valueTerm := by
+      after.carrier.index.current.applyTerm queryTerm = valueTerm ∧
+      RootCommittedScheduledTerminalRelates prog gt after ready ∧
+      StepsN 10
+        (.running initialSession
+          (.task rootScope [.call "cutv" [queryTerm]] []))
+        [ .opened (requestFor "cutv" [queryTerm] []),
+          .pruned
+            (PrologActivatedProductStepBridge.retainedCursorTokenAt
+              active.carrier.carrier.index.predicateScope
+              active.carrier.carrier.index.finish
+              active.carrier.carrier.index.branch
+              active.carrier.carrier.index.branchTail),
+          .answer after.carrier.index.current,
+          .completed ]
+        (.terminal after.carrier.index.session .completed) ∧
+      DemandDrivenCallStep.StepsN prog gt 7
+        (.ready initialOpenConf)
+        (.ready
+          (privateAnswerTarget after.carrier.index.openConf
+            after.carrier.index.runtime)) ∧
+      DemandDrivenStep.Terminal
+        (privateAnswerTarget after.carrier.index.openConf
+          after.carrier.index.runtime) := by
   obtain
       ⟨active, before, first, second, firstExecutableTail,
         secondExecutableTail, firstSourceExtension, firstExecutableExtension,
@@ -1454,13 +1609,38 @@ theorem root_variable_cut_then_body_answer_exact
         firstInstalled, secondGenerated, secondInstalled, firstFacts,
         secondFacts, activeAlts, _beforeBody, _firstBody, _firstOperand,
         ⟨priorPrefix⟩, sourceSix, fineSix, _firstFineNe, _secondFineNe,
-        secondAlts, _secondCurrent, secondQuery, secondBody⟩ :=
+        secondAlts, secondCallerReferences, secondCallerExecutables,
+        secondOuter, secondResources, secondContext, secondBaseAlts,
+        secondFrames, _secondCurrent, secondQuery, secondBody⟩ :=
     root_variable_cut_then_two_materialized_unifies_exact
       (prog := prog) (gt := gt)
   have secondExecutableEmpty :
       second.carrier.carrier.index.bodyExecutables = [] :=
     NormalizedAlphaGoalsAgree.executables_eq_nil_of_references_eq_nil
       second.materializedUnifyGoals.toNormalized secondBody
+  have secondExecutableTailEmpty : secondExecutableTail = [] := by
+    rw [secondFacts.afterIndexExact] at secondExecutableEmpty
+    exact secondExecutableEmpty
+  have firstCallerExecutables :
+      first.carrier.carrier.index.callerExecutables = [] := by
+    rw [secondFacts.afterIndexExact] at secondCallerExecutables
+    exact secondCallerExecutables
+  have firstOuter : first.carrier.carrier.index.outer = [] := by
+    rw [secondFacts.afterIndexExact] at secondOuter
+    exact secondOuter
+  have firstQtermIndex :
+      first.carrier.carrier.index.openConf.control.qterm =
+        first.carrier.carrier.index.qterm :=
+    first.carrier.carrier.agreement.ready.2.2.1
+  have secondFineHead :
+      second.carrier.carrier.index.openConf.toConf.cur =
+        some ([], second.carrier.carrier.index.runtime) := by
+    rw [secondFacts.afterIndexExact]
+    simp [RepresentativePersistentFreeCommittedPayloadState.unifyIndex,
+      RepresentativePersistentFreeCommittedPayloadState.unifyOpenConf,
+      RepresentativePersistentFreeCommittedPayloadState.unifyExecutableTail,
+      secondExecutableTailEmpty, firstCallerExecutables, firstOuter,
+      firstQtermIndex, OpenConf.toConf, Control.toConf]
   let after :=
     RepresentativePersistentFreeCommittedPayloadState.afterBodyAnswer
       prog gt second.carrier secondBody secondExecutableEmpty
@@ -1490,14 +1670,71 @@ theorem root_variable_cut_then_body_answer_exact
       after.carrier.index.current.applyTerm queryTerm = valueTerm := by
     change second.carrier.carrier.index.current.applyTerm queryTerm = valueTerm
     exact secondQuery
+  let ready : RootCommittedScheduledAnswerReady after :=
+    { callerReferencesEmpty := by
+        change second.carrier.carrier.index.callerReferences = []
+        exact secondCallerReferences
+      contextEmpty := by
+        change second.carrier.carrier.index.context = []
+        exact secondContext
+      resourcesEmpty := by
+        change second.carrier.carrier.index.resources = []
+        exact secondResources
+      baseAltsEmpty := by
+        change second.carrier.carrier.index.baseAlts = []
+        exact secondBaseAlts
+      fineHead := by
+        change second.carrier.carrier.index.openConf.toConf.cur =
+          some ([], second.carrier.carrier.index.runtime)
+        exact secondFineHead
+      rootFrames := by
+        change second.carrier.carrier.index.openConf.frames = []
+        exact secondFrames }
+  have terminal :
+      RootCommittedScheduledTerminalRelates prog gt after ready :=
+    RootCommittedScheduledAnswerReady.complete ready
+  have sourceTenRaw := sourceSeven.trans terminal.sourceRun
+  have sourceTen :
+      StepsN 10
+        (.running initialSession
+          (.task rootScope [.call "cutv" [queryTerm]] []))
+        [ .opened (requestFor "cutv" [queryTerm] []),
+          .pruned
+            (PrologActivatedProductStepBridge.retainedCursorTokenAt
+              active.carrier.carrier.index.predicateScope
+              active.carrier.carrier.index.finish
+              active.carrier.carrier.index.branch
+              active.carrier.carrier.index.branchTail),
+          .answer after.carrier.index.current,
+          .completed ]
+        (.terminal after.carrier.index.session .completed) := by
+    simpa [after, GlobalTransitionKind.sourceCost,
+      GlobalTransitionKind.sourceEvents,
+      GlobalTransitionSchedule.sourceCost,
+      GlobalTransitionSchedule.sourceEvents,
+      PrologFailureRebasePrefixBridge.ResolverPhaseState.sourceState,
+      PrologHeterogeneousPrefixBridge.ProductPhaseState.sourceState] using
+      sourceTenRaw
+  have fineSevenRaw := fineStillSix.trans terminal.fineRun
+  have fineSeven :
+      DemandDrivenCallStep.StepsN prog gt 7
+        (.ready initialOpenConf)
+        (.ready
+          (privateAnswerTarget after.carrier.index.openConf
+            after.carrier.index.runtime)) := by
+    simpa [after, GlobalTransitionKind.fineCost,
+      GlobalTransitionSchedule.fineCost,
+      PrologFailureRebasePrefixBridge.ResolverPhaseState.fineState,
+      PrologHeterogeneousPrefixBridge.ProductPhaseState.fineState] using
+      fineSevenRaw
   refine
     ⟨active, before, first, second, firstExecutableTail,
       secondExecutableTail, firstSourceExtension, firstExecutableExtension,
       secondSourceExtension, secondExecutableExtension, firstGenerated,
       firstInstalled, secondGenerated, secondInstalled, firstFacts,
-      secondFacts, after, activeAlts, secondBody, secondExecutableEmpty,
+      secondFacts, after, ready, activeAlts, secondBody, secondExecutableEmpty,
       ⟨combinedPrefix⟩, ?_, ?_, afterAlts, afterActualAlts, afterCells,
-      afterQuery⟩
+      afterQuery, terminal, sourceTen, fineSeven, terminal.fineTerminal⟩
   · simpa [after, GlobalTransitionKind.sourceCost,
       GlobalTransitionKind.sourceEvents,
       GlobalTransitionSchedule.sourceCost,
