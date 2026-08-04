@@ -7135,29 +7135,31 @@ def step (prog : Prog) (gt : GroundingTable) (fuel : Nat) (c : Conf) : Conf :=
                  let g := Goal.eq res (chainOf (other :: args))
                  { c with cur := some (g :: rest, b) })
     | .evalg v res =>
-        -- meta-circular eval [SPEC metta.pl:245]: resolve the value, unchain
-        -- to surface form, re-run the translator against the CURRENT
-        -- definitions, splice the compiled goals. Caller variables are kept
-        -- shared; compiler temporaries are fresh because compilation starts
-        -- from the global counter and returns the next counter.
-        let vv := unchainify 10000 (subst b v)
-        (match compileExprFresh (runtimeEnv c.world gt) (c.counter + 1) vv with
-         | .ok (t, gs, m) =>
-             let (profileWorld, profileGoals) :=
-               specializeGoals (specializationIsBin gt)
-                 specializationBuildFuel c.world gs
-             let bc := barrierDepth c + 1
-             let gs' := tagCutsGoals bc profileGoals
-             let newgoals := gs' ++ [Goal.eq res t] ++ rest
-             { c with cur := some (newgoals, b),
-                      world := profileWorld,
-                      counter := advanceCounterPastGoals (max c.counter m)
-                        (profileGoals ++ [Goal.eq res t] ++ rest) }
-         | .error _ =>
-             -- untranslatable value: eval is the identity (data)
-             let data := chainify vv
-             { c with cur := some (Goal.eq res data :: rest, b),
-                      counter := advanceCounterPastAtoms c.counter [data] })
+        -- Pinned eval accepts variables, atoms, proper lists, and exact
+        -- partial/2 compounds.  Other tagged compounds fail before runtime
+        -- compilation; accepted proper lists are unchained while partial/2
+        -- retains its live compound identity and caller-variable sharing.
+        (match prepareEvalInput? runtimeEvalUnchainifyFuel (subst b v) with
+         | none => pull { c with cur := none }
+         | some code =>
+             match compileExprFresh (runtimeEnv c.world gt) (c.counter + 1)
+                 code with
+             | .ok (t, gs, m) =>
+                 let (profileWorld, profileGoals) :=
+                   specializeGoals (specializationIsBin gt)
+                     specializationBuildFuel c.world gs
+                 let bc := barrierDepth c + 1
+                 let gs' := tagCutsGoals bc profileGoals
+                 let newgoals := gs' ++ [Goal.eq res t] ++ rest
+                 { c with cur := some (newgoals, b),
+                          world := profileWorld,
+                          counter := advanceCounterPastGoals (max c.counter m)
+                            (profileGoals ++ [Goal.eq res t] ++ rest) }
+             | .error _ =>
+                 -- Accepted but untranslatable source data is the identity.
+                 let data := chainify code
+                 { c with cur := some (Goal.eq res data :: rest, b),
+                          counter := advanceCounterPastAtoms c.counter [data] })
     | .catchg tmpl sub res =>
         match catchDirect? gt b tmpl sub with
         | some (.error err) =>

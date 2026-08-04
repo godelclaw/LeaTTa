@@ -332,38 +332,46 @@ theorem step_wact (c : Conf) (op : String) (args : List Atom) (res : Atom)
 theorem step_evalg (c : Conf) (v res : Atom) (rest : List Goal) (b : Subst)
     (h : c.cur = some (Goal.evalg v res :: rest, b)) :
     Step prog gt c (step prog gt fuel c) := by
-  cases hce : compileExprFresh (runtimeEnv c.world gt) (c.counter + 1)
-      (unchainify 10000 (subst b v)) with
-  | ok val =>
-      obtain ⟨t, gs, m⟩ := val
-      cases hsp : specializeGoals (specializationIsBin gt)
-          specializationBuildFuel c.world gs with
-      | mk profileWorld profileGoals =>
-          let newgoals := tagCutsGoals (barrierDepth c + 1) profileGoals
-            ++ [Goal.eq res t] ++ rest
-          have hstep : step prog gt fuel c
-              = { cur := some (newgoals, b), alts := c.alts,
-                  world := profileWorld,
-                  counter := advanceCounterPastGoals (max c.counter m)
-                    (profileGoals ++ [Goal.eq res t] ++ rest),
-                  qterm := c.qterm,
-                  answers := c.answers,
-                  answerKeys := c.answerKeys,
-                  answerKeys_sound := c.answerKeys_sound,
-                  barriers := c.barriers } := by
-            unfold step; rw [h]; simp only [hce, hsp, newgoals]
-          rw [hstep]
-          exact Step.evalg_ok c v res rest b t gs m profileWorld profileGoals
-            newgoals h hce hsp rfl
-  | error e =>
-      have hstep : step prog gt fuel c
-          = { c with cur := some (Goal.eq res (chainify (unchainify 10000 (subst b v)))
-                       :: rest, b),
-                     counter := advanceCounterPastAtoms c.counter
-                       [chainify (unchainify 10000 (subst b v))] } := by
-        unfold step; rw [h]; simp only [hce]
+  cases hi : prepareEvalInput? runtimeEvalUnchainifyFuel (subst b v) with
+  | none =>
+      have hstep : step prog gt fuel c = pull { c with cur := none } := by
+        unfold step
+        rw [h]
+        simp only [hi]
       rw [hstep]
-      exact Step.evalg_err c v res rest b e h hce _ rfl
+      exact Step.evalg_compound_reject c v res rest b h hi
+  | some code =>
+      cases hce : compileExprFresh (runtimeEnv c.world gt) (c.counter + 1)
+          code with
+      | ok val =>
+          obtain ⟨t, gs, m⟩ := val
+          cases hsp : specializeGoals (specializationIsBin gt)
+              specializationBuildFuel c.world gs with
+          | mk profileWorld profileGoals =>
+              let newgoals := tagCutsGoals (barrierDepth c + 1) profileGoals
+                ++ [Goal.eq res t] ++ rest
+              have hstep : step prog gt fuel c
+                  = { cur := some (newgoals, b), alts := c.alts,
+                      world := profileWorld,
+                      counter := advanceCounterPastGoals (max c.counter m)
+                        (profileGoals ++ [Goal.eq res t] ++ rest),
+                      qterm := c.qterm,
+                      answers := c.answers,
+                      answerKeys := c.answerKeys,
+                      answerKeys_sound := c.answerKeys_sound,
+                      barriers := c.barriers } := by
+                unfold step; rw [h]; simp only [hi, hce, hsp, newgoals]
+              rw [hstep]
+              exact Step.evalg_ok c v res rest b code t gs m profileWorld
+                profileGoals newgoals h hi hce hsp rfl
+      | error e =>
+          have hstep : step prog gt fuel c
+              = { c with cur := some (Goal.eq res (chainify code) :: rest, b),
+                         counter := advanceCounterPastAtoms c.counter
+                           [chainify code] } := by
+            unfold step; rw [h]; simp only [hi, hce]
+          rw [hstep]
+          exact Step.evalg_err c v res rest b code e h hi hce _ rfl
 
 theorem step_ite (c : Conf) (cond : Atom) (thn els : Atom × List Goal)
     (res : Atom) (rest : List Goal) (b : Subst)

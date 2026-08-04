@@ -322,6 +322,71 @@ def unchainify (fuel : Nat) (a : Atom) : Atom :=
             | Atom.expr es => Atom.expr (es.map (unchainify fuel))
             | a => a
 
+/-- Shared depth bound for reconstructing source syntax at runtime `eval/2`.
+
+`unchainify` is information-preserving when this bound is exhausted: it
+retains the residual internal representation rather than fabricating or
+dropping syntax. Naming the bound keeps the specification and both executors
+on exactly the same classifier. -/
+def runtimeEvalUnchainifyFuel : Nat := 10000
+
+/-- Prepare one resolved runtime value for pinned `eval/2`.
+
+Pinned `translate_expr/3` accepts variables, atomic values, proper lists, and
+exact `partial/2` compounds.  Internal proper lists must therefore be
+unchainified back to source syntax, while a tagged `partial/2` must retain its
+compound identity and variable sharing.  Every other tagged Prolog compound
+is rejected: it is neither a literal accepted by the first source clause nor
+a proper list accepted by the recursive clause.
+
+Certified retract syntax is rejected as well.  It is a PLeaTTa-only internal
+provenance carrier, not runtime MeTTa code.
+[SPEC translator.pl:96-97; metta.pl:251-253] -/
+def prepareEvalInput? (fuel : Nat) (a : Atom) : Option Atom :=
+  match partialView? a with
+  | some _ => some a
+  | none =>
+      match prologCompoundView? a with
+      | some _ => none
+      | none =>
+          match reservedSyntaxView? a with
+          | some _ => none
+          | none => some (unchainify fuel a)
+
+/-- Exact `partial/2` values pass through runtime eval preparation unchanged. -/
+@[simp] theorem prepareEvalInput?_partialC (fuel : Nat) (functor : String)
+    (encodedArgs : Atom) :
+    prepareEvalInput? fuel (partialC functor encodedArgs) =
+      some (partialC functor encodedArgs) := by
+  simp [prepareEvalInput?]
+
+/-- A tagged Prolog compound that is not exact `partial/2` is rejected. -/
+theorem prepareEvalInput?_prologCompound_of_not_partial (fuel : Nat)
+    (functor : String) (encodedArgs : Atom)
+    (notPartial : partialView? (prologCompoundC functor encodedArgs) = none) :
+    prepareEvalInput? fuel (prologCompoundC functor encodedArgs) = none := by
+  simp [prepareEvalInput?, notPartial]
+
+/-- Certified internal syntax is never reinterpreted as runtime MeTTa code. -/
+@[simp] theorem prepareEvalInput?_reservedSyntaxC (fuel : Nat)
+    (functor : String) (encodedArgs : Atom) :
+    prepareEvalInput? fuel (reservedSyntaxC functor encodedArgs) = none := by
+  simp [prepareEvalInput?, reservedSyntaxC, reservedSyntaxTagA,
+    partialView?, prologCompoundView?, reservedSyntaxView?]
+
+/-- Proper-list provenance, including a source list spelled `partial`, cannot
+forge the live Prolog-compound path. -/
+theorem prepareEvalInput?_chainOf (fuel : Nat) (atoms : List Atom) :
+    prepareEvalInput? fuel (chainOf atoms) =
+      some (unchainify fuel (chainOf atoms)) := by
+  cases atoms with
+  | nil =>
+      simp [prepareEvalInput?, chainOf, nilA, partialView?,
+        prologCompoundView?, reservedSyntaxView?]
+  | cons head tail =>
+      simp [prepareEvalInput?, chainOf, consC, partialView?,
+        prologCompoundView?, reservedSyntaxView?]
+
 @[simp] theorem unchainify_sym (fuel : Nat) (name : String) :
     unchainify fuel (.sym name) = .sym name := by
   cases fuel <;> rfl

@@ -396,15 +396,22 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
         partialView? (subst b hd) ≠ some (base, boundList))
       (g : Goal) (hg : g = Goal.eq res (chainOf (subst b hd :: args))) :
       Step prog gt c { c with cur := some (g :: rest, b) }
-  -- meta-circular eval [SPEC metta.pl:245]: re-compile the runtime value
-  -- against the live definitions and splice the cut-tagged goals, preserving
-  -- caller variables so `reduce/2` can bind variables inside its input term.
+  -- meta-circular eval [SPEC translator.pl:96-97; metta.pl:251-253]: preserve
+  -- exact partial/2 compounds, reject other tagged compounds, and re-compile
+  -- accepted runtime code against the live definitions.  Rejection is
+  -- ordinary Prolog failure, so it backtracks without effects or allocation.
+  | evalg_compound_reject (c : Conf) (v res : Atom) (rest : List Goal)
+      (b : Subst)
+      (h : c.cur = some (Goal.evalg v res :: rest, b))
+      (hi : prepareEvalInput? runtimeEvalUnchainifyFuel (subst b v) = none) :
+      Step prog gt c (pull { c with cur := none })
   | evalg_ok (c : Conf) (v res : Atom) (rest : List Goal) (b : Subst)
-      (t : Atom) (gs : List Goal) (m : Nat) (profileWorld : PWorld)
+      (code t : Atom) (gs : List Goal) (m : Nat) (profileWorld : PWorld)
       (profileGoals newgoals : List Goal)
       (h : c.cur = some (Goal.evalg v res :: rest, b))
+      (hi : prepareEvalInput? runtimeEvalUnchainifyFuel (subst b v) = some code)
       (ho : compileExprFresh (runtimeEnv c.world gt) (c.counter + 1)
-              (unchainify 10000 (subst b v)) = .ok (t, gs, m))
+              code = .ok (t, gs, m))
       (hs : specializeGoals (specializationIsBin gt) specializationBuildFuel
               c.world gs = (profileWorld, profileGoals))
       (hng : newgoals = tagCutsGoals (barrierDepth c + 1) profileGoals
@@ -414,15 +421,16 @@ inductive Step (prog : Prog) (gt : GroundingTable) : Conf → Conf → Prop wher
                  counter := advanceCounterPastGoals (max c.counter m)
                    (profileGoals ++ [Goal.eq res t] ++ rest) }
   | evalg_err (c : Conf) (v res : Atom) (rest : List Goal) (b : Subst)
-      (e : String)
+      (code : Atom) (e : String)
       (h : c.cur = some (Goal.evalg v res :: rest, b))
+      (hi : prepareEvalInput? runtimeEvalUnchainifyFuel (subst b v) = some code)
       (ho : compileExprFresh (runtimeEnv c.world gt) (c.counter + 1)
-              (unchainify 10000 (subst b v)) = .error e)
-      (g : Goal) (hg : g = Goal.eq res (chainify (unchainify 10000 (subst b v)))) :
+              code = .error e)
+      (g : Goal) (hg : g = Goal.eq res (chainify code)) :
       Step prog gt c
         { c with cur := some (g :: rest, b),
                  counter := advanceCounterPastAtoms c.counter
-                   [chainify (unchainify 10000 (subst b v))] }
+                   [chainify code] }
   -- catchg, direct fast path: caught grounded errors become values; ordinary
   -- successful direct answers are replayed as alternatives.
   | catch_direct_error (c : Conf) (tmpl : Atom) (sub : List Goal) (res : Atom)

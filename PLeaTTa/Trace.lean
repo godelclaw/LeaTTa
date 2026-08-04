@@ -32,7 +32,9 @@ get-type/get-metatype (oracle-shaped machine ops). `catchg` normal answers
 are projected as ordinary sub-derivations; caught runtime/type exceptions
 remain outside this SLD certificate lane. `evalg` is projected through a
 trusted wrapper whose dynamically compiled positive sub-derivation is still
-checked against emitted aux clauses.
+checked against emitted aux clauses. The wrapper shares the sealed runtime's
+input classifier, so a value rejected by runtime `eval/2` cannot acquire a
+certificate through this reconstruction lane.
 -/
 import PLeaTTa.Machine
 import PLeaTTa.Builtins
@@ -468,20 +470,25 @@ partial def solve {α : Type} (env : PEnv) (g : WAtom) (b : Subst)
   else if g.rel == "eval_t" then
     match g.args with
     | [v, res] =>
-        let vv := unchainify 10000 (subst b v)
-        let start ← env.freshK
-        match compileExprFresh env.cenv start vv with
-        | .ok (t, gs, n') =>
-            env.kref.set n'
-            let projStart ← env.freshK
-            let (body, st) := (projGoals (gs ++ [Goal.eq res t])).run { k := projStart }
-            env.kref.set st.k
-            let aux := st.aux
-            let env' := { env with cs := (env.cs.toList ++ aux).toArray }
-            solveSeq env' body b (fun kids b2 => cont (.tnode g aux kids) b2)
-        | .error _ =>
-            let idGoal : WAtom := ⟨"ueq", [res, chainify vv]⟩
-            solve env idGoal b (fun kid b2 => cont (.tnode g [] [kid]) b2)
+        match prepareEvalInput? runtimeEvalUnchainifyFuel (subst b v) with
+        | none => return none
+        | some code =>
+            let start ← env.freshK
+            match compileExprFresh env.cenv start code with
+            | .ok (t, gs, n') =>
+                env.kref.set n'
+                let projStart ← env.freshK
+                let (body, st) :=
+                  (projGoals (gs ++ [Goal.eq res t])).run { k := projStart }
+                env.kref.set st.k
+                let aux := st.aux
+                let env' := { env with cs := (env.cs.toList ++ aux).toArray }
+                solveSeq env' body b
+                  (fun kids b2 => cont (.tnode g aux kids) b2)
+            | .error _ =>
+                let idGoal : WAtom := ⟨"ueq", [res, chainify code]⟩
+                solve env idGoal b
+                  (fun kid b2 => cont (.tnode g [] [kid]) b2)
     | _ => return none
   else
     tryCl env g b 0 cont

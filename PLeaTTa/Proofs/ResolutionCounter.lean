@@ -2774,10 +2774,13 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
     intro c head args res rest binding base boundList hcur hnotSymbol
       hpartial hbound below
     exact below.clearActive.pull
+  case evalg_compound_reject =>
+    intro c value res rest binding hcur hinput below
+    exact below.clearActive.pull
   case evalg_ok =>
-    intro c value res rest binding translated compiled compilerCounter
-      profileWorld profileGoals newGoals hcur hcompile hspecialize hnewGoals
-      below
+    intro c value res rest binding code translated compiled compilerCounter
+      profileWorld profileGoals newGoals hcur hinput hcompile hspecialize
+      hnewGoals below
     subst newGoals
     let scannedGoals := profileGoals ++ [Goal.eq res translated] ++ rest
     let counter := advanceCounterPastGoals (max c.counter compilerCounter)
@@ -2814,9 +2817,10 @@ theorem Step.preserves_belowResolutionCounter {prog : Prog}
     · exact Nat.le_trans below.qterm hcounter
     · exact Nat.le_trans below.answers hcounter
   case evalg_err =>
-    intro c value res rest binding message hcur hcompile goal hgoal below
+    intro c value res rest binding code message hcur hinput hcompile goal
+      hgoal below
     subst goal
-    let data := chainify (unchainify 10000 (subst binding value))
+    let data := chainify code
     let counter := advanceCounterPastAtoms c.counter [data]
     have hcounter : c.counter ≤ counter :=
       advanceCounterPastAtoms_mono c.counter [data]

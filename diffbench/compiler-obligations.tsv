@@ -85,7 +85,7 @@ APP.unique	T76-77	X	-	N	GAP	exact-rewrite-value-differential-pass; independent-r
 APP.union	T80-82	X	TranslatesBinaryStream	SC	GAP	nonempty-literal-branch-fragment-sound-complete; empty-and-effectful-branches-open
 APP.intersection	T83-85	X	TranslatesBinaryStream	SC	GAP	nonempty-literal-branch-fragment-sound-complete; empty-and-effectful-branches-open
 APP.subtraction	T86-88	X	TranslatesBinaryStream	SC	GAP	nonempty-literal-branch-fragment-sound-complete; empty-and-effectful-branches-open
-APP.eval	T293-295,M251-253	S	TranslatesExpr.eval	SC	PASS	literal-symbol-head-one-argument-raw-code-preserved-and-runtime-staged; partial-compound-runtime-gap-is-MISS.eval_partial_roundtrip
+APP.eval	T293-295,M251-253	S	TranslatesExpr.eval	SC	PASS	literal-symbol-head-one-argument-raw-code-preserved-and-runtime-staged; runtime-value-provenance-boundary-is-MISS.eval_partial_roundtrip-and-MISS.eval_compound_provenance
 APP.catch	T300-308	X	-	N	GAP	catch-goal-agreement-missing
 APP.call	T278-283	S	-	N	GAP	superpose-dispatch-runtime-pass; general-typed-argument-staging-unproved
 APP.reduce	T285-291	S	-	N	FAIL	incorrectly-aliased-to-eval
@@ -166,4 +166,5 @@ SEQ.fact	F27-30	X	-	N	GAP	program-reference-missing
 APP.alpha_unique	T78-79	X	-	N	GAP	exact-rewrite-value-differential-pass; independent-rule-open
 MISS.sealed	T191-192	M	-	N	FAIL	pinned-translation-absent
 MISS.dynamic_lambda_eval	T225-261	M	-	N	FAIL	prepass-only-runtime-code-bypasses-translation
-MISS.eval_partial_roundtrip	T293-295,M251-253	M	-	N	FAIL	runtime-unchainify-erases-partial-compound-identity
+MISS.eval_partial_roundtrip	T293-295,M251-253	M	PrologPartialCompoundProvenanceRegression.exact_partial_eval_inputs_are_preserved	SH	GAP	exact-partial-compound-identity-preserved-through-classifier-sealed-step-and-all-executable-evaluators-with-live-parity; independent-source-observation-composition-open
+MISS.eval_compound_provenance	T96-97,M251-253	M	PrologPartialCompoundProvenanceRegression.nonpartial_eval_inputs_are_rejected;PrologPartialCompoundProvenanceRegression.source_partial_list_cannot_forge_eval_compound;PrologPartialCompoundProvenanceRegression.variable_eval_input_is_preserved;PrologPartialCompoundProvenanceRegression.nonpartial_compound_eval_step_exact;PrologPartialCompoundProvenanceRegression.nonpartial_compound_eval_step_is_licensed	SH	GAP	ordinary-and-wrong-arity-prolog-compounds-fail-while-source-lists-and-variables-follow-distinct-accepted-paths-with-exact-live-parity; independent-source-observation-composition-open

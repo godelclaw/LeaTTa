@@ -735,9 +735,15 @@ theorem Step.preserves_confTopological {prog : Prog} {gt : GroundingTable}
       · exact htop.2
   | callDyn_data c hd args res rest b h hns hnp g hg =>
       exact htop.replaceActive h
-  | evalg_ok c v res rest b t gs m profileWorld profileGoals newgoals h ho hs hng =>
+  | evalg_compound_reject c v res rest b h hi =>
+      apply ConfTopological.pull
+      constructor
+      · intro goals branchSubst hcur
+        simp at hcur
+      · exact htop.2
+  | evalg_ok c v res rest b code t gs m profileWorld profileGoals newgoals h hi ho hs hng =>
       apply ConfTopological.frame (htop.replaceActive h) <;> rfl
-  | evalg_err c v res rest b e h ho g hg =>
+  | evalg_err c v res rest b code e h hi ho g hg =>
       exact htop.replaceActive h
   | catch_direct_error c tmpl sub res rest b err h hc =>
       apply ConfTopological.frame (htop.replaceActive h) <;> rfl

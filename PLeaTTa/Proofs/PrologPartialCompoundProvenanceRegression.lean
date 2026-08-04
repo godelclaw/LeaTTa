@@ -31,6 +31,18 @@ private def openPredicatePartial : Atom :=
 private def malformedPredicatePartial : Atom :=
   prologCompoundC "partial" (chainOf [.sym "f", .sym "malformed"])
 
+private def ordinaryPredicateCompound : Atom :=
+  prologCompoundC "probe" (chainOf [.sym "value"])
+
+private def oneFieldPartialCompound : Atom :=
+  prologCompoundC "partial" (chainOf [.sym "only-one-field"])
+
+private def threeFieldPartialCompound : Atom :=
+  prologCompoundC "partial" (chainOf [.sym "one", .sym "two", .sym "three"])
+
+private def sourcePartialList : Atom :=
+  chainOf [.sym "partial", .sym "f", nilA]
+
 private def sourceIdentity (name : String) : LogicVar :=
   .source name
 
@@ -126,5 +138,87 @@ theorem malformed_partial_application_fails
   · simp [malformedPredicatePartial, partialView?, prologCompoundC,
       prologCompoundTagA, chainOf, consC, nilA]
   · rfl
+
+/-! Runtime `eval/2` provenance boundary. -/
+
+/-- Exact `partial/2` compounds, including malformed bound-argument fields,
+remain live compounds when passed back through runtime eval. -/
+theorem exact_partial_eval_inputs_are_preserved :
+    prepareEvalInput? runtimeEvalUnchainifyFuel compiledPartial =
+        some compiledPartial ∧
+      prepareEvalInput? runtimeEvalUnchainifyFuel malformedPredicatePartial =
+        some malformedPredicatePartial := by
+  constructor
+  · change prepareEvalInput? runtimeEvalUnchainifyFuel (partialC "f" nilA) =
+      some (partialC "f" nilA)
+    exact prepareEvalInput?_partialC runtimeEvalUnchainifyFuel "f" nilA
+  · change prepareEvalInput? runtimeEvalUnchainifyFuel
+      (partialC "f" (.sym "malformed")) =
+      some (partialC "f" (.sym "malformed"))
+    exact prepareEvalInput?_partialC runtimeEvalUnchainifyFuel "f"
+      (.sym "malformed")
+
+/-- An ordinary Predicate-built compound and same-named `partial` compounds
+of the wrong arity all take the rejection side of the pinned eval boundary. -/
+theorem nonpartial_eval_inputs_are_rejected :
+    prepareEvalInput? runtimeEvalUnchainifyFuel ordinaryPredicateCompound = none ∧
+      prepareEvalInput? runtimeEvalUnchainifyFuel oneFieldPartialCompound = none ∧
+      prepareEvalInput? runtimeEvalUnchainifyFuel threeFieldPartialCompound = none := by
+  constructor
+  · apply prepareEvalInput?_prologCompound_of_not_partial
+    rfl
+  constructor
+  · apply prepareEvalInput?_prologCompound_of_not_partial
+    rfl
+  · apply prepareEvalInput?_prologCompound_of_not_partial
+    rfl
+
+/-- A forgeable source list visibly spelled `partial` follows the ordinary
+list path and remains distinct from the live `partial/2` compound. -/
+theorem source_partial_list_cannot_forge_eval_compound :
+    prepareEvalInput? runtimeEvalUnchainifyFuel sourcePartialList =
+        some (unchainify runtimeEvalUnchainifyFuel sourcePartialList) ∧
+      sourcePartialList ≠ compiledPartial := by
+  constructor
+  · simpa [sourcePartialList] using
+      prepareEvalInput?_chainOf runtimeEvalUnchainifyFuel
+        [.sym "partial", .sym "f", nilA]
+  · intro equality
+    have distinguished := congrArg chainListM equality
+    simp [sourcePartialList, compiledPartial] at distinguished
+
+/-- Runtime variables cross the classifier unchanged; it does not ground or
+rename them before the live compiler receives the code value. -/
+theorem variable_eval_input_is_preserved :
+    prepareEvalInput? runtimeEvalUnchainifyFuel (.var "unbound") =
+      some (.var "unbound") := by
+  rfl
+
+/-- The executable takes exactly the ordinary failure/backtracking transition
+for a non-partial compound.  No identity fallback can manufacture an answer. -/
+theorem nonpartial_compound_eval_step_exact
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable) (fuel : Nat)
+    (c : PLeaTTa.Conf) (res : Atom) (rest : List PLeaTTa.Goal)
+    (current : c.cur = some
+      (PLeaTTa.Goal.evalg ordinaryPredicateCompound res :: rest,
+        ([] : Metta.Subst))) :
+    PLeaTTa.step prog gt fuel c = PLeaTTa.pull { c with cur := none } := by
+  unfold PLeaTTa.step
+  rw [current]
+  simp only [PLeaTTa.subst_nil, nonpartial_eval_inputs_are_rejected]
+
+/-- The concrete rejection transition is also an inhabitant of the sealed
+relational semantics, rather than an executable-only special case. -/
+theorem nonpartial_compound_eval_step_is_licensed
+    (prog : PLeaTTa.Prog) (gt : Metta.GroundingTable)
+    (c : PLeaTTa.Conf) (res : Atom) (rest : List PLeaTTa.Goal)
+    (current : c.cur = some
+      (PLeaTTa.Goal.evalg ordinaryPredicateCompound res :: rest,
+        ([] : Metta.Subst))) :
+    PLeaTTa.Step prog gt c (PLeaTTa.pull { c with cur := none }) := by
+  apply PLeaTTa.Step.evalg_compound_reject c ordinaryPredicateCompound res
+    rest [] current
+  simpa only [PLeaTTa.subst_nil] using
+    nonpartial_eval_inputs_are_rejected.1
 
 end PLeaTTa.PrologPartialCompoundProvenanceRegression

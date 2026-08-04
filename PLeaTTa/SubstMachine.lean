@@ -2807,26 +2807,28 @@ def stepWith (engine : SubstEngine) (prog : Prog) (gt : GroundingTable)
     | .evalg value res =>
         let valueResult := engine.subst state value
         let next := valueResult.2
-        let evaluated := unchainify 10000 valueResult.1
-        match compileExprFresh (runtimeEnv c.world gt) (c.counter + 1)
-            evaluated with
-        | .ok (term, goals, counter') =>
-            let (profileWorld, profileGoals) :=
-              specializeGoals (specializationIsBin gt)
-                specializationBuildFuel c.world goals
-            let barrier := barrierDepth c + 1
-            let tagged := tagCutsGoals barrier profileGoals
-            let newgoals := tagged ++ [Goal.eq res term] ++ rest
-            { c with
-              cur := some (newgoals, next)
-              world := profileWorld
-              counter := advanceCounterPastGoals (max c.counter counter')
-                (profileGoals ++ [Goal.eq res term] ++ rest) }
-        | .error _ =>
-            let data := chainify evaluated
-            { c with
-              cur := some (Goal.eq res data :: rest, next)
-              counter := advanceCounterPastAtoms c.counter [data] }
+        match prepareEvalInput? runtimeEvalUnchainifyFuel valueResult.1 with
+        | none => pull { c with cur := none }
+        | some code =>
+            match compileExprFresh (runtimeEnv c.world gt) (c.counter + 1)
+                code with
+            | .ok (term, goals, counter') =>
+                let (profileWorld, profileGoals) :=
+                  specializeGoals (specializationIsBin gt)
+                    specializationBuildFuel c.world goals
+                let barrier := barrierDepth c + 1
+                let tagged := tagCutsGoals barrier profileGoals
+                let newgoals := tagged ++ [Goal.eq res term] ++ rest
+                { c with
+                  cur := some (newgoals, next)
+                  world := profileWorld
+                  counter := advanceCounterPastGoals (max c.counter counter')
+                    (profileGoals ++ [Goal.eq res term] ++ rest) }
+            | .error _ =>
+                let data := chainify code
+                { c with
+                  cur := some (Goal.eq res data :: rest, next)
+                  counter := advanceCounterPastAtoms c.counter [data] }
     | .catchg tmpl sub res =>
         match catchDirect? gt (engine.denote state) tmpl sub with
         | some (.error err) =>
@@ -3749,33 +3751,41 @@ theorem erase_stepWith_of_run (engine : SubstEngine) (prog : Prog)
                   simp only [stepWith, valueResult, erase, mapConf_fields,
                     Option.map_some, reference_subst]
                   rw [← valueEq]
-                  cases compiled : compileExprFresh (runtimeEnv world gt)
-                      (counter + 1) (unchainify 10000 evaluated) with
-                  | error failure =>
-                      simp [mapConf, valueDenote]
-                      rfl
-                  | ok output =>
-                      rcases output with ⟨term, compiledGoals, nextCounter⟩
-                      let profile := specializeGoals (specializationIsBin gt)
-                        specializationBuildFuel world compiledGoals
-                      have mapped := mapConf_barrierCurrent engine.denote
-                        { cur := some (Goal.evalg value res :: rest, state)
-                          alts := alts
-                          world := world
-                          counter := counter
-                          qterm := qterm
-                          answers := answers
-                          answerKeys := answerKeys
-                          answerKeys_sound := answerKeys_sound
-                          barriers := barriers }
-                        (fun barrier =>
-                          tagCutsGoals (barrier + 1) profile.2 ++
-                            [Goal.eq res term] ++ rest)
-                        next profile.1
-                        (advanceCounterPastGoals (max counter nextCounter)
-                          (profile.2 ++ [Goal.eq res term] ++ rest))
-                      rw [valueDenote] at mapped
-                      exact mapped
+                  cases prepared : prepareEvalInput? runtimeEvalUnchainifyFuel evaluated with
+                  | none =>
+                      rw [mapConf_pull]
+                      simp [mapConf]
+                      apply congrArg pull
+                      apply Conf.ext <;> rfl
+                  | some code =>
+                      cases compiled : compileExprFresh (runtimeEnv world gt)
+                          (counter + 1) code with
+                      | error failure =>
+                          simp [compiled, mapConf, valueDenote]
+                          rfl
+                      | ok output =>
+                          rcases output with ⟨term, compiledGoals, nextCounter⟩
+                          let profile := specializeGoals (specializationIsBin gt)
+                            specializationBuildFuel world compiledGoals
+                          have mapped := mapConf_barrierCurrent engine.denote
+                            { cur := some (Goal.evalg value res :: rest, state)
+                              alts := alts
+                              world := world
+                              counter := counter
+                              qterm := qterm
+                              answers := answers
+                              answerKeys := answerKeys
+                              answerKeys_sound := answerKeys_sound
+                              barriers := barriers }
+                            (fun barrier =>
+                              tagCutsGoals (barrier + 1) profile.2 ++
+                                [Goal.eq res term] ++ rest)
+                            next profile.1
+                            (advanceCounterPastGoals (max counter nextCounter)
+                              (profile.2 ++ [Goal.eq res term] ++ rest))
+                          rw [valueDenote] at mapped
+                          simp only [compiled]
+                          exact mapped
           | catchg tmpl sub res =>
               let base : Conf engine.State :=
                 { cur := some (Goal.catchg tmpl sub res :: rest, state)
