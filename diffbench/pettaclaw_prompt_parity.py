@@ -31,6 +31,10 @@ def lastMessageIsHuman():
     return 1
 
 
+def lastMessageArmLoops():
+    return 50
+
+
 def recent_activity(*args):
     return "fixture recent activity"
 '''

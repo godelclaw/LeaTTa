@@ -2,6 +2,7 @@
   "allow": [
     "dict",
     "eval",
+    "fsops.read_file",
     "goals.goals_view",
     "goals.kernel_pass",
     "helper.balance_parentheses",
@@ -13,6 +14,7 @@
     "helper.recycle_requested",
     "helper.strip_trailing_affect",
     "operator.add",
+    "pins.view",
     "str"
   ],
   "responses": [
@@ -33,8 +35,8 @@
       "value": {"integer": {"value": 1}}
     },
     {
-      "spec": "telegram.lastMessageArmsLightly",
-      "value": {"integer": {"value": 0}}
+      "spec": "telegram.lastMessageArmLoops",
+      "value": {"integer": {"value": 50}}
     },
     {
       "spec": "synthetic_llm.current_model",
