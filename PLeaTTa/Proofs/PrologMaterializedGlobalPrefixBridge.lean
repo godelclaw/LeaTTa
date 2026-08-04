@@ -10,6 +10,7 @@ Main exports:
   MaterializedGlobalCertifiedPrefix,
   MaterializedGlobalCertifiedPrefix.activeCut,
   MaterializedGlobalCertifiedPrefix.committedAdministrative,
+  MaterializedGlobalCertifiedPrefix.committedBodyAnswer,
   MaterializedGlobalCertifiedPrefix.exists_committedUnify
 -/
 import PLeaTTa.Proofs.PrologScheduledSuccessPrefixBridge
@@ -28,6 +29,7 @@ open PrologHeterogeneousPrefixBridge
 open PrologOrdinaryStepBridge
 open PrologPersistentFreeActivePayloadBridge
 open PrologPersistentFreeCommittedPayloadBridge
+open PrologPersistentFreeCommittedScheduledPayloadBridge
 open PrologPersistentFreeCommittedUnifyTransitionBridge
 open PrologScheduledSuccessPrefixBridge
 
@@ -35,9 +37,10 @@ open PrologScheduledSuccessPrefixBridge
 `ResolverPhaseState` deliberately contains only live source/executable state.
 It must not grow a second active/committed constructor merely to remember a
 proof about the current residual body.  The predicate below recovers that
-proof obligation from the literal state index.  Scheduled and post-failure
-states have no executing clause body, so the obligation is vacuous there;
-every transition which enters an active body must establish it anew.
+proof obligation from the literal state index.  Scheduled,
+committed-scheduled, and post-failure states have no executing clause body, so
+the obligation is vacuous there; every transition which enters an active body
+must establish it anew.
 -/
 
 /-- Whole-body equality materialization at precisely the phases where a local
@@ -54,6 +57,7 @@ def MaterializedPhaseInvariant : ResolverPhaseState → Prop
         state.carrier.index.runtime state.carrier.index.bodyBarrier
         state.carrier.index.bodyReferences state.carrier.index.bodyExecutables
   | .ordinary (.scheduled _) => True
+  | .ordinary (.committedScheduled _) => True
   | .postFailure _ => True
 
 /-- A proof-relevant global prefix carrying materialization at every literal
@@ -212,6 +216,24 @@ def committedAdministrative
   single before.materializedUnifyGoals
     (.committedAdministrative before.carrier positive steps)
     (before.afterAdministrative steps).materializedUnifyGoals
+
+/-- A successful post-cut body exits the materialized executing phases.  The
+source schedules its caller in one private step while the fine machine is
+already at the same continuation. -/
+def committedBodyAnswer
+    {prog : PLeaTTa.Prog} {gt : Metta.GroundingTable}
+    (before : MaterializedRepresentativePersistentFreeCommittedPayloadState)
+    (referenceEmpty : before.carrier.carrier.index.bodyReferences = [])
+    (executableEmpty : before.carrier.carrier.index.bodyExecutables = []) :
+    MaterializedGlobalCertifiedPrefix prog gt [.committedBodyAnswer]
+      (.ordinary (.committed before.carrier))
+      (.ordinary
+        (.committedScheduled
+          (RepresentativePersistentFreeCommittedPayloadState.afterBodyAnswer
+            prog gt before.carrier referenceEmpty executableEmpty))) :=
+  single before.materializedUnifyGoals
+    (.committedBodyAnswer before.carrier referenceEmpty executableEmpty)
+    trivial
 
 /-- One selected primitive equality preserves whole-body materialization at
 the literal successor.  The producer remains existential because its MGU and

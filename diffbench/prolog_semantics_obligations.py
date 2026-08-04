@@ -379,6 +379,10 @@ PROLOG_PERSISTENT_FREE_COMMITTED_PAYLOAD_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologPersistentFreeCommittedPayloadBridge.lean"
 )
+PROLOG_PERSISTENT_FREE_COMMITTED_SCHEDULED_PAYLOAD_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologPersistentFreeCommittedScheduledPayloadBridge.lean"
+)
 PROLOG_PERSISTENT_FREE_COMMITTED_UNIFY_TRANSITION_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologPersistentFreeCommittedUnifyTransitionBridge.lean"
@@ -624,6 +628,7 @@ STRICT_AXIOM_AUDIT_ROWS = {
     "BISIM.scheduled_phase_packet_free",
     "BISIM.packet_free_cut_commit",
     "BISIM.packet_free_committed_unify",
+    "BISIM.packet_free_committed_body_answer",
     "BISIM.root_closed_public_answer_value",
     "BISIM.answer_visibility_public",
     "BISIM.findall_collection_answer_general",
@@ -658,7 +663,7 @@ def packet_free_scheduled_consumer_errors() -> list[str]:
     errors: list[str] = []
     legacy_patterns = (
         ("legacy scheduled carrier", re.compile(
-            r"(?<!Free)ScheduledPayloadState")),
+            r"(?<![A-Za-z0-9_])(?:Representative)?ScheduledPayloadState")),
         ("scheduled one-way adapter", re.compile(
             r"PersistentFreeScheduledPayloadState\.ofLegacy")),
     )
@@ -957,6 +962,8 @@ def check() -> list[str]:
             digest(PROLOG_PERSISTENT_FREE_ACTIVE_PAYLOAD_BRIDGE),
         "prolog_persistent_free_committed_payload_bridge_sha256":
             digest(PROLOG_PERSISTENT_FREE_COMMITTED_PAYLOAD_BRIDGE),
+        "prolog_persistent_free_committed_scheduled_payload_bridge_sha256":
+            digest(PROLOG_PERSISTENT_FREE_COMMITTED_SCHEDULED_PAYLOAD_BRIDGE),
         "prolog_persistent_free_committed_unify_transition_bridge_sha256":
             digest(PROLOG_PERSISTENT_FREE_COMMITTED_UNIFY_TRANSITION_BRIDGE),
         "prolog_persistent_free_scheduled_payload_bridge_sha256":

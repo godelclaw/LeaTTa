@@ -3229,7 +3229,7 @@ def RecursiveInvariant : ProductPhaseState → Prop
         state = RepresentativePersistentFreeActivePayloadState.ofLegacy legacy ∧
           ∃ depth : Nat, ∃ executableResult : Atom,
             RecursiveReadyAt legacy depth executableResult
-  | .scheduled _ | .committed _ => False
+  | .scheduled _ | .committed _ | .committedScheduled _ => False
 
 /-- Coupled progress and invariant preservation for the self-recursive local
 clause.  The transition and next readiness share the literal `after` returned
@@ -3241,6 +3241,7 @@ theorem recursiveProgress
   cases phase with
   | scheduled state => simp [RecursiveInvariant] at invariant
   | committed state => simp [RecursiveInvariant] at invariant
+  | committedScheduled state => simp [RecursiveInvariant] at invariant
   | active before =>
       change
         ∃ legacy : RepresentativeActivePayloadState,

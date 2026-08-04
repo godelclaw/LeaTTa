@@ -2,9 +2,9 @@
 
 /-
 Module: PLeaTTa.Proofs.PrologHeterogeneousPrefixBridge
-Purpose: Expose exact active/scheduled/committed source-to-open-machine states
-  as Type-valued data and compose closed, kind-specific transitions through
-  an extractable finite-prefix zipper.
+Purpose: Expose exact active/scheduled/committed/committed-scheduled
+  source-to-open-machine states as Type-valued data and compose closed,
+  kind-specific transitions through an extractable finite-prefix zipper.
 Trusted boundary: none
 Main exports:
   ProductPhaseState,
@@ -17,6 +17,7 @@ import PLeaTTa.Proofs.PrologCurrentSessionPayloadTransitionBridge
 import PLeaTTa.Proofs.PrologCurrentSessionUnifyTransitionBridge
 import PLeaTTa.Proofs.PrologPersistentFreeActivePayloadBridge
 import PLeaTTa.Proofs.PrologPersistentFreeCommittedPayloadBridge
+import PLeaTTa.Proofs.PrologPersistentFreeCommittedScheduledPayloadBridge
 import PLeaTTa.Proofs.PrologPersistentFreeScheduledPayloadBridge
 
 namespace PLeaTTa.PrologHeterogeneousPrefixBridge
@@ -38,6 +39,7 @@ open PrologCurrentSessionUnifyTransitionBridge
 open PrologMguComposition
 open PrologPersistentFreeActivePayloadBridge
 open PrologPersistentFreeCommittedPayloadBridge
+open PrologPersistentFreeCommittedScheduledPayloadBridge
 open PrologPersistentFreeScheduledPayloadBridge
 open PrologNestedCallChainBridge
 open PrologNestedCallPrefixInductionBridge
@@ -582,7 +584,7 @@ def ofLegacy (state : RepresentativeCommittedPayloadState) :
 
 end RepresentativePersistentFreeCommittedPayloadState
 
-/-- The three ordinary product phases which are genuine state
+/-- The four ordinary product phases which are genuine state
 correspondences.  Post-failure and exhausted certificates are intentionally
 not forced into this type: the latter already relates a predecessor and a
 successor and will enter the later frontier-transition layer. -/
@@ -590,6 +592,8 @@ inductive ProductPhaseState where
   | active (state : RepresentativePersistentFreeActivePayloadState)
   | scheduled (state : RepresentativePersistentFreeScheduledPayloadState)
   | committed (state : RepresentativePersistentFreeCommittedPayloadState)
+  | committedScheduled
+      (state : RepresentativePersistentFreeCommittedScheduledPayloadState)
 
 namespace ProductPhaseState
 
@@ -597,21 +601,25 @@ def sourceState : ProductPhaseState → State
   | .active state => state.carrier.sourceState
   | .scheduled state => state.carrier.sourceState
   | .committed state => state.carrier.sourceState
+  | .committedScheduled state => state.carrier.sourceState
 
 def fineState : ProductPhaseState → DemandDrivenCallStep.FineConf
   | .active state => state.carrier.fineState
   | .scheduled state => state.carrier.fineState
   | .committed state => state.carrier.fineState
+  | .committedScheduled state => state.carrier.fineState
 
 def session : ProductPhaseState → Session
   | .active state => state.carrier.index.session
   | .scheduled state => state.carrier.index.session
   | .committed state => state.carrier.index.session
+  | .committedScheduled state => state.carrier.index.session
 
 def openConf : ProductPhaseState → OpenConf
   | .active state => state.carrier.index.openConf
   | .scheduled state => state.carrier.index.openConf
   | .committed state => state.carrier.index.openConf
+  | .committedScheduled state => state.carrier.index.openConf
 
 /-- Literal executable alternative suffix below every locally owned resource
 region.  Keeping this projection in the phase vocabulary lets rooted closure
@@ -621,6 +629,7 @@ def baseAlts : ProductPhaseState → List PLeaTTa.Alt
   | .active state => state.carrier.index.baseAlts
   | .scheduled state => state.carrier.index.baseAlts
   | .committed state => state.carrier.index.baseAlts
+  | .committedScheduled state => state.carrier.index.baseAlts
 
 /-- A locally rooted phase has no unowned executable alternative below its
 complete resource zipper. -/
@@ -631,21 +640,25 @@ def alpha : ProductPhaseState → List (LogicVar × String)
   | .active state => state.carrier.index.alpha
   | .scheduled state => state.carrier.index.alpha
   | .committed state => state.carrier.index.alpha
+  | .committedScheduled state => state.carrier.index.alpha
 
 def representative : ProductPhaseState → TreeSubstitution
   | .active state => state.representative
   | .scheduled state => state.representative
   | .committed state => state.representative
+  | .committedScheduled state => state.representative
 
 def cellIdentities : ProductPhaseState → List PayloadCellIdentity
   | .active state => state.carrier.cellIdentities
   | .scheduled state => state.carrier.cellIdentities
   | .committed state => state.carrier.cellIdentities
+  | .committedScheduled state => state.carrier.cellIdentities
 
 def cellCount : ProductPhaseState → Nat
   | .active state => state.carrier.cellCount
   | .scheduled state => state.carrier.cellCount
   | .committed state => state.carrier.cellCount
+  | .committedScheduled state => state.carrier.cellCount
 
 theorem cellIdentities_length (state : ProductPhaseState) :
     state.cellIdentities.length = state.cellCount := by
@@ -653,6 +666,7 @@ theorem cellIdentities_length (state : ProductPhaseState) :
   | active state => exact state.carrier.cellIdentities_length
   | scheduled state => exact state.carrier.cellIdentities_length
   | committed state => exact state.carrier.cellIdentities_length
+  | committedScheduled state => exact state.carrier.cellIdentities_length
 
 end ProductPhaseState
 

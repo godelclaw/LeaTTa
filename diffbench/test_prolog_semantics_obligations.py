@@ -86,6 +86,14 @@ class PacketFreeScheduledConsumerGuardTests(unittest.TestCase):
         self.assertTrue(errors)
         self.assertIn("PLeaTTa/Runtime/HiddenConsumer.lean", errors[0])
 
+    def test_committed_scheduled_carrier_is_not_legacy_scheduled(self) -> None:
+        errors = self.check_tree(other_sources={
+            "PLeaTTa/Proofs/NewPhase.lean":
+                "def native := "
+                "RepresentativePersistentFreeCommittedScheduledPayloadState\n",
+        })
+        self.assertEqual(errors, [])
+
 
 if __name__ == "__main__":
     unittest.main()
