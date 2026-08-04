@@ -738,6 +738,28 @@ theorem compileAppFuel_counter_step (fuel : Nat)
           omega
       · exact ih.appCore _ _ _ _ _ _ _ compiled
 
+/-- The `translatePredicate` staging helper preserves the compiler counter
+lower bound supplied by its ordered argument traversal. -/
+private theorem compileTranslatePredicateWith_counter
+    (fuel : Nat) (ih : CompilerCounterAt fuel)
+    (env : CEnv) (start : Nat) (goal term : Metta.Atom)
+    (goals : List Goal) (next : Nat)
+    (compiled : compileTranslatePredicateWith
+      (fun counter arguments =>
+        compileListFuel fuel env counter arguments)
+      start goal = .ok (term, goals, next)) :
+    start ≤ next := by
+  unfold compileTranslatePredicateWith at compiled
+  split at compiled <;> try contradiction
+  simp only [Bind.bind, Except.bind] at compiled
+  split at compiled
+  · contradiction
+  · rename_i listOutcome listValue listEq
+    have listCounter := ih.list _ _ _ _ _ _ listEq
+    simp only [fresh, Except.ok.injEq] at compiled
+    rcases compiled with ⟨_, _, rfl⟩
+    omega
+
 local macro "solve_app_core_counter" fuel:ident ih:ident : tactic => `(tactic|
   (intro env start head arguments term goals next classified compiled
    change compileAppCoreFuel (Nat.succ $fuel) env start head arguments =
@@ -777,6 +799,9 @@ local macro "solve_app_core_counter" fuel:ident ih:ident : tactic => `(tactic|
        (CompilerCounterAt.expr $ih _ _ _ _ _ _ (by assumption))
        (freshFold_result_counter _ _ _ (by
          simpa [fresh] using compiled.2.2))
+   all_goals try
+     exact compileTranslatePredicateWith_counter $fuel $ih
+       _ _ _ _ _ _ compiled
    all_goals grind [freshFold_counter_mono, foldlM_counter_mono]))
 
 private abbrev AppCoreCounterFor (fuel : Nat) (kind : AppCoreHead) : Prop :=

@@ -1056,6 +1056,24 @@ def compileAppDefaultWith
       -- [SPEC translator.pl:318-326].
       .ok (chainOf (Atom.sym head :: terms), goals, nextCounter)
 
+/-- Compile the argument staging performed by pinned `translatePredicate`.
+The outer Prolog functor remains data while its arguments are translated from
+left to right.  Keeping this eliminator outside the mutually recursive
+compiler also gives the core application dispatcher one stable branch.
+[SPEC translator.pl:271-275] -/
+def compileTranslatePredicateWith
+    (compileList : Nat → List Atom →
+      CompileM (List Atom × List Goal × Nat))
+    (counter : Nat) : Atom → CompileM (Atom × List Goal × Nat)
+  | Atom.expr (head :: arguments) => do
+      let (terms, goals, nextCounter) ← compileList counter arguments
+      let (result, finalCounter) := fresh nextCounter
+      let predicate := chainify (Atom.expr (head :: terms))
+      .ok (result,
+        goals ++ [Goal.bin "translatePredicate" [predicate] result],
+        finalCounter)
+  | _ => .error "translatePredicate: malformed goal"
+
 set_option maxHeartbeats 2000000 in
 mutual
 
@@ -1175,10 +1193,10 @@ def compileAppCoreFuel : Nat → CEnv → Nat → String → List Atom →
         let (r, n2) := fresh n1
         .ok (r, goals ++ [Goal.bin "Predicate" terms r], n2)
     | .hTranslatePredicate, [goal] => do
-        -- The argument is Prolog syntax, not a MeTTa subexpression.  Preserve it
-        -- as data and make the trusted-host boundary explicit at execution.
-        let (r, n1) := fresh n
-        .ok (r, [Goal.bin "translatePredicate" [chainify goal] r], n1)
+        compileTranslatePredicateWith
+          (fun counter arguments =>
+            compileListFuel fuel env counter arguments)
+          n goal
     | .hCallPredicate, [predicate] => do
         let (term, goals, n1) ← compileExprFuel fuel env n predicate
         let (r, n2) := fresh n1
@@ -2830,6 +2848,54 @@ theorem compileExprFuel_Predicate_eq (argumentFuel : Nat) (env : CEnv)
   rw [compileAppCoreFuel.eq_def]
   simp only [classifyAppCoreHead]
   rw [argumentCompiled]
+  rfl
+
+set_option maxHeartbeats 2000000 in
+/-- Pinned `translatePredicate` translates the arguments of the outer Prolog
+goal from left to right, preserves its functor as data, then appends exactly
+one host-dispatch goal.  The staged goals are observably before the call.
+[SPEC translator.pl:271-275] -/
+theorem compileExprFuel_translatePredicate_eq (argumentFuel : Nat)
+    (env : CEnv) (counter : Nat) (predicateHead : Atom)
+    (arguments terms : List Atom) (goals : List Goal) (nextCounter : Nat)
+    (noHook : env.translatorRules.contains "translatePredicate" = false)
+    (argumentsCompiled :
+      compileListFuel argumentFuel env counter arguments =
+        .ok (terms, goals, nextCounter)) :
+    compileExprFuel (argumentFuel + 3) env counter
+        (.expr [.sym "translatePredicate",
+          .expr (predicateHead :: arguments)]) =
+      .ok (.var s!"_q{nextCounter}",
+        goals ++ [Goal.bin "translatePredicate"
+          [chainify (Atom.expr (predicateHead :: terms))]
+          (.var s!"_q{nextCounter}")],
+        nextCounter + 1) := by
+  rw [show argumentFuel + 3 = (argumentFuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
+  rw [show argumentFuel + 2 = (argumentFuel + 1) + 1 by omega]
+  rw [compileAppFuel.eq_2]
+  simp only [noHook, Bool.false_eq_true, ↓reduceIte]
+  rw [compileAppCoreFuel.eq_def]
+  simp only [classifyAppCoreHead, compileTranslatePredicateWith,
+    Bind.bind, Except.bind]
+  rw [argumentsCompiled]
+  rfl
+
+set_option maxHeartbeats 2000000 in
+/-- A non-goal argument is rejected during translation rather than being
+forwarded as an arbitrary host term. -/
+theorem compileExprFuel_translatePredicate_malformed_eq (fuel : Nat)
+    (env : CEnv) (counter : Nat)
+    (noHook : env.translatorRules.contains "translatePredicate" = false) :
+    compileExprFuel (fuel + 3) env counter
+        (.expr [.sym "translatePredicate", .sym "not-a-goal"]) =
+      .error "translatePredicate: malformed goal" := by
+  rw [show fuel + 3 = (fuel + 2) + 1 by omega]
+  rw [compileExprFuel.eq_8 (x_4 := by simp)]
+  rw [show fuel + 2 = (fuel + 1) + 1 by omega]
+  rw [compileAppFuel.eq_2]
+  simp only [noHook, Bool.false_eq_true, ↓reduceIte]
+  rw [compileAppCoreFuel.eq_def]
   rfl
 
 set_option maxHeartbeats 2000000 in

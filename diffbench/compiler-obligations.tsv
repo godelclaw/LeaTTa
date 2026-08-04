@@ -1,5 +1,5 @@
 # pinned_petta_revision=6b7f52f064bdbc82fabd0a0998404121fb01d52e
-# compiler_sha256=7fae4adc140eb8c122129246746db8e786d9cc7eb742a89de13ecde87e013dd9
+# compiler_sha256=66f6290ee41d47686e0df1a567f4b749bb00a27e3cafbd5a6b5bcae03f508690
 # prolog_core_sha256=341a288728f4385dfc59b5f9f7f1167a662e89149fb0173c9e49282f155421f0
 # compiler_adequacy_sha256=9b53e75bd9ec46bc4a8be9d57ad630abe49882a10f50b8346cc84a73467675ca
 # compiler_translation_support_adequacy_sha256=96243bfa88601971fcc6187ab72a002409dd8bd4e6b914f4133b1dcdf69e07a8
@@ -41,7 +41,8 @@ PATLIST.nil	T20-22	X	ConstrainsPatternSeq	SC	PASS	recursive-fragment-empty-trave
 PATLIST.cons	T20-22	X	ConstrainsPatternSeq	SC	PASS	atomic-and-cons-members-left-to-right; function-and-data-patterns-open
 APP.quote	T297-299	X	TranslatesExpr.quote	SC	PASS	covered
 APP.Predicate	M275,T310-370	X	PredicatePayloadAgrees	EQ	GAP	runtime =../2 staging, ordinary positive-arity compound construction, exact compiler/Predicate partial/2 identity, reserved-syntax anti-forgery, and the exact reducer/error partition are proved; independent source translation and assertion composition remain open
-APP.translatePredicate	T271-275	H	-	N	BOUNDARY	ownership-dispatch
+APP.translatePredicate	T271-275	H	compileExprFuel_translatePredicate_eq	EQ	BOUNDARY	source-ordered outer-argument staging is an exact compiler equation and PLeaTTa's malformed-goal error corresponds to pinned's committed translation failure without equating their primitive outcomes; local-space calls remain core-owned and arbitrary SWI execution remains a replay-policed trusted boundary; the result-token mismatch is tracked separately
+APP.translatePredicate_result	T271-275	S	-	N	FAIL	pinned leaves the result position unconstrained after a successful direct call while PLeaTTa binds True; witnessed through the certified local-space path independently of SWI
 APP.callPredicate	M276	H	-	N	BOUNDARY	ownership-dispatch
 APP.assertaPredicate	M278,T310-324,T335-346	S	TranslatesExpr.assertaPredicate	SH	GAP	source-anchored ordered compiler lowering and the owned local effect through an arbitrary active product/resource/payload context are proved under the existing context relation and a producer-supplied executable world-action head; directly constructing that contextual premise from TranslatesExpr remains open
 APP.assertzPredicate	M277,T310-324,T335-346	S	TranslatesExpr.assertzPredicate	SH	GAP	source-anchored ordered compiler lowering and the owned local effect through an arbitrary active product/resource/payload context are proved under the existing context relation and a producer-supplied executable world-action head; directly constructing that contextual premise from TranslatesExpr remains open
@@ -69,7 +70,7 @@ APP.superpose_literal	T112-114,T419-422	X	TranslatesExpr.superposeLiterals+Rejec
 APP.superpose_general	T112-114,T394-397,T414-422	X	TranslatesExpr.superposeBranches+TranslatesSuperposeBranches+BuildsBranchNormalized	SC	GAP	local-branch-relation-sound-complete; ordered alias-ledger finalization yields exact independent/executable resolver certificates; agreement-indexed mutual goal/branch/list substitution transport covers executable-only hidden fields; split continuation/type-template domains avoid alias-source vacuity; the former universal branch-support premise is refuted by a hidden-output counterexample and replaced by a support-carrying CompileExprSupportContract whose exact fold, normalizer, agreement, support, alias resolution, and final GoalAgrees compose without order or multiplicity loss; discharging that contract by induction over TranslatesExpr and Step composition remain open
 APP.unify_self	HE24-31	L	-	N	GAP	specialized-library-definition
 APP.unify_general	HE32-35	L	-	N	GAP	specialized-library-definition
-APP.succeedsPredicate	LS15-20	L	-	N	FAIL	incorrectly-restricted-to-space-shape
+APP.succeedsPredicate	LS15-20	L	compileExprFuel_translatePredicate_eq	EQ	BOUNDARY	the library hook and general-predicate staging have exact pinned host-live order-and-multiplicity parity plus replay identity; local-space calls remain core-owned while arbitrary SWI execution is trusted, and the distinct direct translatePredicate result-token mismatch is tracked separately as FAIL
 APP.for	LP14-18	L	-	N	GAP	hardcoded-hook-macro
 APP.chain	T185-188	X	TranslatesExpr.chainBind	SC	PASS	source-order-fixed-at-0dd4454
 APP.foldall	T208-223	S	-	N	FAIL	wrong-translation-order-and-listified-execution

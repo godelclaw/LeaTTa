@@ -143,7 +143,8 @@ theorem tagged_fact_builds_call :
       some ("probe", [.atom "input", .atom "output"], []) := by
   unfold buildPrologCall deepUnchain taggedFact
   rw [unchainify_compound]
-  simp [atomToPrologTerm, prologVars, prologVarsRaw, prologVarsRawList]
+  simp [atomToPrologTerm, runtimeSymbolToPrologName, prologVars,
+    prologVarsRaw, prologVarsRawList]
 
 /-- The same cons-chain without `Predicate` provenance is merely a quoted
 source list and cannot install a Prolog clause.  This is the anti-forgery

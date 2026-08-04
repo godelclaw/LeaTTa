@@ -5380,6 +5380,76 @@ private theorem compileAppCoreFuel_hPredicate_generatedNames (fuel : Nat)
     start head "Predicate" [goal] term goals next originStart envAllowed
     (by simpa using argumentsAllowed) compiled
 
+private theorem compileTranslatePredicateWith_generatedNames
+    (fuel : Nat) (ih : CompilerGeneratedNamesAt fuel)
+    (external : String → Prop) (origin : Nat) (env : CEnv) (start : Nat)
+    (goal term : Atom) (goals : List Goal) (next : Nat)
+    (originStart : origin ≤ start)
+    (envAllowed : CompilerEnvNamesAllowed external origin start env)
+    (goalAllowed : CompilerAtomNamesAllowed external origin start goal)
+    (compiled : compileTranslatePredicateWith
+      (fun counter arguments =>
+        compileListFuel fuel env counter arguments)
+      start goal = .ok (term, goals, next)) :
+    CompilerAtomNamesAllowed external origin next term ∧
+      CompilerGoalsNamesAllowed external origin next goals := by
+  cases goal with
+  | var name => simp [compileTranslatePredicateWith] at compiled
+  | sym name => simp [compileTranslatePredicateWith] at compiled
+  | gnd ground => simp [compileTranslatePredicateWith] at compiled
+  | expr items =>
+      cases items with
+      | nil => simp [compileTranslatePredicateWith] at compiled
+      | cons outerHead innerArguments =>
+          simp only [compileTranslatePredicateWith, Bind.bind, Except.bind]
+            at compiled
+          split at compiled
+          · contradiction
+          · rename_i listOutcome listValue listEq
+            rcases listValue with ⟨terms, compiledGoals, nextCounter⟩
+            simp only [fresh] at compiled
+            rcases Except.ok.inj compiled with ⟨rfl, rfl, rfl⟩
+            have sourceParts :=
+              (compilerAtomsNamesAllowed_cons_iff external origin start
+                outerHead innerArguments).mp
+                ((compilerAtomNamesAllowed_expr_iff external origin start
+                  (outerHead :: innerArguments)).mp goalAllowed)
+            have listCounter :=
+              (compilerCounterAt fuel).list _ _ _ _ _ _ listEq
+            have listNames := ih.list external origin env start innerArguments
+              terms compiledGoals nextCounter originStart envAllowed
+              sourceParts.2 listEq
+            have stagedAllowed : CompilerAtomsNamesAllowed external origin
+                nextCounter (outerHead :: terms) :=
+              (compilerAtomsNamesAllowed_cons_iff external origin nextCounter
+                outerHead terms).2
+                ⟨sourceParts.1.mono listCounter, listNames.1⟩
+            have predicateAllowed : CompilerAtomNamesAllowed external origin
+                nextCounter (chainify (Atom.expr (outerHead :: terms))) :=
+              chainify_namesAllowed
+                ((compilerAtomNamesAllowed_expr_iff external origin nextCounter
+                  (outerHead :: terms)).2 stagedAllowed)
+            have resultAllowed : CompilerAtomNamesAllowed external origin
+                (nextCounter + 1)
+                (Atom.var (compilerGeneratedName nextCounter)) := by
+              simp only [compilerAtomNamesAllowed_var_iff]
+              exact .generated (Nat.le_trans originStart listCounter) (by omega)
+            constructor
+            · exact resultAllowed
+            · apply (compilerGoalsNamesAllowed_append_iff external origin
+                  (nextCounter + 1) compiledGoals
+                  [Goal.bin "translatePredicate"
+                    [chainify (Atom.expr (outerHead :: terms))]
+                    (Atom.var (compilerGeneratedName nextCounter))]).2
+              constructor
+              · exact listNames.2.mono (Nat.le_succ nextCounter)
+              · simp only [compilerGoalsNamesAllowed_cons_iff,
+                    compilerGoalsNamesAllowed_nil, and_true]
+                exact compilerGoalNamesAllowed_bin
+                  (by simpa using
+                    predicateAllowed.mono (Nat.le_succ nextCounter))
+                  resultAllowed "translatePredicate"
+
 private theorem compileAppCoreFuel_hTranslatePredicate_generatedNames
     (fuel : Nat) (ih : CompilerGeneratedNamesAt fuel) :
     AppCoreGeneratedNamesFor fuel .hTranslatePredicate := by
@@ -5396,23 +5466,9 @@ private theorem compileAppCoreFuel_hTranslatePredicate_generatedNames
       origin env start head _ term goals next originStart envAllowed
       argumentsAllowed compiled
   rename_i _ _ goal _
-  simp only [fresh] at compiled
-  rcases Except.ok.inj compiled with ⟨rfl, rfl, rfl⟩
-  have sourceAllowed : CompilerAtomNamesAllowed external origin start
-      (chainify goal) := by
-    apply chainify_namesAllowed
-    simpa using argumentsAllowed
-  have resultAllowed : CompilerAtomNamesAllowed external origin (start + 1)
-      (Atom.var (compilerGeneratedName start)) := by
-    simp only [compilerAtomNamesAllowed_var_iff]
-    exact .generated originStart (by omega)
-  constructor
-  · exact resultAllowed
-  · simp only [compilerGoalsNamesAllowed_cons_iff,
-        compilerGoalsNamesAllowed_nil, and_true]
-    exact compilerGoalNamesAllowed_bin (by
-      simpa using sourceAllowed.mono (Nat.le_succ start))
-      resultAllowed "translatePredicate"
+  exact compileTranslatePredicateWith_generatedNames fuel ih external origin
+    env start goal term goals next originStart envAllowed
+    (by simpa using argumentsAllowed) compiled
 
 private theorem compileAppCoreFuel_hCallPredicate_generatedNames
     (fuel : Nat) (ih : CompilerGeneratedNamesAt fuel) :

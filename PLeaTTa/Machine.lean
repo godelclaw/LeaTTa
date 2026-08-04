@@ -5514,6 +5514,10 @@ private def prologSpaceCall? : PrologTerm → Option (Atom × Atom)
       if space.startsWith "&" then
         some (.sym space, chainOf (args.map PrologTerm.toAtom))
       else none
+  | .compound space args =>
+      if space.startsWith "&" then
+        some (.sym space, chainOf (args.map PrologTerm.toAtom))
+      else none
   | _ => none
 
 /-- Extract the local space relation represented by a direct Prolog goal or

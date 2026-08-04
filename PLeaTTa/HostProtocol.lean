@@ -87,6 +87,14 @@ end
 
 mutual
 
+/-- Map canonical runtime Boolean constructors back to the native Prolog atom
+spelling used by pinned PeTTa.  Other runtime symbols are already Prolog atom
+names and pass through unchanged. -/
+def runtimeSymbolToPrologName : String → String
+  | "True" => "true"
+  | "False" => "false"
+  | name => name
+
 /-- Marshal a PLeaTTa atom into a Prolog term for a `translatePredicate`
     goal.  Variables and compounds are preserved; unsupported grounds fail.
 
@@ -102,10 +110,13 @@ def atomToPrologTerm (atom : Atom) : Option PrologTerm :=
   | .gnd (.external "PLeaTTa.internal" "nil") => some (.list [])
   | .gnd (.external kind payload) =>
       payload.toNat?.map (PrologTerm.resource kind)
-  | .sym name => some (.atom name)
+  -- Runtime Booleans use capitalized internal constructors, while native
+  -- Prolog predicates use the lowercase atoms accepted by pinned PeTTa.
+  | .sym name => some (.atom (runtimeSymbolToPrologName name))
   | .expr [] => some (.list [])
   | .expr (.sym f :: args) =>
-      (atomsToPrologTerms args).map (PrologTerm.compound f)
+      (atomsToPrologTerms args).map
+        (PrologTerm.compound (runtimeSymbolToPrologName f))
   | .expr items => (atomsToPrologTerms items).map PrologTerm.list
   | _ => none
 termination_by 2 * atom.size
@@ -184,7 +195,8 @@ def buildPrologCall (innerExpr : Atom) :
   match goal with
   | e@(.expr (.sym functor :: goalArgs)) =>
       (goalArgs.mapM atomToPrologTerm).map
-        (fun ptArgs => (functor, ptArgs, prologVars e))
+        (fun ptArgs =>
+          (runtimeSymbolToPrologName functor, ptArgs, prologVars e))
   | _ => none
 
 /-- Decode the value produced by PeTTa's `Predicate` constructor and build

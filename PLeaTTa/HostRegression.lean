@@ -80,6 +80,28 @@ private def localSpaceCatch : List PrologTerm :=
           (chainOf [Atom.sym "friend", Atom.var "left", Atom.var "right"])),
     Goal.eq resultVar (Atom.sym "True")]
 
+-- Executing pinned `Predicate/2` removes its wrapper and produces the direct
+-- callable space term.  Local ownership must survive that construction.
+private def directLocalSpaceCatch : List PrologTerm :=
+  [.compound "&self" [.atom "friend", .var "left", .var "right"],
+    .var "error", .atom "fail"]
+
+#guard localPrologGoals? {} pleattaTable "catch" directLocalSpaceCatch
+    resultVar [] ==
+  some [Goal.smatch (spacePat selfSpace
+          (chainOf [Atom.sym "friend", Atom.var "left", Atom.var "right"])),
+    Goal.eq resultVar (Atom.sym "True")]
+
+-- A space-shaped term is locally owned only when it is the callable head.
+-- Merely carrying `&self` as a nested argument must not bypass the host.
+private def nestedSpaceArgumentCatch : List PrologTerm :=
+  [.compound "wrapper"
+      [.compound "&self" [.atom "friend", .atom "a", .atom "b"]],
+    .var "error", .atom "fail"]
+
+#guard (localPrologGoals? {} pleattaTable "catch" nestedSpaceArgumentCatch
+    resultVar []).isNone
+
 private def lengthArgument : Atom :=
   chainOf [Atom.sym "len",
     chainOf [Atom.gnd (.int 1), Atom.gnd (.int 2)]]
@@ -206,6 +228,13 @@ private def nestedValue : HostValue :=
     (chainify (.expr [.sym "atom_codes", .var "NL",
       .expr [.gnd (.int 10)]])) ==
   some ("atom_codes", [.var "NL", .list [.int 10]], ["NL"])
+
+-- Canonical runtime Boolean constructors marshal back to the lowercase
+-- native Prolog predicates used by pinned PeTTa, including at the call head.
+#guard buildPrologCall (chainify (.expr [.sym "true"])) ==
+  some ("true", [], [])
+#guard atomToPrologTerm (.expr [.sym "False"]) ==
+  some (.compound "false" [])
 
 -- Internal partial values cross the trusted SWI boundary as the real
 -- `partial/2` compound used by pinned PeTTa, never as the internal tag.

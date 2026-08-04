@@ -3149,6 +3149,8 @@ import PLeaTTa.PeTTaSpec.PrologGoalSemantics
 #print axioms PLeaTTa.reservedSyntaxC_injective
 #print axioms PLeaTTa.prologCompoundC_ne_reservedSyntaxC
 #print axioms PLeaTTa.compileExprFuel_Predicate_eq
+#print axioms PLeaTTa.compileExprFuel_translatePredicate_eq
+#print axioms PLeaTTa.compileExprFuel_translatePredicate_malformed_eq
 #print axioms PLeaTTa.caughtBinErrorResolved_some_iff
 #print axioms PLeaTTa.PredicateAdequacy.compound_not_proper_list
 #print axioms PLeaTTa.PredicateAdequacy.compound_eq_partial_iff

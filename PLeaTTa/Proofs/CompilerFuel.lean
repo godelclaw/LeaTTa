@@ -795,6 +795,29 @@ private abbrev AppCoreFuelStableFor (fuel : Nat) (kind : AppCoreHead) : Prop :=
       compileAppCoreFuel (fuel + 2) env start head arguments =
         .ok (term, goals, next)
 
+/-- Staging the arguments of `translatePredicate` is stable when the
+underlying ordered expression traversal is stable. -/
+private theorem compileTranslatePredicateWith_success_stable
+    (fuel : Nat) (ih : CompilerFuelStepAt fuel)
+    (env : CEnv) (start : Nat) (goal term : Metta.Atom)
+    (goals : List Goal) (next : Nat)
+    (compiled : compileTranslatePredicateWith
+      (fun counter arguments =>
+        compileListFuel fuel env counter arguments)
+      start goal = .ok (term, goals, next)) :
+    compileTranslatePredicateWith
+      (fun counter arguments =>
+        compileListFuel (fuel + 1) env counter arguments)
+      start goal = .ok (term, goals, next) := by
+  unfold compileTranslatePredicateWith at compiled ⊢
+  split at compiled <;> try contradiction
+  simp only [Bind.bind, Except.bind] at compiled ⊢
+  split at compiled
+  · contradiction
+  · rename_i listOutcome listValue listEq
+    rw [ih.list _ _ _ _ _ _ listEq]
+    exact compiled
+
 local macro "solve_app_core_fuel" fuel:ident ih:ident : tactic => `(tactic|
   (intro env start head arguments term goals next classified compiled
    change (compileAppCoreFuel (Nat.succ $fuel) env start head arguments =
@@ -826,7 +849,8 @@ local macro "solve_app_core_fuel" fuel:ident ih:ident : tactic => `(tactic|
    all_goals grind [CompilerFuelStepAt.expr, CompilerFuelStepAt.pattern,
      CompilerFuelStepAt.app, CompilerFuelStepAt.typedArgs,
      CompilerFuelStepAt.argsAt, CompilerFuelStepAt.caseArms,
-     CompilerFuelStepAt.patternList, CompilerFuelStepAt.list]))
+     CompilerFuelStepAt.patternList, CompilerFuelStepAt.list,
+     compileTranslatePredicateWith_success_stable]))
 
 local macro "prove_app_core_fuel" theoremName:ident kind:term : command =>
   `(private theorem $theoremName (fuel : Nat)

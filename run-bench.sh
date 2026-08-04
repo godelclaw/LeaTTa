@@ -15,6 +15,7 @@ esac
 WRAP="$(mktemp)"; trap 'rm -f "$WRAP"' EXIT
 printf '#!/bin/bash\nexec "%s/.lake/build/bin/pleatta" "$@"\n' "$D" > "$WRAP"; chmod +x "$WRAP"
 python3 "$D/diffbench/prolog_worker_policy.py" || exit 1
+python3 "$D/diffbench/succeeds_predicate_host_parity.py" || exit 1
 python3 "$D/diffbench/compiler_obligations.py" || exit 1
 python3 "$D/diffbench/prolog_semantics_obligations.py" || exit 1
 python3 "$D/diffbench/test_source_differential_fuzz.py" || exit 1
