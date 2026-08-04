@@ -347,6 +347,18 @@ PROLOG_COMMITTED_SCHEDULED_TERMINAL_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologCommittedScheduledTerminalBridge.lean"
 )
+PROLOG_COMMITTED_SCHEDULED_OUTER_CATCHUP_BRIDGE = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologCommittedScheduledOuterCatchupBridge.lean"
+)
+PROLOG_COMMITTED_SCHEDULED_OUTER_TRACE_REGRESSION = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologCommittedScheduledOuterTraceRegression.lean"
+)
+PROLOG_COMMITTED_SCHEDULED_OUTER_CATCHUP_REGRESSION = (
+    ROOT / "PLeaTTa" / "Proofs" /
+    "PrologCommittedScheduledOuterCatchupRegression.lean"
+)
 PROLOG_MATERIALIZED_GLOBAL_PREFIX_BRIDGE = (
     ROOT / "PLeaTTa" / "Proofs" /
     "PrologMaterializedGlobalPrefixBridge.lean"
@@ -950,6 +962,12 @@ def check() -> list[str]:
             digest(PROLOG_MATERIALIZED_OPERAND_REGRESSION),
         "prolog_committed_scheduled_terminal_bridge_sha256":
             digest(PROLOG_COMMITTED_SCHEDULED_TERMINAL_BRIDGE),
+        "prolog_committed_scheduled_outer_catchup_bridge_sha256":
+            digest(PROLOG_COMMITTED_SCHEDULED_OUTER_CATCHUP_BRIDGE),
+        "prolog_committed_scheduled_outer_trace_regression_sha256":
+            digest(PROLOG_COMMITTED_SCHEDULED_OUTER_TRACE_REGRESSION),
+        "prolog_committed_scheduled_outer_catchup_regression_sha256":
+            digest(PROLOG_COMMITTED_SCHEDULED_OUTER_CATCHUP_REGRESSION),
         "prolog_materialized_global_prefix_bridge_sha256":
             digest(PROLOG_MATERIALIZED_GLOBAL_PREFIX_BRIDGE),
         "prolog_retained_payload_snapshot_bridge_sha256":
